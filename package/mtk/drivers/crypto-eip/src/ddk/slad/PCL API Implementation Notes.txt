@@ -1,0 +1,150 @@
++=============================================================================+
+| Copyright (c) 2012-2020 Rambus, Inc. and/or its subsidiaries.               |
+|                                                                             |
+| Subject   : PCL API Implementation Notes                                    |
+| Product   : PCL API                                                         |
+| Date      : 18 November, 2020                                               |
+|                                                                             |
++=============================================================================+
+
+The SLAD API is a set of the APIs one of which is the Packet Classification
+(PCL) API. The driver implementation specifics of these APIs are
+described in short documents that serve as an addendum to the API
+specifications. This document describes the PCL API.
+
+This document uses the phrase "configurable" to indicate that a parameter or
+option is build-time configurable in the driver. Please refer to the User Guide
+of the driver for details.
+
+
+PCL API
+-------
+
+The PCL API manages two types of data structures relevant to the
+Packet Classification Engine: flow data structures and transform data
+structures.
+
+The PCL API is not used to submit packets (command descriptors) to the
+Packet Engine and to retrieve result descriptors (referring to
+processed packets). This is performed by the PEC API (see the PEC API
+Implementation Notes for details.
+
+Transform records
+     Transform records are allocated outside the Driver (using the
+     DMABuf API) and are initialized outside the Driver by the
+     Extended SA Builder. The Extended SA Builder is the SA Builder
+     that is compiled with the "Extended" configuration option
+     enabled. Transform records are represented by their DMABuf
+     Handle. They can be registered with PCL_Transform_Register() before
+     they are used and they are unregistered by
+     PCL_Transform_Unregister() after use. A subset of the contents
+     (sequence number and statistics) can be read with
+     PCL_Transform_Get_ReadOnly().
+
+Flow records
+     Flow Records are represented by an internal data structure
+     (represented by PCL_FlowHandle_t), which is invisible to the application.
+     The internal data structure is allocated within the Driver.
+     A DMA-safe buffer is associated with it and this is also allocated
+     within the Driver and invisible to the application.
+
+     The Driver makes use of the internal DMAResource API to allocate
+     the DMA-safe buffer and of an internal memory allocation API
+     (adapter_alloc.h) to allocate the data structure.
+
+     Allocation of flow records can be a time consuming operation and
+     it may not be allowed at all in certain situations (e.g. in
+     interrupt context). Therefore allocating and deallocating the
+     resources for a flow record is decoupled from adding and removing
+     flow records in the flow record table.
+
+     When a flow record is allocated with PCL_Flow_Alloc() its
+     resources (internal data structure and DMA-safe buffer) are
+     allocated, but the flow record is not initialized, is not part of
+     the flow table and is inaccessible to the Packet Classification
+     Engine. PCL_Flow_Add() initializes the record and adds it to a
+     lookup table. The size of the hash table from which flow lookup
+     is started has a configurable size.
+
+     PCL_Flow_Get_ReadOnly() reads the variable fields (last used time,
+     packet statistics) from a flow record. PCL_Flow_Remove() removes it
+     from the lookup table. At this time the resources are still allocated
+     and can be reused by another flow record. PCL_Flow_Release() deallocates
+     all flow resources.
+
+     This implementation does not implement the PCL_Flow_Lookup() function.
+
+Direct Transform Lookup
+     Transform records can be looked up directly (without the need for
+     a flow record). Use the function PCL_DTL_Transform_Add to add an
+     existing record (already registered with PCL_Transform_Register)
+     to the lookup table. PCL_DTL_Transform_Remove removes the transform
+     record from the lookup table again.
+
+Record invalidation
+     When flow records or transform records must be removed from the
+     system, they must also be removed from the record cache of the packet
+     engine, by means of a special command descriptor. The following
+     steps are required:
+     - Prevent the record from being looked up again. Use PCL_Flow_Remove
+       to remove a flow record from the lookup table. Use
+       PCL_DTL_Transform_Remove to remove a transform record from the lookup
+       table.
+     - Submit a special command descriptor containing a record invalidation
+       command with PEC_Packet_Put.
+     - Wait until the corresponding result descriptor is received with
+       PEC_Packet_Get.
+
+Byte ordering (endianness)
+     The transform buffers are considered arrays of 32-bit integers, in host-
+     native byte ordering. The driver will change the byte order if this is
+     required (configurable). The data buffers are considered byte arrays and
+     the driver will not touch these. Flow records are allocated and managed
+     entirely by the driver and their internal representation is never used by
+     the application.
+
+Bounce Buffers
+     The PCL API does not use bounce buffers. Transform buffers can be
+     allocated by the application in a DMA-safe way and buffers for the
+     flow table are allocated entirely within the Driver.
+
+Banks for DMA resources.
+     The PCL API requires that all DMA buffers for transform records
+     are allocated in Bank 1 (Bank parameter in
+     DMABuf_Properties_t). Internally the PCL adapter takes care of
+     allocating DMA-safe buffers for flow records in Bank 2. Memory
+     allocations in Bank 1 and Bank 2 are taken from special-purpose
+     memory pools. On 64-bit systems these pools are guaranteed to lay
+     in a 4GB address range. The PCL implementation takes care to convert
+     64-bit bus addresses for flow and transform records to 32-bit offsets
+     with respect to the base address of the pool.
+
+Concurrent Context Synchronization (CCS)
+     The PCL API implementation supports one single multi-threaded application,
+     allowing concurrent and independent use of PCL_Init/UnInit, PCL_Flow and
+     PCL_Transform functions. Multiple applications for the PCL API are
+     not supported.
+
+     The PCL API implementation provides synchronization mechanisms for
+     concurrent contexts invoking the API functions. The API can be used
+     by multi-threaded user-space or kernel-space applications. The latter
+     can invoke the API functions from the user process as well as from softirq
+     contexts. Mixing user process execution with softirq contexts is also
+     supported. Both Linux Uni-Processor (UP) and Symmetric Multi-Processor
+     (SMP) kernel configurations are supported.
+
+     All the PCL API functions allow for just one execution context at a time.
+     Note that although the API functions take the interface ID as an input
+     parameter it is not used in the current implementation.
+
+     The PCL API implementation serializes the access from concurrent execution
+     contexts to the classification device so having multiple contexts using
+     this API will not result in better performance.
+
+     When a function from the PCL API detects that it competes for a resource
+     already used at the time by another context executing the PCL code it will
+     not block and return PCL_STATUS_BUSY return code. The caller should try
+     calling this function again short after.
+
+
+<end of document>

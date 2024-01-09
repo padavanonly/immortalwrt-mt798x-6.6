@@ -1,0 +1,30 @@
+menu "Crypto Offload Configuration"
+	depends on PACKAGE_kmod-crypto-eip
+
+choice
+	prompt "Crypto Offload Mode"
+	default CRYPTO_OFFLOAD_INLINE
+	help
+	  Select crypto offload mode. Support lookaside mode or inline mode.
+
+config CRYPTO_OFFLOAD_INLINE
+	bool "Inline Mode"
+	depends on TARGET_mediatek_mt7988 && !PACKAGE_kmod-eip197_driver
+	select PACKAGE_kmod-crypto-eip-inline
+	select PACKAGE_kmod-crypto-eip-ddk
+	select PACKAGE_crypto-eip-inline-fw
+endchoice
+
+choice
+	prompt "Crypto XFRM Offload Method"
+	depends on CRYPTO_OFFLOAD_INLINE
+	default CRYPTO_XFRM_OFFLOAD_MTK_PCE
+	help
+	  Select crypto XFRM offload method. Either RAMBUS PCL support or
+	  MTK PCE support.
+
+config CRYPTO_XFRM_OFFLOAD_MTK_PCE
+	bool "Enable MTK PCE XFRM Offload"
+endchoice
+
+endmenu

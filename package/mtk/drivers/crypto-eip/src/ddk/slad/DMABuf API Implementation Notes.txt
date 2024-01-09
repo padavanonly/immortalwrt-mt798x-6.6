@@ -1,0 +1,118 @@
++=============================================================================+
+| Copyright (c) 2010-2020 Rambus, Inc. and/or its subsidiaries.               |
+|                                                                             |
+| Subject   : DMABuf API Implementation Notes                                 |
+| Product   : SLAD API                                                        |
+| Date      : 18 November, 2020                                               |
+|                                                                             |
++=============================================================================+
+
+SLAD API Implementation Notes : DMABuf API
+==========================================
+
+The SLAD API is a set of the API's one of which is the DMA Buffer
+Allocation (DMABuf) API. The driver implementation specifics of these APIs
+are described in short documents that serve as an addendum to the API
+specifications. This document describes the DMABuf API.
+
+
+DMABuf API
+----------
+
+The implementation of this API is fully re-entrant.
+
+Supported properties:
+     Alignment must be 1, 2, 4, 8, 16, 32, 64 or 128.
+     Bank is used to select a memory pool suitable for certain data types.
+     fCached can be used to indicate whether a DMA resource is cached.
+     Implementations of the DMAResource API can ignore the fCached parameter
+     and force all buffers to be allocated or registered either
+     cached or non-cached.
+
+DMABuf_NULLHandle:
+     Implemented as a NULL handle that can be assigned to a variable
+     of type DMABuf_Handle_t
+
+DMABuf_Handle_IsSame:
+     Two pointers to memory locations where the handles are stored
+     should be provided to this function as parameters.
+     The function will do byte comparison for the size of the handle type.
+
+DMABuf_Alloc:
+     Maximum buffer size supported is 1 megabyte.
+     Implementation uses the DMAResource API
+
+DMABuf_Register:
+     Supported values for AllocatorRef:
+     'N' to register a buffer that is not intended to be DMA-safe but for
+         which a DMABuf handle is desired nevertheless.
+     'R' to register a (subrange of) a buffer previously allocated with
+         DMABuf_Alloc. This buffer is known to be DMA-safe.
+     'k' to register a buffer allocated with Linux kmalloc.
+     'C' to register a coherent DMA-mapped buffer. The application must
+         provide the bus address in Alternative_p.
+
+     Alternative_p is only used with allocator ref 'C' and should be set to
+     "NULL" for other allocators.
+
+     All implementations of the DMAResource API support the 'N' and 'R'
+     allocators. The 'k' and 'C' allocators are only supported by
+     the Linux kernel implementation.
+
+DMABuf_Release:
+     The implementation is protected against invalid handles and also detects
+     and warns when handles are used after release (does not work well when
+     all available handles are in use).
+
+Banks:
+     The implementation supports several banks. The banks are configurable,
+     an example default configuration is as follows
+     (bank values in DMABuf_Properties_t):
+
+     - Bank 0 allocates buffers anywhere in physical RAM without restrictions.
+
+     - Bank 1 allocates buffers suitable for SA records and Transform records.
+       All these are required to lie in a single 4GB segment on 64-bit systems.
+
+     - Bank 2 allocates buffers suitable for flow records. All these are
+       required to lie in a single 4GB segment on 64-bit systems.
+
+The following properties of the static (fixed-size) DMA banks are implemented:
+
+     - One static bank contains one DMA pool;
+
+     - One DMA Pool contains a fixed compile-time configurable number of blocks;
+
+     - All blocks in one DMA pool have the same fixed compile-time configurable
+       size;
+
+     - The DMA pools for all the configured static banks are allocated
+       in DMAResource_Init() and freed in DMAResource_Uninit();
+
+     - DMA resources can be allocated in a static bank using
+       DMABuf_Alloc() and they must be freed using DMABuf_Release();
+
+     - Only sub-sets of DMA resources allocated in a static bank can be
+       registered in that bank using DMABuf_Register();
+       If the DMABuf_Register() function is called for a static
+       bank then it must use allocator type 82 ('R') and the required memory
+       block must belong to an already allocated DMA resource in that bank;
+
+     - The DMABuf_Register() function can be called for a static
+       bank also using allocator type 78 ('N') to register a DMA-unsafe buffer;
+       These DMA resources must be subsequently freed using the DMABuf_Release()
+       function;
+
+     - An "all-pool" DMA resource of size (nr_of_blocks * block_size) can be
+       allocated in a static bank using DMABuf_Alloc() where nr_of_blocks
+       and block_size are compile-time configuration parameters
+       (see HWPAL_DMARESOURCE_BANKS in c_dmares_gen.h);
+       The DMABuf_Register() function can be used to register
+       sub-sets of this DMA resource; Only one such a all-pool DMA resource
+       can be allocated in one static bank and must be freed using
+       DMABuf_Release() function;
+
+     - No other DMA resources can be allocated in a static bank
+       where an all-pool DMA resource is allocated.
+
+<end of document>

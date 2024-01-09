@@ -1,0 +1,5 @@
+FW-config:      FIRMWARE-GENERIC
+FW-version:     3.5
+HW-module:      eip197
+HW-config:      EIP-197b-iew-pp-1-axi-8r
+HW-min-version: 3.3
