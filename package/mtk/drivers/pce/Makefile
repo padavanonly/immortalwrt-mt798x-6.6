@@ -43,7 +43,7 @@ define KernelPackage/pce
   FILES+=$(PKG_BUILD_DIR)/pce.ko
   KCONFIG:=
   DEPENDS:= \
-	kmod-mediatek_hnat
+	PACKAGE_kmod-mediatek_hnat:kmod-mediatek_hnat
 endef
 
 define KernelPackage/pce/description
