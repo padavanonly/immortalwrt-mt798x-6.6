@@ -126,7 +126,7 @@
 		reg = <1>;
 		phy-mode = "2500base-x";
 		ext-phy-reg = <3>;
-		ext-phy-reset-gpios = <&pio 6 0>;	
+		ext-phy-reset-gpios = <&pio 6 1>;	
 		fixed-link {
 			speed = <2500>;
 			full-duplex;
