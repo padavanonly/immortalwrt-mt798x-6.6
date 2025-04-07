@@ -2,12 +2,13 @@
 #include "mt7986a.dtsi"
 #include "mt7986a-pinctrl.dtsi"
 #include "mt7986-spim-nand-partition-bpir3_mini-110m.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 / {
 	model = "Bananapi BPI-R3MINI 110M Layout";
 	compatible = "bananapi,bpi-r3mini", "mediatek,mt7986a";
 	chosen {
-		bootargs = "console=ttyS0,115200n1 loglevel=8  \
-				earlycon=uart8250,mmio32,0x11002000";
+		bootargs = "console=ttyS0,115200n1 loglevel=8 earlycon=uart8250,mmio32,0x11002000";
 	};
 
 	memory {
@@ -46,7 +47,7 @@
                 regulator-name = "usb_vbus";
                 regulator-min-microvolt = <5000000>;
                 regulator-max-microvolt = <5000000>;
-                gpios = <&pio 20 GPIO_ACTIVE_LOW>;
+                gpios = <&pio 20 GPIO_ACTIVE_LOW>;  
                 regulator-boot-on;
         };
 
