@@ -2,6 +2,11 @@ set_preinit_iface() {
 	ip link set eth0 up
 
 	case $(board_name) in
+	cudy,tr3000-v1|\
+	cudy,tr3000-v1-ubootmod)
+		ip link set eth1 up
+		ifname=eth1
+		;;
 	ubnt,unifi-6-lr)
 		ifname=eth0
 		;;
