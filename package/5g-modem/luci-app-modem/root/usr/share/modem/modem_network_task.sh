@@ -160,7 +160,8 @@ rndis_dial()
 
     #手动拨号（广和通FM350-GL）
     if [ "$manufacturer" = "fibocom" ] && [ "$platform" = "mediatek" ]; then
-        local at_command="AT+COPS?"
+        sleep 3s
+	local at_command="AT+COPS?"
         isp=$(at ${at_port} ${at_command} | grep "+COPS" | awk -F'"' '{print $2}' | tr -d '\r\n' | xargs)
         if [[ "$isp" == "4E2D56FD8054901A" ]]; then
         isp="CHN-UNICOM"
@@ -231,7 +232,7 @@ modem_network_task()
     local define_connect=$(uci -q get modem.modem${modem_no}.define_connect)
     local interface_name="wwan_5g_${modem_no}"
     local interface_name_ipv6="wwan6_5g_${modem_no}"
-
+    local interface_network=$(uci -q get modem.modem${modem_no}.network_interface)
     #AT串口未获取到重新获取（解决模组还在识别中，就已经开始拨号的问题）
     while [ -z "$manufacturer" ] || [ "$manufacturer" = "unknown" ]; do
         at_port=$(uci -q get modem.modem${modem_no}.at_port)
@@ -266,11 +267,12 @@ modem_network_task()
         fi
 
         #网络连接检查
-        local at_command="AT+CGPADDR=${define_connect}"
+	if ! ping -c 2 -w 5 -I "$interface_network" 223.5.5.5 > /dev/null 2>&1; then
+        echo "[$(date +"%Y-%m-%d %H:%M:%S")] ping failed" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
+	local at_command="AT+CGPADDR=${define_connect}"
         local ipv4=$(at ${at_port} ${at_command} | grep "+CGPADDR: " | sed -n '1p' | awk -F',' '{print $2}' | sed 's/"//g')
 
         if [ -z "$ipv4" ]; then
-
             [ "$mode" = "modemmanager" ] && {
                 #拨号工具为modemmanager时，不需要重新设置连接定义
                 continue
@@ -290,7 +292,6 @@ modem_network_task()
                 "modemmanager") modemmanager_dial "${interface_name}" "${define_connect}" ;;
                 *) ecm_dial "${at_port}" "${manufacturer}" "${define_connect}" ;;
             esac
-
         elif [[ "$ipv4" = *"0.0.0.0"* ]]; then
 
             #输出日志
@@ -334,9 +335,10 @@ modem_network_task()
             }
 	    /etc/init.d/firewall restart
         fi
+	fi
 	rdisc6 eth2 &
         ndisc6 fe80::1 eth2 &
-        sleep 15s
+        sleep 5s
     done
 }
 
