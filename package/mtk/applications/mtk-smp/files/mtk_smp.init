@@ -4,5 +4,7 @@ START=99
 USE_PROCD=1
 
 start_service() {
+    ifconfig eth0 down
+    ifconfig eth0 up
     /sbin/smp.sh
 }
