@@ -19,6 +19,8 @@
 	};
 
 	chosen {
+		bootargs = "root=/dev/fit0 rootwait";
+		rootdisk = <&ubi_rootdisk>;
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -127,14 +129,14 @@
 
 		conf-pu {
 			pins = "SPI0_CS", "SPI0_HOLD", "SPI0_WP";
-			drive-strength = <MTK_DRIVE_8mA>;
-			bias-pull-up = <MTK_PUPD_SET_R1R0_11>;
+			drive-strength = <8>;
+			mediatek,pull-up-adv = <0>; /* bias-disable */
 		};
 
 		conf-pd {
 			pins = "SPI0_CLK", "SPI0_MOSI", "SPI0_MISO";
-			drive-strength = <MTK_DRIVE_8mA>;
-			bias-pull-down = <MTK_PUPD_SET_R1R0_11>;
+			drive-strength = <8>;
+			mediatek,pull-up-adv = <0>; /* bias-disable */
 		};
 	};
 };
@@ -153,9 +155,6 @@
 		spi-max-frequency = <52000000>;
 		spi-tx-bus-width = <4>;
 		spi-rx-bus-width = <4>;
-                mediatek,nmbm;
-                mediatek,bmt-max-ratio = <1>;
-                mediatek,bmt-max-reserved-blocks = <64>;
 
 		partitions {
 			compatible = "fixed-partitions";
@@ -163,7 +162,7 @@
 			#size-cells = <1>;
 
 			partition@0 {
-				label = "BL2";
+				label = "bl2";
 				reg = <0x0 0x100000>;
 				read-only;
 			};
@@ -192,7 +191,7 @@
 			};
 
 			partition@280000 {
-				label = "Factory";
+				label = "factory";
 				reg = <0x280000 0x100000>;
 				read-only;
 
@@ -208,14 +207,21 @@
 			};
 
 			partition@380000 {
-				label = "FIP";
+				label = "fip";
 				reg = <0x380000 0x200000>;
 				read-only;
 			};
 
 			partition@580000 {
+				compatible = "linux,ubi";
 				label = "ubi";
-				reg = <0x580000 0x6e80000>;
+				reg = <0x580000 0x7a80000>;
+
+				volumes {
+					ubi_rootdisk: ubi-volume-fit {
+						volname = "fit";
+					};
+				};
 			};
 		};
 	};

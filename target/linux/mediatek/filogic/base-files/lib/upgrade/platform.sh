@@ -66,23 +66,6 @@ platform_do_upgrade() {
 	local board=$(board_name)
 
 	case "$board" in
-	netcore,n60-pro|\
-	tplink,tl-xdr4288|\
-    tplink,tl-xdr6086|\
-    tplink,tl-xdr6088|\
-	tplink,wma301|\
-	tplink,wma301-stock|\
-	xiaomi,redmi-router-ax6000-ubootmod|\
-	xiaomi,mi-router-ax3000t-ubootmod|\
-    xiaomi,mi-router-wr30u-ubootmod|\
-	h3c,magic-nx30-pro|\
-	jcg,q30-pro|\
-    qihoo,360t7)
-		CI_UBIPART="ubi"
-    		CI_KERNPART="kernel"
-      		CI_ROOTPART="rootfs"
-    		nand_do_upgrade "$1"
-    		;;
 	abt,asr3000|\
 	bananapi,bpi-r3|\
 	bananapi,bpi-r3-mini|\
@@ -93,26 +76,30 @@ platform_do_upgrade() {
 	cmcc,rax3000m|\
 	cmcc,rax3000me|\
 	cudy,tr3000-v1-ubootmod|\
-	cudy,wbr3000uax-v1-ubootmod|\
 	gatonetworks,gdsp|\
+	h3c,magic-nx30-pro|\
 	imou,lc-hx3001|\
+	jcg,q30-pro|\
+	jdcloud,re-cp-03|\
 	konka,komi-a31|\
 	livinet,zr-3020-ubootmod|\
-	mediatek,7981r128|\
 	mediatek,mt7981-rfb|\
 	mediatek,mt7988a-rfb|\
 	mercusys,mr90x-v1-ubi|\
 	netis,nx31|\
-	netis,nx32u|\
 	nokia,ea0326gmp|\
 	openwrt,one|\
 	netcore,n60|\
+	netcore,n60-pro|\
+	qihoo,360t7|\
 	routerich,ax3000-ubootmod|\
-	ruijie,ew-6000gx-pro-ubootmod|\
-	ruijie,rg-x60-new-ubootmod|\
+	tplink,tl-xdr4288|\
+	tplink,tl-xdr6086|\
+	tplink,tl-xdr6088|\
 	tplink,tl-xtr8488|\
-	tplink,wma301-ubootmod|\
-	wirelesstag,zx7981pd-ubootmod|\
+	xiaomi,mi-router-ax3000t-ubootmod|\
+	xiaomi,redmi-router-ax6000-ubootmod|\
+	xiaomi,mi-router-wr30u-ubootmod|\
 	zyxel,ex5601-t0-ubootmod)
 		fit_do_upgrade "$1"
 		;;
@@ -125,24 +112,12 @@ platform_do_upgrade() {
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
 	huasifei,wh3000-emmc|\
-	airpi,ap3000m|\
-	*Airpi*|\
-	cmcc,rax3000m-emmc|\
-	bt,r320|\
-	bt,rb300|\
-	philips,hy3000|\
-	sl,3000-emmc|\
-	sn,r1|\
 	smartrg,sdg-8612|\
 	smartrg,sdg-8614|\
 	smartrg,sdg-8622|\
 	smartrg,sdg-8632|\
 	smartrg,sdg-8733|\
 	smartrg,sdg-8733a|\
-	supergateway,s20*|\
-	huasifei,wh3000-pro|\
-	umi,uax3000e|\
- 	jdcloud,re-cp-03|\
 	smartrg,sdg-8734)
 		CI_KERNPART="kernel"
 		CI_ROOTPART="rootfs"
@@ -154,6 +129,10 @@ platform_do_upgrade() {
 	asus,tuf-ax6000)
 		CI_UBIPART="UBI_DEV"
 		CI_KERNPART="linux"
+		nand_do_upgrade "$1"
+		;;
+	cudy,wr3000h-v1)
+		CI_UBIPART="ubi"
 		nand_do_upgrade "$1"
 		;;
 	cudy,re3000-v1|\
@@ -169,16 +148,11 @@ platform_do_upgrade() {
 		;;
 	mercusys,mr80x-v3|\
 	mercusys,mr90x-v1|\
+	tplink,archer-ax80-v1|\
 	tplink,re6000xd)
 		CI_UBIPART="ubi0"
 		nand_do_upgrade "$1"
 		;;
-	nradio,c8-668gl)
-		CI_DATAPART="rootfs_data"
-		CI_KERNPART="kernel_2nd"
-		CI_ROOTPART="rootfs_2nd"
-		emmc_do_upgrade "$1"
-		;;	
 	ubnt,unifi-6-plus)
 		CI_KERNPART="kernel0"
 		EMMC_ROOT_DEV="$(cmdline_get_var root)"
@@ -235,17 +209,6 @@ platform_check_image() {
 		}
 		return 0
 		;;
-	nradio,c8-668gl)
-		# tar magic `ustar`
-		magic="$(dd if="$1" bs=1 skip=257 count=5 2>/dev/null)"
-
-		[ "$magic" != "ustar" ] && {
-			echo "Invalid image type."
-			return 1
-		}
-
-		return 0
-		;;	
 	*)
 		nand_do_platform_check "$board" "$1"
 		return $?
@@ -257,8 +220,6 @@ platform_check_image() {
 
 platform_copy_config() {
 	case "$(board_name)" in
-	airpi,ap3000m|\
-	*Airpi*|\
 	acer,predator-w6|\
 	acer,predator-w6d|\
 	acer,vero-w6m|\
@@ -268,14 +229,7 @@ platform_copy_config() {
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
 	huasifei,wh3000-emmc|\
-	cmcc,rax3000m-emmc|\
-	philips,hy3000|\
 	jdcloud,re-cp-03|\
-	sl,3000-emmc|\
-	nradio,c8-668gl|\
-	bt,r320|\
-	bt,rb300|\
-	sn,r1|\
 	smartrg,sdg-8612|\
 	smartrg,sdg-8614|\
 	smartrg,sdg-8622|\
@@ -283,9 +237,6 @@ platform_copy_config() {
 	smartrg,sdg-8733|\
 	smartrg,sdg-8733a|\
 	smartrg,sdg-8734|\
-	supergateway,s20*|\
-	huasifei,wh3000-pro|\
-	umi,uax3000e|\
 	ubnt,unifi-6-plus)
 		emmc_copy_config
 		;;

@@ -27,11 +27,6 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && mmc_get_mac_ascii u-boot-env 2gMAC > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && mmc_get_mac_ascii u-boot-env 5gMAC > /sys${DEVPATH}/macaddress
 		;;
-	airpi,ap3000m)
-		addr=$(macaddr_generate_from_mmc_cid mmcblk0)
-		[ "$PHYNBR" = "0" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
-		;;
 	asus,rt-ax59u)
 		CI_UBIPART="UBI_DEV"
 		addr=$(mtd_get_mac_binary_ubi "Factory" 0x4)
@@ -76,10 +71,9 @@ case "$board" in
 	cudy,re3000-v1|\
 	cudy,tr3000-v1|\
 	cudy,tr3000-v1-ubootmod|\
-	cudy,tr3000-v1-256mb|\
-	cudy,wbr3000uax-v1|\
-	cudy,wbr3000uax-v1-ubootmod|\
+	cudy,wr3000e-v1|\
 	cudy,wr3000s-v1|\
+	cudy,wr3000h-v1|\
 	cudy,wr3000-v1)
 		addr=$(mtd_get_mac_binary bdinfo 0xde00)
 		# Originally, phy0 is phy1 mac with LA bit set. However, this would conflict
@@ -127,6 +121,7 @@ case "$board" in
 		[ "$PHYNBR" = "1" ] && macaddr_add $label_mac -2 > /sys${DEVPATH}/macaddress
 		;;
 	mercusys,mr90x-v1|\
+	tplink,archer-ax80-v1|\
 	tplink,re6000xd)
 		addr=$(get_mac_binary "/tmp/tp_data/default-mac" 0)
 		[ "$PHYNBR" = "0" ] && echo "$addr" > /sys${DEVPATH}/macaddress
@@ -137,8 +132,7 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && macaddr_add $hw_mac_addr 2 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $hw_mac_addr 3 > /sys${DEVPATH}/macaddress
 		;;
-	netis,nx31|\
-	netis,nx32u)
+	netis,nx31)
 		addr=$(mtd_get_mac_binary "Factory" 0x4)
 		addr=$(macaddr_unsetbit $(macaddr_setbit_la $addr) 25)
 		addr_2g=$(macaddr_unsetbit $(macaddr_unsetbit $addr 26) 27)
@@ -151,49 +145,15 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
 		;;
-	nradio,c8-668gl)
-		hw_mac_addr=$(mmc_get_mac_ascii bdinfo "fac_mac ")
-		[ "$PHYNBR" = "0" ] && echo "$hw_mac_addr" > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_setbit_la $hw_mac_addr > /sys${DEVPATH}/macaddress
-		;;	
 	qihoo,360t7)
 		addr=$(mtd_get_mac_ascii factory lanMac)
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
 		;;
-	ruijie,ew-6000gx-pro*|\
-	ruijie,rg-x60*)
+	ruijie,rg-x60-pro)
 		addr=$(mtd_get_mac_ascii product_info ethaddr)
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
-		;;
-	yvr,x6)
-		addr=$(mtd_get_mac_ascii Factory_info MAC)
-		[ "$PHYNBR" = "0" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 4 > /sys${DEVPATH}/macaddress
-		;;
-    sl,3000-emmc)
-		label_mac=$(mmc_get_mac_binary factory 0x04)
-		[ "$PHYNBR" = "0" ] && macaddr_add $label_mac 1 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $label_mac 2 > /sys${DEVPATH}/macaddress
-		;;
-    bt,r320|\
-    bt,rb300)
-		label_mac=$(mmc_get_mac_binary factory 0x24)
-		[ "$PHYNBR" = "0" ] && macaddr_add $label_mac 1 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $label_mac 2 > /sys${DEVPATH}/macaddress
-		;;
-	sn,r1)
-		addr=$(mmc_get_mac_binary factory 0x04)
-		[ "$PHYNBR" = "0" ] && echo "$addr" > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
-		;;
-	supergateway,s20l|\
-	supergateway,s20p)
-		addr0=$(mmc_get_mac_binary factory 0x4)
-		addr1=$(mmc_get_mac_binary factory 0x30)
-		[ "$PHYNBR" = "0" ] && echo "$addr0" > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && echo "$addr1" > /sys${DEVPATH}/macaddress
 		;;
 	tplink,tl-xdr4288|\
 	tplink,tl-xdr6086|\
@@ -203,27 +163,15 @@ case "$board" in
 	tplink,tl-xtr8488)
 		[ "$PHYNBR" = "1" ] && get_mac_label > /sys${DEVPATH}/macaddress
 		;;
-	tplink,wma301*)
-		addr=$(mtd_get_mac_binary "art" 0x4)
-		[ "$PHYNBR" = "0" ] && echo "$addr" > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
-		;;
 	ubnt,unifi-6-plus)
 		addr=$(mtd_get_mac_binary EEPROM 0x6)
 		[ "$PHYNBR" = "0" ] && echo "$addr" > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
 		;;
-        umi,uax3000e)
-		addr=$(mmc_get_mac_binary factory 0x24)
-		[ "$PHYNBR" = "0" ] && macaddr_add $addr > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
-		;;
-	mediatek,7981r128|\
 	routerich,ax3000|\
 	routerich,ax3000-ubootmod|\
 	zbtlink,zbt-z8102ax|\
 	zbtlink,zbt-z8103ax|\
-	zbtlink,zbt-z8103ax-c*|\
 	zyxel,ex5601-t0-stock|\
 	zyxel,ex5601-t0-ubootmod)
 		addr=$(mtd_get_mac_binary "Factory" 0x4)

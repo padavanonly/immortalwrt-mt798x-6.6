@@ -36,28 +36,25 @@ case "$board" in
 abt,asr3000|\
 cetron,ct3003-ubootmod|\
 cmcc,a10-ubootmod|\
+cudy,tr3000-v1-ubootmod|\
 h3c,magic-nx30-pro|\
 imou,lc-hx3001|\
 jcg,q30-pro|\
-mediatek,7981r128|\
 livinet,zr-3020-ubootmod|\
 mercusys,mr90x-v1-ubi|\
 netcore,n60|\
 netcore,n60-pro|\
 netis,nx31|\
-netis,nx32u|\
 nokia,ea0326gmp|\
 qihoo,360t7|\
 routerich,ax3000-ubootmod|\
-ruijie,ew-6000gx-pro-ubootmod|\
-ruijie,rg-x60-new-ubootmod|\
 tplink,tl-xdr4288|\
 tplink,tl-xdr6086|\
 tplink,tl-xdr6088|\
 tplink,tl-xtr8488|\
 xiaomi,mi-router-ax3000t-ubootmod|\
+xiaomi,mi-router-wr30u-ubootmod|\
 xiaomi,redmi-router-ax6000-ubootmod|\
-zbtlink,zbt-z8103ax-c-ubootmod|\
 zyxel,ex5601-t0-ubootmod)
 	ubootenv_add_ubi_default
 	;;
@@ -68,9 +65,6 @@ glinet,gl-mt2500|\
 glinet,gl-mt6000|\
 glinet,gl-x3000|\
 glinet,gl-xe3000|\
-nradio,c8-668gl|\
-sl,3000-emmc|\
-umi,uax3000e|\
 huasifei,wh3000-emmc)
 	local envdev=$(find_mmc_part "u-boot-env")
 	ubootenv_add_uci_config "$envdev" "0x0" "0x80000"
@@ -83,13 +77,9 @@ bananapi,bpi-r3-mini|\
 bananapi,bpi-r4|\
 bananapi,bpi-r4-poe|\
 cmcc,rax3000m|\
-bt,r320|\
-bt,rb300|\
 cmcc,rax3000me|\
 jdcloud,re-cp-03|\
-konka,komi-a31|\
-sn,r1|\
-supergateway,s20*)
+konka,komi-a31)
 	. /lib/upgrade/fit.sh
 	export_fitblk_bootdev
 	case "$CI_METHOD" in
@@ -105,36 +95,17 @@ supergateway,s20*)
 		;;
 	esac
 	;;
-ruijie,ew-6000gx-pro|\
-ruijie,ew-6000gx-pro-expand|\
-ruijie,ew-6000gx-pro-stock|\
-ruijie,rg-x60-new|\
-ruijie,rg-x60-new-expand|\
-ruijie,rg-x60-new-stock|\
-ruijie,rg-x60-pro|\
-ruijie,rg-x60-pro-107m)
-	ubootenv_add_uci_config "/dev/mtd2" "0x0" "0x80000" "0x20000" "4"
-	;;
 cetron,ct3003|\
 edgecore,eap111|\
 h3c,magic-nx30-pro-nmbm|\
 livinet,zr-3020|\
 netgear,wax220|\
 zbtlink,zbt-z8102ax|\
-zbtlink,zbt-z8103ax|\
-zbtlink,zbt-z8103ax-c|\
-zbtlink,zbt-z8103ax-c-nmbm)
+zbtlink,zbt-z8103ax)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000"
 	;;
 comfast,cf-e393ax)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x80000"
-	;;
-cudy,tr3000-v1|\
-cudy,tr3000-v1-256mb|\
-cudy,tr3000-v1-ubootmod|\
-cudy,wbr3000uax-v1-ubootmod)
-	local envdev=/dev/mtd$(find_mtd_index "u-boot-env")
-	ubootenv_add_uci_config "$envdev" "0x0" "0x80000" "0x80000"
 	;;
 dlink,aquila-pro-ai-m30-a1|\
 dlink,aquila-pro-ai-m60-a1)
@@ -174,9 +145,7 @@ ubnt,unifi-6-plus)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x80000" "0x10000"
 	;;
 xiaomi,mi-router-ax3000t|\
-xiaomi,mi-router-ax3000t-mtkuboot|\
 xiaomi,mi-router-wr30u-stock|\
-xiaomi,mi-router-wr30u-ubootmod|\
 xiaomi,redmi-router-ax6000-stock)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x10000" "0x20000"
 	ubootenv_add_uci_sys_config "/dev/mtd2" "0x0" "0x10000" "0x20000"
