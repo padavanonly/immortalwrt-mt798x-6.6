@@ -61,13 +61,8 @@ To build your own firmware you need a GNU/Linux, BSD or macOS system (case sensi
   5. Copy the configuration file for your device from the `defconfig` directory to the project root directory and rename it `.config`
      
      ```
-     # MT7981
-     cp -f defconfig/mt7981-ax3000.config .config
-
-     # MT7986
-     cp -f defconfig/mt7986-ax6000.config .config
-     
-     rax3000m，xr30这种有多个lan口的设备如果想要正常使用usb加速，需要将将eth1从wan里删除加入br-lan作为lan使用
+     # MT7988
+     cp -f defconfig/mt7988.config .config
      
   6. Run `make` to build your firmware. This will download all sources, build the cross-compile toolchain and then cross-compile the GNU/Linux kernel & all chosen applications for your target system.
 

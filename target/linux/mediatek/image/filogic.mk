@@ -83,6 +83,10 @@ define Build/append-gl-metadata
 	}
 endef
 
+define Build/append-openwrt-one-eeprom
+	dd if=$(STAGING_DIR_IMAGE)/mt7981_eeprom_mt7976_dbdc.bin >> $@
+endef
+
 define Build/zyxel-nwa-fit-filogic
 	$(TOPDIR)/scripts/mkits-zyxel-fit-filogic.sh \
 		$@.its $@ "80 e1 ff ff ff ff ff ff ff ff"
@@ -811,36 +815,27 @@ TARGET_DEVICES += cudy_tr3000-v1
 define Device/cudy_tr3000-v1-ubootmod
   DEVICE_VENDOR := Cudy
   DEVICE_MODEL := TR3000
-  DEVICE_VARIANT := v1 mod
+  DEVICE_VARIANT := v1 (OpenWrt U-Boot layout)
   DEVICE_DTS := mt7981b-cudy-tr3000-v1-ubootmod
   DEVICE_DTS_DIR := ../dts
-  SUPPORTED_DEVICES += R47
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
-  IMAGE_SIZE := 114688k
   KERNEL_IN_UBI := 1
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount
+  UBOOTENV_IN_UBI := 1
+  IMAGES := sysupgrade.itb
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | append-metadata
+  ARTIFACTS := preloader.bin bl31-uboot.fip
+  ARTIFACT/preloader.bin := mt7981-bl2 cudy-tr3000-v1
+  ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot cudy_tr3000-v1
 endef
 TARGET_DEVICES += cudy_tr3000-v1-ubootmod
-
-define Device/cudy_tr3000-v1-256mb
-  DEVICE_VENDOR := Cudy
-  DEVICE_MODEL := TR3000
-  DEVICE_VARIANT := v1 256mb rom
-  DEVICE_DTS := mt7981b-cudy-tr3000-v1-ubootmod
-  DEVICE_DTS_DIR := ../dts
-  SUPPORTED_DEVICES += R103
-  UBINIZE_OPTS := -E 5
-  BLOCKSIZE := 128k
-  PAGESIZE := 2048
-  IMAGE_SIZE := 235520k
-  KERNEL_IN_UBI := 1
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount
-endef
-TARGET_DEVICES += cudy_tr3000-v1-256mb
 
 define Device/cudy_wr3000-v1
   DEVICE_VENDOR := Cudy
@@ -1674,6 +1669,7 @@ define Device/openwrt_one
 					   mt7981-bl2 spim-nand-ubi-ddr4 | pad-to 1024k | \
 					   ubinize-image fit squashfs-sysupgrade.itb
   ARTIFACT/nor-factory.bin		:= mt7981-bl2 nor-ddr4 | pad-to 256k | \
+					   append-openwrt-one-eeprom | pad-to 1024k | \
 					   mt7981-bl31-uboot openwrt_one-nor | pad-to 512k | \
 					   append-image-stage initramfs.itb
   UBINIZE_OPTS := -E 5

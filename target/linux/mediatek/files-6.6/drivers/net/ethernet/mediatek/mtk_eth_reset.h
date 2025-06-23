@@ -4,7 +4,6 @@
  * Author: Henry Yen <henry.yen@mediatek.com>
  */
 
-
 #ifndef MTK_ETH_RESET_H
 #define MTK_ETH_RESET_H
 
@@ -15,6 +14,14 @@
 #define MTK_WIFI_CHIP_ONLINE 	0x2003
 #define MTK_WIFI_CHIP_OFFLINE 	0x2004
 #define MTK_FE_RESET_NAT_DONE	0x4001
+
+#define MTK_FE_STOP_TRAFFIC	(0x2005)
+#define MTK_FE_STOP_TRAFFIC_DONE	(0x2006)
+#define MTK_FE_START_TRAFFIC	(0x2007)
+#define MTK_FE_STOP_TRAFFIC_DONE_FAIL	(0x2008)
+
+/*FE GDM Counter */
+#define MTK_GDM_RX_FC	(0x24)
 
 /* ADMA Rx Debug Monitor */
 #define MTK_ADMA_RX_DBG0	(PDMA_BASE + 0x238)
@@ -33,6 +40,18 @@
 #define MTK_PPE_TICK_SEL_MASK	(0x1 << 24)
 #define MTK_PPE_SCAN_MODE_MASK	(0x3 << 16)
 #define MTK_PPE_BUSY		BIT(31)
+
+#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+#define MTK_WDMA_CNT	(0x3)
+#define MTK_GDM_RX_BASE	(0x8)
+#define MTK_GDM_CNT_OFFSET	(0x80)
+#define MTK_GDM_TX_BASE	(0x48)
+#else
+#define MTK_WDMA_CNT	(0x2)
+#define MTK_GDM_RX_BASE	(0x8)
+#define MTK_GDM_CNT_OFFSET	(0x40)
+#define MTK_GDM_TX_BASE	(0x38)
+#endif
 
 enum mtk_reset_type {
 	MTK_TYPE_COLD_RESET	= 0,
@@ -56,6 +75,9 @@ extern struct notifier_block mtk_eth_netdevice_nb __read_mostly;
 extern struct completion wait_ser_done;
 extern char* mtk_reset_event_name[32];
 extern atomic_t reset_lock;
+extern struct completion wait_nat_done;
+extern u32 mtk_reset_flag;
+extern bool mtk_stop_fail;
 
 irqreturn_t mtk_handle_fe_irq(int irq, void *_eth);
 u32 mtk_check_reset_event(struct mtk_eth *eth, u32 status);

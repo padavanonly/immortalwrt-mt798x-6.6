@@ -1,3 +1,46 @@
+diff -u -r a/drivers/net/pcs/pcs-mtk-lynxi.c b/drivers/net/pcs/pcs-mtk-lynxi.c
+--- a/drivers/net/pcs/pcs-mtk-lynxi.c	2025-06-23 20:10:47.893000075 +0800
++++ b/drivers/net/pcs/pcs-mtk-lynxi.c	2025-06-23 21:45:41.111002790 +0800
+@@ -140,12 +140,23 @@
+ 		state->an_complete = !!(bmsr & BMSR_ANEGCOMPLETE);
+ 		state->speed = SPEED_2500;
+ 		state->duplex = DUPLEX_FULL;
+-
++		if (state->link != 1) {
++    			state->link = 1;
++    			state->duplex = DUPLEX_FULL;
++    			state->speed = SPEED_2500;
++    			state->an_complete = 1;
++		}
+ 		return;
+ 	}
+ 
+ 	regmap_read(mpcs->regmap, SGMSYS_PCS_ADVERTISE, &adv);
+ 	phylink_mii_c22_pcs_decode_state(state, bmsr, FIELD_GET(SGMII_LPA, adv));
++	if (state->link != 1) {
++                        state->link = 1;
++                        state->duplex = DUPLEX_FULL;
++                        state->speed = SPEED_2500;
++                        state->an_complete = 1;
++                }
+ }
+ 
+ static void mtk_sgmii_reset(struct mtk_pcs_lynxi *mpcs)
+diff -u -r a/drivers/net/pcs/pcs-mtk-usxgmii.c b/drivers/net/pcs/pcs-mtk-usxgmii.c
+--- a/drivers/net/pcs/pcs-mtk-usxgmii.c	2025-06-23 20:10:47.889000075 +0800
++++ b/drivers/net/pcs/pcs-mtk-usxgmii.c	2025-06-23 21:43:48.118002736 +0800
+@@ -298,6 +298,10 @@
+ 	if (!state->link) {
+ 		mtk_usxgmii_pcs_config(pcs, mpcs->neg_mode,
+ 				       state->interface, NULL, false);
++		state->link = 1;
++        	state->an_complete = 1;
++        	state->duplex = DUPLEX_FULL;
++        	state->speed = SPEED_2500;
+ 		return;
+ 	}
+ 
+
 --- a/drivers/net/phy/Makefile	2025-06-21 06:34:45.633002781 +0800
 +++ b/drivers/net/phy/Makefile	2025-06-21 10:51:35.902000421 +0800
 @@ -51,7 +51,8 @@
@@ -165,35 +208,6 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/
  
  #define MTK_TX_DMA_BUF_SHIFT	8
 
---- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c	2025-06-13 10:19:12.000000000 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c	2025-06-17 20:32:50.093002976 +0800
-@@ -68,7 +68,7 @@
- 	int i;
- 
- 	seq_puts(m, "Usage of the QDMA PPPQ for the HW path:\n");
--	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++)
-+	for (i = 0; i < 64; i++)
- 		seq_printf(m, "qdma_txq%d:	%5d Mbps %8d refcnt\n",
- 			   i, eth->qdma_shaper.speed[i],
- 			   atomic_read(&eth->qdma_shaper.refcnt[i]));
-@@ -150,7 +150,7 @@
- 			 "EN\tScheduling\tMAX\tQueue#\n%d\t%s%16d\t", enable,
- 			 (scheduling == 1) ? "WRR" : "SP", max_rate);
- 
--	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
-+	for (i = 0; i < 64; i++) {
- 		mtk_w32(eth, (i / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
- 		sch_reg = mtk_r32(eth, soc->reg_map->qdma.qtx_sch +
- 				       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
-@@ -877,7 +877,7 @@
- 				    &qdma_sched_fops);
- 	}
- 
--	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
-+	for (i = 0; i < 64; i++) {
- 		ret = snprintf(name, sizeof(name), "qdma_txq%d", i);
- 		if (ret != strlen(name)) {
- 			ret = -ENOMEM;
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-15 22:32:46.130001496 +0800
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-18 00:22:51.492001032 +0800
 @@ -39,11 +39,14 @@
@@ -203,7 +217,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/
 -
 +static int mtk_wifi_num = 0;
 +static int mtk_rest_cnt = 0;
-+atomic_t eth1_in_br = ATOMIC_INIT(0);
++atomic_t eth1_in_br = ATOMIC_INIT(2);
 +EXPORT_SYMBOL(eth1_in_br);
  static int mtk_msg_level = -1;
  module_param_named(msg_level, mtk_msg_level, int, 0);
@@ -238,7 +252,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/
  			mac = RX_DMA_GET_SPORT(trxd.rxd4) - 1;
  		}
  
-+		if ( (mac == 4) || ((FIELD_GET(MTK_RXD4_PPE_CPU_REASON, trxd.rxd4)) == HIT_BIND_FORCE_TO_CPU))
++		if ( (mac == 4) || ((FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5)) == HIT_BIND_FORCE_TO_CPU))
 +		mac = atomic_read(&eth1_in_br);
 +
  		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
