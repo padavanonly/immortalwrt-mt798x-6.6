@@ -16,6 +16,7 @@ mediatek_setup_interfaces()
 	imou,lc-hx3001|\
 	konka,komi-a31|\
 	netis,nx31|\
+	newland,nl-wr8103|\
 	nokia,ea0326gmp|\
 	mercusys,mr80x-v3|\
 	routerich,ax3000-v1|\
@@ -201,6 +202,11 @@ mediatek_setup_macs()
 		lan_mac=$(mtd_get_mac_ascii u-boot-env mac)
 		label_mac=$lan_mac
 		;;
+        newland,nl-wr8103)
+ 		label_mac=$(mtd_get_mac_binary Factory 0x04)		
+ 		wan_mac=$(macaddr_add "$label_mac" -2)
+ 		lan_mac=$label_mac
+ 		;;
 	qihoo,360t7)
 		lan_mac=$(mtd_get_mac_ascii factory lanMac)
 		wan_mac=$(macaddr_add "$lan_mac" 1)

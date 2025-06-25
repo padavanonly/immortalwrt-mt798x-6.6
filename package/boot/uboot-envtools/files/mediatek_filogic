@@ -99,6 +99,7 @@ edgecore,eap111|\
 h3c,magic-nx30-pro-nmbm|\
 livinet,zr-3020|\
 netgear,wax220|\
+newland,nl-wr8103|\
 zbtlink,zbt-z8102ax|\
 zbtlink,zbt-z8103ax)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000"

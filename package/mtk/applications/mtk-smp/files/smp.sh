@@ -760,6 +760,7 @@ setup_model()
 	sl,3000-emmc|\
 	h3c,nx30pro |\
 	konka,komi-a31 |\
+	newland,nl-wr8103|\
 	*nokia,ea0326gmp* |\
 	nradio,wt9103 |\
 	*7981*)
