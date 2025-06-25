@@ -1,0 +1,162 @@
+--- a/drivers/mtd/nand/raw/nand_onfi.c
++++ b/drivers/mtd/nand/raw/nand_onfi.c
+@@ -12,6 +12,7 @@
+  * This file contains all ONFI helpers.
+  */
+ 
++#include <linux/mtd/param.h>
+ #include <linux/slab.h>
+ 
+ #include "internals.h"
+@@ -20,14 +21,7 @@
+ 
+ u16 onfi_crc16(u16 crc, u8 const *p, size_t len)
+ {
+-	int i;
+-	while (len--) {
+-		crc ^= *p++ << 8;
+-		for (i = 0; i < 8; i++)
+-			crc = (crc << 1) ^ ((crc & 0x8000) ? 0x8005 : 0);
+-	}
+-
+-	return crc;
++	return nanddev_crc16(crc, p, len);
+ }
+ 
+ /* Parse the Extended Parameter Page. */
+@@ -108,37 +102,6 @@ ext_out:
+ }
+ 
+ /*
+- * Recover data with bit-wise majority
+- */
+-static void nand_bit_wise_majority(const void **srcbufs,
+-				   unsigned int nsrcbufs,
+-				   void *dstbuf,
+-				   unsigned int bufsize)
+-{
+-	int i, j, k;
+-
+-	for (i = 0; i < bufsize; i++) {
+-		u8 val = 0;
+-
+-		for (j = 0; j < 8; j++) {
+-			unsigned int cnt = 0;
+-
+-			for (k = 0; k < nsrcbufs; k++) {
+-				const u8 *srcbuf = srcbufs[k];
+-
+-				if (srcbuf[i] & BIT(j))
+-					cnt++;
+-			}
+-
+-			if (cnt > nsrcbufs / 2)
+-				val |= BIT(j);
+-		}
+-
+-		((u8 *)dstbuf)[i] = val;
+-	}
+-}
+-
+-/*
+  * Check if the NAND chip is ONFI compliant, returns 1 if it is, 0 otherwise.
+  */
+ int nand_onfi_detect(struct nand_chip *chip)
+@@ -200,7 +163,7 @@ int nand_onfi_detect(struct nand_chip *c
+ 			srcbufs[j] = pbuf + j;
+ 
+ 		pr_warn("Could not find a valid ONFI parameter page, trying bit-wise majority to recover it\n");
+-		nand_bit_wise_majority(srcbufs, ONFI_PARAM_PAGES, pbuf,
++		nanddev_bit_wise_majority(srcbufs, ONFI_PARAM_PAGES, pbuf,
+ 				       sizeof(*pbuf));
+ 
+ 		crc = onfi_crc16(ONFI_CRC_BASE, (u8 *)pbuf, 254);
+--- /dev/null
++++ b/drivers/mtd/nand/param.c
+@@ -0,0 +1,52 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (c) 2023 - Mediatek
++ *
++ * Author: SkyLake <SkyLake.Huang@mediatek.com>
++ */
++
++#include <linux/mtd/param.h>
++
++u16 nanddev_crc16(u16 crc, u8 const *p, size_t len)
++{
++	int i;
++
++	while (len--) {
++		crc ^= *p++ << 8;
++		for (i = 0; i < 8; i++)
++			crc = (crc << 1) ^ ((crc & 0x8000) ? 0x8005 : 0);
++	}
++
++	return crc;
++}
++
++/*
++ * Recover data with bit-wise majority
++ */
++void nanddev_bit_wise_majority(const void **srcbufs,
++				   unsigned int nsrcbufs,
++				   void *dstbuf,
++				   unsigned int bufsize)
++{
++	int i, j, k;
++
++	for (i = 0; i < bufsize; i++) {
++		u8 val = 0;
++
++		for (j = 0; j < 8; j++) {
++			unsigned int cnt = 0;
++
++			for (k = 0; k < nsrcbufs; k++) {
++				const u8 *srcbuf = srcbufs[k];
++
++				if (srcbuf[i] & BIT(j))
++					cnt++;
++			}
++
++			if (cnt > nsrcbufs / 2)
++				val |= BIT(j);
++		}
++
++		((u8 *)dstbuf)[i] = val;
++	}
++}
+--- /dev/null
++++ b/include/linux/mtd/param.h
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (c) 2023 - Mediatek
++ *
++ * Author: SkyLake <SkyLake.Huang@mediatek.com>
++ */
++
++#ifndef __LINUX_NAND_PARAM
++#define __LINUX_NAND_PARAM
++
++#include <linux/bitops.h>
++#include <linux/types.h>
++
++u16 nanddev_crc16(u16 crc, u8 const *p, size_t len);
++void nanddev_bit_wise_majority(const void **srcbufs,
++				   unsigned int nsrcbufs,
++				   void *dstbuf,
++				   unsigned int bufsize);
++
++#endif /* __LINUX_NAND_PARAM */
++
+--- a/drivers/mtd/nand/Makefile
++++ b/drivers/mtd/nand/Makefile
+@@ -1,6 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0
+ 
+-nandcore-objs := core.o bbt.o
++nandcore-objs := core.o bbt.o param.o
+ obj-$(CONFIG_MTD_NAND_CORE) += nandcore.o
+ obj-$(CONFIG_MTD_NAND_ECC_MEDIATEK) += ecc-mtk.o
+ obj-$(CONFIG_MTD_NAND_MTK_BMT)	+= mtk_bmt.o mtk_bmt_v2.o mtk_bmt_bbt.o mtk_bmt_nmbm.o

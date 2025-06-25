@@ -1,0 +1,227 @@
+From 1b4b8bfc3119dd7ca4469d9b723d66c99b69cc3d Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Mon, 24 Mar 2025 11:20:38 +0800
+Subject: [PATCH] net: phy: sfp: add debug information
+
+In this patch, we provide the following information to assist users in
+easily address issues.
+  - Dump SFP state machine
+  - Dump System/Line interface status
+  - Dump SFP, PHY, and Host link mode
+If debug messages is too annoying, user can disable it by "dmesg -n 7"
+command.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/phy/phylink.c     | 13 +++++++--
+ drivers/net/phy/sfp-bus.c     |  3 +++
+ drivers/net/phy/sfp.c         | 50 +++++++++++++++++++++++++++++------
+ include/linux/mdio/mdio-i2c.h | 16 +++++++++++
+ 4 files changed, 72 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/phy/phylink.c b/drivers/net/phy/phylink.c
+index b4b05bf..6c951af 100644
+--- a/drivers/net/phy/phylink.c
++++ b/drivers/net/phy/phylink.c
+@@ -1746,6 +1746,15 @@ static void phylink_resolve(struct work_struct *w)
+ 								  &link_state);
+ 			}
+ 
++			if (pl->phydev && !(link_state.link & pl->phy_state.link))
++				phylink_printk(KERN_DEBUG, pl,
++					       "resolve link status: system iface=%d, line iface=%d\n",
++					       link_state.link, pl->phy_state.link);
++			else if (!link_state.link)
++				phylink_printk(KERN_DEBUG, pl,
++					       "resolve link status: system iface=%d\n",
++					       link_state.link);
++
+ 			/* If we have a phy, the "up" state is the union of
+ 			 * both the PHY and the MAC
+ 			 */
+@@ -3424,7 +3433,7 @@ static void phylink_sfp_set_config(struct phylink *pl,
+ 	u8 mode = MLO_AN_INBAND;
+ 	bool changed = false;
+ 
+-	phylink_dbg(pl, "requesting link mode %s/%s with support %*pb\n",
++	phylink_info(pl, "requesting link mode %s/%s with support %*pb\n",
+ 		    phylink_an_mode_str(mode), phy_modes(state->interface),
+ 		    __ETHTOOL_LINK_MODE_MASK_NBITS, supported);
+ 
+@@ -3516,7 +3525,7 @@ static int phylink_sfp_config_optical(struct phylink *pl)
+ 	phy_interface_t interface;
+ 	int ret;
+ 
+-	phylink_dbg(pl, "optical SFP: interfaces=[mac=%*pbl, sfp=%*pbl]\n",
++	phylink_info(pl, "optical SFP: interfaces=[mac=%*pbl, sfp=%*pbl]\n",
+ 		    (int)PHY_INTERFACE_MODE_MAX,
+ 		    pl->config->supported_interfaces,
+ 		    (int)PHY_INTERFACE_MODE_MAX,
+diff --git a/drivers/net/phy/sfp-bus.c b/drivers/net/phy/sfp-bus.c
+index 1727760..26a0d6d 100644
+--- a/drivers/net/phy/sfp-bus.c
++++ b/drivers/net/phy/sfp-bus.c
+@@ -342,6 +342,9 @@ void sfp_parse_support(struct sfp_bus *bus, const struct sfp_eeprom_id *id,
+ 	if (bus->sfp_quirk && bus->sfp_quirk->modes)
+ 		bus->sfp_quirk->modes(id, modes, interfaces);
+ 
++	dev_info(bus->sfp_dev, "sfp: support mode %*pb\n",
++		 __ETHTOOL_LINK_MODE_MASK_NBITS, modes);
++
+ 	linkmode_or(support, support, modes);
+ }
+ EXPORT_SYMBOL_GPL(sfp_parse_support);
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index da1720f..3b9c52b 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -558,7 +558,7 @@ static bool sfp_match(const char *qs, const char *str, size_t len)
+ 	return !strncmp(qs, str, len);
+ }
+ 
+-static const struct sfp_quirk *sfp_lookup_quirk(const struct sfp_eeprom_id *id)
++static const struct sfp_quirk *sfp_lookup_quirk(struct sfp *sfp, const struct sfp_eeprom_id *id)
+ {
+ 	const struct sfp_quirk *q;
+ 	unsigned int i;
+@@ -569,8 +569,14 @@ static const struct sfp_quirk *sfp_lookup_quirk(const struct sfp_eeprom_id *id)
+ 
+ 	for (i = 0, q = sfp_quirks; i < ARRAY_SIZE(sfp_quirks); i++, q++)
+ 		if (sfp_match(q->vendor, id->base.vendor_name, vs) &&
+-		    sfp_match(q->part, id->base.vendor_pn, ps))
++		    sfp_match(q->part, id->base.vendor_pn, ps)) {
++			dev_info(sfp->dev,
++			         "module %.*s %.*s rev %.*s has been found in the quirk list\n",
++				 (int)sizeof(id->base.vendor_name), id->base.vendor_name,
++				 (int)sizeof(id->base.vendor_pn), id->base.vendor_pn,
++				 (int)sizeof(id->base.vendor_rev), id->base.vendor_rev);
+ 			return q;
++		}
+ 
+ 	return NULL;
+ }
+@@ -1690,14 +1696,14 @@ static void sfp_hwmon_exit(struct sfp *sfp)
+ /* Helpers */
+ static void sfp_module_tx_disable(struct sfp *sfp)
+ {
+-	dev_dbg(sfp->dev, "tx disable %u -> %u\n",
++	dev_info(sfp->dev, "tx disable %u -> %u\n",
+ 		sfp->state & SFP_F_TX_DISABLE ? 1 : 0, 1);
+ 	sfp_mod_state(sfp, SFP_F_TX_DISABLE, SFP_F_TX_DISABLE);
+ }
+ 
+ static void sfp_module_tx_enable(struct sfp *sfp)
+ {
+-	dev_dbg(sfp->dev, "tx disable %u -> %u\n",
++	dev_info(sfp->dev, "tx disable %u -> %u\n",
+ 		sfp->state & SFP_F_TX_DISABLE ? 1 : 0, 0);
+ 	sfp_mod_state(sfp, SFP_F_TX_DISABLE, 0);
+ }
+@@ -1806,7 +1812,8 @@ static void sfp_sm_phy_detach(struct sfp *sfp)
+ static int sfp_sm_probe_phy(struct sfp *sfp, int addr, bool is_c45)
+ {
+ 	struct phy_device *phy;
+-	int err;
++	int err, i;
++	u32 id;
+ 
+ 	phy = get_phy_device(sfp->i2c_mii, addr, is_c45);
+ 	if (phy == ERR_PTR(-ENODEV))
+@@ -1827,6 +1834,30 @@ static int sfp_sm_probe_phy(struct sfp *sfp, int addr, bool is_c45)
+ 		return err;
+ 	}
+ 
++	if (phy->is_c45) {
++		for (i = 0; i < ARRAY_SIZE(phy->c45_ids.device_ids); i++) {
++			id = phy->c45_ids.device_ids[i];
++			if (id == 0xffffffff)
++				continue;
++
++			dev_info(sfp->dev,
++				 "CL45 PHY device [0x%04x:0x%04x] found!\n",
++				 (id >> 16) & 0xffff, id & 0xffff);
++		}
++	} else {
++		id = phy->phy_id;
++		dev_info(sfp->dev,
++			 "CL22 PHY device [0x%04x:0x%04x] found!\n",
++			 (id >> 16) & 0xffff, id & 0xffff);
++	}
++
++	dev_info(sfp->dev, "CL%s PHY driver [%s] found!\n",
++		 phy->is_c45 ? "45" : "22",
++		 phy->drv ? phy->drv->name : "not");
++
++	dev_info(sfp->dev, "phy: support mode %*pb\n",
++		 __ETHTOOL_LINK_MODE_MASK_NBITS, phy->supported);
++
+ 	err = sfp_add_phy(sfp->sfp_bus, phy);
+ 	if (err) {
+ 		phy_device_remove(phy);
+@@ -1909,6 +1940,9 @@ static void sfp_sm_fault(struct sfp *sfp, unsigned int next_state, bool warn)
+ 
+ static int sfp_sm_add_mdio_bus(struct sfp *sfp)
+ {
++	dev_info(sfp->dev, "probing phy device through the [%s] protocol\n",
++	         mdio_i2c_proto_type(sfp->mdio_protocol));
++
+ 	if (sfp->mdio_protocol != MDIO_I2C_NONE)
+ 		return sfp_i2c_mdiobus_create(sfp);
+ 
+@@ -2387,7 +2421,7 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+ 	else
+ 		sfp->mdio_protocol = MDIO_I2C_NONE;
+ 
+-	sfp->quirk = sfp_lookup_quirk(&id);
++	sfp->quirk = sfp_lookup_quirk(sfp, &id);
+ 
+ 	mutex_lock(&sfp->st_mutex);
+ 	/* Initialise state bits to use from hardware */
+@@ -2739,7 +2773,7 @@ static void sfp_sm_main(struct sfp *sfp, unsigned int event)
+ 
+ static void __sfp_sm_event(struct sfp *sfp, unsigned int event)
+ {
+-	dev_dbg(sfp->dev, "SM: enter %s:%s:%s event %s\n",
++	dev_info(sfp->dev, "SM: enter %s:%s:%s event %s\n",
+ 		mod_state_to_str(sfp->sm_mod_state),
+ 		dev_state_to_str(sfp->sm_dev_state),
+ 		sm_state_to_str(sfp->sm_state),
+@@ -2749,7 +2783,7 @@ static void __sfp_sm_event(struct sfp *sfp, unsigned int event)
+ 	sfp_sm_module(sfp, event);
+ 	sfp_sm_main(sfp, event);
+ 
+-	dev_dbg(sfp->dev, "SM: exit %s:%s:%s\n",
++	dev_info(sfp->dev, "SM: exit %s:%s:%s\n",
+ 		mod_state_to_str(sfp->sm_mod_state),
+ 		dev_state_to_str(sfp->sm_dev_state),
+ 		sm_state_to_str(sfp->sm_state));
+diff --git a/include/linux/mdio/mdio-i2c.h b/include/linux/mdio/mdio-i2c.h
+index 65b550a..c3eaccd 100644
+--- a/include/linux/mdio/mdio-i2c.h
++++ b/include/linux/mdio/mdio-i2c.h
+@@ -18,6 +18,22 @@ enum mdio_i2c_proto {
+ 	MDIO_I2C_ROLLBALL,
+ };
+ 
++static inline const char *mdio_i2c_proto_type(int type)
++{
++	switch (type) {
++	case MDIO_I2C_NONE:
++		return "MDIO_I2C_NONE";
++	case MDIO_I2C_MARVELL_C22:
++		return "MDIO_I2C_MARVELL_C22";
++	case MDIO_I2C_C45:
++		return "MDIO_I2C_C45";
++	case MDIO_I2C_ROLLBALL:
++		return "MDIO_I2C_ROLLBALL";
++	default:
++		return "UNKNOWN";
++	}
++}
++
+ struct mii_bus *mdio_i2c_alloc(struct device *parent, struct i2c_adapter *i2c,
+ 			       enum mdio_i2c_proto protocol);
+ 
+-- 
+2.45.2
+

@@ -1,0 +1,319 @@
+From 66b5ee3d121bd3e259a201f45d3efd9a51d5d227 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 21 Mar 2025 16:12:23 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: add PPE cache preserved line lock
+
+Without this patch, the driver would mistakenly enable the preserved
+cache line of PPE which should not be used, cause the unexpected
+behavior happen in system.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c      | 165 ++++++++++++++++++-
+ drivers/net/ethernet/mediatek/mtk_ppe.h      |   3 +-
+ drivers/net/ethernet/mediatek/mtk_ppe_regs.h |  14 ++
+ 3 files changed, 174 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 6f9c131..a2bc521 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -76,6 +76,21 @@ static int mtk_ppe_wait_busy(struct mtk_ppe *ppe)
+ 	return ret;
+ }
+ 
++static int mtk_ppe_cache_wait_busy(struct mtk_ppe *ppe)
++{
++	int ret;
++	u32 val;
++
++	ret = readl_poll_timeout_atomic(ppe->base + MTK_PPE_CACHE_CTL, val,
++					!(val & MTK_PPE_CACHE_CTL_REQ),
++					1000, MTK_PPE_WAIT_TIMEOUT_US);
++
++	if (ret)
++		dev_err(ppe->dev, "PPE cache busy");
++
++	return ret;
++}
++
+ static int mtk_ppe_mib_wait_busy(struct mtk_ppe *ppe)
+ {
+ 	int ret;
+@@ -139,15 +154,147 @@ struct mtk_foe_accounting *mtk_ppe_mib_entry_read(struct mtk_ppe *ppe, u16 index
+ 	return acct;
+ }
+ 
+-static void mtk_ppe_cache_clear(struct mtk_ppe *ppe)
++static void mtk_ppe_cache_write(struct mtk_ppe *ppe, u32 line, u32 tag,
++				u32 state, u32 *data)
++{
++	struct mtk_eth *eth = ppe->eth;
++	int i;
++
++	if (line >= (mtk_is_netsys_v2_or_greater(eth) ? 128 : 32)) {
++		dev_warn(ppe->dev, "%s: invalid cache line in %d_%d\n",
++			 __func__, ppe->index, line);
++		return;
++	}
++
++	if (state > 3) {
++		dev_warn(ppe->dev, "%s: invalid cache line state %d in line %d_%d\n",
++			 __func__, state, ppe->index, line);
++		return;
++	}
++
++	if (data == NULL)
++		goto skip_data_write;
++
++	/* write data filed of the cache line */
++	for (i = 0; i < (eth->soc->foe_entry_size / 4); i++) {
++		ppe_m32(ppe, MTK_PPE_CACHE_RW, MTK_PPE_CACHE_RW_LINE,
++			FIELD_PREP(MTK_PPE_CACHE_RW_LINE, line));
++		if (mtk_is_netsys_v3_or_greater(eth)) {
++			ppe_m32(ppe, MTK_PPE_CACHE_RW, MTK_PPE_CACHE_RW_OFFSET,
++				FIELD_PREP(MTK_PPE_CACHE_RW_OFFSET, i / 4));
++			ppe_m32(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_DATA_SEL,
++				FIELD_PREP(MTK_PPE_CACHE_CTL_DATA_SEL, i % 4));
++		} else {
++			ppe_m32(ppe, MTK_PPE_CACHE_RW, MTK_PPE_CACHE_RW_OFFSET,
++				FIELD_PREP(MTK_PPE_CACHE_RW_OFFSET, i));
++		}
++		ppe_w32(ppe, MTK_PPE_CACHE_WDATA, data[i]);
++		/* software access cache command = write */
++		ppe_m32(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_CMD,
++			FIELD_PREP(MTK_PPE_CACHE_CTL_CMD, 3));
++		/* trigger software access cache request */
++		ppe_set(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_REQ);
++		if (mtk_ppe_cache_wait_busy(ppe))
++			dev_warn(ppe->dev, "%s: write data timeout in line %d_%d\n",
++				 __func__, ppe->index, line);
++	}
++
++skip_data_write:
++	/* write tag filed of the cache line */
++	ppe_m32(ppe, MTK_PPE_CACHE_RW, MTK_PPE_CACHE_RW_LINE,
++		FIELD_PREP(MTK_PPE_CACHE_RW_LINE, line));
++	ppe_m32(ppe, MTK_PPE_CACHE_RW, MTK_PPE_CACHE_RW_OFFSET,
++		FIELD_PREP(MTK_PPE_CACHE_RW_OFFSET, 0x1F));
++	ppe_m32(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_DATA_SEL,
++		FIELD_PREP(MTK_PPE_CACHE_CTL_DATA_SEL, 0));
++	ppe_w32(ppe, MTK_PPE_CACHE_WDATA, (state << 16) | tag);
++	/* software access cache command = write */
++	ppe_m32(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_CMD,
++		FIELD_PREP(MTK_PPE_CACHE_CTL_CMD, 3));
++	/* trigger software access cache request */
++	ppe_set(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_REQ);
++	if (mtk_ppe_cache_wait_busy(ppe)) {
++		dev_warn(ppe->dev, "%s: write tag 0x%04x timeout in line %d_%d\n",
++			 __func__, tag, ppe->index, line);
++	}
++}
++
++void mtk_ppe_cache_clear(struct mtk_ppe *ppe)
+ {
++	static const u32 mask = MTK_PPE_ALERT_TCP_FIN_RST_SYN |
++				MTK_PPE_MD_TOAP_BYP_CRSN0 |
++				MTK_PPE_MD_TOAP_BYP_CRSN1 |
++				MTK_PPE_MD_TOAP_BYP_CRSN2 |
++				MTK_PPE_FLOW_CFG_IP_PROTO_BLACKLIST |
++				MTK_PPE_FLOW_CFG_IP4_NAT_FRAG |
++				MTK_PPE_FLOW_CFG_IP4_HASH_GRE_KEY |
++				MTK_PPE_FLOW_CFG_IP6_HASH_GRE_KEY |
++				MTK_PPE_FLOW_CFG_CS0_RM_ALL_IP6_IP_EN |
++				MTK_PPE_FLOW_CFG_L2_HASH_ETH |
++				MTK_PPE_FLOW_CFG_L2_HASH_VID;
++	u32 cah_en, flow_cfg, scan_mode;
++	u32 i, idle, retry;
++
++	spin_lock_bh(&ppe->cache_lock);
++
++	/* disable table learning */
++	flow_cfg = ppe_r32(ppe, MTK_PPE_FLOW_CFG);
++	ppe_w32(ppe, MTK_PPE_FLOW_CFG, flow_cfg & mask);
++
++	/* wait PPE return to idle */
++	udelay(100);
++
++	for (retry = 0; retry < 10; retry++) {
++		for (i = 0, idle = 0; i < 3; i++) {
++			if ((ppe_r32(ppe, MTK_PPE_CACHE_DBG) & MTK_PPE_CACHE_DBG_BUSY) == 0)
++				idle++;
++		}
++
++		if (idle >= 3)
++			break;
++
++		udelay(10);
++	}
++
++	if (retry >= 10) {
++		pr_info("%s: ppe cache idle check timeout!\n", __func__);
++		goto out;
++	}
++
++	/* disable scan mode */
++	scan_mode = FIELD_GET(MTK_PPE_TB_CFG_SCAN_MODE, ppe_r32(ppe, MTK_PPE_TB_CFG));
++	ppe_clear(ppe, MTK_PPE_TB_CFG, MTK_PPE_TB_CFG_SCAN_MODE);
++	/* disable cache */
++	cah_en = FIELD_GET(MTK_PPE_CACHE_CTL_EN, ppe_r32(ppe, MTK_PPE_CACHE_CTL));
++	ppe_clear(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_EN);
++
++	/* invalidate PPE cache lines */
+ 	ppe_set(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_CLEAR);
+ 	ppe_clear(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_CLEAR);
++
++	/* lock the preserved cache line */
++	if (mtk_is_netsys_v2_or_greater(ppe->eth))
++		mtk_ppe_cache_write(ppe, 0, 0x7FFF, 3, NULL);
++	else
++		mtk_ppe_cache_write(ppe, 0, 0x3FFF, 3, NULL);
++
++	/* restore cache enable */
++	ppe_m32(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_EN,
++		FIELD_PREP(MTK_PPE_CACHE_CTL_EN, cah_en));
++	/* restore scan mode */
++	ppe_m32(ppe, MTK_PPE_TB_CFG, MTK_PPE_TB_CFG_SCAN_MODE,
++		FIELD_PREP(MTK_PPE_TB_CFG_SCAN_MODE, scan_mode));
++out:
++	/* restore table learning */
++	ppe_w32(ppe, MTK_PPE_FLOW_CFG, flow_cfg);
++
++	spin_unlock_bh(&ppe->cache_lock);
+ }
+ 
+ static void mtk_ppe_cache_enable(struct mtk_ppe *ppe, bool enable)
+ {
+-	mtk_ppe_cache_clear(ppe);
++	if (enable)
++		mtk_ppe_cache_clear(ppe);
+ 
+ 	ppe_m32(ppe, MTK_PPE_CACHE_CTL, MTK_PPE_CACHE_CTL_EN,
+ 		enable * MTK_PPE_CACHE_CTL_EN);
+@@ -583,6 +730,7 @@ __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+ 		      bool set_state)
+ {
+ 	struct hlist_node *tmp;
++	int state;
+ 
+ 	if (entry->type == MTK_FLOW_TYPE_L2) {
+ 		rhashtable_remove_fast(&ppe->l2_flows, &entry->l2_node,
+@@ -596,10 +744,13 @@ __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+ 	if (entry->hash != 0xffff && set_state) {
+ 		struct mtk_foe_entry *hwe = mtk_foe_get_entry(ppe, entry->hash);
+ 
++		state = FIELD_GET(MTK_FOE_IB1_STATE, hwe->ib1);
++
+ 		hwe->ib1 &= ~MTK_FOE_IB1_STATE;
+ 		hwe->ib1 |= FIELD_PREP(MTK_FOE_IB1_STATE, MTK_FOE_STATE_INVALID);
+ 		dma_wmb();
+-		mtk_ppe_cache_clear(ppe);
++		if (state == MTK_FOE_STATE_BIND)
++			mtk_ppe_cache_clear(ppe);
+ 	}
+ 	entry->hash = 0xffff;
+ 
+@@ -758,8 +909,6 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
+ 		acct->packets = 0;
+ 		acct->bytes = 0;
+ 	}
+-
+-	mtk_ppe_cache_clear(ppe);
+ }
+ 
+ void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry)
+@@ -1014,6 +1163,8 @@ struct mtk_ppe *mtk_ppe_init(struct mtk_eth *eth, void __iomem *base, int index)
+ 		ppe->acct_table = acct;
+ 	}
+ 
++	spin_lock_init(&ppe->cache_lock);
++
+ 	mtk_ppe_debugfs_init(ppe, index);
+ 
+ 	return ppe;
+@@ -1089,8 +1240,6 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+ 	ppe_w32(ppe, MTK_PPE_IP_PROTO_CHK,
+ 		MTK_PPE_IP_PROTO_CHK_IPV4 | MTK_PPE_IP_PROTO_CHK_IPV6);
+ 
+-	mtk_ppe_cache_enable(ppe, true);
+-
+ 	val = MTK_PPE_FLOW_CFG_IP6_3T_ROUTE |
+ 	      MTK_PPE_FLOW_CFG_IP6_5T_ROUTE |
+ 	      MTK_PPE_FLOW_CFG_IP6_6RD |
+@@ -1142,6 +1291,8 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+ 	}
+ 	ppe_w32(ppe, MTK_PPE_GLO_CFG, val);
+ 
++	mtk_ppe_cache_enable(ppe, true);
++
+ 	ppe_w32(ppe, MTK_PPE_DEFAULT_CPU_PORT, 0);
+ 
+ 	if (mtk_is_netsys_v2_or_greater(ppe->eth)) {
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
+index 068858d..40865a2 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
+@@ -345,6 +345,8 @@ struct mtk_ppe {
+ 	struct rhashtable l2_flows;
+ 
+ 	void *acct_table;
++
++	spinlock_t cache_lock;
+ };
+ 
+ struct mtk_ppe *mtk_ppe_init(struct mtk_eth *eth, void __iomem *base, int index);
+@@ -358,7 +360,6 @@ int mtk_ppe_prepare_reset(struct mtk_ppe *ppe);
+ struct mtk_foe_accounting *mtk_ppe_mib_entry_read(struct mtk_ppe *ppe, u16 index);
+ 
+ void __mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash);
+-
+ static inline void
+ mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash)
+ {
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
+index 7f4157b..bc30958 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
+@@ -23,6 +23,7 @@
+ #define MTK_PPE_GLO_CFG_BUSY			BIT(31)
+ 
+ #define MTK_PPE_FLOW_CFG			0x204
++#define MTK_PPE_ALERT_TCP_FIN_RST_SYN		BIT(0)
+ #define MTK_PPE_MD_TOAP_BYP_CRSN0		BIT(1)
+ #define MTK_PPE_MD_TOAP_BYP_CRSN1		BIT(2)
+ #define MTK_PPE_MD_TOAP_BYP_CRSN2		BIT(3)
+@@ -40,6 +41,9 @@
+ #define MTK_PPE_FLOW_CFG_IP4_HASH_FLOW_LABEL	BIT(18)
+ #define MTK_PPE_FLOW_CFG_IP4_HASH_GRE_KEY	BIT(19)
+ #define MTK_PPE_FLOW_CFG_IP6_HASH_GRE_KEY	BIT(20)
++#define MTK_PPE_FLOW_CFG_CS0_RM_ALL_IP6_IP_EN	BIT(25)
++#define MTK_PPE_FLOW_CFG_L2_HASH_ETH		BIT(29)
++#define MTK_PPE_FLOW_CFG_L2_HASH_VID		BIT(30)
+ 
+ #define MTK_PPE_IP_PROTO_CHK			0x208
+ #define MTK_PPE_IP_PROTO_CHK_IPV4		GENMASK(15, 0)
+@@ -144,6 +148,13 @@ enum {
+ #define MTK_PPE_CACHE_CTL_REQ			BIT(8)
+ #define MTK_PPE_CACHE_CTL_CLEAR			BIT(9)
+ #define MTK_PPE_CACHE_CTL_CMD			GENMASK(13, 12)
++#define MTK_PPE_CACHE_CTL_DATA_SEL		GENMASK(19, 18)
++
++#define MTK_PPE_CACHE_RW			0x328
++#define MTK_PPE_CACHE_RW_LINE			GENMASK(15, 0)
++#define MTK_PPE_CACHE_RW_OFFSET			GENMASK(23, 16)
++
++#define MTK_PPE_CACHE_WDATA			0x32C
+ 
+ #define MTK_PPE_MIB_CFG				0x334
+ #define MTK_PPE_MIB_CFG_EN			BIT(0)
+@@ -173,4 +184,7 @@ enum {
+ 
+ #define MTK_PPE_SBW_CTRL			0x374
+ 
++#define MTK_PPE_CACHE_DBG			0x390
++#define MTK_PPE_CACHE_DBG_BUSY			GENMASK(3, 0)
++
+ #endif
+-- 
+2.45.2
+

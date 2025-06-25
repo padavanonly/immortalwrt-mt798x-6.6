@@ -1,0 +1,53 @@
+Subject: [PATCH] 999-2756-net-dsa-change-mt753x-agetime-setting-method
+
+---
+ drivers/net/dsa/mt7530.c | 29 ++++-------------------------
+ 1 file changed, 4 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/net/dsa/mt7530.c b/drivers/net/dsa/mt7530.c
+index f35304a..6281cc7 100644
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -817,35 +817,14 @@ mt7530_set_ageing_time(struct dsa_switch *ds, unsigned int msecs)
+ {
+ 	struct mt7530_priv *priv = ds->priv;
+ 	unsigned int secs = msecs / 1000;
+-	unsigned int tmp_age_count;
+-	unsigned int error = -1;
+ 	unsigned int age_count;
+-	unsigned int age_unit;
++	const unsigned int age_unit = 1;
+ 
+-	/* Applied timer is (AGE_CNT + 1) * (AGE_UNIT + 1) seconds */
+-	if (secs < 1 || secs > (AGE_CNT_MAX + 1) * (AGE_UNIT_MAX + 1))
++	/* Applied timer is (AGE_CNT + 1) * (AGE_UNIT + 1) seconds, and force AGE_UNIT to 1 sec */
++	if (secs < 1 || secs > (AGE_CNT_MAX + 1) * 2)
+ 		return -ERANGE;
+ 
+-	/* iterate through all possible age_count to find the closest pair */
+-	for (tmp_age_count = 0; tmp_age_count <= AGE_CNT_MAX; ++tmp_age_count) {
+-		unsigned int tmp_age_unit = secs / (tmp_age_count + 1) - 1;
+-
+-		if (tmp_age_unit <= AGE_UNIT_MAX) {
+-			unsigned int tmp_error = secs -
+-				(tmp_age_count + 1) * (tmp_age_unit + 1);
+-
+-			/* found a closer pair */
+-			if (error > tmp_error) {
+-				error = tmp_error;
+-				age_count = tmp_age_count;
+-				age_unit = tmp_age_unit;
+-			}
+-
+-			/* found the exact match, so break the loop */
+-			if (!error)
+-				break;
+-		}
+-	}
++	age_count = (secs / 2) - 1;
+ 
+ 	mt7530_write(priv, MT7530_AAC, AGE_CNT(age_count) | AGE_UNIT(age_unit));
+ 
+-- 
+2.45.2
+

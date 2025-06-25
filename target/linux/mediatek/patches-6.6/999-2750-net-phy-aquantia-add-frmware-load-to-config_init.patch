@@ -1,0 +1,28 @@
+diff --git a/drivers/net/phy/aquantia/aquantia_main.c b/drivers/net/phy/aquantia/aquantia_main.c
+index 924cf8e..f864f97 100644
+--- a/drivers/net/phy/aquantia/aquantia_main.c
++++ b/drivers/net/phy/aquantia/aquantia_main.c
+@@ -626,6 +626,11 @@ static int aqr107_config_init(struct phy_device *phydev)
+ 	ret = aqr107_wait_reset_complete(phydev);
+ 	if (!ret)
+ 		aqr107_chip_info(phydev);
++	else {
++		ret = aqr_firmware_load(phydev);
++		if (ret)
++			return ret;
++	}
+ 
+ 	ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PMAPMD, MDIO_PMA_TXDIS,
+ 				 MDIO_PMD_TXDIS_GLOBAL);
+@@ -666,6 +671,11 @@ static int aqcs109_config_init(struct phy_device *phydev)
+ 	ret = aqr107_wait_reset_complete(phydev);
+ 	if (!ret)
+ 		aqr107_chip_info(phydev);
++	else {
++		ret = aqr_firmware_load(phydev);
++		if (ret)
++			return ret;
++	}
+ 
+ 	/* AQCS109 belongs to a chip family partially supporting 10G and 5G.
+ 	 * PMA speed ability bits are the same for all members of the family,

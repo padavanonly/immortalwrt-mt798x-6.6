@@ -1,0 +1,24 @@
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -1285,7 +1285,7 @@ static int spinand_init(struct spinand_d
+ 
+ 	ret = spi_mem_do_calibration(spinand->spimem, spinand_cal_read, spinand);
+ 	if (ret)
+-		dev_err(dev, "Failed to calibrate SPI-NAND (err = %d)\n", ret);
++		dev_info(dev, "Use default SPI calibration value.\n");
+ 
+ 	ret = spinand_detect(spinand);
+ 	if (ret)
+--- a/drivers/spi/spi.c
++++ b/drivers/spi/spi.c
+@@ -1434,7 +1434,9 @@ int spi_do_calibration(struct spi_contro
+ 			dev_info(&spi->dev, "calibration result: 0x%x", *target->cal_item);
+ 		} else {
+ 			*target->cal_item = origin;
+-			dev_warn(&spi->dev, "calibration failed, fallback to default: 0x%x", origin);
++			/* Fix me */
++			//dev_warn(&spi->dev, "calibration failed, fallback to default: 0x%x", origin);
++			ret = -EIO;
+ 		}
+ 	}
+ 

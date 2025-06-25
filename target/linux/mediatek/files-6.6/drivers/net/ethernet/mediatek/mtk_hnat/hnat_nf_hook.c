@@ -38,18 +38,16 @@
 #include <linux/if_pppox.h>
 #include <linux/if_ether.h>
 #define do_ge2ext_fast(dev, skb)                                               \
-	((IS_LAN_GRP(dev) || IS_WAN(dev) || IS_PPD(dev)) && \
-	 skb_hnat_is_hashed(skb) && \
-	 skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU)
+	(skb_hnat_is_hashed(skb) && \
+	  skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU)
 #define do_ext2ge_fast_learn(dev, skb)                                         \
-	(IS_PPD(dev) &&                                                        \
-	 (skb_hnat_sport(skb) == NR_PDMA_PORT ||                           \
+	((skb_hnat_sport(skb) == NR_PDMA_PORT ||                           \
 	  skb_hnat_sport(skb) == NR_QDMA_PORT) &&                       \
 	  ((get_dev_from_index(skb->vlan_tci & VLAN_VID_MASK)) ||   \
 		 get_wandev_from_index(skb->vlan_tci & VLAN_VID_MASK)))
 #define do_mape_w2l_fast(dev, skb)                                          \
 		(mape_toggle && IS_WAN(dev) && (!is_from_mape(skb)))
-
+extern struct net_device *ppd_dev;
 static struct ipv6hdr mape_l2w_v6h;
 static struct ipv6hdr mape_w2l_v6h;
 static inline uint8_t get_wifi_hook_if_index_from_dev(const struct net_device *dev)
@@ -339,6 +337,22 @@ static void gmac_ppe_fwd_enable(struct net_device *dev)
 		set_gmac_ppe_fwd(NR_GMAC3_PORT, 1);
 }
 
+void ppd_dev_setting(void)
+{
+	struct net_device *br_dev;
+	br_dev = __dev_get_by_name(&init_net, "br-lan");
+		if (br_dev) {
+                        struct net_device *dev;
+                        struct list_head *pos;
+                	netdev_for_each_lower_dev(br_dev, dev, pos) {
+                        	if (dev->flags & IFF_UP) {
+                              		ppd_dev = __dev_get_by_name(&init_net, dev->name);
+                                	break;
+                                }
+                        }
+                }
+}
+
 int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 			    void *ptr)
 {
@@ -348,7 +362,7 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 
 	switch (event) {
 	case NETDEV_UP:
-		
+		ppd_dev_setting();		
 		if (!hnat_priv->guest_en) {
 			if (!strcmp(dev->name, "ra1") || !strcmp(dev->name, "rax1"))
 				break;
@@ -362,6 +376,7 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 
 	case NETDEV_CHANGE:
 		/* Clear PPE entries if the slave of bond device physical link down */
+		ppd_dev_setting();
 		if (!netif_is_bond_slave(dev) ||
 		    (!IS_LAN_GRP(dev) && !IS_WAN(dev)))
 			break;
@@ -371,6 +386,7 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 		break;
 		
 	case NETDEV_GOING_DOWN:
+		ppd_dev_setting();
 		if (!get_wifi_hook_if_index_from_dev(dev))
 			extif_put_dev(dev);
 
@@ -383,6 +399,7 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 
 		break;
 	case NETDEV_UNREGISTER:
+		ppd_dev_setting();
 		if (hnat_priv->g_ppdev == dev) {
 			hnat_priv->g_ppdev = NULL;
 			dev_put(dev);
@@ -394,6 +411,7 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 
 		break;
 	case NETDEV_REGISTER:
+		ppd_dev_setting();
 		if (IS_PPD(dev) && !hnat_priv->g_ppdev)
 			hnat_priv->g_ppdev = dev_get_by_name(&init_net, hnat_priv->ppd);
 		if (IS_WAN(dev) && !hnat_priv->g_wandev)
@@ -401,6 +419,7 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 
 		break;
 	case MTK_FE_RESET_NAT_DONE:
+		ppd_dev_setting();
 		pr_info("[%s] HNAT driver starts to do warm init !\n", __func__);
 		hnat_warm_init();
 		break;

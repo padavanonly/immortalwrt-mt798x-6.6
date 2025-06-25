@@ -1,0 +1,47 @@
+From c52a1e697f0bd2bd1ceb82140cb73a0887c6224b Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Fri, 27 Sep 2024 16:58:22 +0800
+Subject: [PATCH 3/6] fix wdma rx hang on wed1 after SER
+
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index 3db954d..c48fba8 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -250,7 +250,7 @@ mtk_wdma_rx_reset(struct mtk_wed_device *dev)
+ 	wdma_w32(dev, MTK_WDMA_RESET_IDX, 0);
+ 
+ 	for (i = 0; i < ARRAY_SIZE(dev->rx_wdma); i++) {
+-		if (dev->rx_wdma[i].desc)
++		if (!dev->rx_wdma[i].desc)
+ 			continue;
+ 
+ 		wdma_w32(dev,
+@@ -1785,6 +1785,21 @@ mtk_wed_reset_dma(struct mtk_wed_device *dev)
+ 			wed_clr(dev, MTK_WED_WDMA_RX_PREF_CFG,
+ 				MTK_WED_WDMA_RX_PREF_DDONE2_EN);
+ 
++			/* Reset prefetch index */
++			wed_set(dev, MTK_WED_WDMA_RX_PREF_CFG,
++				MTK_WED_WDMA_RX_PREF_RX0_SIDX_CLR |
++				MTK_WED_WDMA_RX_PREF_RX1_SIDX_CLR);
++
++			wed_clr(dev, MTK_WED_WDMA_RX_PREF_CFG,
++				MTK_WED_WDMA_RX_PREF_RX0_SIDX_CLR |
++				MTK_WED_WDMA_RX_PREF_RX1_SIDX_CLR);
++
++			/* Reset prefetch FIFO */
++			wed_w32(dev, MTK_WED_WDMA_RX_PREF_FIFO_CFG,
++				MTK_WED_WDMA_RX_PREF_FIFO_RX0_CLR |
++				MTK_WED_WDMA_RX_PREF_FIFO_RX1_CLR);
++			wed_w32(dev, MTK_WED_WDMA_RX_PREF_FIFO_CFG, 0);
++
+ 			/* 2. Reset dma index */
+ 			wed_w32(dev, MTK_WED_WDMA_RESET_IDX,
+ 				MTK_WED_WDMA_RESET_IDX_RX_ALL);
+-- 
+2.45.2
+

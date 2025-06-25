@@ -1,0 +1,106 @@
+From a725e1a393a99856bb81f2af61a9e4005b1d69a3 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 2 Apr 2025 09:49:10 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: dispatch short packets a high
+ priority queue in PPPQ path
+
+Without this patch, the performance of ETH to ETH cannot reach line rate
+in an unbalanced PHY rate test for the mt7988.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c       | 38 +++++++++++++++++++
+ .../net/ethernet/mediatek/mtk_ppe_debugfs.c   |  2 +-
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   |  4 +-
+ 3 files changed, 41 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 034340c..a9df40a 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -505,6 +505,38 @@ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 	return 0;
+ }
+ 
++unsigned int mtk_foe_entry_get_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry)
++{
++	u32 *ib2 = mtk_foe_entry_ib2(eth, entry);
++
++	if (mtk_is_netsys_v2_or_greater(eth))
++		return FIELD_GET(MTK_FOE_IB2_QID_V2, *ib2);
++
++	return FIELD_GET(MTK_FOE_IB2_QID, *ib2);
++}
++
++void mtk_foe_entry_adj_queue(struct mtk_ppe *ppe, struct mtk_foe_entry *entry)
++{
++	struct mtk_eth *eth = ppe->eth;
++	u32 *ib2 = mtk_foe_entry_ib2(eth, entry);
++	unsigned int queue;
++
++	if (mtk_is_netsys_v2_or_greater(eth)) {
++		if (!(*ib2 & MTK_FOE_IB2_PSE_QOS_V2))
++			return;
++	} else {
++		if (!(*ib2 & MTK_FOE_IB2_PSE_QOS))
++			return;
++	}
++
++	queue = mtk_foe_entry_get_queue(eth, entry);
++	/* To enhance performance in the unbalanced PHY rate test,
++	 * dispatching short packets to the high priority TXQ.
++	 */
++	if (eth->qos_toggle == 2 && (queue >= 3 && queue <= 8))
++		mtk_foe_entry_set_queue(eth, entry, queue + 6);
++}
++
+ static int
+ mtk_flow_entry_match_len(struct mtk_eth *eth, struct mtk_foe_entry *entry)
+ {
+@@ -848,6 +880,12 @@ void __mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash)
+ 			continue;
+ 		}
+ 
++		/* Dispatch the IPv4/IPv6 TCP Ack packets to the high-priority
++		 * queue, assuming they are less than 100 bytes.
++		 */
++		if (!(foe.ib1 & MTK_FOE_IB1_UDP) && skb && skb->len < 100)
++			mtk_foe_entry_adj_queue(ppe, &entry->data);
++
+ 		entry->hash = hash;
+ 		__mtk_foe_entry_commit(ppe, &entry->data, hash);
+ 		found = true;
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+index 2d30ae0..46024ef 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+@@ -236,7 +236,7 @@ mtk_ppe_internal_debugfs_write_qos(struct file *file, const char __user *buffer,
+ 		eth->qos_toggle = 1;
+ 	} else if (buf[0] == '2') {
+ 		pr_info("Per-port-per-queue mode is going to be enabled !\n");
+-		pr_info("PPPQ use qid 3~8 (scheduler 0).\n");
++		pr_info("PPPQ use qid 3~14 (scheduler 0).\n");
+ 		eth->qos_toggle = 2;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index f4657dd..e133362 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -237,11 +237,11 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 
+ 	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(eth, foe, dsa_port))
+ 		mtk_foe_entry_set_queue(eth, foe, queue);
+-	else if (eth->qos_toggle == 1 || (ct->mark & MTK_QDMA_QUEUE_MASK) >= 9) {
++	else if (eth->qos_toggle == 1 || (ct->mark & MTK_QDMA_QUEUE_MASK) >= 15) {
+ 		u8 qos_ul_toggle;
+ 
+ 		if (eth->qos_toggle == 2)
+-			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 9 ? 1 : 0;
++			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 15 ? 1 : 0;
+ 		else
+ 			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 1 ? 1 : 0;
+ 
+-- 
+2.45.2
+

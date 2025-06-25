@@ -1,0 +1,69 @@
+From 73c2090956a1aac2314c6003c35f958dfd0f3a8f Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Fri, 27 Sep 2024 14:17:12 +0800
+Subject: [PATCH 2/6] refactor mtk_wed_assgin not base on pci domain
+
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 31 +++++++------------------
+ 1 file changed, 8 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index d8821b7..3db954d 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -488,34 +488,21 @@ void mtk_wed_fe_reset_complete(void)
+ static struct mtk_wed_hw *
+ mtk_wed_assign(struct mtk_wed_device *dev)
+ {
+-	struct mtk_wed_hw *hw;
+ 	int i;
+ 
+-	if (dev->wlan.bus_type == MTK_WED_BUS_PCIE) {
+-		hw = hw_list[pci_domain_nr(dev->wlan.pci_dev->bus)];
+-		if (!hw)
+-			return NULL;
++	for (i = 0; i < ARRAY_SIZE(hw_list); i++) {
++		struct mtk_wed_hw *hw = hw_list[i];
+ 
+-		if (!hw->wed_dev)
+-			goto out;
++		if (!hw || hw->wed_dev)
++			continue;
+ 
+-		if (mtk_wed_is_v1(hw))
+-			return NULL;
++		hw->wed_dev = dev;
++		hw->pcie_base = MTK_WED_PCIE_BASE;
+ 
+-		/* MT7986 WED devices do not have any pcie slot restrictions */
+-	}
+-	/* MT7986 PCIE or AXI */
+-	for (i = 0; i < ARRAY_SIZE(hw_list); i++) {
+-		hw = hw_list[i];
+-		if (hw && !hw->wed_dev)
+-			goto out;
++		return hw;
+ 	}
+ 
+ 	return NULL;
+-
+-out:
+-	hw->wed_dev = dev;
+-	return hw;
+ }
+ 
+ static int
+@@ -2403,9 +2390,7 @@ mtk_wed_attach(struct mtk_wed_device *dev)
+ 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
+ 			 "mtk_wed_attach without holding the RCU read lock");
+ 
+-	if ((dev->wlan.bus_type == MTK_WED_BUS_PCIE &&
+-	     pci_domain_nr(dev->wlan.pci_dev->bus) > 1) ||
+-	    !try_module_get(THIS_MODULE))
++	if (!try_module_get(THIS_MODULE))
+ 		ret = -ENODEV;
+ 
+ 	rcu_read_unlock();
+-- 
+2.45.2
+

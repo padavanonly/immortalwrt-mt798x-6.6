@@ -1,0 +1,136 @@
+From 7c85c61a39858c35398e20e262acf9e85cbe4f32 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 12 Mar 2025 12:40:06 +0800
+Subject: [PATCH] arm64: dts: mt7988: increase mdc for aqr 10gphy
+
+Without this patch, the AQR 10G PHY driver might take too much time
+to download the firmware.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso   | 9 +++++++++
+ .../boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso      | 9 +++++++++
+ arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso   | 9 +++++++++
+ .../boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso      | 9 +++++++++
+ arch/arm64/boot/dts/mediatek/mt7988a-rfb.dts             | 5 -----
+ 5 files changed, 36 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso
+index a9c3101..2fa4e55 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso
+@@ -17,6 +17,7 @@ fragment@0 {
+ 		__overlay__ {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
++			clock-frequency = <10500000>;
+ 
+ 			/* external Aquantia AQR113C */
+ 			phy0: ethernet-phy@0 {
+@@ -41,4 +42,12 @@ __overlay__ {
+ 			status = "okay";
+ 		};
+ 	};
++
++	fragment@2 {
++		target = <&eth>;
++		__overlay__ {
++			pinctrl-0 = <&mdio0_pins>;
++			pinctrl-names = "default";
++		};
++	};
+ };
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso
+index 9ee1a4c..74ef643 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso
+@@ -18,6 +18,7 @@ fragment@0 {
+ 		__overlay__ {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
++			clock-frequency = <10500000>;
+ 
+ 			/* external Aquantia CUX3410 */
+ 			phy0: ethernet-phy@0 {
+@@ -65,4 +66,12 @@ __overlay__ {
+ 			status = "okay";
+ 		};
+ 	};
++
++	fragment@2 {
++		target = <&eth>;
++		__overlay__ {
++			pinctrl-0 = <&mdio0_pins>;
++			pinctrl-names = "default";
++		};
++	};
+ };
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso
+index 6563800..08a6a4b 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso
+@@ -17,6 +17,7 @@ fragment@0 {
+ 		__overlay__ {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
++			clock-frequency = <10500000>;
+ 
+ 			/* external Aquantia AQR113C */
+ 			phy8: ethernet-phy@8 {
+@@ -41,4 +42,12 @@ __overlay__ {
+ 			status = "okay";
+ 		};
+ 	};
++
++	fragment@2 {
++		target = <&eth>;
++		__overlay__ {
++			pinctrl-0 = <&mdio0_pins>;
++			pinctrl-names = "default";
++		};
++	};
+ };
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso
+index b53300c..2e0e9d4 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso
+@@ -17,6 +17,7 @@ fragment@0 {
+ 		__overlay__ {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
++			clock-frequency = <10500000>;
+ 
+ 			/* external Aquantia CUX3410 */
+ 			phy8: ethernet-phy@8 {
+@@ -64,4 +65,12 @@ __overlay__ {
+ 			status = "okay";
+ 		};
+ 	};
++
++	fragment@2 {
++		target = <&eth>;
++		__overlay__ {
++			pinctrl-0 = <&mdio0_pins>;
++			pinctrl-names = "default";
++		};
++	};
+ };
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb.dts b/arch/arm64/boot/dts/mediatek/mt7988a-rfb.dts
+index 2a798c9..fca9a3d 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb.dts
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb.dts
+@@ -50,11 +50,6 @@ trng{
+ 	};
+ };
+ 
+-&eth {
+-	pinctrl-0 = <&mdio0_pins>;
+-	pinctrl-names = "default";
+-};
+-
+ &gmac0 {
+ 	status = "okay";
+ };
+-- 
+2.45.2
+

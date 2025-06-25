@@ -1,0 +1,29 @@
+From 66471b08086a19dd87a94bbd2e95991daeee73a6 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 12 Mar 2025 14:00:12 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: fix typo for enabling MIB cache
+
+Without this patch, the PPE performance might degrade when
+per-accounting is enabled.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 3482147..5c5ba48 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -1117,7 +1117,7 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+ 		ppe_m32(ppe, MTK_PPE_MIB_CFG, MTK_PPE_MIB_CFG_RD_CLR,
+ 			MTK_PPE_MIB_CFG_RD_CLR);
+ 		ppe_m32(ppe, MTK_PPE_MIB_CACHE_CTL, MTK_PPE_MIB_CACHE_CTL_EN,
+-			MTK_PPE_MIB_CFG_RD_CLR);
++			MTK_PPE_MIB_CACHE_CTL_EN);
+ 	}
+ }
+ 
+-- 
+2.45.2
+

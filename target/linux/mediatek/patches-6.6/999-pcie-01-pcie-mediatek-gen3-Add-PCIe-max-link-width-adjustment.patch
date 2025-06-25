@@ -1,0 +1,95 @@
+From 9c7ce8970d6cff91f49f8f768d060850596a3e18 Mon Sep 17 00:00:00 2001
+From: Jianguo Zhang <jianguo.zhang@mediatek.com>
+Date: Fri, 15 Nov 2024 09:41:41 +0800
+Subject: [PATCH] pcie: mediatek-gen3: Add PCIe max link width adjustment
+ feature
+
+[Description]
+Add PCIe max link width adjustment feature.
+
+[Release-log]
+N/A
+
+Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
+---
+ drivers/pci/controller/pcie-mediatek-gen3.c | 36 +++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
+index 826d7ea..1cac215 100644
+--- a/drivers/pci/controller/pcie-mediatek-gen3.c
++++ b/drivers/pci/controller/pcie-mediatek-gen3.c
+@@ -122,6 +122,7 @@ struct mtk_msi_set {
+  * @phy: PHY controller block
+  * @clks: PCIe clocks
+  * @num_clks: PCIe clocks count for this port
++ * @max_link_width: PCIe slot max supported link width
+  * @irq: PCIe controller interrupt number
+  * @saved_irq_state: IRQ enable state saved at suspend time
+  * @irq_lock: lock protecting IRQ register access
+@@ -141,6 +142,7 @@ struct mtk_gen3_pcie {
+ 	struct phy *phy;
+ 	struct clk_bulk_data *clks;
+ 	int num_clks;
++	int max_link_width;
+ 
+ 	int irq;
+ 	u32 saved_irq_state;
+@@ -241,6 +243,26 @@ static struct pci_ops mtk_pcie_ops = {
+ 	.write = mtk_pcie_config_write,
+ };
+ 
++/**
++ * This function will try to find the limitation of link width by finding
++ * a property called "max-link-width" of the given device node.
++ *
++ * @node: device tree node with the max link width information
++ *
++ * Returns the associated max link width from DT, or a negative value if the
++ * required property is not found or is invalid.
++ */
++int of_pci_get_max_link_width(struct device_node *node)
++{
++	u32 max_link_width = 0;
++
++	if (of_property_read_u32(node, "max-link-width", &max_link_width) ||
++	    max_link_width == 0 || max_link_width > 2)
++		return -EINVAL;
++
++	return max_link_width;
++}
++
+ static int mtk_pcie_set_trans_table(struct mtk_gen3_pcie *pcie,
+ 				    resource_size_t cpu_addr,
+ 				    resource_size_t pci_addr,
+@@ -345,6 +367,16 @@ static int mtk_pcie_startup_port(struct mtk_gen3_pcie *pcie)
+ 	val |= PCIE_RC_MODE;
+ 	writel_relaxed(val, pcie->base + PCIE_SETTING_REG);
+ 
++	/* Set link width*/
++	val = readl_relaxed(pcie->base + PCIE_SETTING_REG);
++	if (pcie->max_link_width == 1) {
++		val &= ~GENMASK(11, 8);
++	} else if (pcie->max_link_width == 2) {
++		val &= ~GENMASK(11, 8);
++		val |= BIT(8);
++	}
++	writel_relaxed(val, pcie->base + PCIE_SETTING_REG);
++
+ 	/* Set class code */
+ 	val = readl_relaxed(pcie->base + PCIE_PCI_IDS_1);
+ 	val &= ~GENMASK(31, 8);
+@@ -830,6 +862,10 @@ static int mtk_pcie_parse_port(struct mtk_gen3_pcie *pcie)
+ 		return pcie->num_clks;
+ 	}
+ 
++	pcie->max_link_width = of_pci_get_max_link_width(dev->of_node);
++	if (pcie->max_link_width < 0)
++		dev_err(dev, "failed to get max link width\n");
++
+ 	return 0;
+ }
+ 
+-- 
+2.46.0
+

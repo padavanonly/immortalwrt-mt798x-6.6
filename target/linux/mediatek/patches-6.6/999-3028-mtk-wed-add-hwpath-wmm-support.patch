@@ -1,0 +1,137 @@
+From afaa1c3632e8730a6743b4ec3d22e668017d6e22 Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Mon, 23 Dec 2024 16:27:20 +0800
+Subject: [PATCH] mtk wed add hwpath wmm support
+
+Signed-off-by: Rex Lu <rex.lu@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c       |  3 +-
+ drivers/net/ethernet/mediatek/mtk_ppe.h       |  2 +-
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   | 32 +++++++++++--------
+ drivers/net/ethernet/mediatek/mtk_wed.h       |  1 +
+ include/linux/netdevice.h                     |  1 +
+ 5 files changed, 23 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 193093b..b000743 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -451,7 +451,7 @@ int mtk_foe_entry_set_pppoe(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 
+ int mtk_foe_entry_set_wdma(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			   int wdma_idx, int txq, int bss, int wcid,
+-			   bool amsdu_en)
++			   int tid, bool amsdu_en)
+ {
+ 	struct mtk_foe_mac_info *l2 = mtk_foe_entry_l2(eth, entry);
+ 	u32 *ib2 = mtk_foe_entry_ib2(eth, entry);
+@@ -464,6 +464,7 @@ int mtk_foe_entry_set_wdma(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 		l2->w3info = FIELD_PREP(MTK_FOE_WINFO_WCID_V3, wcid) |
+ 			     FIELD_PREP(MTK_FOE_WINFO_BSS_V3, bss);
+ 		l2->amsdu = FIELD_PREP(MTK_FOE_WINFO_AMSDU_EN, amsdu_en);
++		l2->amsdu |= FIELD_PREP(MTK_FOE_WINFO_AMSDU_TID, tid);
+ 		break;
+ 	case 2:
+ 		*ib2 &= ~MTK_FOE_IB2_PORT_MG_V2;
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
+index 87b8223..c37c939 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
+@@ -400,7 +400,7 @@ int mtk_foe_entry_set_pppoe(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			    int sid);
+ int mtk_foe_entry_set_wdma(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			   int wdma_idx, int txq, int bss, int wcid,
+-			   bool amsdu_en);
++			   int tid, bool amsdu_en);
+ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			    unsigned int queue);
+ int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index f4657dd..8304f92 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -91,29 +91,31 @@ mtk_flow_offload_mangle_eth(const struct flow_action_entry *act, void *eth)
+ static int
+ mtk_flow_get_wdma_info(struct net_device *dev, const u8 *addr, struct mtk_wdma_info *info)
+ {
+-	struct net_device_path_stack stack;
+-	struct net_device_path *path;
+-	int err;
++	struct net_device_path_ctx ctx = {};
++	struct net_device_path path = {};
+ 
+ 	if (!dev)
+ 		return -ENODEV;
+ 
++	ctx.dev = dev;
++
+ 	if (!IS_ENABLED(CONFIG_NET_MEDIATEK_SOC_WED))
+ 		return -1;
+ 
+-	err = dev_fill_forward_path(dev, addr, &stack);
+-	if (err)
+-		return err;
++	if (!dev->netdev_ops->ndo_fill_forward_path)
++		return -1;
+ 
+-	path = &stack.path[stack.num_paths - 1];
+-	if (path->type != DEV_PATH_MTK_WDMA)
++	memcpy(ctx.daddr, addr, sizeof(ctx.daddr));
++
++	path.mtk_wdma.tid = info->tid;
++
++	if (dev->netdev_ops->ndo_fill_forward_path(&ctx, &path))
+ 		return -1;
+ 
+-	info->wdma_idx = path->mtk_wdma.wdma_idx;
+-	info->queue = path->mtk_wdma.queue;
+-	info->bss = path->mtk_wdma.bss;
+-	info->wcid = path->mtk_wdma.wcid;
+-	info->amsdu = path->mtk_wdma.amsdu;
++	if (path.type != DEV_PATH_MTK_WDMA)
++		return -1;
++
++	memcpy(info, &path.mtk_wdma, sizeof(*info));
+ 
+ 	return 0;
+ }
+@@ -193,9 +195,11 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 	struct mtk_wdma_info info = {};
+ 	int pse_port, dsa_port, queue;
+ 
++	info.tid = dscp;
++
+ 	if (mtk_flow_get_wdma_info(dev, dest_mac, &info) == 0) {
+ 		mtk_foe_entry_set_wdma(eth, foe, info.wdma_idx, info.queue,
+-				       info.bss, info.wcid, info.amsdu);
++				       info.bss, info.wcid, info.tid, info.amsdu);
+ 		if (mtk_is_netsys_v2_or_greater(eth)) {
+ 			switch (info.wdma_idx) {
+ 			case 0:
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.h b/drivers/net/ethernet/mediatek/mtk_wed.h
+index 657a5f7..33bca92 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.h
++++ b/drivers/net/ethernet/mediatek/mtk_wed.h
+@@ -60,6 +60,7 @@ struct mtk_wdma_info {
+ 	u16 wcid;
+ 	u8 bss;
+ 	u8 amsdu;
++	u8 tid;
+ };
+ 
+ #ifdef CONFIG_NET_MEDIATEK_SOC_WED
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+index 7d35448..d179e07 100644
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -941,6 +941,7 @@ struct net_device_path {
+ 			u16 wcid;
+ 			u8 bss;
+ 			u8 amsdu;
++			u8 tid;
+ 		} mtk_wdma;
+ 	};
+ };
+-- 
+2.45.2
+

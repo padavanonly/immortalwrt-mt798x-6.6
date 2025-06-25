@@ -1,0 +1,99 @@
+From 0f40b7b46ee239d0ea883b1fbff41c46987a8733 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Tue, 8 Apr 2025 12:36:42 +0800
+Subject: [PATCH] net: pcs: mtk_usxgmii: add pextp reset
+
+---
+ drivers/net/pcs/pcs-mtk-usxgmii.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/net/pcs/pcs-mtk-usxgmii.c b/drivers/net/pcs/pcs-mtk-usxgmii.c
+index 43be634..5a80b89 100644
+--- a/drivers/net/pcs/pcs-mtk-usxgmii.c
++++ b/drivers/net/pcs/pcs-mtk-usxgmii.c
+@@ -14,6 +14,7 @@
+ #include <linux/of_platform.h>
+ #include <linux/reset.h>
+ #include <linux/pcs/pcs-mtk-usxgmii.h>
++#include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
+ 
+ /* USXGMII subsystem config registers */
+@@ -79,6 +80,7 @@ struct mtk_usxgmii_pcs {
+ 	void __iomem			*base;
+ 	struct clk			*clk;
+ 	struct reset_control		*reset;
++	struct phy			*xfi_tphy;
+ 	phy_interface_t			interface;
+ 	unsigned int			polarity;
+ 	unsigned int			neg_mode;
+@@ -160,6 +162,7 @@ static int mtk_usxgmii_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode
+ 		mode_changed = true;
+ 	}
+ 
++	phy_reset(mpcs->xfi_tphy);
+ 	mtk_usxgmii_reset(mpcs);
+ 
+ 	/* Configure the interface polarity */
+@@ -298,6 +301,7 @@ static void mtk_usxgmii_pcs_get_state(struct phylink_pcs *pcs,
+ 	if (!state->link) {
+ 		mtk_usxgmii_pcs_config(pcs, mpcs->neg_mode,
+ 				       state->interface, NULL, false);
++		phy_set_mode_ext(mpcs->xfi_tphy, PHY_MODE_ETHERNET, state->interface);
+ 		return;
+ 	}
+ 
+@@ -318,10 +322,22 @@ static void mtk_usxgmii_pcs_link_up(struct phylink_pcs *pcs, unsigned int neg_mo
+ 				    phy_interface_t interface,
+ 				    int speed, int duplex)
+ {
++	struct mtk_usxgmii_pcs *mpcs = pcs_to_mtk_usxgmii_pcs(pcs);
++
+ 	/* Reconfiguring USXGMII to ensure the quality of the RX signal
+ 	 * after the line side link up.
+ 	 */
+ 	mtk_usxgmii_pcs_config(pcs, neg_mode, interface, NULL, false);
++	phy_set_mode_ext(mpcs->xfi_tphy, PHY_MODE_ETHERNET, interface);
++}
++
++static int mtk_usxgmii_pcs_enable(struct phylink_pcs *pcs)
++{
++	struct mtk_usxgmii_pcs *mpcs = pcs_to_mtk_usxgmii_pcs(pcs);
++
++	phy_power_on(mpcs->xfi_tphy);
++
++	return 0;
+ }
+ 
+ static void mtk_usxgmii_pcs_disable(struct phylink_pcs *pcs)
+@@ -330,6 +346,8 @@ static void mtk_usxgmii_pcs_disable(struct phylink_pcs *pcs)
+ 
+ 	mpcs->interface = PHY_INTERFACE_MODE_NA;
+ 	mpcs->neg_mode = -1;
++
++	phy_power_off(mpcs->xfi_tphy);
+ }
+ 
+ static const struct phylink_pcs_ops mtk_usxgmii_pcs_ops = {
+@@ -337,6 +355,7 @@ static const struct phylink_pcs_ops mtk_usxgmii_pcs_ops = {
+ 	.pcs_get_state = mtk_usxgmii_pcs_get_state,
+ 	.pcs_an_restart = mtk_usxgmii_pcs_restart_an,
+ 	.pcs_link_up = mtk_usxgmii_pcs_link_up,
++	.pcs_enable = mtk_usxgmii_pcs_enable,
+ 	.pcs_disable = mtk_usxgmii_pcs_disable,
+ };
+ 
+@@ -372,6 +391,10 @@ static int mtk_usxgmii_probe(struct platform_device *pdev)
+ 	if (IS_ERR(mpcs->clk))
+ 		return PTR_ERR(mpcs->clk);
+ 
++	mpcs->xfi_tphy = devm_of_phy_get(mpcs->dev, dev->of_node, NULL);
++	if (IS_ERR(mpcs->xfi_tphy))
++		return PTR_ERR(mpcs->xfi_tphy);
++
+ 	mpcs->reset = devm_reset_control_get_shared(dev, NULL);
+ 	if (IS_ERR(mpcs->reset))
+ 		return PTR_ERR(mpcs->reset);
+-- 
+2.45.2
+

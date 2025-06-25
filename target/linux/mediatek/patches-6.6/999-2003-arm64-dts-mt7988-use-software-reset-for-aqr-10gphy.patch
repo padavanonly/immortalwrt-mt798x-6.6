@@ -1,0 +1,71 @@
+From 6c8b7e983c6e99faf21f7b5c38b44b4996f143e2 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 7 May 2025 13:17:22 +0800
+Subject: [PATCH] arm64: dts: mt7988: use software reset for aqr 10gphy
+
+---
+ .../dts/mediatek/mt7988a-rfb-eth1-aqr.dtso    |  3 ---
+ .../mediatek/mt7988a-rfb-eth1-cux3410.dtso    |  3 ---
+ .../dts/mediatek/mt7988a-rfb-eth2-aqr.dtso    |  3 ---
+ .../mediatek/mt7988a-rfb-eth2-cux3410.dtso    |  3 ---
+ 4 files changed, 0 insertions(+), 12 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso
+index 2fa4e55..b4cde39 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-aqr.dtso
+@@ -24,9 +24,6 @@ phy0: ethernet-phy@0 {
+ 				reg = <0>;
+ 				compatible = "ethernet-phy-ieee802.3-c45";
+ 				firmware-name = "Rhe-05.06-Candidate9-AQR_Mediatek_23B_P5_ID45824_LCLVER1.cld";
+-				reset-gpios = <&pio 72 GPIO_ACTIVE_LOW>;
+-				reset-assert-us = <100000>;
+-				reset-deassert-us = <221000>;
+ 				eee-broken-10gt;
+ 				eee-broken-1000t;
+ 			};
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso
+index 74ef643..a04a519 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth1-cux3410.dtso
+@@ -25,9 +25,6 @@ phy0: ethernet-phy@0 {
+ 				reg = <0>;
+ 				compatible = "ethernet-phy-ieee802.3-c45";
+ 				firmware-name = "AQR-G4_v5.7.0-AQR_EVB_Generic_X3410_StdCfg_MDISwap_USX_ID46316_VER2148.cld";
+-				reset-gpios = <&pio 72 GPIO_ACTIVE_LOW>;
+-				reset-assert-us = <100000>;
+-				reset-deassert-us = <221000>;
+ 				eee-broken-10gt;
+ 				eee-broken-1000t;
+ 
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso
+index 08a6a4b..b93a7d2 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-aqr.dtso
+@@ -24,9 +24,6 @@ phy8: ethernet-phy@8 {
+ 				reg = <8>;
+ 				compatible = "ethernet-phy-ieee802.3-c45";
+ 				firmware-name = "Rhe-05.06-Candidate9-AQR_Mediatek_23B_P5_ID45824_LCLVER1.cld";
+-				reset-gpios = <&pio 71 GPIO_ACTIVE_LOW>;
+-				reset-assert-us = <100000>;
+-				reset-deassert-us = <221000>;
+ 				eee-broken-10gt;
+ 				eee-broken-1000t;
+ 			};
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso
+index 2e0e9d4..58b04d5 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-eth2-cux3410.dtso
+@@ -24,9 +24,6 @@ phy8: ethernet-phy@8 {
+ 				reg = <8>;
+ 				compatible = "ethernet-phy-ieee802.3-c45";
+ 				firmware-name = "AQR-G4_v5.7.0-AQR_EVB_Generic_X3410_StdCfg_MDISwap_USX_ID46316_VER2148.cld";
+-				reset-gpios = <&pio 71 GPIO_ACTIVE_LOW>;
+-				reset-assert-us = <100000>;
+-				reset-deassert-us = <221000>;
+ 				eee-broken-10gt;
+ 				eee-broken-1000t;
+ 
+-- 
+2.45.2
+

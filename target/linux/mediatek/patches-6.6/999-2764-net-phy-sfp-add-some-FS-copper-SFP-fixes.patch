@@ -1,0 +1,77 @@
+From 233353ef9cf54fddcb5df9fa15b763ff4ea55ebc Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 21 May 2025 12:50:10 +0800
+Subject: [PATCH] net: phy: sfp: add some FS copper SFP fixes
+
+---
+ drivers/net/phy/realtek/realtek_main.c | 17 ++---------------
+ drivers/net/phy/sfp.c                  |  5 +++--
+ 2 files changed, 5 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/net/phy/realtek/realtek_main.c b/drivers/net/phy/realtek/realtek_main.c
+index ffd14d0..1ea213b 100644
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -840,23 +840,10 @@ static int rtl822x_probe(struct phy_device *phydev)
+ 
+ static int rtl822xb_config_init(struct phy_device *phydev)
+ {
+-	bool has_2500, has_sgmii;
++	bool has_2500 = true, has_sgmii = false;
+ 	int ret, val;
+ 	u16 mode;
+ 
+-	has_2500 = test_bit(PHY_INTERFACE_MODE_2500BASEX,
+-			    phydev->host_interfaces) ||
+-		   phydev->interface == PHY_INTERFACE_MODE_2500BASEX;
+-
+-	has_sgmii = test_bit(PHY_INTERFACE_MODE_SGMII,
+-			     phydev->host_interfaces) ||
+-		    phydev->interface == PHY_INTERFACE_MODE_SGMII;
+-
+-	/* disable listening on MDIO broadcast address (0) */
+-	ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2, 0xa430, BIT(13));
+-	if (ret < 0)
+-		return ret;
+-
+ 	/* fill in possible interfaces */
+ 	__assign_bit(PHY_INTERFACE_MODE_2500BASEX, phydev->possible_interfaces,
+ 		     has_2500);
+@@ -1628,7 +1615,7 @@ static struct phy_driver realtek_drvs[] = {
+ 		.name           = "RTL8221B-VB-CG 2.5Gbps PHY (C45)",
+ 		.config_intr	= rtl8221b_config_intr,
+ 		.handle_interrupt = rtl8221b_handle_interrupt,
+-		.soft_reset     = genphy_soft_reset,
++		/*.soft_reset     = genphy_soft_reset,*/
+ 		.probe		= rtl822x_probe,
+ 		.config_init    = rtl822xb_config_init_war,
+ 		.get_rate_matching = rtl822xb_get_rate_matching,
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 565fb69..44b2898 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -489,6 +489,7 @@ static const struct sfp_quirk sfp_quirks[] = {
+ 	// Fiberstore SFP-2.5G-T and SFP-10GM-T uses Rollball protocol to talk
+ 	// to the PHY and needs 4 sec wait before probing the PHY.
+ 	SFP_QUIRK_F("FS", "SFP-2.5G-T", sfp_fixup_rollball_wait4s),
++	SFP_QUIRK_F("FS", "SFP-2.5G-T-I", sfp_fixup_rollball_wait4s),
+ 	SFP_QUIRK_F("FS", "SFP-10GM-T", sfp_fixup_rollball_wait4s),
+ 
+ 	// Fiberstore GPON-ONU-34-20BI can operate at 2500base-X, but report 1.2GBd
+@@ -2703,11 +2704,11 @@ static void sfp_sm_main(struct sfp *sfp, unsigned int event)
+ 		 * clear.  Probe for the PHY and check the LOS state.
+ 		 */
+ 		ret = sfp_sm_probe_for_phy(sfp);
+-		if (ret == -ENODEV) {
++		if (ret == -ENODEV || ret == -EINVAL) {
+ 			if (--sfp->sm_phy_retries) {
+ 				sfp_sm_next(sfp, SFP_S_INIT_PHY,
+ 					    sfp->phy_t_retry);
+-				dev_dbg(sfp->dev,
++				dev_info(sfp->dev,
+ 					"no PHY detected, %u tries left\n",
+ 					sfp->sm_phy_retries);
+ 				break;
+-- 
+2.45.2
+

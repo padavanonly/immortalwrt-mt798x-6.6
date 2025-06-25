@@ -882,7 +882,7 @@ static int hnat_probe(struct platform_device *pdev)
 
 	err = of_property_read_string(np, "mtketh-ppd", &name);
 	if (err < 0)
-		strncpy(hnat_priv->ppd, "eth2", IFNAMSIZ);
+		strncpy(hnat_priv->ppd, "eth0", IFNAMSIZ);
 	else
 		strncpy(hnat_priv->ppd, (char *)name, IFNAMSIZ - 1);
 	dev_info(&pdev->dev, "ppd = %s\n", hnat_priv->ppd);

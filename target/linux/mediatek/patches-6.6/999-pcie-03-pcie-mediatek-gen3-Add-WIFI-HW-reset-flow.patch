@@ -1,0 +1,94 @@
+From 47baf08ae8b4164446c15b130c1c551fa6eee16c Mon Sep 17 00:00:00 2001
+From: Jianguo Zhang <jianguo.zhang@mediatek.com>
+Date: Sat, 16 Nov 2024 13:46:36 +0800
+Subject: [PATCH] pcie: mediatek-gen3: Add WIFI HW reset flow
+
+[Description]
+Add WIFI HW reset before PCIe host detects EP device for reboot.
+
+[Release-log]
+NA
+
+Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
+---
+ drivers/pci/controller/pcie-mediatek-gen3.c | 29 +++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
+index 49bb70f..a868126 100644
+--- a/drivers/pci/controller/pcie-mediatek-gen3.c
++++ b/drivers/pci/controller/pcie-mediatek-gen3.c
+@@ -8,6 +8,8 @@
+ 
+ #include <linux/clk.h>
+ #include <linux/delay.h>
++#include <linux/gpio.h>
++#include <linux/gpio/consumer.h>
+ #include <linux/iopoll.h>
+ #include <linux/irq.h>
+ #include <linux/irqchip/chained_irq.h>
+@@ -15,6 +17,7 @@
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/msi.h>
++#include <linux/of_gpio.h>
+ #include <linux/pci.h>
+ #include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
+@@ -157,6 +160,8 @@ struct mtk_pcie_irq {
+  * @clks: PCIe clocks
+  * @num_clks: PCIe clocks count for this port
+  * @max_link_width: PCIe slot max supported link width
++ * @wifi_reset: reset pin for WIFI chip
++ * @wifi_reset_delay_ms: delaty time for WIFI chip reset
+  * @irq: PCIe controller interrupt number
+  * @num_irqs: PCIe irqs count
+  * @irqs: PCIe controller interrupts information
+@@ -181,6 +186,9 @@ struct mtk_gen3_pcie {
+ 	int num_clks;
+ 	int max_link_width;
+ 
++	struct gpio_desc *wifi_reset;
++	u32 wifi_reset_delay_ms;
++
+ 	int irq;
+ 	int num_irqs;
+ 	struct mtk_pcie_irq *irqs;
+@@ -447,6 +455,12 @@ static int mtk_pcie_startup_port(struct mtk_gen3_pcie *pcie)
+ 	val |= PCIE_MAC_RSTB | PCIE_PHY_RSTB | PCIE_BRG_RSTB | PCIE_PE_RSTB;
+ 	writel_relaxed(val, pcie->base + PCIE_RST_CTRL_REG);
+ 
++	if (pcie->wifi_reset) {
++		gpiod_set_value_cansleep(pcie->wifi_reset, 0);
++		msleep(pcie->wifi_reset_delay_ms);
++		gpiod_set_value_cansleep(pcie->wifi_reset, 1);
++	}
++
+ 	/*
+ 	 * Described in PCIe CEM specification sections 2.2 (PERST# Signal)
+ 	 * and 2.2.1 (Initial Power-Up (G3 to S0)).
+@@ -1078,6 +1092,21 @@ static int mtk_pcie_parse_port(struct mtk_gen3_pcie *pcie)
+ 		return ret;
+ 	}
+ 
++	ret = of_property_read_u32(dev->of_node, "wifi-reset-msleep",
++				   &pcie->wifi_reset_delay_ms);
++	if (!ret) {
++		pcie->wifi_reset = devm_gpiod_get_optional(dev, "wifi-reset",
++							   GPIOD_OUT_LOW);
++		if (IS_ERR(pcie->wifi_reset)) {
++			ret = PTR_ERR(pcie->wifi_reset);
++			if (ret != -EPROBE_DEFER)
++				dev_err(dev,
++					"failed to request WIFI reset gpio\n");
++			return ret;
++		}
++
++	}
++
+ 	return 0;
+ }
+ 
+-- 
+2.46.0
+

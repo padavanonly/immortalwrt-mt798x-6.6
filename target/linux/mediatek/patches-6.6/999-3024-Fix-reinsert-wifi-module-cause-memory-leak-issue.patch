@@ -1,0 +1,74 @@
+From d83af8f83169ec2ebef82af5d8cad95dc27ce455 Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Tue, 1 Oct 2024 14:07:22 +0800
+Subject: [PATCH 4/6] Fix reinsert wifi module cause memory leak issue
+
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index c48fba8..ff86f45 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -929,6 +929,16 @@ mtk_wed_free_ring(struct mtk_wed_device *dev, struct mtk_wed_ring *ring)
+ static void
+ mtk_wed_free_rx_rings(struct mtk_wed_device *dev)
+ {
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(dev->rx_ring); i++)
++		if ((dev->tx_ring[i].flags & MTK_WED_RING_CONFIGURED))
++			mtk_wed_free_ring(dev, &dev->rx_ring[i]);
++
++	for (i = 0; i < ARRAY_SIZE(dev->tx_wdma); i++)
++		if ((dev->tx_wdma[i].flags & MTK_WED_RING_CONFIGURED))
++			mtk_wed_free_ring(dev, &dev->tx_wdma[i]);
++
+ 	mtk_wed_free_rx_buffer(dev);
+ 	mtk_wed_free_ring(dev, &dev->rro.ring);
+ }
+@@ -939,9 +949,12 @@ mtk_wed_free_tx_rings(struct mtk_wed_device *dev)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(dev->tx_ring); i++)
+-		mtk_wed_free_ring(dev, &dev->tx_ring[i]);
++		if ((dev->tx_ring[i].flags & MTK_WED_RING_CONFIGURED))
++			mtk_wed_free_ring(dev, &dev->tx_ring[i]);
++
+ 	for (i = 0; i < ARRAY_SIZE(dev->rx_wdma); i++)
+-		mtk_wed_free_ring(dev, &dev->rx_wdma[i]);
++		if ((dev->rx_wdma[i].flags & MTK_WED_RING_CONFIGURED))
++			mtk_wed_free_ring(dev, &dev->rx_wdma[i]);
+ }
+ 
+ static void
+@@ -1906,6 +1919,8 @@ mtk_wed_wdma_rx_ring_setup(struct mtk_wed_device *dev, int idx, int size,
+ 					 dev->hw->soc->wdma_desc_size, true))
+ 		return -ENOMEM;
+ 
++	wdma->flags |= MTK_WED_RING_CONFIGURED;
++
+ 	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_BASE,
+ 		 wdma->desc_phys);
+ 	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_COUNT,
+@@ -1952,6 +1967,8 @@ mtk_wed_wdma_tx_ring_setup(struct mtk_wed_device *dev, int idx, int size,
+ 		}
+ 	}
+ 
++	wdma->flags |= MTK_WED_RING_CONFIGURED;
++
+ 	wdma_w32(dev, MTK_WDMA_RING_TX(idx) + MTK_WED_RING_OFS_BASE,
+ 		 wdma->desc_phys);
+ 	wdma_w32(dev, MTK_WDMA_RING_TX(idx) + MTK_WED_RING_OFS_COUNT,
+@@ -2507,6 +2524,7 @@ mtk_wed_tx_ring_setup(struct mtk_wed_device *dev, int idx, void __iomem *regs,
+ 
+ 	ring->reg_base = MTK_WED_RING_TX(idx);
+ 	ring->wpdma = regs;
++	ring->flags |= MTK_WED_RING_CONFIGURED;
+ 
+ 	if (mtk_wed_is_v3_or_greater(dev->hw) && idx == 1) {
+ 		/* reset prefetch index */
+-- 
+2.45.2
+

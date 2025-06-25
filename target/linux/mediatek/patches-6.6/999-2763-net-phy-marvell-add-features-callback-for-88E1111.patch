@@ -1,0 +1,25 @@
+From 6944f5d2f102c08b4a22d7b17f93ffc3f2b070d5 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 19 Mar 2025 13:22:10 +0800
+Subject: [PATCH] net: phy: marvell: add features callback for 88E1111
+
+---
+ drivers/net/phy/marvell.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/marvell.c b/drivers/net/phy/marvell.c
+index 140b003..e7e122c 100644
+--- a/drivers/net/phy/marvell.c
++++ b/drivers/net/phy/marvell.c
+@@ -3354,7 +3354,7 @@ static struct phy_driver marvell_drivers[] = {
+ 		.phy_id = MARVELL_PHY_ID_88E1111,
+ 		.phy_id_mask = MARVELL_PHY_ID_MASK,
+ 		.name = "Marvell 88E1111",
+-		/* PHY_GBIT_FEATURES */
++		.features = PHY_GBIT_FEATURES,
+ 		.probe = marvell_probe,
+ 		.inband_caps = m88e1111_inband_caps,
+ 		.config_inband = m88e1111_config_inband,
+-- 
+2.45.2
+

@@ -1,0 +1,46 @@
+From fbc4b319d4979e5918fb7757f3b56445bb87cbad Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Tue, 11 Mar 2025 11:29:32 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: enable CS0_PIPE and SRH_CACHE_FIRST
+ for NETSYSv3
+
+Without this patch, the MT7988 2x10Gbps BiDi cannot achieve line rate
+when packets smaller than 256B.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c      | 4 ++++
+ drivers/net/ethernet/mediatek/mtk_ppe_regs.h | 2 ++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 3482147..8c25a34 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -1101,6 +1101,10 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+ 	      MTK_PPE_GLO_CFG_IP4_L4_CS_DROP |
+ 	      MTK_PPE_GLO_CFG_IP4_CS_DROP |
+ 	      MTK_PPE_GLO_CFG_FLOW_DROP_UPDATE;
++	if (mtk_is_netsys_v3_or_greater(ppe->eth)) {
++		val |= MTK_PPE_GLO_CFG_CS0_PIPE_EN |
++		       MTK_PPE_GLO_CFG_SRH_CACHE_FIRST_EN;
++	}
+ 	ppe_w32(ppe, MTK_PPE_GLO_CFG, val);
+ 
+ 	ppe_w32(ppe, MTK_PPE_DEFAULT_CPU_PORT, 0);
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
+index 3ce088e..7f4157b 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
+@@ -18,6 +18,8 @@
+ #define MTK_PPE_GLO_CFG_UDP_LITE_EN		BIT(10)
+ #define MTK_PPE_GLO_CFG_UDP_LEN_DROP		BIT(11)
+ #define MTK_PPE_GLO_CFG_MCAST_ENTRIES		GNEMASK(13, 12)
++#define MTK_PPE_GLO_CFG_CS0_PIPE_EN		BIT(29)
++#define MTK_PPE_GLO_CFG_SRH_CACHE_FIRST_EN	BIT(30)
+ #define MTK_PPE_GLO_CFG_BUSY			BIT(31)
+ 
+ #define MTK_PPE_FLOW_CFG			0x204
+-- 
+2.45.2
+

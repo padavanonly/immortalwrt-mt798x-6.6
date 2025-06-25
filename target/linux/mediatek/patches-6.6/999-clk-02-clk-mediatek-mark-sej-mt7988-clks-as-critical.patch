@@ -1,0 +1,13 @@
+--- a/drivers/clk/mediatek/clk-mt7988-infracfg.c
++++ b/drivers/clk/mediatek/clk-mt7988-infracfg.c
+@@ -183,8 +183,8 @@ static const struct mtk_gate infra_clks[
+ 	GATE_INFRA1_FLAGS(CLK_INFRA_133M_DBG_ACKM, "infra_hf_133m_dbg_ackm", "sysaxi_sel", 20,
+ 			  CLK_IS_CRITICAL),
+ 	GATE_INFRA1(CLK_INFRA_66M_AP_DMA_BCK, "infra_66m_ap_dma_bck", "sysaxi_sel", 21),
+-	GATE_INFRA1(CLK_INFRA_66M_SEJ_BCK, "infra_hf_66m_sej_bck", "sysaxi_sel", 29),
+-	GATE_INFRA1(CLK_INFRA_PRE_CK_SEJ_F13M, "infra_pre_ck_sej_f13m", "csw_infra_f26m_sel", 30),
++	GATE_INFRA1_FLAGS(CLK_INFRA_66M_SEJ_BCK, "infra_hf_66m_sej_bck", "sysaxi_sel", 29, CLK_IS_CRITICAL),
++	GATE_INFRA1_FLAGS(CLK_INFRA_PRE_CK_SEJ_F13M, "infra_pre_ck_sej_f13m", "csw_infra_f26m_sel", 30, CLK_IS_CRITICAL),
+ 	/* INFRA2 */
+ 	GATE_INFRA2(CLK_INFRA_26M_THERM_SYSTEM, "infra_hf_26m_therm_system", "csw_infra_f26m_sel",
+ 		    0),
