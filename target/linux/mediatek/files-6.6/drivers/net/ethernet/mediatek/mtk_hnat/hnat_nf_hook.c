@@ -347,7 +347,6 @@ void ppd_dev_setting(void)
                 	netdev_for_each_lower_dev(br_dev, dev, pos) {
                         	if (dev->flags & IFF_UP) {
                               		ppd_dev = __dev_get_by_name(&init_net, dev->name);
-					printk("ppd dev is %s",ppd_dev->name);
                                 	break;
                                 }
                         }
