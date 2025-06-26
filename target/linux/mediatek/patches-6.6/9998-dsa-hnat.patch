@@ -51,7 +51,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  		if ( (mac == 4) || ((FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5)) == HIT_BIND_FORCE_TO_CPU))
 -		mac = atomic_read(&eth1_in_br);
 -
-+		{
++		{ if (mac ==4 ) printk_ratelimited(KERN_WARNING "mac is 4");
 +		mac = 0;
 +		sent_ppd = 1;
 +		}
@@ -63,7 +63,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  			hw_lro_flush_stats_update(ring->ring_no, &trxd);
  		}
 -
-+		if (sent_ppd && ppd_dev){
++		if (sent_ppd && ppd_dev){ printk_ratelimited(KERN_WARNING "ppd is %s",ppd_dev->name);
 +			skb->protocol = eth_hdr(skb)->h_proto;
 +			skb->dev = ppd_dev;
 +		}
