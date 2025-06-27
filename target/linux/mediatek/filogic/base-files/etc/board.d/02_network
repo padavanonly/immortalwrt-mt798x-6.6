@@ -35,7 +35,6 @@ mediatek_setup_interfaces()
 	arcadyan,mozart)
 		ucidef_set_interfaces_lan_wan "lan0 eth1" eth2
 		;;
-	huasifei,wh3000-pro|\
 	*Airpi*)
                 ucidef_set_interfaces_lan_wan "eth1.1234 eth0 eth1" eth2
                 ;;
@@ -81,7 +80,8 @@ mediatek_setup_interfaces()
 		;;
 	bananapi,bpi-r3-mini|\
 	edgecore,eap111|\
-	huasifei,wh3000-emmc)
+	huasifei,wh3000-emmc|\
+	huasifei,wh3000-pro)
 		ucidef_set_interfaces_lan_wan eth0 eth1
 		;;
 	bananapi,bpi-r4|\
