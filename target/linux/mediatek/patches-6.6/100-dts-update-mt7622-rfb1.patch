@@ -1,5 +1,5 @@
 --- a/arch/arm64/boot/dts/mediatek/mt7622-rfb1.dts
-+++ b/arch/arm64/boot/dts/mediatek/mt7622-rfb1.dts
++++ b/arch/arm64/boot/dts/mediatek/mt7622-rfb1.dts 
 @@ -1,7 +1,6 @@
  /*
 - * Copyright (c) 2017 MediaTek Inc.
