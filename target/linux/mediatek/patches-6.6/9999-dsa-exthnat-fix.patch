@@ -1,0 +1,67 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-28 00:00:04.327001326 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-28 00:07:28.673001538 +0800
+@@ -1784,6 +1784,10 @@
+ 	}
+ 
+ 	data |= TX_DMA_SWC_V2 | QID_BITS_V2(info->qid);
++	if(info->ext_ppe) {
++		data &= ~(0xf << TX_DMA_FPORT_SHIFT_V2);
++		data |= 0x3 << TX_DMA_FPORT_SHIFT_V2;
++	}
+ 	WRITE_ONCE(desc->txd4, data);
+ 
+ 	data = 0;
+@@ -1793,8 +1797,10 @@
+ 		/* tx checksum offload */
+ 		if (info->csum)
+ 			data |= TX_DMA_CHKSUM_V2;
+-		if (mtk_is_netsys_v3_or_greater(eth) && netdev_uses_dsa(dev))
++		if (mtk_is_netsys_v3_or_greater(eth) && netdev_uses_dsa(dev)){
++			if (info->ext_ppe!= 1)
+ 			data |= TX_DMA_SPTAG_V3;
++			}
+ 	}
+ 	WRITE_ONCE(desc->txd5, data);
+ 
+@@ -1831,6 +1837,7 @@
+ 		.vlan_tci = skb_vlan_tag_get(skb),
+ 		.first = true,
+ 		.last = !skb_is_nonlinear(skb),
++		.ext_ppe = HNAT_SKB_CB2(skb)->magic == 0x78681415,
+ 	};
+ 	struct netdev_queue *txq;
+ 	struct mtk_mac *mac = netdev_priv(dev);
+@@ -1867,13 +1874,6 @@
+ 	/* TX SG offload */
+ 	txd = itxd;
+ 	txd_pdma = qdma_to_pdma(ring, txd);
+-	#if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
+-	if (HNAT_SKB_CB2(skb)->magic == 0x78681415) {
+-		txd->txd4 &= ~(0xf << TX_DMA_FPORT_SHIFT_V2);
+-		txd->txd4 |= 0x3 << TX_DMA_FPORT_SHIFT_V2;
+-	}
+-#endif
+-
+ 	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+ 		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+ 		unsigned int offset = 0;
+@@ -2476,6 +2476,7 @@
+ 				mac = MTK_GMAC3_ID;
+ 				break;
+ 			default:
++				mac = val - 1;
+ 				break;
+ 			}
+ 		} else if (!MTK_HAS_CAPS(eth->soc->caps, MTK_SOC_MT7628) &&
+diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-06-28 00:00:04.325001326 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-06-28 00:02:59.561001409 +0800
+@@ -1483,6 +1483,7 @@
+ 	u8		vlan:1;
+ 	u8		first:1;
+ 	u8		last:1;
++	u8		ext_ppe:1;
+ };
+ 
+ struct mtk_reg_map {
+
