@@ -14,7 +14,6 @@
 #include <asm/addrspace.h>
 #endif
 
-
 int mt_mtd_write_nm_wifi(char *name, loff_t to, size_t len, const u_char *buf)
 {
 	int ret = -1;

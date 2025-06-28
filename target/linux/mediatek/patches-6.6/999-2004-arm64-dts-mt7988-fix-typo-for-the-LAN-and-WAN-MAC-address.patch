@@ -1,0 +1,38 @@
+From aac44cf03f5fd6ce45db90bc03f2c911ee7a9806 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Mon, 19 May 2025 09:52:11 +0800
+Subject: [PATCH] arm64: dts: mt7988: fix typo for the LAN and WAN MAC address
+offset
+
+Without this patch, the MAC addresses of the LAN and WAN will be
+swapped.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ .../boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso  | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso
+index 3fe75ac..d5f8050 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso
++++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso
+@@ -27,12 +27,12 @@ gmac2_mac: eeprom@fffee {
+ 							reg = <0xfffee 0x6>;
+ 						};
+ 
+-						gmac1_mac: eeprom@ffff4 {
+-							reg = <0xffff4 0x6>;
++						gmac1_mac: eeprom@ffffa {
++							reg = <0xffffa 0x6>;
+ 						};
+ 
+-						gmac0_mac: eeprom@ffffa {
+-							reg = <0xffffa 0x6>;
++						gmac0_mac: eeprom@ffff4 {
++							reg = <0xffff4 0x6>;
+ 						};
+ 					};
+ 				};
+-- 
+2.45.2
+

@@ -1,0 +1,115 @@
+From 4536f6f2911e5a26c01ff82000cdfcf71668dd9d Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Tue, 10 Jun 2025 17:03:40 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: keep sp in the info1
+
+Without this patch, the source port of the PPE entry will be cleared
+after BIND.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   | 16 ++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe.c       | 25 +++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe.h       |  2 ++
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   |  2 ++
+ 4 files changed, 45 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 7157e0a..f809b8f 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1861,6 +1861,22 @@ static inline u32 mtk_get_ib1_pkt_type(struct mtk_eth *eth, u32 val)
+ 	return FIELD_GET(MTK_FOE_IB1_PACKET_TYPE, val);
+ }
+ 
++static inline u32 mtk_prep_ib1_sp(struct mtk_eth *eth, u32 val)
++{
++	if (mtk_is_netsys_v2_or_greater(eth))
++		return FIELD_PREP(MTK_FOE_IB1_BIND_SRC_PORT_V2, val);
++
++	return 0;
++}
++
++static inline u32 mtk_get_ib1_sp(struct mtk_eth *eth, struct mtk_foe_entry *foe)
++{
++	if (mtk_is_netsys_v2_or_greater(eth))
++		return FIELD_GET(MTK_FOE_IB1_BIND_SRC_PORT_V2, foe->ib1);
++
++	return 0;
++}
++
+ static inline u32 mtk_get_ib2_multicast_mask(struct mtk_eth *eth)
+ {
+ 	if (mtk_is_netsys_v2_or_greater(eth))
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 66fbde5..26ff0e3 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -515,6 +515,31 @@ mtk_flow_entry_match(struct mtk_eth *eth, struct mtk_flow_entry *entry,
+ 	return !memcmp(&entry->data.data, &data->data, len - 4);
+ }
+ 
++int mtk_foe_entry_set_sp(struct mtk_ppe *ppe, struct mtk_foe_entry *foe)
++{
++	struct mtk_eth *eth = ppe->eth;
++	struct mtk_flow_entry entry;
++	struct mtk_foe_entry *hwe;
++	u32 hash, sp = 0;
++	int len, i;
++
++	memcpy(&entry.data, foe, sizeof(entry.data));
++
++	len = mtk_flow_entry_match_len(eth, &entry.data);
++	hash = mtk_ppe_hash_entry(eth, &entry.data);
++	for (i = 0; i < eth->soc->hash_offset; i++) {
++		hwe = mtk_foe_get_entry(ppe, hash + i);
++		if (mtk_flow_entry_match(eth, &entry, hwe, len)) {
++			sp = mtk_get_ib1_sp(ppe->eth, hwe);
++			break;
++		}
++	}
++
++	foe->ib1 |= mtk_prep_ib1_sp(ppe->eth, sp);
++
++	return 0;
++}
++
+ static void
+ __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+ 		      bool set_state)
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
+index 6363453..b536c14 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
+@@ -34,6 +34,7 @@
+ 
+ /* CONFIG_MEDIATEK_NETSYS_V2 */
+ #define MTK_FOE_IB1_BIND_TIMESTAMP_V2	GENMASK(7, 0)
++#define MTK_FOE_IB1_BIND_SRC_PORT_V2	GENMASK(11, 8)
+ #define MTK_FOE_IB1_BIND_VLAN_LAYER_V2	GENMASK(16, 14)
+ #define MTK_FOE_IB1_BIND_PPPOE_V2	BIT(17)
+ #define MTK_FOE_IB1_BIND_VLAN_TAG_V2	BIT(18)
+@@ -399,6 +400,7 @@ int mtk_foe_entry_set_wdma(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			   int tid, bool amsdu_en);
+ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			    unsigned int queue);
++int mtk_foe_entry_set_sp(struct mtk_ppe *ppe, struct mtk_foe_entry *entry);
+ int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+ void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index);
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index b3cf74b..372ed66 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -459,6 +459,8 @@ mtk_flow_offload_replace(struct mtk_eth *eth, struct flow_cls_offload *f,
+ 	if (data.pppoe.num == 1)
+ 		mtk_foe_entry_set_pppoe(eth, &foe, data.pppoe.sid);
+ 
++	mtk_foe_entry_set_sp(eth->ppe[ppe_index], &foe);
++
+ 	err = mtk_flow_set_output_device(eth, &foe, odev, data.eth.h_dest,
+ 					 &wed_index);
+ 	if (err)
+-- 
+2.45.2
+

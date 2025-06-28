@@ -1,0 +1,78 @@
+From 58d5a373d2d42b5292c1c2242133bcf0b082c6e0 Mon Sep 17 00:00:00 2001
+From: Sam Shih <sam.shih@mediatek.com>
+Date: Fri, 2 Jun 2023 13:06:07 +0800
+Subject: [PATCH] 
+ [slow-speed-io][999-2133-pwm-mediatek-add-longer-period-support.patch]
+
+---
+ drivers/pwm/pwm-mediatek.c | 34 ++++++++++++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/pwm/pwm-mediatek.c b/drivers/pwm/pwm-mediatek.c
+index 9701092e7..79d15a9c0 100644
+--- a/drivers/pwm/pwm-mediatek.c
++++ b/drivers/pwm/pwm-mediatek.c
+@@ -152,8 +152,11 @@ static int pwm_mediatek_config(struct pwm_chip *chip, struct pwm_device *pwm,
+ 			       int duty_ns, int period_ns)
+ {
+ 	struct pwm_mediatek_chip *pc = to_pwm_mediatek_chip(chip);
+-	u32 clkdiv = 0, cnt_period, cnt_duty, reg_width = PWMDWIDTH,
+-	    reg_thres = PWMTHRES;
++	/* The source clock is divided by 2^clkdiv or iff the clksel bit
++	 * is set by (2^clkdiv*1625)
++	 */
++	u32 clkdiv = 0, clksel = 0, cnt_period, cnt_duty,
++	    reg_width = PWMDWIDTH, reg_thres = PWMTHRES;
+ 	unsigned long clk_rate;
+ 	u64 resolution;
+ 
+@@ -164,12 +167,30 @@ static int pwm_mediatek_config(struct pwm_chip *chip, struct pwm_device *pwm,
+ 
+ 	/* Using resolution in picosecond gets accuracy higher */
+ 	resolution = (u64)NSEC_PER_SEC * 1000;
++	/* Calculate resolution based on current clock frequency */
+ 	do_div(resolution, clk_rate);
+-
++	/* Using resolution to calculate cnt_period which represents
++	 * the effective range of the PWM period counter
++	 */
+ 	cnt_period = DIV_ROUND_CLOSEST_ULL((u64)period_ns * 1000, resolution);
+ 	while (cnt_period > 8191) {
++		/* Using clkdiv to reduce clock frequency and calculate
++		 * new resolution based on new clock speed
++		 */
+ 		resolution *= 2;
+ 		clkdiv++;
++		if (clkdiv > PWM_CLK_DIV_MAX && !clksel) {
++			/* Using clksel to divide the pwm source clock by
++			 * an additional 1625, and recalculate new clkdiv
++			 * and resolution
++			 */
++			clksel = 1;
++			clkdiv = 0;
++			resolution = (u64)NSEC_PER_SEC * 1000 * 1625;
++			do_div(resolution,
++				clk_get_rate(pc->clk_pwms[pwm->hwpwm]));
++		}
++		/* Calculate cnt_period based on resolution */
+ 		cnt_period = DIV_ROUND_CLOSEST_ULL((u64)period_ns * 1000,
+ 						   resolution);
+ 	}
+@@ -189,8 +210,13 @@ static int pwm_mediatek_config(struct pwm_chip *chip, struct pwm_device *pwm,
+ 		reg_thres = PWM45THRES_FIXUP;
+ 	}
+ 
++	/* Calculate cnt_duty based on resolution */
+ 	cnt_duty = DIV_ROUND_CLOSEST_ULL((u64)duty_ns * 1000, resolution);
+-	pwm_mediatek_writel(pc, pwm->hwpwm, PWMCON, BIT(15) | clkdiv);
++	if (clksel)
++		pwm_mediatek_writel(pc, pwm->hwpwm, PWMCON, BIT(15) | BIT(3) |
++				    clkdiv);
++	else
++		pwm_mediatek_writel(pc, pwm->hwpwm, PWMCON, BIT(15) | clkdiv);
+ 	pwm_mediatek_writel(pc, pwm->hwpwm, reg_width, cnt_period);
+ 	pwm_mediatek_writel(pc, pwm->hwpwm, reg_thres, cnt_duty);
+ 
+-- 
+2.34.1
+

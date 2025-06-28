@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	fragment@0 {
+		target = <&sfp>;
+		__overlay__ {
+			los-gpios = <&pio 7 GPIO_ACTIVE_HIGH>;
+			/* HIGH->LOW when SFP plug-in */
+			mod-def0-gpios = <&pio 5 GPIO_ACTIVE_LOW>;
+			tx-disable-gpios = <&pio 3 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};

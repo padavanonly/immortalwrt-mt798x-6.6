@@ -1,0 +1,47 @@
+From 3bf8163a36adb550536c0de8ae00685f050edf53 Mon Sep 17 00:00:00 2001
+From: Heiner Kallweit <hkallweit1@gmail.com>
+Date: Tue, 12 Nov 2024 21:33:11 +0100
+Subject: [PATCH] net: phy: c45: don't use temporary linkmode bitmaps in
+ genphy_c45_ethtool_get_eee
+
+genphy_c45_eee_is_active() populates both bitmaps only if it returns
+successfully. So we can avoid the overhead of the temporary bitmaps.
+
+Signed-off-by: Heiner Kallweit <hkallweit1@gmail.com>
+Reviewed-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Link: https://patch.msgid.link/b0832102-28ab-4223-b879-91fb1fc11278@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/phy/phy-c45.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/phy/phy-c45.c b/drivers/net/phy/phy-c45.c
+index c1b3576c307f..7b0ffa3515aa 100644
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -1523,20 +1523,17 @@ EXPORT_SYMBOL(genphy_c45_eee_is_active);
+ int genphy_c45_ethtool_get_eee(struct phy_device *phydev,
+ 			       struct ethtool_keee *data)
+ {
+-	__ETHTOOL_DECLARE_LINK_MODE_MASK(adv) = {};
+-	__ETHTOOL_DECLARE_LINK_MODE_MASK(lp) = {};
+ 	bool is_enabled;
+ 	int ret;
+ 
+-	ret = genphy_c45_eee_is_active(phydev, adv, lp, &is_enabled);
++	ret = genphy_c45_eee_is_active(phydev, data->advertised,
++				       data->lp_advertised, &is_enabled);
+ 	if (ret < 0)
+ 		return ret;
+ 
+ 	data->eee_enabled = is_enabled;
+ 	data->eee_active = ret;
+ 	linkmode_copy(data->supported, phydev->supported_eee);
+-	linkmode_copy(data->advertised, adv);
+-	linkmode_copy(data->lp_advertised, lp);
+ 
+ 	return 0;
+ }
+-- 
+2.45.2
+

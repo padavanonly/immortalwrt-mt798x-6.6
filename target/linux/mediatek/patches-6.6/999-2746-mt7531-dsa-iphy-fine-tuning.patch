@@ -1,0 +1,346 @@
+From 165c2cda38c9e283944a8d7a332cf0badfcf0059 Mon Sep 17 00:00:00 2001
+Date: Tue, 14 Jan 2025 13:59:31 +0800
+Subject: [PATCH] 999-2746-mt7531-dsa-iphy-fine-tuning
+
+---
+ drivers/net/phy/mediatek/mtk-ge-soc.c  | 84 +++++++++++++++++++---
+ drivers/net/phy/mediatek/mtk-ge.c      | 98 ++++++++++++++++++++++++++
+ drivers/net/phy/mediatek/mtk-phy-lib.c |  9 +++
+ drivers/net/phy/mediatek/mtk.h         |  7 ++
+ 4 files changed, 188 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/phy/mediatek/mtk-ge-soc.c b/drivers/net/phy/mediatek/mtk-ge-soc.c
+index 71d29de..54d8037 100644
+--- a/drivers/net/phy/mediatek/mtk-ge-soc.c
++++ b/drivers/net/phy/mediatek/mtk-ge-soc.c
+@@ -135,6 +135,8 @@
+ #define   MTK_PHY_TCLKOFFSET_MASK		GENMASK(12, 8)
+ 
+ /* Registers on MDIO_MMD_VEND1 */
++#define MTK_PHY_RG_DEV1E_REGA6			0xa6
++
+ #define MTK_PHY_TXVLD_DA_RG			0x12
+ #define   MTK_PHY_DA_TX_I2MPB_A_GBE_MASK	GENMASK(15, 10)
+ #define   MTK_PHY_DA_TX_I2MPB_A_TBT_MASK	GENMASK(5, 0)
+@@ -201,6 +203,8 @@
+ #define MTK_PHY_RG_LPI_PCS_DSP_CTRL_REG122	0x122
+ #define   MTK_PHY_LPI_NORM_MSE_HI_THRESH1000_MASK	GENMASK(7, 0)
+ 
++#define MTK_PHY_RG_DEV1E_REG123			0x123
++
+ #define MTK_PHY_RG_TESTMUX_ADC_CTRL		0x144
+ #define   MTK_PHY_RG_TXEN_DIG_MASK		GENMASK(5, 5)
+ 
+@@ -245,6 +249,8 @@
+ #define MTK_PHY_RG_DASN_DAC_IN1_D		0x184
+ #define   MTK_PHY_DASN_DAC_IN1_D_MASK		GENMASK(9, 0)
+ 
++#define MTK_PHY_RG_DEV1E_REG189			0x189
++
+ #define MTK_PHY_RG_DEV1E_REG19b			0x19b
+ #define   MTK_PHY_BYPASS_DSP_LPI_READY		BIT(8)
+ 
+@@ -902,6 +908,11 @@ static void mt7988_phy_finetune(struct phy_device *phydev)
+ 	for (i = 0; i < 12; i++)
+ 		phy_write_mmd(phydev, MDIO_MMD_VEND1, i, val[i]);
+ 
++	/* Enable HW auto downshift */
++	phy_modify_paged(phydev, MTK_PHY_PAGE_EXTENDED_1,
++					MTK_PHY_AUX_CTRL_AND_STATUS,
++					0, MTK_PHY_ENABLE_DOWNSHIFT);
++
+ 	/* TCT finetune */
+ 	phy_write_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_TX_FILTER, 0x5);
+ 
+@@ -910,21 +921,15 @@ static void mt7988_phy_finetune(struct phy_device *phydev)
+ 			RESET_SYNC_OFFSET_MASK,
+ 			FIELD_PREP(RESET_SYNC_OFFSET_MASK, 0x5));
+ 
+-	/* VgaDecRate is 1 at default on mt7988 */
+-
+-	__mtk_tr_modify(phydev, 0x1, 0xf, 0x1,
+-			MRVL_TR_FIX_100KP_MASK | MRVL_TR_FIX_100KF_MASK |
+-			MRVL_TR_FIX_1000KP_MASK | MRVL_TR_FIX_1000KF_MASK,
+-			FIELD_PREP(MRVL_TR_FIX_100KP_MASK, 0x6) |
+-			FIELD_PREP(MRVL_TR_FIX_100KF_MASK, 0x7) |
+-			FIELD_PREP(MRVL_TR_FIX_1000KP_MASK, 0x6) |
+-			FIELD_PREP(MRVL_TR_FIX_1000KF_MASK, 0x7));
+-
+ 	__mtk_tr_modify(phydev, 0x0, 0xf, 0x3c,
+ 			REMOTE_ACK_COUNT_LIMIT_CTRL_MASK,
+ 			FIELD_PREP(REMOTE_ACK_COUNT_LIMIT_CTRL_MASK, 0x1));
+ 	phy_restore_page(phydev, MTK_PHY_PAGE_STANDARD, 0);
+ 
++	/* Timing Recovery for GbE slave mode */
++	mtk_tr_write(phydev, 0x1, 0xf, 0x1, 0x6fb90a);
++	mtk_tr_write(phydev, 0x2, 0xd, 0x6, 0x2ebaef);
++
+ 	/* TR_OPEN_LOOP_EN = 1, lpf_x_average = 10 */
+ 	phy_modify_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REG234,
+ 		       MTK_PHY_TR_OPEN_LOOP_EN_MASK |
+@@ -933,6 +938,63 @@ static void mt7988_phy_finetune(struct phy_device *phydev)
+ 
+ 	/* rg_tr_lpf_cnt_val = 1023 */
+ 	phy_write_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_LPF_CNT_VAL, 0x3ff);
++
++	/* enable asymmetric pause cap */
++	phy_set_bits(phydev, 0x4, ADVERTISE_PAUSE_ASYM);
++
++	/* Disable EEE */
++	phy_write_mmd(phydev, MDIO_MMD_AN, 0x3c, 0x0);
++
++	/* Disable generate signal to clear the scramble_lock when lpi mode */
++	phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REG189, BIT(1));
++
++	/* Adjust 100_mse_threshold */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REG123, 0xffff);
++
++	/* Disable mcc */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REGA6, 0x300);
++}
++
++static void mt7988_phy_line_driving(struct phy_device *phydev)
++{
++	/* For ADC timing margin window for LDO calibration */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0xd3, 0x2222);
++
++	/* Adjust AD sample timing */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0xc2, 0x4444);
++
++	/* Adjust Line driver current for different mode */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x271, 0x2ca5);
++
++	/* Adjust Line driver current for different mode */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x272, 0xc6b);
++
++	/* Adjust Line driver gain for 10BT from 1000BT calibration result */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x273, 0x3000);
++
++	/* Adjust RX Echo path filter */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_TX_FILTER, 0x5);
++
++	/* Adjust RX HVGA bias current */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x41, 0x3333);
++
++	/* Adjust TX class AB driver 1 */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x268, 0x384);
++
++	/* Adjust TX class AB driver 2 */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x269, 0x1114);
++
++	/* Adjust DAC delay for TX Pairs */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x13, 0x404);
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x14, 0x404);
++
++	/* Adjust DAC digital delay for TX Delay */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x44, 0xc0);
++
++	/* Adjust Line driver compensation cap for stability concern due to
++	 * increase current.
++	 */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x26a, 0x3333);
+ }
+ 
+ static void mt798x_phy_eee(struct phy_device *phydev)
+@@ -1179,6 +1241,7 @@ static int mt798x_phy_config_init(struct phy_device *phydev)
+ 		break;
+ 	case MTK_GPHY_ID_MT7988:
+ 		mt7988_phy_finetune(phydev);
++		mt7988_phy_line_driving(phydev);
+ 		break;
+ 	}
+ 
+@@ -1369,6 +1432,7 @@ static int mt7988_phy_probe(struct phy_device *phydev)
+ 	 * 1. Meet common mode compliance test criteria
+ 	 * 2. Make sure that TX-VCM calibration works fine
+ 	 */
++	phy_set_bits(phydev, 0x17, BIT(4));
+ 	phy_modify_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RXADC_CTRL_RG7,
+ 		       MTK_PHY_DA_AD_BUF_BIAS_LP_MASK, 0x3 << 8);
+ 
+diff --git a/drivers/net/phy/mediatek/mtk-ge.c b/drivers/net/phy/mediatek/mtk-ge.c
+index 64e9e49..bcb00a5 100644
+--- a/drivers/net/phy/mediatek/mtk-ge.c
++++ b/drivers/net/phy/mediatek/mtk-ge.c
+@@ -23,6 +23,10 @@
+ /* ch_addr = 0x1, node_addr = 0xf, data_addr = 0x17 */
+ #define SLAVE_DSP_READY_TIME_MASK		GENMASK(22, 15)
+ 
++/* ch_addr = 0x1, node_addr = 0xf, data_addr = 0x18 */
++/* EnabRandUpdTrig */
++#define ENABLE_RANDOM_UPDOWN_COUNTER_TRIGGER	BIT(8)
++
+ /* Registers on MDIO_MMD_VEND1 */
+ #define MTK_PHY_GBE_MODE_TX_DELAY_SEL		0x13
+ #define MTK_PHY_TEST_MODE_TX_DELAY_SEL		0x14
+@@ -39,6 +43,13 @@
+ #define   MTK_PHY_LPI_NORM_MSE_LO_THRESH100_MASK	GENMASK(15, 8)
+ #define   MTK_PHY_LPI_NORM_MSE_HI_THRESH100_MASK	GENMASK(7, 0)
+ 
++#define MTK_PHY_RG_DEV1E_REG189			0x189
++
++#define MTK_PHY_RG_DEV1E_REG234			0x234
++#define   MTK_PHY_TR_OPEN_LOOP_EN_MASK		GENMASK(0, 0)
++
++#define MTK_PHY_RG_DEV1E_REG2D1			0x2d1
++
+ struct mtk_gephy_priv {
+ 	unsigned long		led_state;
+ };
+@@ -115,10 +126,91 @@ static int mt7530_led_config_of(struct phy_device *phydev)
+ 	return 0;
+ }
+ 
++static void mt7531_phy_line_driving(struct phy_device *phydev)
++{
++	/* For ADC timing margin window for LDO calibration */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0xd3, 0x2222);
++
++	/* Adjust AD sample timing */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0xc2, 0x4444);
++
++	/* Adjust Line driver current for different mode */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x271, 0x2ca5);
++
++	/* Adjust Line driver current for different mode */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x272, 0xc6b);
++
++	/* Adjust Line driver gain for 10BT from 1000BT calibration result */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x273, 0x3000);
++
++	/* Adjust RX Echo path filter */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0xfe, 0x2);
++
++	/* Adjust RX HVGA bias current */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x41, 0x3333);
++
++	/* Adjust TX class AB driver 1 */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x268, 0x384);
++
++	/* Adjust TX class AB driver 2 */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x269, 0x1114);
++
++	/* Adjust DAC delay for TX Pairs */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x13, 0x404);
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x14, 0x404);
++
++	/* Adjust DAC digital delay for TX Delay */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x44, 0xc0);
++
++	/* Adjust Line driver compensation cap for stability concern due to
++	 * increase current.
++	 */
++	phy_write_mmd(phydev, MDIO_MMD_VEND2, 0x26a, 0x3333);
++}
++
++static void mt7531_phy_eee(struct phy_device *phydev)
++{
++	/* Disable EEE */
++	phy_write_mmd(phydev, MDIO_MMD_AN, 0x3c, 0x0);\
++
++	/* Disable generate signal to clear the scramble_lock when lpi mode */
++	phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REG189, BIT(1));
++
++	/* Roll back EEE Slave Mode */
++	phy_write_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REG2D1, 0x0);
++	mtk_tr_write(phydev, 0x2, 0xd, 0x8, 0x1b);
++	mtk_tr_write(phydev, 0x2, 0xd, 0xf, 0x0);
++	mtk_tr_write(phydev, 0x2, 0xd, 0x10, 0x5000);
++}
++
+ static int mt7531_phy_config_init(struct phy_device *phydev)
+ {
++	u16 val[12] = { 0x0187, 0x01c9, 0x01c6, 0x0182,
++			0x0208, 0x0205, 0x0384, 0x03cb,
++			0x03c4, 0x030a, 0x000b, 0x0002 };
++	int i;
++
++	/* Set default MLT3 shaper first */
++	for (i = 0; i < 12; i++)
++		phy_write_mmd(phydev, MDIO_MMD_VEND1, i, val[i]);
++
+ 	mtk_gephy_config_init(phydev);
+ 
++	/* enable random update mechanism */
++	phy_select_page(phydev, MTK_PHY_PAGE_EXTENDED_52B5);
++	__mtk_tr_set_bits(phydev, 0x1, 0xf, 0x18,
++			  ENABLE_RANDOM_UPDOWN_COUNTER_TRIGGER);
++	phy_restore_page(phydev, MTK_PHY_PAGE_STANDARD, 0);
++
++	/* Timing Recovery for GbE slave mode */
++	mtk_tr_write(phydev, 0x1, 0xf, 0x1, 0x6fb90a);
++	mtk_tr_write(phydev, 0x2, 0xd, 0x6, 0x2ebaef);
++
++	/* TR_OPEN_LOOP_EN = 1 */
++	phy_modify_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RG_DEV1E_REG234,
++		       MTK_PHY_TR_OPEN_LOOP_EN_MASK,
++		       BIT(0));
++
+ 	/* PHY link down power saving enable */
+ 	phy_set_bits(phydev, 0x17, BIT(4));
+ 	phy_modify_mmd(phydev, MDIO_MMD_VEND1, MTK_PHY_RXADC_CTRL_RG7,
+@@ -135,9 +227,15 @@ static int mt7531_phy_config_init(struct phy_device *phydev)
+ 		       FIELD_PREP(MTK_TX_DELAY_PAIR_B_MASK, 0x4) |
+ 		       FIELD_PREP(MTK_TX_DELAY_PAIR_D_MASK, 0x4));
+ 
++	/* enable asymmetric pause cap */
++	phy_set_bits(phydev, 0x4, ADVERTISE_PAUSE_ASYM);
++
+ 	/* LED Config*/
+ 	mt7530_led_config_of(phydev);
+ 
++	mt7531_phy_line_driving(phydev);
++	mt7531_phy_eee(phydev);
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/phy/mediatek/mtk-phy-lib.c b/drivers/net/phy/mediatek/mtk-phy-lib.c
+index 32520af..29e4263 100644
+--- a/drivers/net/phy/mediatek/mtk-phy-lib.c
++++ b/drivers/net/phy/mediatek/mtk-phy-lib.c
+@@ -60,6 +60,15 @@ static void __mtk_tr_write(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
+ 	__mtk_tr_access(phydev, false, ch_addr, node_addr, data_addr);
+ }
+ 
++void mtk_tr_write(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
++			u8 data_addr, u32 set)
++{
++	phy_select_page(phydev, MTK_PHY_PAGE_EXTENDED_52B5);
++	__mtk_tr_write(phydev, ch_addr, node_addr, data_addr, set);
++	phy_restore_page(phydev, MTK_PHY_PAGE_STANDARD, 0);
++}
++EXPORT_SYMBOL_GPL(mtk_tr_write);
++
+ void __mtk_tr_modify(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
+ 		     u8 data_addr, u32 mask, u32 set)
+ {
+diff --git a/drivers/net/phy/mediatek/mtk.h b/drivers/net/phy/mediatek/mtk.h
+index 8c0acea..3fd489a 100644
+--- a/drivers/net/phy/mediatek/mtk.h
++++ b/drivers/net/phy/mediatek/mtk.h
+@@ -10,7 +10,12 @@
+ 
+ #define MTK_EXT_PAGE_ACCESS			0x1f
+ #define MTK_PHY_PAGE_STANDARD			0x0000
++#define MTK_PHY_PAGE_EXTENDED_1			0x0001
+ #define MTK_PHY_PAGE_EXTENDED_52B5		0x52b5
++#define MTK_PHY_AUX_CTRL_AND_STATUS		0x14
++
++/* suprv_media_select_RefClk */
++#define   MTK_PHY_ENABLE_DOWNSHIFT		BIT(4)
+ 
+ /* Registers on MDIO_MMD_VEND2 */
+ #define MTK_PHY_LED0_ON_CTRL			0x24
+@@ -66,6 +71,8 @@
+ 
+ u32 mtk_tr_read(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
+ 		u8 data_addr);
++void mtk_tr_write(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
++			u8 data_addr, u32 set);
+ void __mtk_tr_modify(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
+ 		     u8 data_addr, u32 mask, u32 set);
+ void mtk_tr_modify(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
+-- 
+2.45.2
+

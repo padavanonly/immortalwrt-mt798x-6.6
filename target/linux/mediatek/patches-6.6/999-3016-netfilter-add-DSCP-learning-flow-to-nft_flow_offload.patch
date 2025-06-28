@@ -1,0 +1,112 @@
+From 72f95d78d690581998c5d427e5e75eeacc10df2b Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Thu, 8 May 2025 14:55:42 +0800
+Subject: [PATCH] netfilter: add DSCP learning flow to nft_flow_offload
+
+We have implemented a mechanism to learn the DSCP until count of the
+bi-directional TCP packets reached 30.
+
+User can use the command below to enable DSCP learning flow.
+ - echo 1 > /proc/sys/net/netfilter/nf_conntrack_qos
+
+Without this patch, the PPEs are unable to learn the DSCP from SKB.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ net/netfilter/nft_flow_offload.c | 49 +++++++++++++++++++++++++++++++-
+ 1 file changed, 48 insertions(+), 1 deletion(-)
+
+diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
+index 253ef56..25fda90 100644
+--- a/net/netfilter/nft_flow_offload.c
++++ b/net/netfilter/nft_flow_offload.c
+@@ -11,6 +11,7 @@
+ #include <net/ip.h> /* for ipv4 options. */
+ #include <net/netfilter/nf_tables.h>
+ #include <net/netfilter/nf_tables_core.h>
++#include <net/netfilter/nf_conntrack_qos.h>
+ #include <net/netfilter/nf_conntrack_core.h>
+ #include <net/netfilter/nf_conntrack_extend.h>
+ #include <net/netfilter/nf_flow_table.h>
+@@ -20,6 +21,19 @@ struct nft_flow_offload {
+ 	struct nft_flowtable	*flowtable;
+ };
+ 
++static void
++nft_flow_offload_dscp_init(struct flow_offload *flow, const struct nf_conn *ct,
++			   enum ip_conntrack_dir dir)
++{
++	struct nf_conn_qos *qos;
++
++	qos = nf_conn_qos_find(ct);
++	if (qos) {
++		flow->tuplehash[dir].tuple.tos = qos->tos[dir].value;
++		flow->tuplehash[!dir].tuple.tos = qos->tos[!dir].value;
++	}
++}
++
+ static enum flow_offload_xmit_type nft_xmit_type(struct dst_entry *dst)
+ {
+ 	if (dst_xfrm(dst))
+@@ -439,6 +453,11 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+ 	struct flow_offload *flow;
+ 	enum ip_conntrack_dir dir;
+ 	struct nf_conn *ct;
++	struct nf_conn_qos *qos;
++	struct ipv6hdr *ip6h;
++	struct iphdr *iph;
++	u32 offset = 0;
++	u8 tos = 0;
+ 	int ret;
+ 
+ 	if (nft_flow_offload_skip(pkt->skb, nft_pf(pkt)))
+@@ -482,10 +501,36 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+ 	if (!nf_ct_is_confirmed(ct))
+ 		goto out;
+ 
++	dir = CTINFO2DIR(ctinfo);
++
++	qos = nf_conn_qos_find(ct);
++	if (qos) {
++		switch (nft_pf(pkt)) {
++		case NFPROTO_IPV4:
++			iph = (struct iphdr *)(skb_network_header(pkt->skb) + offset);
++			tos = iph->tos;
++			break;
++		case NFPROTO_IPV6:
++			ip6h = (struct ipv6hdr *)(skb_network_header(pkt->skb) + offset);
++			tos = ipv6_get_dsfield(ip6h);
++			break;
++		}
++
++		qos->tos[dir].value = tos;
++		atomic64_add(1, &qos->tos[dir].counter);
++
++		if (atomic64_read(&qos->tos[dir].counter) < 30)
++			goto out;
++
++		if (ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum == IPPROTO_TCP) {
++			if (atomic64_read(&qos->tos[!dir].counter) < 30)
++				goto out;
++		}
++	}
++
+ 	if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status))
+ 		goto out;
+ 
+-	dir = CTINFO2DIR(ctinfo);
+ 	if (nft_flow_offload_is_bridging(pkt->skb)) {
+ 		if (nft_flow_route_bridging(pkt, ct, &route, dir, priv->flowtable) < 0)
+ 			goto err_flow_route;
+@@ -502,6 +547,8 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+ 	if (tcph)
+ 		flow_offload_ct_tcp(ct);
+ 
++	nft_flow_offload_dscp_init(flow, ct, dir);
++
+ 	__set_bit(NF_FLOW_HW_BIDIRECTIONAL, &flow->flags);
+ 	ret = flow_offload_add(flowtable, flow);
+ 	if (ret < 0)
+-- 
+2.45.2
+

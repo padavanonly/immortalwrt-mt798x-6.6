@@ -1,0 +1,60 @@
+--- a/drivers/mtd/spi-nor/core.c
++++ b/drivers/mtd/spi-nor/core.c
+@@ -3387,7 +3387,21 @@ static int spi_nor_cal_read(void *priv,
+ 	nor->read_opcode = SPINOR_OP_READ;
+ 	nor->read_dummy = 0;
+ 
+-	return nor->controller_ops->read(nor, *addr, readlen, buf);
++	return spi_nor_read_data(nor, *addr, readlen, buf);
++}
++
++static int spi_nor_cal_read_4B(void *priv, u32 *addr, int addrlen, u8 *buf,
++			    int readlen)
++{
++	struct spi_nor *nor = (struct spi_nor *)priv;
++
++	nor->reg_proto = SNOR_PROTO_1_1_1;
++	nor->read_proto = SNOR_PROTO_1_1_1;
++	nor->read_opcode = SPINOR_OP_READ_4B;
++	nor->addr_nbytes = 4;
++	nor->read_dummy = 0;
++
++	return spi_nor_read_data(nor, *addr, readlen, buf);
+ }
+ 
+ static const struct flash_info *spi_nor_get_flash_info(struct spi_nor *nor,
+@@ -3482,6 +3496,15 @@ static int spi_nor_hw_reset(struct spi_n
+ 	return 0;
+ }
+ 
++static void spi_nor_reset_read(struct spi_nor *nor)
++{
++	nor->reg_proto = SNOR_PROTO_1_1_1;
++	nor->read_proto = SNOR_PROTO_1_1_1;
++	nor->write_proto = SNOR_PROTO_1_1_1;
++	nor->addr_nbytes = 0;
++	nor->read_dummy = 0;
++}
++
+ int spi_nor_scan(struct spi_nor *nor, const char *name,
+ 		 const struct spi_nor_hwcaps *hwcaps)
+ {
+@@ -3518,8 +3541,16 @@ int spi_nor_scan(struct spi_nor *nor, co
+ 	if (ret)
+ 		return ret;
+ 
+-	if(nor->spimem)
+-		spi_mem_do_calibration(nor->spimem, spi_nor_cal_read, nor);
++	if(nor->spimem) {
++		ret = spi_mem_do_calibration(nor->spimem,
++					     spi_nor_cal_read, nor);
++		if (ret) {
++			dev_info(dev, "Switch to 4B mode to do SPI calibration\n");
++			ret = spi_mem_do_calibration(nor->spimem,
++						     spi_nor_cal_read_4B, nor);
++		}
++		spi_nor_reset_read(nor);
++	}
+ 
+ 	info = spi_nor_get_flash_info(nor, name);
+ 	if (IS_ERR(info))

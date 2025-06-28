@@ -1,0 +1,38 @@
+From 6cdcd70c51e72bf775ef8eebde4448963d45f900 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 14 Mar 2025 22:43:56 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: change TCP UDP aging out time
+
+The PPE will age out the entry earlier than the flow offload garbage
+collection (GC) work when traffic stops for a duration longer than
+the PPE TCP/UDP aging out time. During this period, the flow offload
+GC work does not teardown this flow rule. As a result, the flow offload
+cannot immediately reallocate a new flow rule when the traffic resumes.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 59a16ac..fc707d7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -1112,12 +1112,12 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+ 	      FIELD_PREP(MTK_PPE_UNBIND_AGE_DELTA, 3);
+ 	ppe_w32(ppe, MTK_PPE_UNBIND_AGE, val);
+ 
+-	val = FIELD_PREP(MTK_PPE_BIND_AGE0_DELTA_UDP, 12) |
++	val = FIELD_PREP(MTK_PPE_BIND_AGE0_DELTA_UDP, 30) |
+ 	      FIELD_PREP(MTK_PPE_BIND_AGE0_DELTA_NON_L4, 1);
+ 	ppe_w32(ppe, MTK_PPE_BIND_AGE0, val);
+ 
+ 	val = FIELD_PREP(MTK_PPE_BIND_AGE1_DELTA_TCP_FIN, 1) |
+-	      FIELD_PREP(MTK_PPE_BIND_AGE1_DELTA_TCP, 7);
++	      FIELD_PREP(MTK_PPE_BIND_AGE1_DELTA_TCP, 30);
+ 	ppe_w32(ppe, MTK_PPE_BIND_AGE1, val);
+ 
+ 	val = MTK_PPE_BIND_LIMIT0_QUARTER | MTK_PPE_BIND_LIMIT0_HALF;
+-- 
+2.45.2
+

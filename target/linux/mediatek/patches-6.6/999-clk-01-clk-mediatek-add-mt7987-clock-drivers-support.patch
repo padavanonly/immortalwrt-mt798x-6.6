@@ -1,0 +1,49 @@
+From ffc3638ed4167738d99e59f2ca4229375dc85859 Mon Sep 17 00:00:00 2001
+From: Sam Shih <sam.shih@mediatek.com>
+Date: Mon, 20 Jan 2025 19:50:03 +0800
+Subject: [PATCH 2/3] clk: mediatek: add mt7987 clock drivers support
+
+---
+ drivers/clk/mediatek/Kconfig  | 9 +++++++++
+ drivers/clk/mediatek/Makefile | 5 +++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/drivers/clk/mediatek/Kconfig b/drivers/clk/mediatek/Kconfig
+index 486401e1..1201df41 100644
+--- a/drivers/clk/mediatek/Kconfig
++++ b/drivers/clk/mediatek/Kconfig
+@@ -423,6 +423,15 @@ config COMMON_CLK_MT7986_ETHSYS
+ 	  This driver adds support for clocks for Ethernet and SGMII
+ 	  required on MediaTek MT7986 SoC.
+ 
++config COMMON_CLK_MT7987
++	tristate "Clock driver for MediaTek MT7987"
++	depends on ARCH_MEDIATEK || COMPILE_TEST
++	select COMMON_CLK_MEDIATEK
++	default ARCH_MEDIATEK
++	help
++	  This driver supports MediaTek MT7987 basic clocks and clocks
++	  required for various periperals found on this SoC.
++
+ config COMMON_CLK_MT7988
+ 	tristate "Clock driver for MediaTek MT7988"
+ 	depends on ARCH_MEDIATEK || COMPILE_TEST
+diff --git a/drivers/clk/mediatek/Makefile b/drivers/clk/mediatek/Makefile
+index eeccfa03..19a97fd3 100644
+--- a/drivers/clk/mediatek/Makefile
++++ b/drivers/clk/mediatek/Makefile
+@@ -62,6 +62,11 @@ obj-$(CONFIG_COMMON_CLK_MT7986) += clk-mt7986-apmixed.o
+ obj-$(CONFIG_COMMON_CLK_MT7986) += clk-mt7986-topckgen.o
+ obj-$(CONFIG_COMMON_CLK_MT7986) += clk-mt7986-infracfg.o
+ obj-$(CONFIG_COMMON_CLK_MT7986_ETHSYS) += clk-mt7986-eth.o
++obj-$(CONFIG_COMMON_CLK_MT7987) += clk-mt7987-apmixed.o
++obj-$(CONFIG_COMMON_CLK_MT7987) += clk-mt7987-eth.o
++obj-$(CONFIG_COMMON_CLK_MT7987) += clk-mt7987-infracfg.o
++obj-$(CONFIG_COMMON_CLK_MT7987) += clk-mt7987-mcusys.o
++obj-$(CONFIG_COMMON_CLK_MT7987) += clk-mt7987-topckgen.o
+ obj-$(CONFIG_COMMON_CLK_MT7988) += clk-mt7988-apmixed.o
+ obj-$(CONFIG_COMMON_CLK_MT7988) += clk-mt7988-topckgen.o
+ obj-$(CONFIG_COMMON_CLK_MT7988) += clk-mt7988-infracfg.o
+-- 
+2.45.2
+

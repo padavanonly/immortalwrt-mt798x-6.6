@@ -1,0 +1,222 @@
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -706,6 +706,22 @@ int genphy_c45_write_eee_adv(struct phy_
+ 			changed = 1;
+ 	}
+ 
++	if (linkmode_intersects(phydev->supported_eee, PHY_EEE_CAP2_FEATURES)) {
++		val = linkmode_to_mii_eee_cap2_t(adv);
++
++		/* IEEE 802.3-2022 45.2.7.16 EEE advertisement 2
++		 * (Register 7.62)
++		 */
++		val = phy_modify_mmd_changed(phydev, MDIO_MMD_AN,
++					     MDIO_AN_EEE_ADV2,
++					     MDIO_EEE_2_5GT | MDIO_EEE_5GT,
++					     val);
++		if (val < 0)
++			return val;
++		if (val > 0)
++			changed = 1;
++	}
++
+ 	if (linkmode_test_bit(ETHTOOL_LINK_MODE_10baseT1L_Full_BIT,
+ 			      phydev->supported_eee)) {
+ 		val = linkmode_adv_to_mii_10base_t1_t(adv);
+@@ -745,6 +761,17 @@ int genphy_c45_read_eee_adv(struct phy_d
+ 		mii_eee_cap1_mod_linkmode_t(adv, val);
+ 	}
+ 
++	if (linkmode_intersects(phydev->supported_eee, PHY_EEE_CAP2_FEATURES)) {
++		/* IEEE 802.3-2022 45.2.7.16 EEE advertisement 2
++		 * (Register 7.62)
++		 */
++		val = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV2);
++		if (val < 0)
++			return val;
++
++		mii_eee_cap2_mod_linkmode_adv_t(adv, val);
++	}
++
+ 	if (linkmode_test_bit(ETHTOOL_LINK_MODE_10baseT1L_Full_BIT,
+ 			      phydev->supported_eee)) {
+ 		/* IEEE 802.3cg-2019 45.2.7.25 10BASE-T1 AN control register
+@@ -781,6 +808,17 @@ static int genphy_c45_read_eee_lpa(struc
+ 		mii_eee_cap1_mod_linkmode_t(lpa, val);
+ 	}
+ 
++	if (linkmode_intersects(phydev->supported_eee, PHY_EEE_CAP2_FEATURES)) {
++		/* IEEE 802.3-2022 45.2.7.17 EEE link partner ability 2
++		 * (Register 7.63)
++		 */
++		val = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_LPABLE2);
++		if (val < 0)
++			return val;
++
++		mii_eee_cap2_mod_linkmode_adv_t(lpa, val);
++	}
++
+ 	if (linkmode_test_bit(ETHTOOL_LINK_MODE_10baseT1L_Full_BIT,
+ 			      phydev->supported_eee)) {
+ 		/* IEEE 802.3cg-2019 45.2.7.26 10BASE-T1 AN status register
+@@ -831,6 +869,30 @@ static int genphy_c45_read_eee_cap1(stru
+ }
+ 
+ /**
++ * genphy_c45_read_eee_cap2 - read supported EEE link modes from register 3.21
++ * @phydev: target phy_device struct
++ */
++static int genphy_c45_read_eee_cap2(struct phy_device *phydev)
++{
++	int val;
++
++	/* IEEE 802.3-2022 45.2.3.11 EEE control and capability 2
++	 * (Register 3.21)
++	 */
++	val = phy_read_mmd(phydev, MDIO_MMD_PCS, MDIO_PCS_EEE_ABLE2);
++	if (val < 0)
++		return val;
++
++	/* IEEE 802.3-2022 45.2.3.11 says 9 bits are reserved. */
++	if (val == 0xffff)
++		return 0;
++
++	mii_eee_cap2_mod_linkmode_sup_t(phydev->supported_eee, val);
++
++	return 0;
++}
++
++/**
+  * genphy_c45_read_eee_abilities - read supported EEE link modes
+  * @phydev: target phy_device struct
+  */
+@@ -847,6 +909,13 @@ int genphy_c45_read_eee_abilities(struct
+ 		if (val)
+ 			return val;
+ 	}
++
++	/* Same for cap2 (3.21) */
++	if (linkmode_intersects(phydev->supported, PHY_EEE_CAP2_FEATURES)) {
++		val = genphy_c45_read_eee_cap2(phydev);
++		if (val)
++			return val;
++	}
+ 
+ 	if (linkmode_test_bit(ETHTOOL_LINK_MODE_10baseT1L_Full_BIT,
+ 			      phydev->supported)) {
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -148,6 +148,14 @@ static const int phy_eee_cap1_features_a
+ __ETHTOOL_DECLARE_LINK_MODE_MASK(phy_eee_cap1_features) __ro_after_init;
+ EXPORT_SYMBOL_GPL(phy_eee_cap1_features);
+ 
++static const int phy_eee_cap2_features_array[] = {
++	ETHTOOL_LINK_MODE_2500baseT_Full_BIT,
++	ETHTOOL_LINK_MODE_5000baseT_Full_BIT,
++};
++
++__ETHTOOL_DECLARE_LINK_MODE_MASK(phy_eee_cap2_features) __ro_after_init;
++EXPORT_SYMBOL_GPL(phy_eee_cap2_features);
++
+ static void features_init(void)
+ {
+ 	/* 10/100 half/full*/
+@@ -232,6 +240,9 @@ static void features_init(void)
+ 	linkmode_set_bit_array(phy_eee_cap1_features_array,
+ 			       ARRAY_SIZE(phy_eee_cap1_features_array),
+ 			       phy_eee_cap1_features);
++	linkmode_set_bit_array(phy_eee_cap2_features_array,
++			       ARRAY_SIZE(phy_eee_cap2_features_array),
++			       phy_eee_cap2_features);
+ 
+ }
+ 
+--- a/include/linux/mdio.h
++++ b/include/linux/mdio.h
+@@ -439,6 +439,42 @@ static inline void mii_eee_cap1_mod_link
+ }
+ 
+ /**
++ * mii_eee_cap2_mod_linkmode_sup_t()
++ * @adv: target the linkmode settings
++ * @val: register value
++ *
++ * A function that translates value of following registers to the linkmode:
++ * IEEE 802.3-2022 45.2.3.11 "EEE control and capability 2" register (3.21)
++ */
++static inline void mii_eee_cap2_mod_linkmode_sup_t(unsigned long *adv, u32 val)
++{
++	linkmode_mod_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT,
++			 adv, val & MDIO_EEE_2_5GT);
++	linkmode_mod_bit(ETHTOOL_LINK_MODE_5000baseT_Full_BIT,
++			 adv, val & MDIO_EEE_5GT);
++}
++
++/**
++ * mii_eee_cap2_mod_linkmode_adv_t()
++ * @adv: target the linkmode advertisement settings
++ * @val: register value
++ *
++ * A function that translates value of following registers to the linkmode:
++ * IEEE 802.3-2022 45.2.7.16 "EEE advertisement 2" register (7.62)
++ * IEEE 802.3-2022 45.2.7.17 "EEE link partner ability 2" register (7.63)
++ * Note: Currently this function is the same as mii_eee_cap2_mod_linkmode_sup_t.
++ *       For certain, not yet supported, modes however the bits differ.
++ *       Therefore create separate functions already.
++ */
++static inline void mii_eee_cap2_mod_linkmode_adv_t(unsigned long *adv, u32 val)
++{
++	linkmode_mod_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT,
++			 adv, val & MDIO_EEE_2_5GT);
++	linkmode_mod_bit(ETHTOOL_LINK_MODE_5000baseT_Full_BIT,
++			 adv, val & MDIO_EEE_5GT);
++}
++
++/**
+  * linkmode_to_mii_eee_cap1_t()
+  * @adv: the linkmode advertisement settings
+  *
+@@ -464,6 +500,25 @@ static inline u32 linkmode_to_mii_eee_ca
+ 
+ 	return result;
+ }
++
++/**
++ * linkmode_to_mii_eee_cap2_t()
++ * @adv: the linkmode advertisement settings
++ *
++ * A function that translates linkmode to value for IEEE 802.3-2022 45.2.7.16
++ * "EEE advertisement 2" register (7.62)
++ */
++static inline u32 linkmode_to_mii_eee_cap2_t(unsigned long *adv)
++{
++	u32 result = 0;
++
++	if (linkmode_test_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT, adv))
++		result |= MDIO_EEE_2_5GT;
++	if (linkmode_test_bit(ETHTOOL_LINK_MODE_5000baseT_Full_BIT, adv))
++		result |= MDIO_EEE_5GT;
++
++	return result;
++}
+ 
+ /**
+  * mii_10base_t1_adv_mod_linkmode_t()
+--- a/include/linux/phy.h
++++ b/include/linux/phy.h
+@@ -54,6 +54,7 @@ extern __ETHTOOL_DECLARE_LINK_MODE_MASK(
+ extern __ETHTOOL_DECLARE_LINK_MODE_MASK(phy_10gbit_fec_features) __ro_after_init;
+ extern __ETHTOOL_DECLARE_LINK_MODE_MASK(phy_10gbit_full_features) __ro_after_init;
+ extern __ETHTOOL_DECLARE_LINK_MODE_MASK(phy_eee_cap1_features) __ro_after_init;
++extern __ETHTOOL_DECLARE_LINK_MODE_MASK(phy_eee_cap2_features) __ro_after_init;
+ 
+ #define PHY_BASIC_FEATURES ((unsigned long *)&phy_basic_features)
+ #define PHY_BASIC_T1_FEATURES ((unsigned long *)&phy_basic_t1_features)
+@@ -65,6 +66,7 @@ extern __ETHTOOL_DECLARE_LINK_MODE_MASK(
+ #define PHY_10GBIT_FEC_FEATURES ((unsigned long *)&phy_10gbit_fec_features)
+ #define PHY_10GBIT_FULL_FEATURES ((unsigned long *)&phy_10gbit_full_features)
+ #define PHY_EEE_CAP1_FEATURES ((unsigned long *)&phy_eee_cap1_features)
++#define PHY_EEE_CAP2_FEATURES ((unsigned long *)&phy_eee_cap2_features)
+ 
+ extern const int phy_basic_ports_array[3];
+ extern const int phy_fibre_port_array[1];

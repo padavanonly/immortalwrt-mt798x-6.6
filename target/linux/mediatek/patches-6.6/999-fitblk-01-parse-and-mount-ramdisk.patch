@@ -1,0 +1,26 @@
+--- a/drivers/block/fitblk.c
++++ b/drivers/block/fitblk.c
+@@ -461,6 +461,11 @@ static int parse_fit_on_dev(struct devic
+ 	config_loadables = fdt_getprop(fit, node, FIT_LOADABLE_PROP,
+ 				       &config_loadables_len);
+ 
++	/* when ramdisk is mounted as rootfs, its image type is ramdisk,
++	   and performing the same function as loadable */
++	if (!config_loadables)
++		config_loadables = fdt_getprop(fit, node, FIT_RAMDISK_PROP, &config_loadables_len);
++
+ 	pr_info("FIT: %s configuration: \"%.*s\"%s%.*s%s\n",
+ 		bootconf ? "Selected" : "Default",
+ 		bootconf ? bootconf_len : config_default_len,
+@@ -517,8 +522,9 @@ static int parse_fit_on_dev(struct devic
+ 			image_description ? image_description_len : 0,
+ 			image_description ?: "", image_description ? ") " : "");
+ 
+-		/* only 'filesystem' images should be mapped as partitions */
+-		if (strncmp(image_type, FIT_FILESYSTEM_PROP, image_type_len))
++		/* only 'filesystem' or 'ramdisk' images should be mapped as partitions */
++		if (strncmp(image_type, FIT_FILESYSTEM_PROP, image_type_len) &&
++		    strncmp(image_type, FIT_RAMDISK_PROP, image_type_len))
+ 			continue;
+ 
+ 		/* check if sub-image is part of configured loadables */

@@ -1,0 +1,35 @@
+Subject: [PATCH] net-dsa-add-mxl862xx-dsa-driver-kconfig
+
+---
+ drivers/net/dsa/Kconfig  | 2 ++
+ drivers/net/dsa/Makefile | 1 +
+ 2 files changed, 3 insertions(+)
+
+diff --git a/drivers/net/dsa/Kconfig b/drivers/net/dsa/Kconfig
+index b373646..faf4668 100644
+--- a/drivers/net/dsa/Kconfig
++++ b/drivers/net/dsa/Kconfig
+@@ -92,6 +92,8 @@ source "drivers/net/dsa/ocelot/Kconfig"
+ 
+ source "drivers/net/dsa/qca/Kconfig"
+ 
++source "drivers/net/dsa/mxl862xx/Kconfig"
++
+ source "drivers/net/dsa/sja1105/Kconfig"
+ 
+ source "drivers/net/dsa/xrs700x/Kconfig"
+diff --git a/drivers/net/dsa/Makefile b/drivers/net/dsa/Makefile
+index 66b60a0..9980eb1 100644
+--- a/drivers/net/dsa/Makefile
++++ b/drivers/net/dsa/Makefile
+@@ -22,6 +22,7 @@ obj-y				+= b53/
+ obj-y				+= hirschmann/
+ obj-y				+= microchip/
+ obj-y				+= mv88e6xxx/
++obj-y				+= mxl862xx/
+ obj-y				+= ocelot/
+ obj-y				+= qca/
+ obj-y				+= realtek/
+-- 
+2.45.2
+

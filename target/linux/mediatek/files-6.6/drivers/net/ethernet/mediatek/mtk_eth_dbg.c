@@ -15,7 +15,6 @@
  *   Copyright (C) 2013-2016 Michael Lee <igvtee@gmail.com>
  */
 
-
 #include <linux/trace_seq.h>
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>

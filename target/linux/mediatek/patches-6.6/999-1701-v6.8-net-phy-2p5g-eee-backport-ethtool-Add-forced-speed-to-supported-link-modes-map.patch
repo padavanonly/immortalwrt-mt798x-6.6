@@ -1,0 +1,127 @@
+From 26c5334d344db7a9bffa1f5ce87d9045b5e90383 Mon Sep 17 00:00:00 2001
+From: Paul Greenwalt <paul.greenwalt@intel.com>
+Date: Sun, 15 Oct 2023 19:43:02 -0400
+Subject: [PATCH] ethtool: Add forced speed to supported link modes maps
+
+The need to map Ethtool forced speeds to Ethtool supported link modes is
+common among drivers. To support this, add a common structure for forced
+speed maps and a function to init them.  This is solution was originally
+introduced in commit 1d4e4ecccb11 ("qede: populate supported link modes
+maps on module init") for qede driver.
+
+ethtool_forced_speed_maps_init() should be called during driver init
+with an array of struct ethtool_forced_speed_map to populate the mapping.
+
+Definitions for maps themselves are left in the driver code, as the sets
+of supported link modes may vary between the devices.
+
+Suggested-by: Andrew Lunn <andrew@lunn.ch>
+Reviewed-by: Jacob Keller <jacob.e.keller@intel.com>
+Reviewed-by: Przemek Kitszel <przemyslaw.kitszel@intel.com>
+Signed-off-by: Pawel Chmielewski <pawel.chmielewski@intel.com>
+Signed-off-by: Paul Greenwalt <paul.greenwalt@intel.com>
+Reviewed-by: Simon Horman <horms@kernel.org>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ include/linux/ethtool.h  | 37 +++++++++++++++++++++++++++++++++++++
+ include/linux/linkmode.h | 29 +++++++++++++++--------------
+ 2 files changed, 52 insertions(+), 14 deletions(-)
+
+--- a/include/linux/ethtool.h
++++ b/include/linux/ethtool.h
+@@ -13,6 +13,7 @@
+ #ifndef _LINUX_ETHTOOL_H
+ #define _LINUX_ETHTOOL_H
+ 
++#include <linux/linkmode.h>
+ #include <linux/bitmap.h>
+ #include <linux/compat.h>
+ #include <linux/if_ether.h>
+@@ -1053,6 +1054,42 @@ static inline int ethtool_mm_frag_size_m
+  */
+ extern __printf(2, 3) void ethtool_sprintf(u8 **data, const char *fmt, ...);
+ 
++/* Link mode to forced speed capabilities maps */
++struct ethtool_forced_speed_map {
++	u32		speed;
++	__ETHTOOL_DECLARE_LINK_MODE_MASK(caps);
++
++	const u32	*cap_arr;
++	u32		arr_size;
++};
++
++#define ETHTOOL_FORCED_SPEED_MAP(prefix, value)				\
++{									\
++	.speed		= SPEED_##value,				\
++	.cap_arr	= prefix##_##value,				\
++	.arr_size	= ARRAY_SIZE(prefix##_##value),			\
++}
++
++/**
++ * ethtool_forced_speed_maps_init
++ * @maps: Pointer to an array of Ethtool forced speed map
++ * @size: Array size
++ *
++ * Initialize an array of Ethtool forced speed map to Ethtool link modes. This
++ * should be called during driver module init.
++ */
++static inline void
++ethtool_forced_speed_maps_init(struct ethtool_forced_speed_map *maps, u32 size)
++{
++	for (u32 i = 0; i < size; i++) {
++		struct ethtool_forced_speed_map *map = &maps[i];
++
++		linkmode_set_bit_array(map->cap_arr, map->arr_size, map->caps);
++		map->cap_arr = NULL;
++		map->arr_size = 0;
++	}
++}
++
+ /**
+  * ethtool_puts - Write string to ethtool string data
+  * @data: Pointer to a pointer to the start of string to update
+--- a/include/linux/linkmode.h
++++ b/include/linux/linkmode.h
+@@ -2,6 +2,21 @@
+ #define __LINKMODE_H
+ 
+ #include <linux/bitmap.h>
++
++static inline void linkmode_set_bit(int nr, volatile unsigned long *addr)
++{
++	__set_bit(nr, addr);
++}
++
++static inline void linkmode_set_bit_array(const int *array, int array_size,
++					  unsigned long *addr)
++{
++	int i;
++
++	for (i = 0; i < array_size; i++)
++		linkmode_set_bit(array[i], addr);
++}
++
+ #include <linux/ethtool.h>
+ #include <uapi/linux/ethtool.h>
+ 
+@@ -38,20 +53,6 @@ static inline int linkmode_andnot(unsign
+ 	return bitmap_andnot(dst, src1, src2,  __ETHTOOL_LINK_MODE_MASK_NBITS);
+ }
+ 
+-static inline void linkmode_set_bit(int nr, volatile unsigned long *addr)
+-{
+-	__set_bit(nr, addr);
+-}
+-
+-static inline void linkmode_set_bit_array(const int *array, int array_size,
+-					  unsigned long *addr)
+-{
+-	int i;
+-
+-	for (i = 0; i < array_size; i++)
+-		linkmode_set_bit(array[i], addr);
+-}
+-
+ static inline void linkmode_clear_bit(int nr, volatile unsigned long *addr)
+ {
+ 	__clear_bit(nr, addr);

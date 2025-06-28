@@ -1,0 +1,177 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Neal.Yen <neal.yen@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/leds/common.h>
+
+/ {
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			compatible = "mediatek,mt7988a-rfb-gsw",
+						 "mediatek,mt7988a",
+						 "mediatek,mt7988";
+		};
+	};
+
+	fragment@1 {
+		target = <&switch>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@2 {
+		target = <&ethwarp>;
+		__overlay__ {
+			compatible = "mediatek,mt7988-ethwarp", "syscon";
+		};
+	};
+
+	fragment@3 {
+		target = <&gsw>;
+		__overlay__ {
+			compatible = "mediatek,mt753x", "mediatek,mt7988-gsw-switch", "syscon";
+			mediatek,sysctrl = <&ethwarp>;
+			mediatek,mdio = <&mdio_bus>;
+			mediatek,portmap = "llllw";
+			mediatek,mdio_master_pinmux = <1>;
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SPI 209 IRQ_TYPE_LEVEL_HIGH>;
+			status = "okay";
+
+			port6: port@6 {
+				compatible = "mediatek,mt753x-port";
+				mediatek,ssc-on;
+				phy-mode = "10gbase-kr";
+				reg = <6>;
+				fixed-link {
+					speed = <10000>;
+					full-duplex;
+				};
+			};
+
+			mdio1: mdio-bus {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				mediatek,pio = <&pio>;
+
+				gsw_phy0: ethernet-phy@0 {
+					compatible = "ethernet-phy-ieee802.3-c22";
+					reg = <0>;
+					phy-mode = "internal";
+					pinctrl-names = "gbe-led";
+					pinctrl-0 = <&gbe0_led0_pins>;
+					nvmem-cells = <&phy_calibration_p0>;
+					nvmem-cell-names = "phy-cal-data";
+
+					leds {
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						gsw_phy0_led0: gsw-phy0-led0@0 {
+							reg = <0>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+
+						gsw_phy0_led1: gsw-phy0-led1@1 {
+							reg = <1>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+					};
+				};
+
+				gsw_phy1: ethernet-phy@1 {
+					compatible = "ethernet-phy-ieee802.3-c22";
+					reg = <1>;
+					phy-mode = "internal";
+					pinctrl-names = "gbe-led";
+					pinctrl-0 = <&gbe1_led0_pins>;
+					nvmem-cells = <&phy_calibration_p1>;
+					nvmem-cell-names = "phy-cal-data";
+
+					leds {
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						gsw_phy1_led0: gsw-phy1-led0@0 {
+							reg = <0>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+
+						gsw_phy1_led1: gsw-phy1-led1@1 {
+							reg = <1>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+					};
+				};
+
+				gsw_phy2: ethernet-phy@2 {
+					compatible = "ethernet-phy-ieee802.3-c22";
+					reg = <2>;
+					phy-mode = "internal";
+					pinctrl-names = "gbe-led";
+					pinctrl-0 = <&gbe2_led0_pins>;
+					nvmem-cells = <&phy_calibration_p2>;
+					nvmem-cell-names = "phy-cal-data";
+
+					leds {
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						gsw_phy2_led0: gsw-phy2-led0@0 {
+							reg = <0>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+
+						gsw_phy2_led1: gsw-phy2-led1@1 {
+							reg = <1>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+					};
+				};
+
+				gsw_phy3: ethernet-phy@3 {
+					compatible = "ethernet-phy-ieee802.3-c22";
+					reg = <3>;
+					phy-mode = "internal";
+					pinctrl-names = "gbe-led";
+					pinctrl-0 = <&gbe3_led0_pins>;
+					nvmem-cells = <&phy_calibration_p3>;
+					nvmem-cell-names = "phy-cal-data";
+
+					leds {
+						#address-cells = <1>;
+						#size-cells = <0>;
+
+						gsw_phy3_led0: gsw-phy3-led0@0 {
+							reg = <0>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+
+						gsw_phy3_led1: gsw-phy3-led1@1 {
+							reg = <1>;
+							function = LED_FUNCTION_LAN;
+							status = "disabled";
+						};
+					};
+				};
+			};
+		};
+	};
+};

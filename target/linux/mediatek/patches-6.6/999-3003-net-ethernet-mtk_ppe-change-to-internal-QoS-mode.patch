@@ -1,0 +1,299 @@
+From 86da9211e9f658ab48b869e3759511cf768b2099 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Tue, 10 Jun 2025 17:25:20 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: change to internal QoS mode
+
+Without this patch, the users are unable to use the proprietary HQoS
+and PPPQ modes.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   | 18 +++++
+ .../net/ethernet/mediatek/mtk_ppe_debugfs.c   | 94 +++++++++++++++++++
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   | 40 ++++++--
+ include/net/flow_offload.h                    |  1 +
+ net/netfilter/nf_flow_table_offload.c         |  4 +-
+ 5 files changed, 148 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index f809b8f..e448b93 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1680,6 +1681,7 @@ struct mtk_eth {
+ 
+ 	struct metadata_dst		*dsa_meta[MTK_MAX_DSA_PORTS];
+ 
++	u8				qos_toggle;
+ 	struct mtk_ppe			*ppe[3];
+ 	struct rhashtable		flow_table;
+ 
+@@ -1885,6 +1887,23 @@ static inline u32 mtk_get_ib2_multicast_mask(struct mtk_eth *eth)
+ 	return MTK_FOE_IB2_MULTICAST;
+ }
+ 
++static inline int
++mtk_ppe_check_pppq_path(struct mtk_mac *mac, struct mtk_foe_entry *foe, int dsa_port)
++{
++	u32 sp = mtk_get_ib1_sp(mac->hw, foe);
++	bool wifi_rx;
++
++	wifi_rx = (sp == PSE_WDMA0_PORT ||
++		   sp == PSE_WDMA1_PORT ||
++		   sp == PSE_WDMA2_PORT);
++
++	if ((dsa_port >= 0 && dsa_port <= 4) ||
++	    (dsa_port == 5 && wifi_rx))
++		return 1;
++
++	return 0;
++}
++
+ static inline bool mtk_interface_mode_is_xgmii(phy_interface_t interface)
+ {
+ 	switch (interface) {
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+index 0ba49a5..129bde4 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+@@ -195,6 +195,62 @@ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index)
+ 	return 0;
+ }
+ 
++static int
++mtk_ppe_internal_debugfs_read_qos(struct seq_file *m, void *private)
++{
++	struct mtk_eth *eth = m->private;
++
++	if (eth->qos_toggle == 0)
++		pr_info("HQoS is disabled now!\n");
++	else if (eth->qos_toggle == 1)
++		pr_info("HQoS is enabled now!\n");
++	else if (eth->qos_toggle == 2)
++		pr_info("Per-port-per-queue mode is enabled!\n");
++
++	return 0;
++}
++
++static int mtk_ppe_internal_debugfs_open_qos(struct inode *inode, struct file *file)
++{
++	return single_open(file, mtk_ppe_internal_debugfs_read_qos,
++			   inode->i_private);
++}
++
++static ssize_t
++mtk_ppe_internal_debugfs_write_qos(struct file *file, const char __user *buffer,
++				   size_t count, loff_t *data)
++{
++	struct seq_file *m = file->private_data;
++	struct mtk_eth *eth = m->private;
++	char buf[8];
++	int len = count;
++
++	if ((len > 8) || copy_from_user(buf, buffer, len))
++		return -EFAULT;
++
++	if (buf[0] == '0') {
++		pr_info("HQoS is going to be disabled !\n");
++		eth->qos_toggle = 0;
++	} else if (buf[0] == '1') {
++		pr_info("HQoS mode is going to be enabled !\n");
++		eth->qos_toggle = 1;
++	} else if (buf[0] == '2') {
++		pr_info("Per-port-per-queue mode is going to be enabled !\n");
++		pr_info("PPPQ use qid 3~8 (scheduler 0).\n");
++		eth->qos_toggle = 2;
++	}
++
++	return len;
++}
++
++static const struct file_operations mtk_ppe_internal_debugfs_qos_fops = {
++	.open = mtk_ppe_internal_debugfs_open_qos,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.write = mtk_ppe_internal_debugfs_write_qos,
++	.release = single_release,
++};
++
+ static int
+ mtk_ppe_internal_debugfs_foe_all_show(struct seq_file *m, void *private)
+ {
+@@ -240,6 +296,9 @@ DEFINE_SHOW_ATTRIBUTE(mtk_ppe_internal_debugfs_foe_bind);
+ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
+ {
+ 	struct dentry *root;
++	char name[16], name_symlink[48];
++	long i;
++	int ret = 0;
+ 
+ 	root = debugfs_create_dir("mtk_ppe", NULL);
+ 	if (!root)
+@@ -249,6 +308,41 @@ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
+ 			    &mtk_ppe_internal_debugfs_foe_all_fops);
+ 	debugfs_create_file("bind", S_IRUGO, root, eth,
+ 			    &mtk_ppe_internal_debugfs_foe_bind_fops);
++	debugfs_create_file("qos_toggle", S_IRUGO, root, eth,
++			    &mtk_ppe_internal_debugfs_qos_fops);
++
++	for (i = 0; i < (mtk_is_netsys_v2_or_greater(eth) ? 4 : 2); i++) {
++		ret = snprintf(name, sizeof(name), "qdma_sch%ld", i);
++		if (ret != strlen(name)) {
++			ret = -ENOMEM;
++			goto err;
++		}
++		ret = snprintf(name_symlink, sizeof(name_symlink),
++			       "/sys/kernel/debug/mtketh/qdma_sch%ld", i);
++		if (ret != strlen(name_symlink)) {
++			ret = -ENOMEM;
++			goto err;
++		}
++		debugfs_create_symlink(name, root, name_symlink);
++	}
++
++	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
++		ret = snprintf(name, sizeof(name), "qdma_txq%ld", i);
++		if (ret != strlen(name)) {
++			ret = -ENOMEM;
++			goto err;
++		}
++		ret = snprintf(name_symlink, sizeof(name_symlink),
++			       "/sys/kernel/debug/mtketh/qdma_txq%ld", i);
++		if (ret != strlen(name_symlink)) {
++			ret = -ENOMEM;
++			goto err;
++		}
++		debugfs_create_symlink(name, root, name_symlink);
++	}
+ 
+ 	return 0;
++
++err:
++	return ret;
+ }
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index 372ed66..9be31fe 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -9,6 +9,8 @@
+ #include <linux/ipv6.h>
+ #include <net/flow_offload.h>
+ #include <net/pkt_cls.h>
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_flow_table.h>
+ #include <net/dsa.h>
+ #include "mtk_eth_soc.h"
+ #include "mtk_wed.h"
+@@ -187,10 +189,11 @@ mtk_flow_get_dsa_port(struct net_device **dev)
+ 
+ static int
+ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+-			   struct net_device *dev, const u8 *dest_mac,
++			   struct net_device *dev, struct nf_conn *ct, const u8 *dest_mac,
+ 			   int *wed_index)
+ {
+ 	struct mtk_wdma_info info = {};
++	struct mtk_mac *mac;
+ 	int pse_port, dsa_port, queue;
+ 
+ 	info.tid = dscp;
+@@ -221,22 +224,43 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 
+ 	dsa_port = mtk_flow_get_dsa_port(&dev);
+ 
+-	if (dev == eth->netdev[0])
++	if (dev == eth->netdev[0]) {
++		mac = eth->mac[0];
+ 		pse_port = PSE_GDM1_PORT;
+-	else if (dev == eth->netdev[1])
++	} else if (dev == eth->netdev[1]) {
++		mac = eth->mac[1];
+ 		pse_port = PSE_GDM2_PORT;
+-	else if (dev == eth->netdev[2])
++	} else if (dev == eth->netdev[2]) {
++		mac = eth->mac[2];
+ 		pse_port = PSE_GDM3_PORT;
+-	else
++	} else
+ 		return -EOPNOTSUPP;
+ 
+ 	if (dsa_port >= 0) {
+ 		mtk_foe_entry_set_dsa(eth, foe, dsa_port);
+ 		queue = 3 + dsa_port;
+ 	} else {
+-		queue = pse_port - 1;
++		queue = (pse_port == PSE_GDM3_PORT) ? 2 : pse_port - 1;
++	}
++
++	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(mac, foe, dsa_port))
++		mtk_foe_entry_set_queue(eth, foe, queue);
++	else if (eth->qos_toggle == 1 || (ct->mark & MTK_QDMA_QUEUE_MASK) >= 9) {
++		u8 qos_ul_toggle;
++
++		if (eth->qos_toggle == 2)
++			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 9 ? 1 : 0;
++		else
++			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 1 ? 1 : 0;
++
++		if (qos_ul_toggle == 1) {
++			if (dev == eth->netdev[1])
++				mtk_foe_entry_set_queue(eth, foe, (ct->mark >> 16) & MTK_QDMA_QUEUE_MASK);
++			else
++				mtk_foe_entry_set_queue(eth, foe, ct->mark & MTK_QDMA_QUEUE_MASK);
++		} else
++			mtk_foe_entry_set_queue(eth, foe, ct->mark & MTK_QDMA_QUEUE_MASK);
+ 	}
+-	mtk_foe_entry_set_queue(eth, foe, queue);
+ 
+ out:
+ 	mtk_foe_entry_set_pse_port(eth, foe, pse_port);
+@@ -461,7 +485,7 @@ mtk_flow_offload_replace(struct mtk_eth *eth, struct flow_cls_offload *f,
+ 
+ 	mtk_foe_entry_set_sp(eth->ppe[ppe_index], &foe);
+ 
+-	err = mtk_flow_set_output_device(eth, &foe, odev, data.eth.h_dest,
++	err = mtk_flow_set_output_device(eth, &foe, odev, f->flow->ct, data.eth.h_dest,
+ 					 &wed_index);
+ 	if (err)
+ 		return err;
+diff --git a/include/net/flow_offload.h b/include/net/flow_offload.h
+index 9efa9a5..77635e6 100644
+--- a/include/net/flow_offload.h
++++ b/include/net/flow_offload.h
+@@ -603,6 +603,7 @@ struct flow_cls_offload {
+ 	enum flow_cls_command command;
+ 	bool use_act_stats;
+ 	unsigned long cookie;
++	struct flow_offload *flow;
+ 	struct flow_rule *rule;
+ 	struct flow_stats stats;
+ 	u32 classid;
+diff --git a/net/netfilter/nf_flow_table_offload.c b/net/netfilter/nf_flow_table_offload.c
+index 3d46372..9189ece 100644
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -820,11 +820,13 @@ static int nf_flow_offload_alloc(const struct flow_offload_work *offload,
+ }
+ 
+ static void nf_flow_offload_init(struct flow_cls_offload *cls_flow,
++				 struct flow_offload *flow,
+ 				 __be16 proto, int priority,
+ 				 enum flow_cls_command cmd,
+ 				 const struct flow_offload_tuple *tuple,
+ 				 struct netlink_ext_ack *extack)
+ {
++	cls_flow->flow = flow;
+ 	cls_flow->common.protocol = proto;
+ 	cls_flow->common.prio = priority;
+ 	cls_flow->common.extack = extack;
+@@ -846,7 +848,7 @@ static int nf_flow_offload_tuple(struct nf_flowtable *flowtable,
+ 	__be16 proto = ETH_P_ALL;
+ 	int err, i = 0;
+ 
+-	nf_flow_offload_init(&cls_flow, proto, priority, cmd,
++	nf_flow_offload_init(&cls_flow, flow, proto, priority, cmd,
+ 			     &flow->tuplehash[dir].tuple, &extack);
+ 	if (cmd == FLOW_CLS_REPLACE)
+ 		cls_flow.rule = flow_rule->rule;
+-- 
+2.45.2
+

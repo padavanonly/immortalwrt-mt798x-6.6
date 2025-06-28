@@ -28,6 +28,62 @@
 			no-sd;
 			no-sdio;
 			status = "okay";
+
+			card@0 {
+				compatible = "mmc-card";
+				reg = <0>;
+
+				block {
+					compatible = "block-device";
+					partitions {
+						block-partition-env {
+							partname = "u-boot-env";
+							nvmem-layout {
+								compatible = "u-boot,env-layout";
+							};
+						};
+
+						block-partition-factory {
+							partname = "factory";
+
+							nvmem-layout {
+								compatible = "fixed-layout";
+								#address-cells = <1>;
+								#size-cells = <1>;
+
+								eeprom_factory_0: eeprom@0 {
+									reg = <0x0 0x1e00>;
+								};
+							};
+						};
+
+						emmc_rootfs: block-partition-production {
+							partname = "firmware";
+						};
+					};
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&pcie0>;
+		__overlay__ {
+			slot0: pcie@0,0 {
+				reg = <0x0000 0 0 0 0>;
+				mt7996@0,0 {
+					reg = <0x0000 0 0 0 0>;
+					nvmem-cells = <&eeprom_factory_0>;
+					nvmem-cell-names = "eeprom";
+				};
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/chosen";
+		__overlay__ {
+			rootdisk-emmc = <&emmc_rootfs>;
 		};
 	};
 };

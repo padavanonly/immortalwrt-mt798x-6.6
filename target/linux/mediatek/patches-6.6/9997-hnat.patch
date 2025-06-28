@@ -1,0 +1,197 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-06-15 22:32:46.146001496 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-06-16 22:18:52.874002024 +0800
+@@ -26,7 +26,7 @@
+ #define MTK_MAX_DSA_PORTS	7
+ #define MTK_DSA_PORT_MASK	GENMASK(2, 0)
+ 
+-#define MTK_QDMA_NUM_QUEUES	16
++#define MTK_QDMA_NUM_QUEUES	16
+ #define MTK_QDMA_QUEUE_MASK	((1ULL << MTK_QDMA_NUM_QUEUES) - 1)
+ #define MTK_QDMA_PAGE_SIZE	2048
+ #define MTK_MAX_RX_LENGTH	1536
+@@ -439,7 +439,7 @@
+ 
+ /* QDMA TX NUM */
+ #define QID_BITS_V2(x)		(((x) & 0x3f) << 16)
+-#define MTK_QDMA_GMAC2_QID	8
++#define MTK_QDMA_GMAC2_QID	32
+ 
+ #define MTK_TX_DMA_BUF_SHIFT	8
+
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-15 22:32:46.130001496 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-18 00:22:51.492001032 +0800
+@@ -39,11 +39,14 @@
+ #if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
+ #include "mtk_hnat/nf_hnat_mtk.h"
+ #endif
+-
++static int mtk_wifi_num = 0;
++static int mtk_rest_cnt = 0;
++atomic_t eth1_in_br = ATOMIC_INIT(2);
++EXPORT_SYMBOL(eth1_in_br);
+ static int mtk_msg_level = -1;
+ module_param_named(msg_level, mtk_msg_level, int, 0);
+ MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
+-
++DECLARE_COMPLETION(wait_ser_done);
+ #define MTK_ETHTOOL_STAT(x) { #x, \
+ 			      offsetof(struct mtk_hw_stats, x) / sizeof(u64) }
+ 
+@@ -938,7 +941,6 @@
+ {
+ 	const struct mtk_soc_data *soc = eth->soc;
+ 	u32 ofs, val;
+-
+ 	if (!MTK_HAS_CAPS(soc->caps, MTK_QDMA))
+ 		return;
+ 
+@@ -1864,6 +1866,12 @@
+ 	/* TX SG offload */
+ 	txd = itxd;
+ 	txd_pdma = qdma_to_pdma(ring, txd);
++	#if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
++	if (HNAT_SKB_CB2(skb)->magic == 0x78681415) {
++		txd->txd4 &= ~(0xf << TX_DMA_FPORT_SHIFT_V2);
++		txd->txd4 |= 0x3 << TX_DMA_FPORT_SHIFT_V2;
++	}
++#endif
+ 
+ 	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+ 		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+@@ -2474,6 +2482,9 @@
+ 			mac = RX_DMA_GET_SPORT(trxd.rxd4) - 1;
+ 		}
+ 
++		if ( (mac == 4) || ((FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5)) == HIT_BIND_FORCE_TO_CPU))
++		mac = atomic_read(&eth1_in_br);
++
+ 		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
+ 			     !eth->netdev[mac]))
+ 			goto release_desc;
+@@ -2611,9 +2622,6 @@
+ 		skb_hnat_alg(skb) = 0;
+ 		skb_hnat_filled(skb) = 0;
+ 		skb_hnat_magic_tag(skb) = HNAT_MAGIC_TAG;
+-		skb_hnat_set_tops(skb, 0);
+-		skb_hnat_set_is_decap(skb, 0);
+-		skb_hnat_set_is_decrypt(skb, (skb_hnat_cdrt(skb) ? 1 : 0));
+ 
+ 		if (skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU) {
+ 			trace_printk("[%s] reason=0x%x(force to CPU) from WAN to Ext\n",
+@@ -2990,14 +2998,12 @@
+ 			ring->phys + ((ring_size - 1) * sz),
+ 			soc->reg_map->qdma.crx_ptr);
+ 		mtk_w32(eth, ring->last_free_ptr, soc->reg_map->qdma.drx_ptr);
+-
+ 		for (i = 0, ofs = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
+ 			val = (QDMA_RES_THRES << 8) | QDMA_RES_THRES;
+ 			mtk_w32(eth, val, soc->reg_map->qdma.qtx_cfg + ofs);
+ 
+ 			val = MTK_QTX_SCH_MIN_RATE_EN |
+ 			      MTK_QTX_SCH_LEAKY_BUCKET_SIZE;
+-			/* minimum: 10 Mbps */
+ 			if (mtk_is_netsys_v3_or_greater(eth) &&
+ 			    (eth->soc->caps != MT7988_CAPS)) {
+ 				val |= FIELD_PREP(MTK_QTX_SCH_MIN_RATE_MAN_V3, 1) |
+@@ -3944,7 +3950,7 @@
+ 	int i, j, txqs = 1;
+ 
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
+-		txqs = MTK_QDMA_NUM_QUEUES;
++		txqs = MTK_QDMA_NUM_QUEUES;
+ 
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+ 		if (!eth->netdev[i])
+@@ -4263,9 +4269,6 @@
+ 			}
+ 			mtk_gdm_config(eth, target_mac->id, gdm_config);
+ 		}
+-		/* Reset and enable PSE */
+-		mtk_w32(eth, RST_GL_PSE, MTK_RST_GL);
+-		mtk_w32(eth, 0, MTK_RST_GL);
+ 
+ 		napi_enable(&eth->tx_napi);
+ 		napi_enable(&eth->rx_napi[0].napi);
+@@ -5447,7 +5450,16 @@
+ 	 * possible race during FE reset since it can run releasing RTNL lock.
+ 	 */
+ 	mtk_prepare_for_reset(eth);
+-
++	/* Trigger Wifi SER reset */
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		if (!eth->netdev[i])
++			continue;
++		call_netdevice_notifiers(MTK_FE_START_RESET, eth->netdev[i]);
++		rtnl_unlock();
++		wait_for_completion_timeout(&wait_ser_done, 5000);
++		rtnl_lock();
++		break;
++	}
+ 	/* stop all devices to make sure that dma is properly shut down */
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+ 		if (!eth->netdev[i] || !netif_running(eth->netdev[i]))
+@@ -5485,7 +5497,14 @@
+ 
+ 	mtk_wed_fe_reset_complete();
+ 	mtk_restore_qdma_cfg(eth);
+-
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++                if (!eth->netdev[i])
++                        continue;
++		call_netdevice_notifiers(MTK_FE_RESET_NAT_DONE, eth->netdev[i]);
++		printk("[%s] HNAT reset done !\n", __func__);
++		call_netdevice_notifiers(MTK_FE_RESET_DONE, eth->netdev[i]);
++		printk("[%s] WiFi SER reset done !\n", __func__);
++        }
+ 	rtnl_unlock();
+ }
+ 
+@@ -5878,10 +5897,7 @@
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	unsigned int queue = 0;
+ 
+-	if (netdev_uses_dsa(dev))
+-		queue = skb_get_queue_mapping(skb) + 3;
+-	else
+-		queue = mac->id;
++	queue = mac->id ? 32 : 0;
+ 
+ 	if (queue >= dev->num_tx_queues)
+ 		queue = 0;
+@@ -7130,6 +7146,36 @@
+ 	},
+ };
+ 
++static int mtk_eth_netdevice_event(struct notifier_block *unused,
++				   unsigned long event, void *ptr)
++{
++	switch (event) {
++	case MTK_WIFI_RESET_DONE:
++		mtk_rest_cnt--;
++		if(!mtk_rest_cnt) {
++			complete(&wait_ser_done);
++			mtk_rest_cnt = mtk_wifi_num;
++		}
++		break;
++	case MTK_WIFI_CHIP_ONLINE:
++		mtk_wifi_num++;
++		mtk_rest_cnt = mtk_wifi_num;
++		break;
++	case MTK_WIFI_CHIP_OFFLINE:
++		mtk_wifi_num--;
++		mtk_rest_cnt = mtk_wifi_num;
++		break;
++	default:
++		break;
++	}
++
++	return NOTIFY_DONE;
++}
++
++struct notifier_block mtk_eth_netdevice_nb __read_mostly = {
++	.notifier_call = mtk_eth_netdevice_event,
++};
++
+ module_platform_driver(mtk_driver);
+ 
+ MODULE_LICENSE("GPL");

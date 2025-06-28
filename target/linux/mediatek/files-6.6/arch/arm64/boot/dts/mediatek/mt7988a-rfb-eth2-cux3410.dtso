@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2022 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	compatible = "mediatek,mt7988a-rfb", "mediatek,mt7988a";
+
+	fragment@0 {
+		target = <&mdio_bus>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* external Aquantia CUX3410 */
+			phy8: ethernet-phy@8 {
+				reg = <8>;
+				compatible = "ethernet-phy-ieee802.3-c45";
+				firmware-name = "AQR-G4_v5.7.0-AQR_EVB_Generic_X3410_StdCfg_MDISwap_USX_ID46316_VER2148.cld";
+				reset-gpios = <&pio 71 GPIO_ACTIVE_LOW>;
+				reset-assert-us = <100000>;
+				reset-deassert-us = <221000>;
+
+				leds {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					phy8_led0: aqr_phy8_led0@0 {
+						reg = <0>;
+						linux,default-trigger = "netdev";
+						status = "okay";
+					};
+
+					phy8_led1: aqr_phy8_led1@1 {
+						reg = <1>;
+						linux,default-trigger = "netdev";
+						status = "okay";
+					};
+
+					phy8_led2: aqr_phy8_led2@2 {
+						reg = <2>;
+						linux,default-trigger = "netdev";
+						status = "okay";
+					};
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gmac2>;
+		__overlay__ {
+			phy-mode = "usxgmii";
+			phy-connection-type = "usxgmii";
+			phy = <&phy8>;
+			status = "okay";
+		};
+	};
+};

@@ -1,0 +1,70 @@
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -680,7 +680,8 @@ EXPORT_SYMBOL_GPL(genphy_c45_read_mdix);
+  * @phydev: target phy_device struct
+  * @adv: the linkmode advertisement settings
+  */
+-int genphy_c45_write_eee_adv(struct phy_device *phydev, unsigned long *adv)
++static int genphy_c45_write_eee_adv(struct phy_device *phydev,
++				    unsigned long *adv)
+ {
+ 	int val, changed = 0;
+ 
+@@ -950,6 +951,7 @@ int genphy_c45_an_config_eee_aneg(struct
+ 
+ 	return genphy_c45_write_eee_adv(phydev, phydev->advertising_eee);
+ }
++EXPORT_SYMBOL_GPL(genphy_c45_an_config_eee_aneg);
+ 
+ /**
+  * genphy_c45_pma_baset1_read_abilities - read supported baset1 link modes from PMA
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -2180,29 +2180,6 @@ static int genphy_c37_config_advert(stru
+ }
+ 
+ /**
+- * genphy_config_eee_advert - disable unwanted eee mode advertisement
+- * @phydev: target phy_device struct
+- *
+- * Description: Writes MDIO_AN_EEE_ADV after disabling unsupported energy
+- *   efficent ethernet modes. Returns 0 if the PHY's advertisement hasn't
+- *   changed, and 1 if it has changed.
+- */
+-int genphy_config_eee_advert(struct phy_device *phydev)
+-{
+-	int err;
+-
+-	/* Nothing to disable */
+-	if (!phydev->eee_broken_modes)
+-		return 0;
+-
+-	err = phy_modify_mmd_changed(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV,
+-				     phydev->eee_broken_modes, 0);
+-	/* If the call failed, we assume that EEE is not supported */
+-	return err < 0 ? 0 : err;
+-}
+-EXPORT_SYMBOL(genphy_config_eee_advert);
+-
+-/**
+  * genphy_setup_forced - configures/forces speed/duplex from @phydev
+  * @phydev: target phy_device struct
+  *
+--- a/include/linux/phy.h
++++ b/include/linux/phy.h
+@@ -1892,7 +1892,6 @@ int genphy_read_abilities(struct phy_dev
+ int genphy_setup_forced(struct phy_device *phydev);
+ int genphy_restart_aneg(struct phy_device *phydev);
+ int genphy_check_and_restart_aneg(struct phy_device *phydev, bool restart);
+-int genphy_config_eee_advert(struct phy_device *phydev);
+ int __genphy_config_aneg(struct phy_device *phydev, bool changed);
+ int genphy_aneg_done(struct phy_device *phydev);
+ int genphy_update_link(struct phy_device *phydev);
+@@ -1960,7 +1959,6 @@ int genphy_c45_ethtool_get_eee(struct ph
+ 			       struct ethtool_keee *data);
+ int genphy_c45_ethtool_set_eee(struct phy_device *phydev,
+ 			       struct ethtool_keee *data);
+-int genphy_c45_write_eee_adv(struct phy_device *phydev, unsigned long *adv);
+ int genphy_c45_an_config_eee_aneg(struct phy_device *phydev);
+ int genphy_c45_read_eee_adv(struct phy_device *phydev, unsigned long *adv);
+ 

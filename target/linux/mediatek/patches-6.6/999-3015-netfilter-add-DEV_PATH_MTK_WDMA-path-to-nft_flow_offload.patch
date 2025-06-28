@@ -1,0 +1,33 @@
+From c2f405cce07ba88aebd19c54306744c611c94183 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Thu, 8 May 2025 13:25:44 +0800
+Subject: [PATCH] netfilter: add DEV_PATH_MTK_WDMA path to nft_flow_offload for
+ the RelayD
+
+Without this patch, nf_dev_path_info will populate an incorrect source
+MAC address while running RelayD. Consequently, traffic may experience
+stalls in both the software fastpath and the hardware path.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ net/netfilter/nft_flow_offload.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
+index db5345a..253ef56 100644
+--- a/net/netfilter/nft_flow_offload.c
++++ b/net/netfilter/nft_flow_offload.c
+@@ -178,6 +178,10 @@ static void nft_dev_path_info(const struct net_device_path_stack *stack,
+ 			}
+ 			info->xmit_type = FLOW_OFFLOAD_XMIT_DIRECT;
+ 			break;
++		case DEV_PATH_MTK_WDMA:
++			if (is_zero_ether_addr(info->h_source))
++				memcpy(info->h_source, path->dev->dev_addr, ETH_ALEN);
++			break;
+ 		default:
+ 			break;
+ 		}
+-- 
+2.45.2
+

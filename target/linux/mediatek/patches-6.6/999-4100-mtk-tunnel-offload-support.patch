@@ -1,0 +1,24 @@
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -179,10 +179,21 @@ struct flow_offload {
+ 	struct rcu_head				rcu_head;
+ };
+ 
++enum flow_offload_tnl {
++	FLOW_OFFLOAD_TNL_GRETAP,
++	FLOW_OFFLOAD_TNL_PPTP,
++	FLOW_OFFLOAD_TNL_L2TP_V2,
++	FLOW_OFFLOAD_TNL_L2TP_V3,
++	FLOW_OFFLOAD_TNL_VXLAN,
++	FLOW_OFFLOAD_NATT,
++	__FLOW_OFFLOAD_MAX,
++};
++
+ struct flow_offload_hw_path {
+ 	struct net_device *dev;
+ 	struct net_device *virt_dev;
+ 	u32 flags;
++	u32 tnl_type;
+ 
+ 	u8 eth_src[ETH_ALEN];
+ 	u8 eth_dest[ETH_ALEN];

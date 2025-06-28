@@ -1,0 +1,150 @@
+From afef68a6df2b7743010efc3749aaad9c733e4c95 Mon Sep 17 00:00:00 2001
+From: Jianguo Zhang <jianguo.zhang@mediatek.com>
+Date: Sat, 16 Nov 2024 14:24:37 +0800
+Subject: [PATCH] pcie: mediatek-gen3: Add soft off and soft on API
+
+[Description]
+Add soft off and soft on API
+
+[Release-log]
+NA
+
+Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
+---
+ drivers/pci/controller/pcie-mediatek-gen3.c | 99 +++++++++++++++++++++
+ 1 file changed, 99 insertions(+)
+
+diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
+index a868126..405b902 100644
+--- a/drivers/pci/controller/pcie-mediatek-gen3.c
++++ b/drivers/pci/controller/pcie-mediatek-gen3.c
+@@ -200,6 +200,7 @@ struct mtk_gen3_pcie {
+ 	struct mtk_msi_set msi_sets[PCIE_MSI_SET_NUM];
+ 	enum mtk_msi_group_type msi_group_type;
+ 	struct mutex lock;
++	bool soft_off;
+ 	DECLARE_BITMAP(msi_irq_in_use, PCIE_MSI_IRQS_NUM);
+ };
+ 
+@@ -269,6 +270,11 @@ static void __iomem *mtk_pcie_map_bus(struct pci_bus *bus, unsigned int devfn,
+ static int mtk_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
+ 				int where, int size, u32 *val)
+ {
++	struct mtk_gen3_pcie *pcie = bus->sysdata;
++
++	if (pcie->soft_off)
++		return 0;
++
+ 	mtk_pcie_config_tlp_header(bus, devfn, where, size);
+ 
+ 	return pci_generic_config_read32(bus, devfn, where, size, val);
+@@ -277,6 +283,11 @@ static int mtk_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
+ static int mtk_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
+ 				 int where, int size, u32 val)
+ {
++	struct mtk_gen3_pcie *pcie = bus->sysdata;
++
++	if (pcie->soft_off)
++		return 0;
++
+ 	mtk_pcie_config_tlp_header(bus, devfn, where, size);
+ 
+ 	if (size <= 2)
+@@ -1308,6 +1319,94 @@ static int mtk_pcie_turn_off_link(struct mtk_gen3_pcie *pcie)
+ 				   50 * USEC_PER_MSEC);
+ }
+ 
++int mtk_pcie_soft_off(struct pci_bus *bus)
++{
++	struct pci_host_bridge *host;
++	struct mtk_gen3_pcie *pcie;
++	struct pci_dev *dev;
++	int ret;
++
++	if (!bus) {
++		pr_err("There is no bus, please check the host driver\n");
++		return -ENODEV;
++	}
++
++	pcie = bus->sysdata;
++	if (pcie->soft_off) {
++		dev_err(pcie->dev, "The soft_off is true, can't soft off\n");
++		return -EPERM;
++	}
++
++	host = pci_host_bridge_from_priv(pcie);
++	dev = pci_get_slot(host->bus, 0);
++	if (!dev) {
++		dev_err(pcie->dev, "Failed to get device from bus\n");
++		return -ENODEV;
++	}
++
++	/* Trigger link to L2 state */
++	ret = mtk_pcie_turn_off_link(pcie);
++
++	pci_save_state(dev);
++	pci_dev_put(dev);
++	mtk_pcie_irq_save(pcie);
++	pcie->soft_off = true;
++	mtk_pcie_power_down(pcie);
++
++	dev_info(pcie->dev, "mtk pcie soft off done\n");
++
++	return ret;
++}
++EXPORT_SYMBOL(mtk_pcie_soft_off);
++
++int mtk_pcie_soft_on(struct pci_bus *bus)
++{
++	struct pci_host_bridge *host;
++	struct mtk_gen3_pcie *pcie;
++	struct pci_dev *dev;
++	int ret;
++
++	if (!bus) {
++		pr_err("There is no bus, please check the host driver\n");
++		return -ENODEV;
++	}
++
++	pcie = bus->sysdata;
++	if (!pcie->soft_off) {
++		dev_err(pcie->dev, "The soft_off is false, can't soft on\n");
++		return -EPERM;
++	}
++
++	host = pci_host_bridge_from_priv(pcie);
++	dev = pci_get_slot(host->bus, 0);
++	if (!dev) {
++		dev_err(pcie->dev, "Failed to get device from bus\n");
++		return -ENODEV;
++	}
++
++	ret = mtk_pcie_power_up(pcie);
++	if (ret) {
++		dev_err(pcie->dev, "Failed to power up RC\n");
++		return ret;
++	}
++
++	ret = mtk_pcie_startup_port(pcie);
++	if (ret) {
++		dev_err(pcie->dev, "Failed to detect EP\n");
++		return ret;
++	}
++
++	pcie->soft_off = false;
++	mtk_pcie_irq_restore(pcie);
++	pci_restore_state(dev);
++	pci_dev_put(dev);
++
++	dev_info(pcie->dev, "mtk pcie soft on done\n");
++
++	return ret;
++}
++EXPORT_SYMBOL(mtk_pcie_soft_on);
++
+ static int mtk_pcie_suspend_noirq(struct device *dev)
+ {
+ 	struct mtk_gen3_pcie *pcie = dev_get_drvdata(dev);
+-- 
+2.46.0
+

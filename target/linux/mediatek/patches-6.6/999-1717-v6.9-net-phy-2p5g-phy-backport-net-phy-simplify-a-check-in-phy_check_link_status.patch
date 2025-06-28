@@ -1,0 +1,33 @@
+From c786459fc827216447b34d716d0a9f8f6a79bf73 Mon Sep 17 00:00:00 2001
+From: Heiner Kallweit <hkallweit1@gmail.com>
+Date: Thu, 7 Mar 2024 22:16:12 +0100
+Subject: [PATCH] net: phy: simplify a check in phy_check_link_status
+
+Handling case err == 0 in the other branch allows to simplify the
+code. In addition I assume in "err & phydev->eee_cfg.tx_lpi_enabled"
+it should have been a logical and operator. It works as expected also
+with the bitwise and, but using a bitwise and with a bool value looks
+ugly to me.
+
+Signed-off-by: Heiner Kallweit <hkallweit1@gmail.com>
+Link: https://lore.kernel.org/r/de37bf30-61dd-49f9-b645-2d8ea11ddb5d@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/phy/phy.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -965,10 +965,10 @@ static int phy_check_link_status(struct
+ 		phydev->state = PHY_RUNNING;
+ 		err = genphy_c45_eee_is_active(phydev,
+ 					       NULL, NULL, NULL);
+-		if (err < 0)
++		if (err <= 0)
+ 			phydev->enable_tx_lpi = false;
+ 		else
+-			phydev->enable_tx_lpi = (err & phydev->eee_cfg.tx_lpi_enabled);
++			phydev->enable_tx_lpi = phydev->eee_cfg.tx_lpi_enabled;
+ 
+ 		phy_link_up(phydev);
+ 	} else if (!phydev->link && phydev->state != PHY_NOLINK) {

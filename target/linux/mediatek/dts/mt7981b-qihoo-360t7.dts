@@ -20,8 +20,6 @@
 	};
 
 	chosen {
-		bootargs-append = " root=/dev/fit0 rootwait";
-		rootdisk = <&ubi_rootdisk>;
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -105,6 +103,10 @@
 		spi-tx-bus-width = <4>;
 		spi-rx-bus-width = <4>;
 
+		mediatek,nmbm;
+                mediatek,bmt-max-ratio = <1>;
+                mediatek,bmt-max-reserved-blocks = <64>;
+
 		partitions {
 			compatible = "fixed-partitions";
 			#address-cells = <1>;
@@ -136,13 +138,6 @@
 			partition@580000 {
 				label = "ubi";
 				reg = <0x0580000 0x6c00000>;
-				compatible = "linux,ubi";
-
-				volumes {
-					ubi_rootdisk: ubi-volume-fit {
-						volname = "fit";
-					};
-				};
 			};
 
 			partition@7180000 {

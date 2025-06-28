@@ -1,0 +1,44 @@
+From be465374271ec0c31d1225c7c20725bd86ba5e95 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 6 Jun 2025 15:48:48 +0800
+Subject: [PATCH] netfilter: fix memory leak issue for the nft_flow_offload
+
+Without this patch, the kernel may encounter an OOM issue with the
+ip_dst during a high number of WiFi STA connections.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ net/netfilter/nft_flow_offload.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
+index 66c9146..df529b4 100644
+--- a/net/netfilter/nft_flow_offload.c
++++ b/net/netfilter/nft_flow_offload.c
+@@ -327,8 +327,11 @@ static int nft_flow_route_routing(const struct nft_pktinfo *pkt,
+ 	if (route->tuple[dir].xmit_type	== FLOW_OFFLOAD_XMIT_NEIGH &&
+ 	    route->tuple[!dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH) {
+ 		if (nft_dev_forward_path(pkt, route, ct, dir, ft) ||
+-		    nft_dev_forward_path(pkt, route, ct, !dir, ft))
+-		    return -ENOENT;
++		    nft_dev_forward_path(pkt, route, ct, !dir, ft)) {
++			dst_release(route->tuple[dir].dst);
++			dst_release(route->tuple[!dir].dst);
++			return -ENOENT;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -555,6 +558,9 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+ 	if (ret < 0)
+ 		goto err_flow_add;
+ 
++	dst_release(route.tuple[dir].dst);
++	dst_release(route.tuple[!dir].dst);
++
+ 	return;
+ 
+ err_flow_add:
+-- 
+2.45.2
+

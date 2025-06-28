@@ -23,9 +23,8 @@
 	};
 
 	chosen {
-		bootargs-override = "root=/dev/fit0 rootwait";
+		bootargs = "root=PARTLABEL=rootfs rootwait rootfstype=squashfs,f2fs";
 		stdout-path = "serial0:115200n8";
-		rootdisk = <&emmc_rootdisk>;
 	};
 
 	memory@40000000 {
@@ -200,9 +199,6 @@
 					};
 				};
 
-				emmc_rootdisk: block-partition-production {
-					partname = "production";
-				};
 			};
 		};
 	};

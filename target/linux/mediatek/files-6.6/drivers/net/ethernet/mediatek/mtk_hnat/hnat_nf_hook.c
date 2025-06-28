@@ -30,9 +30,11 @@
 #include "hnat.h"
 
 #include "../mtk_eth_soc.h"
+#include "../mtk_eth_reset.h"
 #include <linux/ppp_defs.h>
 #include <linux/ppp_channel.h>
 #include "../mtk_eth_soc.h"
+#include "../mtk_eth_reset.h"
 #include <linux/if_pppox.h>
 #include <linux/if_ether.h>
 #define do_ge2ext_fast(dev, skb)                                               \
@@ -1942,8 +1944,7 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
 			entry.ipv4_hnapt.act_dp &= ~UDF_PINGPONG_IFIDX;
 			entry.ipv4_hnapt.act_dp |= dev->ifindex & UDF_PINGPONG_IFIDX;
 		}
-	} else if (IS_EXT(dev) && (FROM_GE_PPD(skb) || FROM_GE_LAN_GRP(skb) ||
-		   FROM_GE_WAN(skb) || FROM_GE_VIRTUAL(skb) || FROM_WED(skb) || FROM_EXT(skb))) {
+	} else if (IS_EXT(dev)) {
 		if (!hnat_priv->data->whnat && IS_GMAC1_MODE) {
 			entry.bfib1.vpm = 1;
 			entry.bfib1.vlan_layer = 1;

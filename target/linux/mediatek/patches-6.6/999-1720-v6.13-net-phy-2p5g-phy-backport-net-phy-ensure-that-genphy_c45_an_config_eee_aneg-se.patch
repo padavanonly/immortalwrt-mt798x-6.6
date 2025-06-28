@@ -1,0 +1,75 @@
+From f26a29a038ee3982099e867bec2260576a19720f Mon Sep 17 00:00:00 2001
+From: Heiner Kallweit <hkallweit1@gmail.com>
+Date: Sat, 16 Nov 2024 21:52:15 +0100
+Subject: [PATCH] net: phy: ensure that genphy_c45_an_config_eee_aneg() sees
+ new value of phydev->eee_cfg.eee_enabled
+
+This is a follow-up to 41ffcd95015f ("net: phy: fix phylib's dual
+eee_enabled") and resolves an issue with genphy_c45_an_config_eee_aneg()
+(called from genphy_c45_ethtool_set_eee) not seeing the new value of
+phydev->eee_cfg.eee_enabled.
+
+Fixes: 49168d1980e2 ("net: phy: Add phy_support_eee() indicating MAC support EEE")
+Signed-off-by: Heiner Kallweit <hkallweit1@gmail.com>
+Reported-by: Choong Yong Liang <yong.liang.choong@linux.intel.com>
+Reviewed-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/phy/phy.c | 24 ++++++++++++++----------
+ 1 file changed, 14 insertions(+), 10 deletions(-)
+
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -1689,7 +1689,7 @@ EXPORT_SYMBOL(phy_ethtool_get_eee);
+  * phy_ethtool_set_eee_noneg - Adjusts MAC LPI configuration without PHY
+  *			       renegotiation
+  * @phydev: pointer to the target PHY device structure
+- * @data: pointer to the ethtool_keee structure containing the new EEE settings
++ * @old_cfg: pointer to the eee_config structure containing the old EEE settings
+  *
+  * This function updates the Energy Efficient Ethernet (EEE) configuration
+  * for cases where only the MAC's Low Power Idle (LPI) configuration changes,
+@@ -1700,11 +1700,10 @@ EXPORT_SYMBOL(phy_ethtool_get_eee);
+  * configuration.
+  */
+ static void phy_ethtool_set_eee_noneg(struct phy_device *phydev,
+-				      struct ethtool_keee *data)
++				      const struct eee_config *old_cfg)
+ {
+-	if (phydev->eee_cfg.tx_lpi_enabled != data->tx_lpi_enabled ||
+-	    phydev->eee_cfg.tx_lpi_timer != data->tx_lpi_timer) {
+-		eee_to_eeecfg(&phydev->eee_cfg, data);
++	if (phydev->eee_cfg.tx_lpi_enabled != old_cfg->tx_lpi_enabled ||
++	    phydev->eee_cfg.tx_lpi_timer != old_cfg->tx_lpi_timer) {
+ 		phydev->enable_tx_lpi = eeecfg_mac_can_tx_lpi(&phydev->eee_cfg);
+ 		if (phydev->link) {
+ 			phydev->link = false;
+@@ -1724,18 +1723,23 @@ static void phy_ethtool_set_eee_noneg(st
+  */
+ int phy_ethtool_set_eee(struct phy_device *phydev, struct ethtool_keee *data)
+ {
++	struct eee_config old_cfg;
+ 	int ret;
+ 
+ 	if (!phydev->drv)
+ 		return -EIO;
+ 
+ 	mutex_lock(&phydev->lock);
++
++	old_cfg = phydev->eee_cfg;
++	eee_to_eeecfg(&phydev->eee_cfg, data);
++
+ 	ret = genphy_c45_ethtool_set_eee(phydev, data);
+-	if (ret >= 0) {
+-		if (ret == 0)
+-			phy_ethtool_set_eee_noneg(phydev, data);
+-		eee_to_eeecfg(&phydev->eee_cfg, data);
+-	}
++	if (ret == 0)
++		phy_ethtool_set_eee_noneg(phydev, &old_cfg);
++	else if (ret < 0)
++		phydev->eee_cfg = old_cfg;
++
+ 	mutex_unlock(&phydev->lock);
+ 
+ 	return ret < 0 ? ret : 0;

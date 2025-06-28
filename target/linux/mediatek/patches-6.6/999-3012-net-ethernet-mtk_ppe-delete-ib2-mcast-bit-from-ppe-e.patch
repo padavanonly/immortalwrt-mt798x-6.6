@@ -1,0 +1,30 @@
+From 0c573f85fab7d9b6f139b4d864c68d96d8476de1 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Thu, 20 Mar 2025 14:48:35 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: delete ib2 mcast bit from ppe entry
+
+Wihtout this patch, the CDMA may receive an incorrect PPE CPU reason
+with a multicast packet, resulting in abnormal operation of the CDMA.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_ppe.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index fc707d7..118785f 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -253,9 +253,6 @@ int mtk_foe_entry_prepare(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 		      FIELD_PREP(MTK_FOE_IB2_PORT_AG, 0x1f);
+ 	}
+ 
+-	if (is_multicast_ether_addr(dest_mac))
+-		val |= mtk_get_ib2_multicast_mask(eth);
+-
+ 	ports_pad = 0xa5a5a500 | (l4proto & 0xff);
+ 	if (type == MTK_PPE_PKT_TYPE_IPV4_ROUTE)
+ 		entry->ipv4.orig.ports = ports_pad;
+-- 
+2.45.2
+

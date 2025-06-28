@@ -21,8 +21,6 @@
 	};
 
 	chosen {
-		bootargs = "root=/dev/fit0 rootwait";
-		rootdisk = <&ubi_rootdisk>;
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -241,6 +239,10 @@
 		spi-max-frequency = <20000000>;
 		spi-tx-bus-width = <4>;
 		spi-rx-bus-width = <4>;
+		
+		mediatek,nmbm;
+        	mediatek,bmt-max-ratio = <1>;
+        	mediatek,bmt-max-reserved-blocks = <64>;
 
 		partitions {
 			compatible = "fixed-partitions";
@@ -261,7 +263,6 @@
 			partition@180000 {
 				label = "factory";
 				reg = <0x180000 0x200000>;
-				read-only;
 
 				nvmem-layout {
 					compatible = "fixed-layout";
@@ -294,14 +295,7 @@
 
 			partition@580000 {
 				label = "ubi";
-				reg = <0x0580000 0x7a80000>;
-				compatible = "linux,ubi";
-
-				volumes {
-					ubi_rootdisk: ubi-volume-fit {
-						volname = "fit";
-					};
-				};
+				reg = <0x0580000 0x7280000>;
 			};
 		};
 	};

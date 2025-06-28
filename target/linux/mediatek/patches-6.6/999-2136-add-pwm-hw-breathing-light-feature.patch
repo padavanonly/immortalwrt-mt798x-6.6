@@ -1,0 +1,215 @@
+From eecc1e7982d4f5da63b129e5437d79ced3aeb26f Mon Sep 17 00:00:00 2001
+From: Sam Shih <sam.shih@mediatek.com>
+Date: Mon, 3 Mar 2025 14:38:41 +0800
+Subject: [PATCH] add pwm hw breathing light support for mt7987
+
+---
+ drivers/pwm/pwm-mediatek.c | 118 ++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 116 insertions(+), 2 deletions(-)
+
+--- a/drivers/pwm/pwm-mediatek.c
++++ b/drivers/pwm/pwm-mediatek.c
+@@ -31,6 +31,11 @@
+ #define PWM45THRES_FIXUP	0x34
+ #define PWM_CK_26M_SEL		0x210
+ 
++#define PWM_BREATHING_THRES_MAX	32
++#define PWM_BREATHING_CON	0xb8
++#define PWM_BREATHING_THRES_0	0xbc
++#define PWM_BREATHING_THRES_1	0xd0
++
+ #define PWM_CLK_DIV_MAX		7
+ 
+ struct pwm_mediatek_of_data {
+@@ -38,6 +43,8 @@ struct pwm_mediatek_of_data {
+ 	bool pwm45_fixup;
+ 	bool has_ck_26m_sel;
+ 	const unsigned int *reg_offset;
++	int hw_breathing_light;
++	int hw_breathing_light_thres_num;
+ };
+ 
+ /**
+@@ -57,6 +64,7 @@ struct pwm_mediatek_chip {
+ 	struct clk *clk_main;
+ 	struct clk **clk_pwms;
+ 	const struct pwm_mediatek_of_data *soc;
++	bool bw_mode[8];
+ };
+ 
+ static const unsigned int mtk_pwm_reg_offset_v1[] = {
+@@ -122,6 +130,85 @@ static inline void pwm_mediatek_writel(s
+ 	writel(value, chip->regs + chip->soc->reg_offset[num] + offset);
+ }
+ 
++static inline int pwm_bl_set_thres(struct pwm_mediatek_chip *chip, int pwm,
++				    int idx, int value, int scale)
++{
++	u32 offset;
++	u32 shift;
++	u32 tmp;
++
++	value = value / scale;
++	if ((idx < 0) || (idx >= PWM_BREATHING_THRES_MAX))
++		return -EINVAL;
++	if ((value < 0) || (value > 255))
++		return -EINVAL;
++	if (idx < 4) {
++		offset = PWM_BREATHING_THRES_0;
++		shift = (idx % 4) * 8;
++	} else {
++		offset = PWM_BREATHING_THRES_1 + ((idx / 4) - 1) * 4;
++		shift = (idx % 4) * 8;
++	}
++	tmp = readl(chip->regs + mtk_pwm_reg_offset_v3[pwm] + offset);
++	tmp &= ~(0xff << shift);
++	tmp |= (value << shift);
++	writel(tmp, chip->regs + mtk_pwm_reg_offset_v3[pwm] + offset);
++
++	return 0;
++}
++
++static inline int pwm_config_bl_thres(struct pwm_mediatek_chip *chip, int pwm,
++				      int max_counter, int num_thres)
++{
++	/* use x_scale to make the wavefrom display smoothly */
++	const int x_scale = 1000;
++	int c, x;
++	int ret;
++	int i;
++	/*
++	 *  [Breathing Light Pattern]
++         *  - x         : max_counter / (num_thres / 2)
++         *  - 100% duty : (num_thres / 2) * x
++         *  - 0% duty   : 0 * x
++         *  - per period: T(0)~T(num_thres)
++	 *                (If period = 10^9 (ns), 1T = 10^9 (ns) / num_thres)
++         *
++	 *  | num_thres | T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 10 11 12 13 14 15 ... |
++	 *  |-----------|-----------------------------------------------------|
++         *  | 8         | 4x 3x 2x 1x 0x 1x 2x 3x (repeat) .................. |
++	 *  | 16        | 8x 7x 6x 5x 4x 3x 2x 1x 0x 1x 2x 3x 4x 5x 6x 7x ... |
++	 *  | 24        | 12x ............................................... |
++	 *  | 32 (max)  | 16x ............................................... |
++	 */
++	int pattern[PWM_BREATHING_THRES_MAX];
++
++	if ((num_thres < 2) || (num_thres % 2))
++		return -EINVAL;
++
++	c = num_thres / 2;
++	x = (max_counter * x_scale) / (num_thres / 2);
++
++	/* create breathing ligh pattern according to previous table */
++	/* use (x_scale * max_counter) instead of (x * num_thres) */
++	pattern[0] = max_counter * x_scale;
++	/* caculate each pattern according to (i) */
++	for (i = 1 ; i < c ; i++)
++		pattern[i] = x * (c - i);
++	for (i = c ; i < num_thres ; i++)
++		pattern[i] = x * (i - c);
++	for (i = 0 ; i < num_thres ; i++) {
++		ret = pwm_bl_set_thres(chip, pwm, i, pattern[i], x_scale);
++		if (ret)
++			return ret;
++	}
++
++	/* enable breathing light mode */
++	writel(((num_thres - 1) << 8 | 0x1),
++	       chip->regs + mtk_pwm_reg_offset_v3[pwm] + PWM_BREATHING_CON);
++
++	return 0;
++}
++
+ static int pwm_mediatek_config(struct pwm_chip *chip, struct pwm_device *pwm,
+ 			       int duty_ns, int period_ns)
+ {
+@@ -132,6 +219,8 @@ static int pwm_mediatek_config(struct pw
+ 	u32 clkdiv = 0, clksel = 0, cnt_period, cnt_duty,
+ 	    reg_width = PWMDWIDTH, reg_thres = PWMTHRES;
+ 	u64 resolution;
++	u32 max_cnt_period = 8191;
++	int thres_num;
+ 	int ret;
+ 
+ 	ret = pwm_mediatek_clk_enable(chip, pwm);
+@@ -143,15 +232,24 @@ static int pwm_mediatek_config(struct pw
+ 	if (pc->soc->has_ck_26m_sel)
+ 		writel(0, pc->regs + PWM_CK_26M_SEL);
+ 
++	if (pc->bw_mode[pwm->hwpwm]) {
++		thres_num = pc->soc->hw_breathing_light_thres_num;
++		period_ns = period_ns / thres_num;
++		max_cnt_period = 255;
++	}
++
+ 	/* Using resolution in picosecond gets accuracy higher */
+ 	resolution = (u64)NSEC_PER_SEC * 1000;
++
+ 	/* Calculate resolution based on current clock frequency */
+ 	do_div(resolution, clk_rate);
++
+ 	/* Using resolution to calculate cnt_period which represents
+ 	 * the effective range of the PWM period counter
+ 	 */
+ 	cnt_period = DIV_ROUND_CLOSEST_ULL((u64)period_ns * 1000, resolution);
+-	while (cnt_period > 8191) {
++
++	while (cnt_period > max_cnt_period) {
+ 		/* Using clkdiv to reduce clock frequency and calculate
+ 		 * new resolution based on new clock speed
+ 		 */
+@@ -195,8 +293,14 @@ static int pwm_mediatek_config(struct pw
+ 				    clkdiv);
+ 	else
+ 		pwm_mediatek_writel(pc, pwm->hwpwm, PWMCON, BIT(15) | clkdiv);
++
+ 	pwm_mediatek_writel(pc, pwm->hwpwm, reg_width, cnt_period);
+-	pwm_mediatek_writel(pc, pwm->hwpwm, reg_thres, cnt_duty);
++
++	/* use array of bw_thres instead of normal thres in bw_mode */
++	if (pc->bw_mode[pwm->hwpwm])
++		pwm_config_bl_thres(pc, pwm->hwpwm, cnt_period, thres_num);
++	else
++		pwm_mediatek_writel(pc, pwm->hwpwm, reg_thres, cnt_duty);
+ 
+ 	pwm_mediatek_clk_disable(chip, pwm);
+ 
+@@ -264,6 +368,7 @@ static const struct pwm_ops pwm_mediatek
+ 
+ static int pwm_mediatek_probe(struct platform_device *pdev)
+ {
++	struct device_node *np = pdev->dev.of_node;
+ 	struct pwm_mediatek_chip *pc;
+ 	unsigned int i;
+ 	int ret;
+@@ -295,6 +400,7 @@ static int pwm_mediatek_probe(struct pla
+ 
+ 	for (i = 0; i < pc->soc->num_pwms; i++) {
+ 		char name[8];
++		char bw_name[32];
+ 
+ 		snprintf(name, sizeof(name), "pwm%d", i + 1);
+ 
+@@ -302,6 +408,12 @@ static int pwm_mediatek_probe(struct pla
+ 		if (IS_ERR(pc->clk_pwms[i]))
+ 			return dev_err_probe(&pdev->dev, PTR_ERR(pc->clk_pwms[i]),
+ 					     "Failed to get %s clock\n", name);
++
++		if (pc->soc->hw_breathing_light) {
++			snprintf(bw_name, sizeof(bw_name),
++				 "mediatek,pwm%d-breathing-light", i);
++			pc->bw_mode[i] = of_property_read_bool(np, bw_name);
++		}
+ 	}
+ 
+ 	pc->chip.dev = &pdev->dev;
+@@ -376,6 +488,8 @@ static const struct pwm_mediatek_of_data
+ 	.pwm45_fixup = false,
+ 	.has_ck_26m_sel = false,
+ 	.reg_offset = mtk_pwm_reg_offset_v3,
++	.hw_breathing_light = 1,
++	.hw_breathing_light_thres_num = 32,
+ };
+ 
+ static const struct pwm_mediatek_of_data mt7988_pwm_data = {

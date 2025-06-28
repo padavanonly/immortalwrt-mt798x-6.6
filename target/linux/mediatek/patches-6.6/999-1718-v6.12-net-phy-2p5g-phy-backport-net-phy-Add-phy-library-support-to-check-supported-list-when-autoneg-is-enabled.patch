@@ -1,0 +1,31 @@
+From d4c897675a5a9f41a3f2c964d84e93bca5367f7a Mon Sep 17 00:00:00 2001
+From: Divya Koppera <divya.koppera@microchip.com>
+Date: Wed, 21 Aug 2024 11:29:05 +0530
+Subject: [PATCH] net: phy: Add phy library support to check supported list
+ when autoneg is enabled
+
+Adds support in phy library to accept autoneg configuration only when
+feature is enabled in supported list.
+
+Signed-off-by: Divya Koppera <divya.koppera@microchip.com>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Link: https://patch.msgid.link/20240821055906.27717-2-Divya.Koppera@microchip.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/phy/phy.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -1120,7 +1120,10 @@ int phy_ethtool_ksettings_set(struct phy
+ 	if (autoneg != AUTONEG_ENABLE && autoneg != AUTONEG_DISABLE)
+ 		return -EINVAL;
+ 
+-	if (autoneg == AUTONEG_ENABLE && linkmode_empty(advertising))
++	if (autoneg == AUTONEG_ENABLE &&
++	    (linkmode_empty(advertising) ||
++	     !linkmode_test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT,
++				phydev->supported)))
+ 		return -EINVAL;
+ 
+ 	if (autoneg == AUTONEG_DISABLE &&

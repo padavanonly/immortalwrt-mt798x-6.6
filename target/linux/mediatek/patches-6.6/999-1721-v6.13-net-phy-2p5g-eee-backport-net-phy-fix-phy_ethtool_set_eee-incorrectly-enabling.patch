@@ -1,0 +1,122 @@
+From e2668c34b7e1a2288ea0a97ccf3cd12e2870ca18 Mon Sep 17 00:00:00 2001
+From: "Russell King (Oracle)" <rmk+kernel@armlinux.org.uk>
+Date: Sat, 23 Nov 2024 14:50:12 +0000
+Subject: [PATCH] net: phy: fix phy_ethtool_set_eee() incorrectly enabling LPI
+
+When phy_ethtool_set_eee_noneg() detects a change in the LPI
+parameters, it attempts to update phylib state and trigger the link
+to cycle so the MAC sees the updated parameters.
+
+However, in doing so, it sets phydev->enable_tx_lpi depending on
+whether the EEE configuration allows the MAC to generate LPI without
+taking into account the result of negotiation.
+
+This can be demonstrated with a 1000base-T FD interface by:
+
+ # ethtool --set-eee eno0 advertise 8   # cause EEE to be not negotiated
+ # ethtool --set-eee eno0 tx-lpi off
+ # ethtool --set-eee eno0 tx-lpi on
+
+This results in being true, despite EEE not having been negotiated and:
+ # ethtool --show-eee eno0
+	EEE status: enabled - inactive
+	Tx LPI: 250 (us)
+	Supported EEE link modes:  100baseT/Full
+	                           1000baseT/Full
+	Advertised EEE link modes:  100baseT/Full
+	                                         1000baseT/Full
+
+Fix this by keeping track of whether EEE was negotiated via a new
+eee_active member in struct phy_device, and include this state in
+the decision whether phydev->enable_tx_lpi should be set.
+
+Fixes: 3e43b903da04 ("net: phy: Immediately call adjust_link if only tx_lpi_enabled changes")
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Link: https://patch.msgid.link/E1tErSe-005RhB-2R@rmk-PC.armlinux.org.uk
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ drivers/net/phy/phy-c45.c |  2 +-
+ drivers/net/phy/phy.c     | 30 ++++++++++++++++++------------
+ include/linux/phy.h       |  2 ++
+ 3 files changed, 21 insertions(+), 13 deletions(-)
+
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -1530,7 +1530,7 @@ int genphy_c45_ethtool_get_eee(struct ph
+ 		return ret;
+ 
+ 	data->eee_enabled = is_enabled;
+-	data->eee_active = ret;
++	data->eee_active = phydev->eee_active;
+ 	linkmode_copy(data->supported, phydev->supported_eee);
+ 
+ 	return 0;
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -971,14 +971,14 @@ static int phy_check_link_status(struct
+ 		phydev->state = PHY_RUNNING;
+ 		err = genphy_c45_eee_is_active(phydev,
+ 					       NULL, NULL, NULL);
+-		if (err <= 0)
+-			phydev->enable_tx_lpi = false;
+-		else
+-			phydev->enable_tx_lpi = phydev->eee_cfg.tx_lpi_enabled;
++		phydev->eee_active = err > 0;
++		phydev->enable_tx_lpi = phydev->eee_cfg.tx_lpi_enabled &&
++					phydev->eee_active;
+ 
+ 		phy_link_up(phydev);
+ 	} else if (!phydev->link && phydev->state != PHY_NOLINK) {
+ 		phydev->state = PHY_NOLINK;
++		phydev->eee_active = false;
+ 		phydev->enable_tx_lpi = false;
+ 		phy_link_down(phydev);
+ 	}
+@@ -1702,15 +1702,21 @@ EXPORT_SYMBOL(phy_ethtool_get_eee);
+ static void phy_ethtool_set_eee_noneg(struct phy_device *phydev,
+ 				      const struct eee_config *old_cfg)
+ {
+-	if (phydev->eee_cfg.tx_lpi_enabled != old_cfg->tx_lpi_enabled ||
++	bool enable_tx_lpi;
++
++	if (!phydev->link)
++		return;
++
++	enable_tx_lpi = phydev->eee_cfg.tx_lpi_enabled && phydev->eee_active;
++
++	if (phydev->enable_tx_lpi != enable_tx_lpi ||
+ 	    phydev->eee_cfg.tx_lpi_timer != old_cfg->tx_lpi_timer) {
+-		phydev->enable_tx_lpi = eeecfg_mac_can_tx_lpi(&phydev->eee_cfg);
+-		if (phydev->link) {
+-			phydev->link = false;
+-			phy_link_down(phydev);
+-			phydev->link = true;
+-			phy_link_up(phydev);
+-		}
++		phydev->enable_tx_lpi = false;
++		phydev->link = false;
++		phy_link_down(phydev);
++		phydev->enable_tx_lpi = enable_tx_lpi;
++		phydev->link = true;
++		phy_link_up(phydev);
+ 	}
+ }
+ 
+--- a/include/linux/phy.h
++++ b/include/linux/phy.h
+@@ -596,6 +596,7 @@ struct macsec_ops;
+  * @supported_eee: supported PHY EEE linkmodes
+  * @advertising_eee: Currently advertised EEE linkmodes
+  * @enable_tx_lpi: When True, MAC should transmit LPI to PHY
++ * @eee_active: phylib private state, indicating that EEE has been negotiated
+  * @eee_cfg: User configuration of EEE
+  * @lp_advertising: Current link partner advertised linkmodes
+  * @host_interfaces: PHY interface modes supported by host
+@@ -712,6 +713,7 @@ struct phy_device {
+ 	/* Energy efficient ethernet modes which should be prohibited */
+ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(eee_broken_modes);
+ 	bool enable_tx_lpi;
++	bool eee_active;
+ 	struct eee_config eee_cfg;
+ 
+ 	/* Host supported PHY interface types. Should be ignored if empty. */

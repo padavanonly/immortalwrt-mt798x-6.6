@@ -1,0 +1,79 @@
+From 41ffcd95015f18178ddc53fed919c2842d52fe38 Mon Sep 17 00:00:00 2001
+From: "Russell King (Oracle)" <rmk+kernel@armlinux.org.uk>
+Date: Thu, 14 Nov 2024 10:33:27 +0000
+Subject: [PATCH] net: phy: fix phylib's dual eee_enabled
+
+phylib has two eee_enabled members. Some parts of the code are using
+phydev->eee_enabled, other parts are using phydev->eee_cfg.eee_enabled.
+This leads to incorrect behaviour as their state goes out of sync.
+ethtool --show-eee shows incorrect information, and --set-eee sometimes
+doesn't take effect.
+
+Fix this by only having one eee_enabled member - that in eee_cfg.
+
+Fixes: 49168d1980e2 ("net: phy: Add phy_support_eee() indicating MAC support EEE")
+Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
+Reviewed-by: Heiner Kallweit <hkallweit1@gmail.com>
+Link: https://patch.msgid.link/E1tBXAF-00341F-EQ@rmk-PC.armlinux.org.uk
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/phy/phy-c45.c    | 4 +---
+ drivers/net/phy/phy_device.c | 4 ++--
+ include/linux/phy.h          | 2 --
+ 3 files changed, 3 insertions(+), 7 deletions(-)
+
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -941,7 +941,7 @@ EXPORT_SYMBOL_GPL(genphy_c45_read_eee_ab
+  */
+ int genphy_c45_an_config_eee_aneg(struct phy_device *phydev)
+ {
+-	if (!phydev->eee_enabled) {
++	if (!phydev->eee_cfg.eee_enabled) {
+ 		__ETHTOOL_DECLARE_LINK_MODE_MASK(adv) = {};
+ 
+ 		return genphy_c45_write_eee_adv(phydev, adv);
+@@ -1571,8 +1571,6 @@ int genphy_c45_ethtool_set_eee(struct ph
+ 		}
+ 	}
+ 
+-	phydev->eee_enabled = data->eee_enabled;
+-
+ 	ret = genphy_c45_an_config_eee_aneg(phydev);
+ 	if (ret > 0) {
+ 		ret = phy_restart_aneg(phydev);
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -3501,12 +3501,12 @@ static int phy_probe(struct device *dev)
+ 	/* There is no "enabled" flag. If PHY is advertising, assume it is
+ 	 * kind of enabled.
+ 	 */
+-	phydev->eee_enabled = !linkmode_empty(phydev->advertising_eee);
++	phydev->eee_cfg.eee_enabled = !linkmode_empty(phydev->advertising_eee);
+ 
+ 	/* Some PHYs may advertise, by default, not support EEE modes. So,
+ 	 * we need to clean them.
+ 	 */
+-	if (phydev->eee_enabled)
++	if (phydev->eee_cfg.eee_enabled)
+ 		linkmode_and(phydev->advertising_eee, phydev->supported_eee,
+ 			     phydev->advertising_eee);
+ 
+--- a/include/linux/phy.h
++++ b/include/linux/phy.h
+@@ -595,7 +595,6 @@ struct macsec_ops;
+  * @adv_old: Saved advertised while power saving for WoL
+  * @supported_eee: supported PHY EEE linkmodes
+  * @advertising_eee: Currently advertised EEE linkmodes
+- * @eee_enabled: Flag indicating whether the EEE feature is enabled
+  * @enable_tx_lpi: When True, MAC should transmit LPI to PHY
+  * @eee_cfg: User configuration of EEE
+  * @lp_advertising: Current link partner advertised linkmodes
+@@ -712,7 +711,6 @@ struct phy_device {
+ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(advertising_eee);
+ 	/* Energy efficient ethernet modes which should be prohibited */
+ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(eee_broken_modes);
+-	bool eee_enabled;
+ 	bool enable_tx_lpi;
+ 	struct eee_config eee_cfg;
+ 

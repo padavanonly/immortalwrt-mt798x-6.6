@@ -1,0 +1,14 @@
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index cc4fb3b..086aa28 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -114,6 +114,9 @@
+ 
+ /* Frame Engine Interrupt Status 2 Register */
+ #define MTK_FE_INT_STATUS2	0x28
++#define MTK_FE_INT_ENABLE2	0x2C
++#define MTK_FE_INT2_PPE0_FLOW_CHK	BIT(28)
++#define MTK_FE_INT2_PPE1_FLOW_CHK	BIT(29)
+ 
+ /* Frame Engine LRO Auto-Learn Table Information */
+ #define MTK_FE_ALT_CF8		0x300

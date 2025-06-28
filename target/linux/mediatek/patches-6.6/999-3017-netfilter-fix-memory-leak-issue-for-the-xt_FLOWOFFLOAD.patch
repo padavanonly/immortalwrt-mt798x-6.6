@@ -1,0 +1,46 @@
+From f2bd40645eed2462483798706f5a89fe8e068653 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 6 Jun 2025 20:13:10 +0800
+Subject: [PATCH] netfilter: fix memory leak issue for the xt_FLOWOFFLOAD
+
+Without this patch, the kernel may encounter an OOM issue with the
+ip_dst during a high number of WiFi STA connections.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ net/netfilter/xt_FLOWOFFLOAD.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
+index dcda741..a6d0c54 100644
+--- a/net/netfilter/xt_FLOWOFFLOAD.c
++++ b/net/netfilter/xt_FLOWOFFLOAD.c
+@@ -520,10 +520,12 @@ xt_flowoffload_route_routing(struct sk_buff *skb, const struct nf_conn *ct,
+ 
+ 	if (route->tuple[dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH &&
+ 	    route->tuple[!dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH) {
+-		if (nf_dev_forward_path(skb, route, ct, dir, devs))
+-			return -ENOENT;
+-		if (nf_dev_forward_path(skb, route, ct, !dir, devs))
++		if (nf_dev_forward_path(skb, route, ct, dir, devs) ||
++		    nf_dev_forward_path(skb, route, ct, !dir, devs)) {
++			dst_release(route->tuple[dir].dst);
++			dst_release(route->tuple[!dir].dst);
+ 			return -ENOENT;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -725,6 +727,9 @@ flowoffload_tg(struct sk_buff *skb, const struct xt_action_param *par)
+ 	xt_flowoffload_check_device(table, devs[0]);
+ 	xt_flowoffload_check_device(table, devs[1]);
+ 
++	dst_release(route.tuple[dir].dst);
++	dst_release(route.tuple[!dir].dst);
++
+ 	return XT_CONTINUE;
+ 
+ err_flow_add:
+-- 
+2.45.2
+

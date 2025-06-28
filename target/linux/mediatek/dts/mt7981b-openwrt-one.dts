@@ -137,10 +137,14 @@
 	gmac0: mac@0 {
 		compatible = "mediatek,eth-mac";
 		reg = <0>;
-		phy-handle = <&phy15>;
 		phy-mode = "2500base-x";
 		nvmem-cell-names = "mac-address";
 		nvmem-cells = <&macaddr_factory_24>;
+		fixed-link {
+                        speed = <2500>;
+                        full-duplex;
+                        paus;
+                };
 	};
 
 	gmac1: mac@1 {
@@ -152,10 +156,10 @@
 };
 
 &mdio_bus {
-	phy15: phy@f {
-		reg = <0xf>;
+	phy15: phy@15 {
+		reg = <15>;
 
-		airoha,pnswap-rx;
+		airoha,polarity = <3>;
 
 		interrupt-parent = <&pio>;
 		interrupts = <38 IRQ_TYPE_EDGE_FALLING>;
@@ -166,23 +170,6 @@
 		phy-mode = "2500base-x";
 		full-duplex;
 		pause;
-
-		leds {
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			led@0 {
-				reg = <0>;
-				function = LED_FUNCTION_WAN;
-				color = <LED_COLOR_ID_AMBER>;
-			};
-
-			led@1 {
-				reg = <1>;
-				function = LED_FUNCTION_WAN;
-				color = <LED_COLOR_ID_GREEN>;
-			};
-		};
 	};
 };
 

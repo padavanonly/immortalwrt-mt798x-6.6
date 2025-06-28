@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2022 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	compatible = "mediatek,mt7988a-rfb", "mediatek,mt7988a";
+
+	fragment@0 {
+		target = <&mdio_bus>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* external Airoha AN8831X */
+			phy28: ethernet-phy@28 {
+				reg = <28>;
+				compatible = "ethernet-phy-ieee802.3-c45";
+				reset-gpios = <&pio 72 GPIO_ACTIVE_LOW>;
+				reset-assert-us = <200000>;
+				reset-deassert-us = <350000>;
+				firmware-name = "as21x1x_fw.bin";
+
+				leds {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					phy28_led0: an8831x_phy28_led0@0 {
+						reg = <0>;
+						linux,default-trigger = "netdev";
+						active-high;
+						status = "okay";
+					};
+
+					phy28_led1: an8831x_phy28_led1@1 {
+						reg = <1>;
+						linux,default-trigger = "netdev";
+						active-high;
+						status = "okay";
+					};
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gmac1>;
+		__overlay__ {
+			phy-mode = "usxgmii";
+			phy-connection-type = "usxgmii";
+			phy = <&phy28>;
+			status = "okay";
+		};
+	};
+};

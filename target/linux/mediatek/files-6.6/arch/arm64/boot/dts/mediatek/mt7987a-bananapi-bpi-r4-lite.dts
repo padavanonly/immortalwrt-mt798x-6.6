@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+#include "mt7987a.dtsi"
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Bananapi BPI-R4-LITE";
+	compatible = "bananapi,bpi-r4-lite",
+		     "mediatek,mt7987a", "mediatek,mt7987";
+
+	aliases {
+		/* mt7987 I2C0 */
+		i2c0 = &i2c0;
+		/* PCA9548 (0-0070) provides 4 i2c channels */
+		i2c1 = &imux0_rtc;
+		i2c2 = &imux1_sfp;
+		i2c3 = &imux2_MikroBus;
+		i2c4 = &imux3_eeprom;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200n1 loglevel=8  \
+			    earlycon=uart8250,mmio32,0x11000000 \
+			    pci=pcie_bus_perf ubi.block=0,firmware \
+			    root=/dev/fit0 rootwait";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
+			debounce-interval = <10>;
+		};
+
+		wps {
+			label = "wps";
+			linux,code = <KEY_WPS_BUTTON>;
+			gpios = <&pio 0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <10>;
+		};
+	};
+
+	sfp: sfp@0 {
+		compatible = "sff,sfp";
+		i2c-bus = <&imux1_sfp>;
+		maximum-power-milliwatt = <3000>;
+	};
+};
+
+&eth {
+	gmac0: mac@0 {
+		compatible = "mediatek,eth-mac";
+		reg = <0>;
+		pcs-handle = <&sgmiipcs0>;
+		phy-mode = "2500base-x";
+		fixed-link {
+			speed = <2500>;
+			full-duplex;
+			pause;
+		};
+	};
+
+	gmac1: mac@1 {
+		compatible = "mediatek,eth-mac";
+		reg = <1>;
+		phy-mode = "internal";
+		phy-handle = <&phy15>;
+	};
+};
+
+&hnat {
+	mtketh-lan2 = "eth2";
+	mtketh-max-gmac = <3>;
+};
+
+&i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins>;
+	status = "okay";
+
+	pca9545@70 {
+		compatible = "nxp,pca9545";
+		reg = <0x70>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		imux0_rtc: i2c@0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x0>;
+
+			rtc@51 {
+				compatible = "nxp,pcf8563";
+				reg = <0x51>;
+			};
+
+			eeprom@57 {
+				compatible = "atmel,24c02";
+				reg = <0x57>;
+				address-bits = <8>;
+				page-size = <8>;
+				size = <256>;
+			};
+		};
+
+		imux1_sfp: i2c@1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x1>;
+		};
+
+		imux2_MikroBus: i2c@2 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x2>;
+		};
+
+		imux3_eeprom: i2c@3 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x3>;
+
+			wifi_eeprom@51 {
+				compatible = "atmel,24c02";
+				reg = <0x51>;
+
+				address-bits = <8>;
+				page-size = <8>;
+				size = <256>;
+			};
+		};
+	};
+};
+
+&mdio {
+	/* built-in 2.5G Ethernet PHY */
+	phy15: phy@15 {
+		pinctrl-names = "i2p5gbe-led";
+		pinctrl-0 = <&i2p5gbe_led0_pins>;
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <15>;
+		phy-mode = "internal";
+	};
+
+	switch31: switch@31 {
+		compatible = "mediatek,mt7531";
+		reg = <31>;
+		reset-gpios = <&pio 42 0>;
+	};
+};
+
+&ssusb {
+	mediatek,u3p-dis-msk=<0>;
+	phys = <&tphyu2port0 PHY_TYPE_USB2>,
+	       <&tphyu3port0 PHY_TYPE_USB3>;
+};
+
+&switch31 {
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			label = "lan0";
+		};
+
+		port@1 {
+			reg = <1>;
+			label = "lan1";
+		};
+
+		port@2 {
+			reg = <2>;
+			label = "lan2";
+		};
+
+		port@3 {
+			reg = <3>;
+			label = "lan3";
+		};
+
+		port@5 {
+			reg = <5>;
+			label = "sfp0";
+			phy-mode = "2500base-x";
+			sfp = <&sfp>;
+			managed = "in-band-status";
+		};
+
+		port@6 {
+			reg = <6>;
+			label = "cpu";
+			ethernet = <&gmac0>;
+			phy-mode = "2500base-x";
+
+			fixed-link {
+				speed = <2500>;
+				full-duplex;
+				pause;
+			};
+		};
+	};
+};
+
+&tphyu3port0 {
+	status = "okay";
+};

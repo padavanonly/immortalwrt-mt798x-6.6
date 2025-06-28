@@ -15,6 +15,7 @@
 #include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/mux/mux.h>
+#include <dt-bindings/reset/ti-syscon.h>
 
 / {
 	compatible = "mediatek,mt7981";
@@ -95,18 +96,23 @@
 		};
 
 		wmcpu_emi: wmcpu-reserved@47c80000 {
+			compatible = "mediatek,wmcpu-reserved";
 			reg = <0 0x47c80000 0 0x100000>;
 			no-map;
 		};
 
 		wo_emi0: wo-emi@47d80000 {
+			compatible = "mediatek,wocpu0_emi";
 			reg = <0 0x47d80000 0 0x40000>;
 			no-map;
+			shared = <0>;
 		};
 
 		wo_data: wo-data@47dc0000 {
+			compatible = "mediatek,wocpu_data";
 			reg = <0 0x47dc0000 0 0x240000>;
 			no-map;
+			shared = <1>;
 		};
 	};
 
@@ -129,6 +135,9 @@
 		consys: consys@10000000 {
 			compatible = "mediatek,mt7981-consys";
 			reg = <0 0x10000000 0 0x8600000>;
+			clocks = <&topckgen CLK_TOP_NETSYS_MCU_SEL>,
+                 		<&topckgen CLK_TOP_AP2CNN_HOST_SEL>;
+        		clock-names = "mcu", "ap2conn";
 			memory-region = <&wmcpu_emi>;
 		};
 
@@ -174,6 +183,18 @@
 				 <&infracfg CLK_INFRA_PWM3_CK>;
 			clock-names = "top", "main", "pwm1", "pwm2", "pwm3";
 			#pwm-cells = <2>;
+		};
+		
+		hnat: hnat@15000000 {
+			compatible = "mediatek,mtk-hnat_v4";
+			reg = <0 0x15100000 0 0x80000>;
+			resets = <&ethsys 0>;
+			reset-names = "mtketh";
+			mtketh-wan = "eth1";
+			mtketh-lan = "eth0";
+			mtketh-max-gmac = <2>;
+			mtketh-ppe-num = <2>;
+			ext-devices-prefix = "usb","wwan","rmnet","eth2","eth3","eth4";
 		};
 
 		sgmiisys0: syscon@10060000 {
@@ -577,38 +598,48 @@
 			};
 		};
 
-		ethsys: clock-controller@15000000 {
-			compatible = "mediatek,mt7981-ethsys",
-				     "syscon";
-			reg = <0 0x15000000 0 0x1000>;
-			#clock-cells = <1>;
-			#reset-cells = <1>;
-			#address-cells = <1>;
-			#size-cells = <1>;
-		};
-
+		ethsys: syscon@15000000 {
+                	#address-cells = <1>;
+                	#size-cells = <1>;
+                	compatible = "mediatek,mt7981-ethsys",
+                             "syscon";
+                	reg = <0 0x15000000 0 0x1000>;
+                	#clock-cells = <1>;
+                	#reset-cells = <1>;
+			ethsysrst: reset-controller {
+				compatible = "ti,syscon-reset";
+				#reset-cells = <1>;
+				ti,reset-bits = <0x34 4 0x34 4 0x34 4 (ASSERT_SET | DEASSERT_CLEAR | STATUS_SET)>;
+			};
+        	};
+		
 		wed: wed@15010000 {
-			compatible = "mediatek,mt7981-wed",
-				     "mediatek,mt7986-wed",
-				     "syscon";
-			reg = <0 0x15010000 0 0x1000>;
+			compatible = "mediatek,wed";
+			wed_num = <2>;
+			/* add this property for wed get the pci slot number. */
+			pci_slot_map = <0>, <1>;
+			reg = <0 0x15010000 0 0x1000>,
+		      		<0 0x15011000 0 0x1000>;
 			interrupt-parent = <&gic>;
-			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>;
-			memory-region = <&wo_emi0>, <&wo_data>;
-			memory-region-names = "wo-emi", "wo-data";
-			mediatek,wo-ccif = <&wo_ccif0>;
-			mediatek,wo-ilm = <&wo_ilm0>;
-			mediatek,wo-dlm = <&wo_dlm0>;
-			mediatek,wo-cpuboot = <&wo_cpuboot>;
+			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>,
+			     	<GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
+		wdma: wdma@15104800 {
+			compatible = "mediatek,wed-wdma";
+			reg = <0 0x15104800 0 0x400>,
+		      	      <0 0x15104c00 0 0x400>;
+		};
 		eth: ethernet@15100000 {
 			compatible = "mediatek,mt7981-eth";
 			reg = <0 0x15100000 0 0x80000>;
-			interrupts = <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
-					<GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
-					<GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
-					<GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
+			interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 191 IRQ_TYPE_LEVEL_HIGH>,						     <GIC_SPI 192 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&ethsys CLK_ETH_FE_EN>,
 				<&ethsys CLK_ETH_GP2_EN>,
 				<&ethsys CLK_ETH_GP1_EN>,
@@ -675,17 +706,6 @@
 			};
 		};
 
-		wdma: wdma@15104800 {
-			compatible = "mediatek,wed-wdma";
-			reg = <0 0x15104800 0 0x400>,
-			      <0 0x15104c00 0 0x400>;
-		};
-
-		wo_cpuboot: syscon@15194000 {
-			compatible = "mediatek,mt7986-wo-cpuboot", "syscon";
-			reg = <0 0x15194000 0 0x1000>;
-		};
-
 		ap2woccif: ap2woccif@151a5000 {
 			compatible = "mediatek,ap2woccif";
 			reg = <0 0x151a5000 0 0x1000>,
@@ -695,41 +715,37 @@
 				     <GIC_SPI 212 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
-		wo_ccif0: syscon@151a5000 {
-			compatible = "mediatek,mt7986-wo-ccif", "syscon";
-			reg = <0 0x151a5000 0 0x1000>;
-			interrupt-parent = <&gic>;
-			interrupts = <GIC_SPI 211 IRQ_TYPE_LEVEL_HIGH>;
+		wocpu0_ilm: wocpu0_ilm@151E0000 {
+			compatible = "mediatek,wocpu0_ilm";
+			reg = <0 0x151E0000 0 0x8000>;
 		};
 
-		wo_ilm0: syscon@151e0000 {
-			compatible = "mediatek,mt7986-wo-ilm", "syscon";
-			reg = <0 0x151e0000 0 0x8000>;
+		wocpu_dlm: wocpu_dlm@151E8000 {
+			compatible = "mediatek,wocpu_dlm";
+			reg = <0 0x151E8000 0 0x2000>,
+		      	<0 0x151F8000 0 0x2000>;
+			resets = <&ethsysrst 0>;
+			reset-names = "wocpu_rst";
 		};
 
-		wo_dlm0: syscon@151e8000 {
-			compatible = "mediatek,mt7986-wo-dlm", "syscon";
-			reg = <0 0x151e8000 0 0x2000>;
+		cpu_boot: wocpu_boot@15194000 {
+			compatible = "mediatek,wocpu_boot";
+			reg = <0 0x15194000 0 0x1000>;
 		};
+
 
 		wifi: wifi@18000000 {
 			compatible = "mediatek,mt7981-wmac";
-			reg = <0 0x18000000 0 0x1000000>,
-			      <0 0x10003000 0 0x1000>,
-			      <0 0x11d10000 0 0x1000>;
-			resets = <&watchdog MT7986_TOPRGU_CONSYS_SW_RST>;
-			reset-names = "consys";
-			pinctrl-0 = <&wifi_dbdc_pins>;
-			pinctrl-names = "dbdc";
-			clocks = <&topckgen CLK_TOP_NETSYS_MCU_SEL>,
-				 <&topckgen CLK_TOP_AP2CNN_HOST_SEL>;
-			clock-names = "mcu", "ap2conn";
+		};
+
+		wbsys: wbsys@18000000 {
+			compatible = "mediatek,wbsys";
+			reg = <0 0x18000000 0  0x1000000>;
 			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
-				     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
-			memory-region = <&wmcpu_emi>;
-			status = "disabled";
+					 <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
+					 <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
+					 <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
+			chip_id = <0x7981>;
 		};
 	};
 

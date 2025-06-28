@@ -1,0 +1,2046 @@
+--- a/drivers/net/dsa/b53/b53_common.c
++++ b/drivers/net/dsa/b53/b53_common.c
+@@ -1261,7 +1261,7 @@ static void b53_adjust_link(struct dsa_s
+ 			    struct phy_device *phydev)
+ {
+ 	struct b53_device *dev = ds->priv;
+-	struct ethtool_eee *p = &dev->ports[port].eee;
++	struct ethtool_keee *p = &dev->ports[port].eee;
+ 	u8 rgmii_ctrl = 0, reg = 0, off;
+ 	bool tx_pause = false;
+ 	bool rx_pause = false;
+@@ -2228,10 +2228,10 @@ int b53_eee_init(struct dsa_switch *ds,
+ }
+ EXPORT_SYMBOL(b53_eee_init);
+ 
+-int b53_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e)
++int b53_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_keee *e)
+ {
+ 	struct b53_device *dev = ds->priv;
+-	struct ethtool_eee *p = &dev->ports[port].eee;
++	struct ethtool_keee *p = &dev->ports[port].eee;
+ 	u16 reg;
+ 
+ 	if (is5325(dev) || is5365(dev))
+@@ -2245,10 +2245,10 @@ int b53_get_mac_eee(struct dsa_switch *d
+ }
+ EXPORT_SYMBOL(b53_get_mac_eee);
+ 
+-int b53_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e)
++int b53_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_keee *e)
+ {
+ 	struct b53_device *dev = ds->priv;
+-	struct ethtool_eee *p = &dev->ports[port].eee;
++	struct ethtool_keee *p = &dev->ports[port].eee;
+ 
+ 	if (is5325(dev) || is5365(dev))
+ 		return -EOPNOTSUPP;
+--- a/drivers/net/dsa/b53/b53_priv.h
++++ b/drivers/net/dsa/b53/b53_priv.h
+@@ -95,7 +95,7 @@ struct b53_pcs {
+ 
+ struct b53_port {
+ 	u16		vlan_ctl_mask;
+-	struct ethtool_eee eee;
++	struct ethtool_keee eee;
+ };
+ 
+ struct b53_vlan {
+@@ -397,7 +397,7 @@ void b53_disable_port(struct dsa_switch
+ void b53_brcm_hdr_setup(struct dsa_switch *ds, int port);
+ void b53_eee_enable_set(struct dsa_switch *ds, int port, bool enable);
+ int b53_eee_init(struct dsa_switch *ds, int port, struct phy_device *phy);
+-int b53_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e);
+-int b53_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e);
++int b53_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_keee *e);
++int b53_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_keee *e);
+ 
+ #endif
+--- a/drivers/net/dsa/bcm_sf2.c
++++ b/drivers/net/dsa/bcm_sf2.c
+@@ -839,7 +839,7 @@ static void bcm_sf2_sw_mac_link_up(struc
+ 				   bool tx_pause, bool rx_pause)
+ {
+ 	struct bcm_sf2_priv *priv = bcm_sf2_to_priv(ds);
+-	struct ethtool_eee *p = &priv->dev->ports[port].eee;
++	struct ethtool_keee *p = &priv->dev->ports[port].eee;
+ 	u32 reg_rgmii_ctrl = 0;
+ 	u32 reg, offset;
+ 
+--- a/drivers/net/dsa/microchip/ksz_common.c
++++ b/drivers/net/dsa/microchip/ksz_common.c
+@@ -2748,7 +2748,7 @@ static int ksz_validate_eee(struct dsa_s
+ }
+ 
+ static int ksz_get_mac_eee(struct dsa_switch *ds, int port,
+-			   struct ethtool_eee *e)
++			   struct ethtool_keee *e)
+ {
+ 	int ret;
+ 
+@@ -2768,7 +2768,7 @@ static int ksz_get_mac_eee(struct dsa_sw
+ }
+ 
+ static int ksz_set_mac_eee(struct dsa_switch *ds, int port,
+-			   struct ethtool_eee *e)
++			   struct ethtool_keee *e)
+ {
+ 	struct ksz_device *dev = ds->priv;
+ 	int ret;
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -3031,7 +3031,7 @@ mt753x_setup(struct dsa_switch *ds)
+ }
+ 
+ static int mt753x_get_mac_eee(struct dsa_switch *ds, int port,
+-			      struct ethtool_eee *e)
++			      struct ethtool_keee *e)
+ {
+ 	struct mt7530_priv *priv = ds->priv;
+ 	u32 eeecr = mt7530_read(priv, MT753X_PMEEECR_P(port));
+@@ -3043,7 +3043,7 @@ static int mt753x_get_mac_eee(struct dsa
+ }
+ 
+ static int mt753x_set_mac_eee(struct dsa_switch *ds, int port,
+-			      struct ethtool_eee *e)
++			      struct ethtool_keee *e)
+ {
+ 	struct mt7530_priv *priv = ds->priv;
+ 	u32 set, mask = LPI_THRESH_MASK | LPI_MODE_EN;
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -1398,14 +1398,14 @@ static void mv88e6xxx_get_regs(struct ds
+ }
+ 
+ static int mv88e6xxx_get_mac_eee(struct dsa_switch *ds, int port,
+-				 struct ethtool_eee *e)
++				 struct ethtool_keee *e)
+ {
+ 	/* Nothing to do on the port's MAC */
+ 	return 0;
+ }
+ 
+ static int mv88e6xxx_set_mac_eee(struct dsa_switch *ds, int port,
+-				 struct ethtool_eee *e)
++				 struct ethtool_keee *e)
+ {
+ 	/* Nothing to do on the port's MAC */
+ 	return 0;
+--- a/drivers/net/dsa/qca/qca8k-common.c
++++ b/drivers/net/dsa/qca/qca8k-common.c
+@@ -535,7 +535,7 @@ int qca8k_get_sset_count(struct dsa_swit
+ }
+ 
+ int qca8k_set_mac_eee(struct dsa_switch *ds, int port,
+-		      struct ethtool_eee *eee)
++		      struct ethtool_keee *eee)
+ {
+ 	u32 lpi_en = QCA8K_REG_EEE_CTRL_LPI_EN(port);
+ 	struct qca8k_priv *priv = ds->priv;
+@@ -559,7 +559,7 @@ exit:
+ }
+ 
+ int qca8k_get_mac_eee(struct dsa_switch *ds, int port,
+-		      struct ethtool_eee *e)
++		      struct ethtool_keee *e)
+ {
+ 	/* Nothing to do on the port's MAC */
+ 	return 0;
+--- a/drivers/net/dsa/qca/qca8k.h
++++ b/drivers/net/dsa/qca/qca8k.h
+@@ -517,8 +517,8 @@ void qca8k_get_ethtool_stats(struct dsa_
+ int qca8k_get_sset_count(struct dsa_switch *ds, int port, int sset);
+ 
+ /* Common eee function */
+-int qca8k_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *eee);
+-int qca8k_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_eee *e);
++int qca8k_set_mac_eee(struct dsa_switch *ds, int port, struct ethtool_keee *eee);
++int qca8k_get_mac_eee(struct dsa_switch *ds, int port, struct ethtool_keee *e);
+ 
+ /* Common bridge function */
+ void qca8k_port_stp_state_set(struct dsa_switch *ds, int port, u8 state);
+--- a/drivers/net/ethernet/aquantia/atlantic/aq_ethtool.c
++++ b/drivers/net/ethernet/aquantia/atlantic/aq_ethtool.c
+@@ -696,7 +696,7 @@ static u32 eee_mask_to_ethtool_mask(u32
+ 	return rate;
+ }
+ 
+-static int aq_ethtool_get_eee(struct net_device *ndev, struct ethtool_eee *eee)
++static int aq_ethtool_get_eee(struct net_device *ndev, struct ethtool_keee *eee)
+ {
+ 	struct aq_nic_s *aq_nic = netdev_priv(ndev);
+ 	u32 rate, supported_rates;
+@@ -712,14 +712,14 @@ static int aq_ethtool_get_eee(struct net
+ 	if (err < 0)
+ 		return err;
+ 
+-	eee->supported = eee_mask_to_ethtool_mask(supported_rates);
++	eee->supported_u32 = eee_mask_to_ethtool_mask(supported_rates);
+ 
+ 	if (aq_nic->aq_nic_cfg.eee_speeds)
+-		eee->advertised = eee->supported;
++		eee->advertised_u32 = eee->supported_u32;
+ 
+-	eee->lp_advertised = eee_mask_to_ethtool_mask(rate);
++	eee->lp_advertised_u32 = eee_mask_to_ethtool_mask(rate);
+ 
+-	eee->eee_enabled = !!eee->advertised;
++	eee->eee_enabled = !!eee->advertised_u32;
+ 
+ 	eee->tx_lpi_enabled = eee->eee_enabled;
+ 	if ((supported_rates & rate) & AQ_NIC_RATE_EEE_MSK)
+@@ -728,7 +728,7 @@ static int aq_ethtool_get_eee(struct net
+ 	return 0;
+ }
+ 
+-static int aq_ethtool_set_eee(struct net_device *ndev, struct ethtool_eee *eee)
++static int aq_ethtool_set_eee(struct net_device *ndev, struct ethtool_keee *eee)
+ {
+ 	struct aq_nic_s *aq_nic = netdev_priv(ndev);
+ 	u32 rate, supported_rates;
+--- a/drivers/net/ethernet/broadcom/asp2/bcmasp.h
++++ b/drivers/net/ethernet/broadcom/asp2/bcmasp.h
+@@ -337,7 +337,7 @@ struct bcmasp_intf {
+ 	int				wol_irq;
+ 	unsigned int			wol_irq_enabled:1;
+ 
+-	struct ethtool_eee		eee;
++	struct ethtool_keee		eee;
+ };
+ 
+ #define NUM_NET_FILTERS				32
+--- a/drivers/net/ethernet/broadcom/asp2/bcmasp_ethtool.c
++++ b/drivers/net/ethernet/broadcom/asp2/bcmasp_ethtool.c
+@@ -363,10 +363,10 @@ void bcmasp_eee_enable_set(struct bcmasp
+ 	intf->eee.eee_active = enable;
+ }
+ 
+-static int bcmasp_get_eee(struct net_device *dev, struct ethtool_eee *e)
++static int bcmasp_get_eee(struct net_device *dev, struct ethtool_keee *e)
+ {
+ 	struct bcmasp_intf *intf = netdev_priv(dev);
+-	struct ethtool_eee *p = &intf->eee;
++	struct ethtool_keee *p = &intf->eee;
+ 
+ 	if (!dev->phydev)
+ 		return -ENODEV;
+@@ -379,10 +379,10 @@ static int bcmasp_get_eee(struct net_dev
+ 	return phy_ethtool_get_eee(dev->phydev, e);
+ }
+ 
+-static int bcmasp_set_eee(struct net_device *dev, struct ethtool_eee *e)
++static int bcmasp_set_eee(struct net_device *dev, struct ethtool_keee *e)
+ {
+ 	struct bcmasp_intf *intf = netdev_priv(dev);
+-	struct ethtool_eee *p = &intf->eee;
++	struct ethtool_keee *p = &intf->eee;
+ 	int ret;
+ 
+ 	if (!dev->phydev)
+--- a/drivers/net/ethernet/broadcom/bnx2x/bnx2x_ethtool.c
++++ b/drivers/net/ethernet/broadcom/bnx2x/bnx2x_ethtool.c
+@@ -2108,7 +2108,7 @@ static u32 bnx2x_adv_to_eee(u32 modes, u
+ 	return eee_adv << shift;
+ }
+ 
+-static int bnx2x_get_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int bnx2x_get_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct bnx2x *bp = netdev_priv(dev);
+ 	u32 eee_cfg;
+@@ -2120,14 +2120,14 @@ static int bnx2x_get_eee(struct net_devi
+ 
+ 	eee_cfg = bp->link_vars.eee_status;
+ 
+-	edata->supported =
++	edata->supported_u32 =
+ 		bnx2x_eee_to_adv((eee_cfg & SHMEM_EEE_SUPPORTED_MASK) >>
+ 				 SHMEM_EEE_SUPPORTED_SHIFT);
+ 
+-	edata->advertised =
++	edata->advertised_u32 =
+ 		bnx2x_eee_to_adv((eee_cfg & SHMEM_EEE_ADV_STATUS_MASK) >>
+ 				 SHMEM_EEE_ADV_STATUS_SHIFT);
+-	edata->lp_advertised =
++	edata->lp_advertised_u32 =
+ 		bnx2x_eee_to_adv((eee_cfg & SHMEM_EEE_LP_ADV_STATUS_MASK) >>
+ 				 SHMEM_EEE_LP_ADV_STATUS_SHIFT);
+ 
+@@ -2141,7 +2141,7 @@ static int bnx2x_get_eee(struct net_devi
+ 	return 0;
+ }
+ 
+-static int bnx2x_set_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int bnx2x_set_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct bnx2x *bp = netdev_priv(dev);
+ 	u32 eee_cfg;
+@@ -2162,7 +2162,7 @@ static int bnx2x_set_eee(struct net_devi
+ 		return -EOPNOTSUPP;
+ 	}
+ 
+-	advertised = bnx2x_adv_to_eee(edata->advertised,
++	advertised = bnx2x_adv_to_eee(edata->advertised_u32,
+ 				      SHMEM_EEE_ADV_STATUS_SHIFT);
+ 	if ((advertised != (eee_cfg & SHMEM_EEE_ADV_STATUS_MASK))) {
+ 		DP(BNX2X_MSG_ETHTOOL,
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -9591,10 +9591,10 @@ static int bnxt_hwrm_phy_qcaps(struct bn
+ 
+ 	bp->phy_flags = resp->flags | (le16_to_cpu(resp->flags2) << 8);
+ 	if (resp->flags & PORT_PHY_QCAPS_RESP_FLAGS_EEE_SUPPORTED) {
+-		struct ethtool_eee *eee = &bp->eee;
++		struct ethtool_keee *eee = &bp->eee;
+ 		u16 fw_speeds = le16_to_cpu(resp->supported_speeds_eee_mode);
+ 
+-		eee->supported = _bnxt_fw_to_ethtool_adv_spds(fw_speeds, 0);
++		eee->supported_u32 = _bnxt_fw_to_ethtool_adv_spds(fw_speeds, 0);
+ 		bp->lpi_tmr_lo = le32_to_cpu(resp->tx_lpi_timer_low) &
+ 				 PORT_PHY_QCAPS_RESP_TX_LPI_TIMER_LOW_MASK;
+ 		bp->lpi_tmr_hi = le32_to_cpu(resp->valid_tx_lpi_timer_high) &
+@@ -9697,7 +9697,7 @@ int bnxt_update_link(struct bnxt *bp, bo
+ 	link_info->module_status = resp->module_status;
+ 
+ 	if (bp->phy_flags & BNXT_PHY_FL_EEE_CAP) {
+-		struct ethtool_eee *eee = &bp->eee;
++		struct ethtool_keee *eee = &bp->eee;
+ 		u16 fw_speeds;
+ 
+ 		eee->eee_active = 0;
+@@ -9706,7 +9706,7 @@ int bnxt_update_link(struct bnxt *bp, bo
+ 			eee->eee_active = 1;
+ 			fw_speeds = le16_to_cpu(
+ 				resp->link_partner_adv_eee_link_speed_mask);
+-			eee->lp_advertised =
++			eee->lp_advertised_u32 =
+ 				_bnxt_fw_to_ethtool_adv_spds(fw_speeds, 0);
+ 		}
+ 
+@@ -9717,7 +9717,7 @@ int bnxt_update_link(struct bnxt *bp, bo
+ 				eee->eee_enabled = 1;
+ 
+ 			fw_speeds = le16_to_cpu(resp->adv_eee_link_speed_mask);
+-			eee->advertised =
++			eee->advertised_u32 =
+ 				_bnxt_fw_to_ethtool_adv_spds(fw_speeds, 0);
+ 
+ 			if (resp->eee_config_phy_addr &
+@@ -9891,7 +9891,7 @@ int bnxt_hwrm_set_pause(struct bnxt *bp)
+ static void bnxt_hwrm_set_eee(struct bnxt *bp,
+ 			      struct hwrm_port_phy_cfg_input *req)
+ {
+-	struct ethtool_eee *eee = &bp->eee;
++	struct ethtool_keee *eee = &bp->eee;
+ 
+ 	if (eee->eee_enabled) {
+ 		u16 eee_speeds;
+@@ -9903,7 +9903,7 @@ static void bnxt_hwrm_set_eee(struct bnx
+ 			flags |= PORT_PHY_CFG_REQ_FLAGS_EEE_TX_LPI_DISABLE;
+ 
+ 		req->flags |= cpu_to_le32(flags);
+-		eee_speeds = bnxt_get_fw_auto_link_speeds(eee->advertised);
++		eee_speeds = bnxt_get_fw_auto_link_speeds(eee->advertised_u32);
+ 		req->eee_link_speed_mask = cpu_to_le16(eee_speeds);
+ 		req->tx_lpi_timer = cpu_to_le32(eee->tx_lpi_timer);
+ 	} else {
+@@ -10331,7 +10331,7 @@ static void bnxt_hwmon_open(struct bnxt
+ 
+ static bool bnxt_eee_config_ok(struct bnxt *bp)
+ {
+-	struct ethtool_eee *eee = &bp->eee;
++	struct ethtool_keee *eee = &bp->eee;
+ 	struct bnxt_link_info *link_info = &bp->link_info;
+ 
+ 	if (!(bp->phy_flags & BNXT_PHY_FL_EEE_CAP))
+@@ -10345,8 +10345,8 @@ static bool bnxt_eee_config_ok(struct bn
+ 			eee->eee_enabled = 0;
+ 			return false;
+ 		}
+-		if (eee->advertised & ~advertising) {
+-			eee->advertised = advertising & eee->supported;
++		if (eee->advertised_u32 & ~advertising) {
++			eee->advertised_u32 = advertising & eee->supported_u32;
+ 			return false;
+ 		}
+ 	}
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+@@ -2146,7 +2146,7 @@ struct bnxt {
+ 	 */
+ 	struct mutex		link_lock;
+ 	struct bnxt_link_info	link_info;
+-	struct ethtool_eee	eee;
++	struct ethtool_keee	eee;
+ 	u32			lpi_tmr_lo;
+ 	u32			lpi_tmr_hi;
+ 
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
+@@ -3102,10 +3102,10 @@ static int bnxt_set_eeprom(struct net_de
+ 				eeprom->len);
+ }
+ 
+-static int bnxt_set_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int bnxt_set_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct bnxt *bp = netdev_priv(dev);
+-	struct ethtool_eee *eee = &bp->eee;
++	struct ethtool_keee *eee = &bp->eee;
+ 	struct bnxt_link_info *link_info = &bp->link_info;
+ 	u32 advertising;
+ 	int rc = 0;
+@@ -3137,16 +3137,16 @@ static int bnxt_set_eee(struct net_devic
+ 			edata->tx_lpi_timer = eee->tx_lpi_timer;
+ 		}
+ 	}
+-	if (!edata->advertised) {
+-		edata->advertised = advertising & eee->supported;
+-	} else if (edata->advertised & ~advertising) {
++	if (!edata->advertised_u32) {
++		edata->advertised_u32 = advertising & eee->supported_u32;
++	} else if (edata->advertised_u32 & ~advertising) {
+ 		netdev_warn(dev, "EEE advertised %x must be a subset of autoneg advertised speeds %x\n",
+-			    edata->advertised, advertising);
++			    edata->advertised_u32, advertising);
+ 		rc = -EINVAL;
+ 		goto eee_exit;
+ 	}
+ 
+-	eee->advertised = edata->advertised;
++	eee->advertised_u32 = edata->advertised_u32;
+ 	eee->tx_lpi_enabled = edata->tx_lpi_enabled;
+ 	eee->tx_lpi_timer = edata->tx_lpi_timer;
+ eee_ok:
+@@ -3160,7 +3160,7 @@ eee_exit:
+ 	return rc;
+ }
+ 
+-static int bnxt_get_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int bnxt_get_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct bnxt *bp = netdev_priv(dev);
+ 
+@@ -3172,12 +3172,12 @@ static int bnxt_get_eee(struct net_devic
+ 		/* Preserve tx_lpi_timer so that the last value will be used
+ 		 * by default when it is re-enabled.
+ 		 */
+-		edata->advertised = 0;
++		edata->advertised_u32 = 0;
+ 		edata->tx_lpi_enabled = 0;
+ 	}
+ 
+ 	if (!bp->eee.eee_active)
+-		edata->lp_advertised = 0;
++		edata->lp_advertised_u32 = 0;
+ 
+ 	return 0;
+ }
+--- a/drivers/net/ethernet/broadcom/genet/bcmgenet.c
++++ b/drivers/net/ethernet/broadcom/genet/bcmgenet.c
+@@ -1317,10 +1317,10 @@ void bcmgenet_eee_enable_set(struct net_
+ 	priv->eee.tx_lpi_enabled = tx_lpi_enabled;
+ }
+ 
+-static int bcmgenet_get_eee(struct net_device *dev, struct ethtool_eee *e)
++static int bcmgenet_get_eee(struct net_device *dev, struct ethtool_keee *e)
+ {
+ 	struct bcmgenet_priv *priv = netdev_priv(dev);
+-	struct ethtool_eee *p = &priv->eee;
++	struct ethtool_keee *p = &priv->eee;
+ 
+ 	if (GENET_IS_V1(priv))
+ 		return -EOPNOTSUPP;
+@@ -1336,10 +1336,10 @@ static int bcmgenet_get_eee(struct net_d
+ 	return phy_ethtool_get_eee(dev->phydev, e);
+ }
+ 
+-static int bcmgenet_set_eee(struct net_device *dev, struct ethtool_eee *e)
++static int bcmgenet_set_eee(struct net_device *dev, struct ethtool_keee *e)
+ {
+ 	struct bcmgenet_priv *priv = netdev_priv(dev);
+-	struct ethtool_eee *p = &priv->eee;
++	struct ethtool_keee *p = &priv->eee;
+ 
+ 	if (GENET_IS_V1(priv))
+ 		return -EOPNOTSUPP;
+--- a/drivers/net/ethernet/broadcom/genet/bcmgenet.h
++++ b/drivers/net/ethernet/broadcom/genet/bcmgenet.h
+@@ -647,7 +647,7 @@ struct bcmgenet_priv {
+ 
+ 	struct bcmgenet_mib_counters mib;
+ 
+-	struct ethtool_eee eee;
++	struct ethtool_keee eee;
+ };
+ 
+ #define GENET_IO_MACRO(name, offset)					\
+--- a/drivers/net/ethernet/broadcom/tg3.c
++++ b/drivers/net/ethernet/broadcom/tg3.c
+@@ -2339,10 +2339,10 @@ static void tg3_phy_apply_otp(struct tg3
+ 	tg3_phy_toggle_auxctl_smdsp(tp, false);
+ }
+ 
+-static void tg3_eee_pull_config(struct tg3 *tp, struct ethtool_eee *eee)
++static void tg3_eee_pull_config(struct tg3 *tp, struct ethtool_keee *eee)
+ {
+ 	u32 val;
+-	struct ethtool_eee *dest = &tp->eee;
++	struct ethtool_keee *dest = &tp->eee;
+ 
+ 	if (!(tp->phy_flags & TG3_PHYFLG_EEE_CAP))
+ 		return;
+@@ -2363,13 +2363,13 @@ static void tg3_eee_pull_config(struct t
+ 	/* Pull lp advertised settings */
+ 	if (tg3_phy_cl45_read(tp, MDIO_MMD_AN, MDIO_AN_EEE_LPABLE, &val))
+ 		return;
+-	dest->lp_advertised = mmd_eee_adv_to_ethtool_adv_t(val);
++	dest->lp_advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(val);
+ 
+ 	/* Pull advertised and eee_enabled settings */
+ 	if (tg3_phy_cl45_read(tp, MDIO_MMD_AN, MDIO_AN_EEE_ADV, &val))
+ 		return;
+ 	dest->eee_enabled = !!val;
+-	dest->advertised = mmd_eee_adv_to_ethtool_adv_t(val);
++	dest->advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(val);
+ 
+ 	/* Pull tx_lpi_enabled */
+ 	val = tr32(TG3_CPMU_EEE_MODE);
+@@ -4365,9 +4365,9 @@ static int tg3_phy_autoneg_cfg(struct tg
+ 
+ 		if (!tp->eee.eee_enabled) {
+ 			val = 0;
+-			tp->eee.advertised = 0;
++			tp->eee.advertised_u32 = 0;
+ 		} else {
+-			tp->eee.advertised = advertise &
++			tp->eee.advertised_u32 = advertise &
+ 					     (ADVERTISED_100baseT_Full |
+ 					      ADVERTISED_1000baseT_Full);
+ 		}
+@@ -4619,7 +4619,7 @@ static int tg3_init_5401phy_dsp(struct t
+ 
+ static bool tg3_phy_eee_config_ok(struct tg3 *tp)
+ {
+-	struct ethtool_eee eee;
++	struct ethtool_keee eee;
+ 
+ 	if (!(tp->phy_flags & TG3_PHYFLG_EEE_CAP))
+ 		return true;
+@@ -4627,13 +4627,13 @@ static bool tg3_phy_eee_config_ok(struct
+ 	tg3_eee_pull_config(tp, &eee);
+ 
+ 	if (tp->eee.eee_enabled) {
+-		if (tp->eee.advertised != eee.advertised ||
++		if (tp->eee.advertised_u32 != eee.advertised_u32 ||
+ 		    tp->eee.tx_lpi_timer != eee.tx_lpi_timer ||
+ 		    tp->eee.tx_lpi_enabled != eee.tx_lpi_enabled)
+ 			return false;
+ 	} else {
+ 		/* EEE is disabled but we're advertising */
+-		if (eee.advertised)
++		if (eee.advertised_u32)
+ 			return false;
+ 	}
+ 
+@@ -14101,7 +14101,7 @@ static int tg3_set_coalesce(struct net_d
+ 	return 0;
+ }
+ 
+-static int tg3_set_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int tg3_set_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct tg3 *tp = netdev_priv(dev);
+ 
+@@ -14110,7 +14110,7 @@ static int tg3_set_eee(struct net_device
+ 		return -EOPNOTSUPP;
+ 	}
+ 
+-	if (edata->advertised != tp->eee.advertised) {
++	if (edata->advertised_u32 != tp->eee.advertised_u32) {
+ 		netdev_warn(tp->dev,
+ 			    "Direct manipulation of EEE advertisement is not supported\n");
+ 		return -EINVAL;
+@@ -14138,7 +14138,7 @@ static int tg3_set_eee(struct net_device
+ 	return 0;
+ }
+ 
+-static int tg3_get_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int tg3_get_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct tg3 *tp = netdev_priv(dev);
+ 
+@@ -15576,10 +15576,10 @@ static int tg3_phy_probe(struct tg3 *tp)
+ 	      tg3_chip_rev_id(tp) != CHIPREV_ID_57765_A0))) {
+ 		tp->phy_flags |= TG3_PHYFLG_EEE_CAP;
+ 
+-		tp->eee.supported = SUPPORTED_100baseT_Full |
+-				    SUPPORTED_1000baseT_Full;
+-		tp->eee.advertised = ADVERTISED_100baseT_Full |
+-				     ADVERTISED_1000baseT_Full;
++		tp->eee.supported_u32 = SUPPORTED_100baseT_Full |
++					SUPPORTED_1000baseT_Full;
++		tp->eee.advertised_u32 = ADVERTISED_100baseT_Full |
++					 ADVERTISED_1000baseT_Full;
+ 		tp->eee.eee_enabled = 1;
+ 		tp->eee.tx_lpi_enabled = 1;
+ 		tp->eee.tx_lpi_timer = TG3_CPMU_DBTMR1_LNKIDLE_2047US;
+--- a/drivers/net/ethernet/broadcom/tg3.h
++++ b/drivers/net/ethernet/broadcom/tg3.h
+@@ -3416,7 +3416,7 @@ struct tg3 {
+ 	unsigned int			irq_cnt;
+ 
+ 	struct ethtool_coalesce		coal;
+-	struct ethtool_eee		eee;
++	struct ethtool_keee		eee;
+ 
+ 	/* firmware info */
+ 	const char			*fw_needed;
+--- a/drivers/net/ethernet/engleder/tsnep_main.c
++++ b/drivers/net/ethernet/engleder/tsnep_main.c
+@@ -228,7 +228,7 @@ static int tsnep_phy_loopback(struct tsn
+ static int tsnep_phy_open(struct tsnep_adapter *adapter)
+ {
+ 	struct phy_device *phydev;
+-	struct ethtool_eee ethtool_eee;
++	struct ethtool_keee ethtool_keee;
+ 	int retval;
+ 
+ 	retval = phy_connect_direct(adapter->netdev, adapter->phydev,
+@@ -247,8 +247,8 @@ static int tsnep_phy_open(struct tsnep_a
+ 	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_1000baseT_Half_BIT);
+ 
+ 	/* disable EEE autoneg, EEE not supported by TSNEP */
+-	memset(&ethtool_eee, 0, sizeof(ethtool_eee));
+-	phy_ethtool_set_eee(adapter->phydev, &ethtool_eee);
++	memset(&ethtool_keee, 0, sizeof(ethtool_keee));
++	phy_ethtool_set_eee(adapter->phydev, &ethtool_keee);
+ 
+ 	adapter->phydev->irq = PHY_MAC_INTERRUPT;
+ 	phy_start(adapter->phydev);
+--- a/drivers/net/ethernet/freescale/enetc/enetc.c
++++ b/drivers/net/ethernet/freescale/enetc/enetc.c
+@@ -2426,7 +2426,7 @@ static void enetc_clear_interrupts(struc
+ static int enetc_phylink_connect(struct net_device *ndev)
+ {
+ 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
+-	struct ethtool_eee edata;
++	struct ethtool_keee edata;
+ 	int err;
+ 
+ 	if (!priv->phylink) {
+@@ -2442,7 +2442,7 @@ static int enetc_phylink_connect(struct
+ 	}
+ 
+ 	/* disable EEE autoneg, until ENETC driver supports it */
+-	memset(&edata, 0, sizeof(struct ethtool_eee));
++	memset(&edata, 0, sizeof(struct ethtool_keee));
+ 	phylink_ethtool_set_eee(priv->phylink, &edata);
+ 
+ 	phylink_start(priv->phylink);
+--- a/drivers/net/ethernet/freescale/fec.h
++++ b/drivers/net/ethernet/freescale/fec.h
+@@ -672,7 +672,7 @@ struct fec_enet_private {
+ 	unsigned int itr_clk_rate;
+ 
+ 	/* tx lpi eee mode */
+-	struct ethtool_eee eee;
++	struct ethtool_keee eee;
+ 	unsigned int clk_ref_rate;
+ 
+ 	/* ptp clock period in ns*/
+--- a/drivers/net/ethernet/freescale/fec_main.c
++++ b/drivers/net/ethernet/freescale/fec_main.c
+@@ -3175,7 +3175,7 @@ static int fec_enet_us_to_tx_cycle(struc
+ static int fec_enet_eee_mode_set(struct net_device *ndev, bool enable)
+ {
+ 	struct fec_enet_private *fep = netdev_priv(ndev);
+-	struct ethtool_eee *p = &fep->eee;
++	struct ethtool_keee *p = &fep->eee;
+ 	unsigned int sleep_cycle, wake_cycle;
+ 	int ret = 0;
+ 
+@@ -3202,10 +3202,10 @@ static int fec_enet_eee_mode_set(struct
+ }
+ 
+ static int
+-fec_enet_get_eee(struct net_device *ndev, struct ethtool_eee *edata)
++fec_enet_get_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	struct fec_enet_private *fep = netdev_priv(ndev);
+-	struct ethtool_eee *p = &fep->eee;
++	struct ethtool_keee *p = &fep->eee;
+ 
+ 	if (!(fep->quirks & FEC_QUIRK_HAS_EEE))
+ 		return -EOPNOTSUPP;
+@@ -3222,10 +3222,10 @@ fec_enet_get_eee(struct net_device *ndev
+ }
+ 
+ static int
+-fec_enet_set_eee(struct net_device *ndev, struct ethtool_eee *edata)
++fec_enet_set_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	struct fec_enet_private *fep = netdev_priv(ndev);
+-	struct ethtool_eee *p = &fep->eee;
++	struct ethtool_keee *p = &fep->eee;
+ 	int ret = 0;
+ 
+ 	if (!(fep->quirks & FEC_QUIRK_HAS_EEE))
+--- a/drivers/net/ethernet/freescale/gianfar.c
++++ b/drivers/net/ethernet/freescale/gianfar.c
+@@ -1649,7 +1649,7 @@ static int init_phy(struct net_device *d
+ 	struct gfar_private *priv = netdev_priv(dev);
+ 	phy_interface_t interface = priv->interface;
+ 	struct phy_device *phydev;
+-	struct ethtool_eee edata;
++	struct ethtool_keee edata;
+ 
+ 	linkmode_set_bit_array(phy_10_100_features_array,
+ 			       ARRAY_SIZE(phy_10_100_features_array),
+@@ -1681,7 +1681,7 @@ static int init_phy(struct net_device *d
+ 	phy_support_asym_pause(phydev);
+ 
+ 	/* disable EEE autoneg, EEE not supported by eTSEC */
+-	memset(&edata, 0, sizeof(struct ethtool_eee));
++	memset(&edata, 0, sizeof(struct ethtool_keee));
+ 	phy_ethtool_set_eee(phydev, &edata);
+ 
+ 	return 0;
+--- a/drivers/net/ethernet/intel/e1000e/ethtool.c
++++ b/drivers/net/ethernet/intel/e1000e/ethtool.c
+@@ -2186,7 +2186,7 @@ static int e1000_get_rxnfc(struct net_de
+ 	}
+ }
+ 
+-static int e1000e_get_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int e1000e_get_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -2223,16 +2223,16 @@ static int e1000e_get_eee(struct net_dev
+ 	ret_val = e1000_read_emi_reg_locked(hw, cap_addr, &phy_data);
+ 	if (ret_val)
+ 		goto release;
+-	edata->supported = mmd_eee_cap_to_ethtool_sup_t(phy_data);
++	edata->supported_u32 = mmd_eee_cap_to_ethtool_sup_t(phy_data);
+ 
+ 	/* EEE Advertised */
+-	edata->advertised = mmd_eee_adv_to_ethtool_adv_t(adapter->eee_advert);
++	edata->advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(adapter->eee_advert);
+ 
+ 	/* EEE Link Partner Advertised */
+ 	ret_val = e1000_read_emi_reg_locked(hw, lpa_addr, &phy_data);
+ 	if (ret_val)
+ 		goto release;
+-	edata->lp_advertised = mmd_eee_adv_to_ethtool_adv_t(phy_data);
++	edata->lp_advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(phy_data);
+ 
+ 	/* EEE PCS Status */
+ 	ret_val = e1000_read_emi_reg_locked(hw, pcs_stat_addr, &phy_data);
+@@ -2262,11 +2262,11 @@ release:
+ 	return ret_val;
+ }
+ 
+-static int e1000e_set_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int e1000e_set_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct e1000_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+-	struct ethtool_eee eee_curr;
++	struct ethtool_keee eee_curr;
+ 	s32 ret_val;
+ 
+ 	ret_val = e1000e_get_eee(netdev, &eee_curr);
+@@ -2283,12 +2283,12 @@ static int e1000e_set_eee(struct net_dev
+ 		return -EINVAL;
+ 	}
+ 
+-	if (edata->advertised & ~(ADVERTISE_100_FULL | ADVERTISE_1000_FULL)) {
++	if (edata->advertised_u32 & ~(ADVERTISE_100_FULL | ADVERTISE_1000_FULL)) {
+ 		e_err("EEE advertisement supports only 100TX and/or 1000T full-duplex\n");
+ 		return -EINVAL;
+ 	}
+ 
+-	adapter->eee_advert = ethtool_adv_to_mmd_eee_adv_t(edata->advertised);
++	adapter->eee_advert = ethtool_adv_to_mmd_eee_adv_t(edata->advertised_u32);
+ 
+ 	hw->dev_spec.ich8lan.eee_disable = !edata->eee_enabled;
+ 
+--- a/drivers/net/ethernet/intel/i40e/i40e_ethtool.c
++++ b/drivers/net/ethernet/intel/i40e/i40e_ethtool.c
+@@ -5627,7 +5627,7 @@ static int i40e_get_module_eeprom(struct
+ 	return 0;
+ }
+ 
+-static int i40e_get_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int i40e_get_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct i40e_netdev_priv *np = netdev_priv(netdev);
+ 	struct i40e_aq_get_phy_abilities_resp phy_cfg;
+@@ -5647,16 +5647,16 @@ static int i40e_get_eee(struct net_devic
+ 	if (phy_cfg.eee_capability == 0)
+ 		return -EOPNOTSUPP;
+ 
+-	edata->supported = SUPPORTED_Autoneg;
+-	edata->lp_advertised = edata->supported;
++	edata->supported_u32 = SUPPORTED_Autoneg;
++	edata->lp_advertised_u32 = edata->supported_u32;
+ 
+ 	/* Get current configuration */
+ 	status = i40e_aq_get_phy_capabilities(hw, false, false, &phy_cfg, NULL);
+ 	if (status)
+ 		return -EAGAIN;
+ 
+-	edata->advertised = phy_cfg.eee_capability ? SUPPORTED_Autoneg : 0U;
+-	edata->eee_enabled = !!edata->advertised;
++	edata->advertised_u32 = phy_cfg.eee_capability ? SUPPORTED_Autoneg : 0U;
++	edata->eee_enabled = !!edata->advertised_u32;
+ 	edata->tx_lpi_enabled = pf->stats.tx_lpi_status;
+ 
+ 	edata->eee_active = pf->stats.tx_lpi_status && pf->stats.rx_lpi_status;
+@@ -5665,7 +5665,7 @@ static int i40e_get_eee(struct net_devic
+ }
+ 
+ static int i40e_is_eee_param_supported(struct net_device *netdev,
+-				       struct ethtool_eee *edata)
++				       struct ethtool_keee *edata)
+ {
+ 	struct i40e_netdev_priv *np = netdev_priv(netdev);
+ 	struct i40e_vsi *vsi = np->vsi;
+@@ -5674,7 +5674,7 @@ static int i40e_is_eee_param_supported(s
+ 		u32 value;
+ 		const char *name;
+ 	} param[] = {
+-		{edata->advertised & ~SUPPORTED_Autoneg, "advertise"},
++		{edata->advertised_u32 & ~SUPPORTED_Autoneg, "advertise"},
+ 		{edata->tx_lpi_timer, "tx-timer"},
+ 		{edata->tx_lpi_enabled != pf->stats.tx_lpi_status, "tx-lpi"}
+ 	};
+@@ -5692,7 +5692,7 @@ static int i40e_is_eee_param_supported(s
+ 	return 0;
+ }
+ 
+-static int i40e_set_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int i40e_set_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct i40e_netdev_priv *np = netdev_priv(netdev);
+ 	struct i40e_aq_get_phy_abilities_resp abilities;
+--- a/drivers/net/ethernet/intel/igb/igb_ethtool.c
++++ b/drivers/net/ethernet/intel/igb/igb_ethtool.c
+@@ -3030,7 +3030,7 @@ static int igb_set_rxnfc(struct net_devi
+ 	return ret;
+ }
+ 
+-static int igb_get_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int igb_get_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct igb_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+@@ -3041,10 +3041,10 @@ static int igb_get_eee(struct net_device
+ 	    (hw->phy.media_type != e1000_media_type_copper))
+ 		return -EOPNOTSUPP;
+ 
+-	edata->supported = (SUPPORTED_1000baseT_Full |
+-			    SUPPORTED_100baseT_Full);
++	edata->supported_u32 = (SUPPORTED_1000baseT_Full |
++				SUPPORTED_100baseT_Full);
+ 	if (!hw->dev_spec._82575.eee_disable)
+-		edata->advertised =
++		edata->advertised_u32 =
+ 			mmd_eee_adv_to_ethtool_adv_t(adapter->eee_advert);
+ 
+ 	/* The IPCNFG and EEER registers are not supported on I354. */
+@@ -3071,7 +3071,7 @@ static int igb_get_eee(struct net_device
+ 		if (ret_val)
+ 			return -ENODATA;
+ 
+-		edata->lp_advertised = mmd_eee_adv_to_ethtool_adv_t(phy_data);
++		edata->lp_advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(phy_data);
+ 		break;
+ 	case e1000_i354:
+ 	case e1000_i210:
+@@ -3082,7 +3082,7 @@ static int igb_get_eee(struct net_device
+ 		if (ret_val)
+ 			return -ENODATA;
+ 
+-		edata->lp_advertised = mmd_eee_adv_to_ethtool_adv_t(phy_data);
++		edata->lp_advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(phy_data);
+ 
+ 		break;
+ 	default:
+@@ -3102,18 +3102,18 @@ static int igb_get_eee(struct net_device
+ 		edata->eee_enabled = false;
+ 		edata->eee_active = false;
+ 		edata->tx_lpi_enabled = false;
+-		edata->advertised &= ~edata->advertised;
++		edata->advertised_u32 &= ~edata->advertised_u32;
+ 	}
+ 
+ 	return 0;
+ }
+ 
+ static int igb_set_eee(struct net_device *netdev,
+-		       struct ethtool_eee *edata)
++		       struct ethtool_keee *edata)
+ {
+ 	struct igb_adapter *adapter = netdev_priv(netdev);
+ 	struct e1000_hw *hw = &adapter->hw;
+-	struct ethtool_eee eee_curr;
++	struct ethtool_keee eee_curr;
+ 	bool adv1g_eee = true, adv100m_eee = true;
+ 	s32 ret_val;
+ 
+@@ -3121,7 +3121,7 @@ static int igb_set_eee(struct net_device
+ 	    (hw->phy.media_type != e1000_media_type_copper))
+ 		return -EOPNOTSUPP;
+ 
+-	memset(&eee_curr, 0, sizeof(struct ethtool_eee));
++	memset(&eee_curr, 0, sizeof(struct ethtool_keee));
+ 
+ 	ret_val = igb_get_eee(netdev, &eee_curr);
+ 	if (ret_val)
+@@ -3141,14 +3141,14 @@ static int igb_set_eee(struct net_device
+ 			return -EINVAL;
+ 		}
+ 
+-		if (!edata->advertised || (edata->advertised &
++		if (!edata->advertised_u32 || (edata->advertised_u32 &
+ 		    ~(ADVERTISE_100_FULL | ADVERTISE_1000_FULL))) {
+ 			dev_err(&adapter->pdev->dev,
+ 				"EEE Advertisement supports only 100Tx and/or 100T full duplex\n");
+ 			return -EINVAL;
+ 		}
+-		adv100m_eee = !!(edata->advertised & ADVERTISE_100_FULL);
+-		adv1g_eee = !!(edata->advertised & ADVERTISE_1000_FULL);
++		adv100m_eee = !!(edata->advertised_u32 & ADVERTISE_100_FULL);
++		adv1g_eee = !!(edata->advertised_u32 & ADVERTISE_1000_FULL);
+ 
+ 	} else if (!edata->eee_enabled) {
+ 		dev_err(&adapter->pdev->dev,
+@@ -3156,7 +3156,7 @@ static int igb_set_eee(struct net_device
+ 		return -EINVAL;
+ 	}
+ 
+-	adapter->eee_advert = ethtool_adv_to_mmd_eee_adv_t(edata->advertised);
++	adapter->eee_advert = ethtool_adv_to_mmd_eee_adv_t(edata->advertised_u32);
+ 	if (hw->dev_spec._82575.eee_disable != !edata->eee_enabled) {
+ 		hw->dev_spec._82575.eee_disable = !edata->eee_enabled;
+ 		adapter->flags |= IGB_FLAG_EEE;
+--- a/drivers/net/ethernet/intel/igc/igc.h
++++ b/drivers/net/ethernet/intel/igc/igc.h
+@@ -153,7 +153,7 @@ struct igc_ring {
+ struct igc_adapter {
+ 	struct net_device *netdev;
+ 
+-	struct ethtool_eee eee;
++	struct ethtool_keee eee;
+ 	u16 eee_advert;
+ 
+ 	unsigned long state;
+--- a/drivers/net/ethernet/intel/igc/igc_ethtool.c
++++ b/drivers/net/ethernet/intel/igc/igc_ethtool.c
+@@ -1623,18 +1623,18 @@ static int igc_ethtool_set_priv_flags(st
+ }
+ 
+ static int igc_ethtool_get_eee(struct net_device *netdev,
+-			       struct ethtool_eee *edata)
++			       struct ethtool_keee *edata)
+ {
+ 	struct igc_adapter *adapter = netdev_priv(netdev);
+ 	struct igc_hw *hw = &adapter->hw;
+ 	u32 eeer;
+ 
+ 	if (hw->dev_spec._base.eee_enable)
+-		edata->advertised =
++		edata->advertised_u32 =
+ 			mmd_eee_adv_to_ethtool_adv_t(adapter->eee_advert);
+ 
+ 	*edata = adapter->eee;
+-	edata->supported = SUPPORTED_Autoneg;
++	edata->supported_u32 = SUPPORTED_Autoneg;
+ 
+ 	eeer = rd32(IGC_EEER);
+ 
+@@ -1647,8 +1647,8 @@ static int igc_ethtool_get_eee(struct ne
+ 
+ 	edata->eee_enabled = hw->dev_spec._base.eee_enable;
+ 
+-	edata->advertised = SUPPORTED_Autoneg;
+-	edata->lp_advertised = SUPPORTED_Autoneg;
++	edata->advertised_u32 = SUPPORTED_Autoneg;
++	edata->lp_advertised_u32 = SUPPORTED_Autoneg;
+ 
+ 	/* Report correct negotiated EEE status for devices that
+ 	 * wrongly report EEE at half-duplex
+@@ -1657,21 +1657,21 @@ static int igc_ethtool_get_eee(struct ne
+ 		edata->eee_enabled = false;
+ 		edata->eee_active = false;
+ 		edata->tx_lpi_enabled = false;
+-		edata->advertised &= ~edata->advertised;
++		edata->advertised_u32 &= ~edata->advertised_u32;
+ 	}
+ 
+ 	return 0;
+ }
+ 
+ static int igc_ethtool_set_eee(struct net_device *netdev,
+-			       struct ethtool_eee *edata)
++			       struct ethtool_keee *edata)
+ {
+ 	struct igc_adapter *adapter = netdev_priv(netdev);
+ 	struct igc_hw *hw = &adapter->hw;
+-	struct ethtool_eee eee_curr;
++	struct ethtool_keee eee_curr;
+ 	s32 ret_val;
+ 
+-	memset(&eee_curr, 0, sizeof(struct ethtool_eee));
++	memset(&eee_curr, 0, sizeof(struct ethtool_keee));
+ 
+ 	ret_val = igc_ethtool_get_eee(netdev, &eee_curr);
+ 	if (ret_val) {
+@@ -1699,7 +1699,7 @@ static int igc_ethtool_set_eee(struct ne
+ 		return -EINVAL;
+ 	}
+ 
+-	adapter->eee_advert = ethtool_adv_to_mmd_eee_adv_t(edata->advertised);
++	adapter->eee_advert = ethtool_adv_to_mmd_eee_adv_t(edata->advertised_u32);
+ 	if (hw->dev_spec._base.eee_enable != edata->eee_enabled) {
+ 		hw->dev_spec._base.eee_enable = edata->eee_enabled;
+ 		adapter->flags |= IGC_FLAG_EEE;
+--- a/drivers/net/ethernet/intel/ixgbe/ixgbe_ethtool.c
++++ b/drivers/net/ethernet/intel/ixgbe/ixgbe_ethtool.c
+@@ -3423,7 +3423,7 @@ static const struct {
+ };
+ 
+ static int
+-ixgbe_get_eee_fw(struct ixgbe_adapter *adapter, struct ethtool_eee *edata)
++ixgbe_get_eee_fw(struct ixgbe_adapter *adapter, struct ethtool_keee *edata)
+ {
+ 	u32 info[FW_PHY_ACT_DATA_COUNT] = { 0 };
+ 	struct ixgbe_hw *hw = &adapter->hw;
+@@ -3434,33 +3434,33 @@ ixgbe_get_eee_fw(struct ixgbe_adapter *a
+ 	if (rc)
+ 		return rc;
+ 
+-	edata->lp_advertised = 0;
++	edata->lp_advertised_u32 = 0;
+ 	for (i = 0; i < ARRAY_SIZE(ixgbe_lp_map); ++i) {
+ 		if (info[0] & ixgbe_lp_map[i].lp_advertised)
+-			edata->lp_advertised |= ixgbe_lp_map[i].mac_speed;
++			edata->lp_advertised_u32 |= ixgbe_lp_map[i].mac_speed;
+ 	}
+ 
+-	edata->supported = 0;
++	edata->supported_u32 = 0;
+ 	for (i = 0; i < ARRAY_SIZE(ixgbe_ls_map); ++i) {
+ 		if (hw->phy.eee_speeds_supported & ixgbe_ls_map[i].mac_speed)
+-			edata->supported |= ixgbe_ls_map[i].supported;
++			edata->supported_u32 |= ixgbe_ls_map[i].supported;
+ 	}
+ 
+-	edata->advertised = 0;
++	edata->advertised_u32 = 0;
+ 	for (i = 0; i < ARRAY_SIZE(ixgbe_ls_map); ++i) {
+ 		if (hw->phy.eee_speeds_advertised & ixgbe_ls_map[i].mac_speed)
+-			edata->advertised |= ixgbe_ls_map[i].supported;
++			edata->advertised_u32 |= ixgbe_ls_map[i].supported;
+ 	}
+ 
+-	edata->eee_enabled = !!edata->advertised;
++	edata->eee_enabled = !!edata->advertised_u32;
+ 	edata->tx_lpi_enabled = edata->eee_enabled;
+-	if (edata->advertised & edata->lp_advertised)
++	if (edata->advertised_u32 & edata->lp_advertised_u32)
+ 		edata->eee_active = true;
+ 
+ 	return 0;
+ }
+ 
+-static int ixgbe_get_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int ixgbe_get_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
+ 	struct ixgbe_hw *hw = &adapter->hw;
+@@ -3474,17 +3474,17 @@ static int ixgbe_get_eee(struct net_devi
+ 	return -EOPNOTSUPP;
+ }
+ 
+-static int ixgbe_set_eee(struct net_device *netdev, struct ethtool_eee *edata)
++static int ixgbe_set_eee(struct net_device *netdev, struct ethtool_keee *edata)
+ {
+ 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
+ 	struct ixgbe_hw *hw = &adapter->hw;
+-	struct ethtool_eee eee_data;
++	struct ethtool_keee eee_data;
+ 	s32 ret_val;
+ 
+ 	if (!(adapter->flags2 & IXGBE_FLAG2_EEE_CAPABLE))
+ 		return -EOPNOTSUPP;
+ 
+-	memset(&eee_data, 0, sizeof(struct ethtool_eee));
++	memset(&eee_data, 0, sizeof(struct ethtool_keee));
+ 
+ 	ret_val = ixgbe_get_eee(netdev, &eee_data);
+ 	if (ret_val)
+@@ -3502,7 +3502,7 @@ static int ixgbe_set_eee(struct net_devi
+ 			return -EINVAL;
+ 		}
+ 
+-		if (eee_data.advertised != edata->advertised) {
++		if (eee_data.advertised_u32 != edata->advertised_u32) {
+ 			e_err(drv,
+ 			      "Setting EEE advertised speeds is not supported\n");
+ 			return -EINVAL;
+--- a/drivers/net/ethernet/marvell/mvneta.c
++++ b/drivers/net/ethernet/marvell/mvneta.c
+@@ -5103,7 +5103,7 @@ static int mvneta_ethtool_set_wol(struct
+ }
+ 
+ static int mvneta_ethtool_get_eee(struct net_device *dev,
+-				  struct ethtool_eee *eee)
++				  struct ethtool_keee *eee)
+ {
+ 	struct mvneta_port *pp = netdev_priv(dev);
+ 	u32 lpi_ctl0;
+@@ -5119,7 +5119,7 @@ static int mvneta_ethtool_get_eee(struct
+ }
+ 
+ static int mvneta_ethtool_set_eee(struct net_device *dev,
+-				  struct ethtool_eee *eee)
++				  struct ethtool_keee *eee)
+ {
+ 	struct mvneta_port *pp = netdev_priv(dev);
+ 	u32 lpi_ctl0;
+--- a/drivers/net/ethernet/microchip/lan743x_ethtool.c
++++ b/drivers/net/ethernet/microchip/lan743x_ethtool.c
+@@ -1052,7 +1052,7 @@ static int lan743x_ethtool_get_ts_info(s
+ }
+ 
+ static int lan743x_ethtool_get_eee(struct net_device *netdev,
+-				   struct ethtool_eee *eee)
++				   struct ethtool_keee *eee)
+ {
+ 	struct lan743x_adapter *adapter = netdev_priv(netdev);
+ 	struct phy_device *phydev = netdev->phydev;
+@@ -1090,7 +1090,7 @@ static int lan743x_ethtool_get_eee(struc
+ }
+ 
+ static int lan743x_ethtool_set_eee(struct net_device *netdev,
+-				   struct ethtool_eee *eee)
++				   struct ethtool_keee *eee)
+ {
+ 	struct lan743x_adapter *adapter;
+ 	struct phy_device *phydev;
+--- a/drivers/net/ethernet/qlogic/qede/qede_ethtool.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_ethtool.c
+@@ -1796,7 +1796,7 @@ static int qede_get_tunable(struct net_d
+ 	return 0;
+ }
+ 
+-static int qede_get_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int qede_get_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct qede_dev *edev = netdev_priv(dev);
+ 	struct qed_link_output current_link;
+@@ -1810,17 +1810,17 @@ static int qede_get_eee(struct net_devic
+ 	}
+ 
+ 	if (current_link.eee.adv_caps & QED_EEE_1G_ADV)
+-		edata->advertised = ADVERTISED_1000baseT_Full;
++		edata->advertised_u32 = ADVERTISED_1000baseT_Full;
+ 	if (current_link.eee.adv_caps & QED_EEE_10G_ADV)
+-		edata->advertised |= ADVERTISED_10000baseT_Full;
++		edata->advertised_u32 |= ADVERTISED_10000baseT_Full;
+ 	if (current_link.sup_caps & QED_EEE_1G_ADV)
+-		edata->supported = ADVERTISED_1000baseT_Full;
++		edata->supported_u32 = ADVERTISED_1000baseT_Full;
+ 	if (current_link.sup_caps & QED_EEE_10G_ADV)
+-		edata->supported |= ADVERTISED_10000baseT_Full;
++		edata->supported_u32 |= ADVERTISED_10000baseT_Full;
+ 	if (current_link.eee.lp_adv_caps & QED_EEE_1G_ADV)
+-		edata->lp_advertised = ADVERTISED_1000baseT_Full;
++		edata->lp_advertised_u32 = ADVERTISED_1000baseT_Full;
+ 	if (current_link.eee.lp_adv_caps & QED_EEE_10G_ADV)
+-		edata->lp_advertised |= ADVERTISED_10000baseT_Full;
++		edata->lp_advertised_u32 |= ADVERTISED_10000baseT_Full;
+ 
+ 	edata->tx_lpi_timer = current_link.eee.tx_lpi_timer;
+ 	edata->eee_enabled = current_link.eee.enable;
+@@ -1830,7 +1830,7 @@ static int qede_get_eee(struct net_devic
+ 	return 0;
+ }
+ 
+-static int qede_set_eee(struct net_device *dev, struct ethtool_eee *edata)
++static int qede_set_eee(struct net_device *dev, struct ethtool_keee *edata)
+ {
+ 	struct qede_dev *edev = netdev_priv(dev);
+ 	struct qed_link_output current_link;
+@@ -1852,20 +1852,20 @@ static int qede_set_eee(struct net_devic
+ 	memset(&params, 0, sizeof(params));
+ 	params.override_flags |= QED_LINK_OVERRIDE_EEE_CONFIG;
+ 
+-	if (!(edata->advertised & (ADVERTISED_1000baseT_Full |
+-				   ADVERTISED_10000baseT_Full)) ||
+-	    ((edata->advertised & (ADVERTISED_1000baseT_Full |
+-				   ADVERTISED_10000baseT_Full)) !=
+-	     edata->advertised)) {
++	if (!(edata->advertised_u32 & (ADVERTISED_1000baseT_Full |
++				       ADVERTISED_10000baseT_Full)) ||
++	    ((edata->advertised_u32 & (ADVERTISED_1000baseT_Full |
++				       ADVERTISED_10000baseT_Full)) !=
++	     edata->advertised_u32)) {
+ 		DP_VERBOSE(edev, QED_MSG_DEBUG,
+ 			   "Invalid advertised capabilities %d\n",
+-			   edata->advertised);
++			   edata->advertised_u32);
+ 		return -EINVAL;
+ 	}
+ 
+-	if (edata->advertised & ADVERTISED_1000baseT_Full)
++	if (edata->advertised_u32 & ADVERTISED_1000baseT_Full)
+ 		params.eee.adv_caps = QED_EEE_1G_ADV;
+-	if (edata->advertised & ADVERTISED_10000baseT_Full)
++	if (edata->advertised_u32 & ADVERTISED_10000baseT_Full)
+ 		params.eee.adv_caps |= QED_EEE_10G_ADV;
+ 	params.eee.enable = edata->eee_enabled;
+ 	params.eee.tx_lpi_enable = edata->tx_lpi_enabled;
+--- a/drivers/net/ethernet/realtek/r8169_main.c
++++ b/drivers/net/ethernet/realtek/r8169_main.c
+@@ -2096,7 +2096,7 @@ static unsigned int r8169_get_tx_lpi_tim
+ 	return DIV_ROUND_CLOSEST(timer * BITS_PER_BYTE, speed);
+ }
+ 
+-static int rtl8169_get_eee(struct net_device *dev, struct ethtool_eee *data)
++static int rtl8169_get_eee(struct net_device *dev, struct ethtool_keee *data)
+ {
+ 	struct rtl8169_private *tp = netdev_priv(dev);
+ 	int ret;
+@@ -2114,7 +2114,7 @@ static int rtl8169_get_eee(struct net_de
+ 	return 0;
+ }
+ 
+-static int rtl8169_set_eee(struct net_device *dev, struct ethtool_eee *data)
++static int rtl8169_set_eee(struct net_device *dev, struct ethtool_keee *data)
+ {
+ 	struct rtl8169_private *tp = netdev_priv(dev);
+ 
+--- a/drivers/net/ethernet/samsung/sxgbe/sxgbe_ethtool.c
++++ b/drivers/net/ethernet/samsung/sxgbe/sxgbe_ethtool.c
+@@ -133,7 +133,7 @@ static const struct sxgbe_stats sxgbe_gs
+ #define SXGBE_STATS_LEN ARRAY_SIZE(sxgbe_gstrings_stats)
+ 
+ static int sxgbe_get_eee(struct net_device *dev,
+-			 struct ethtool_eee *edata)
++			 struct ethtool_keee *edata)
+ {
+ 	struct sxgbe_priv_data *priv = netdev_priv(dev);
+ 
+@@ -148,7 +148,7 @@ static int sxgbe_get_eee(struct net_devi
+ }
+ 
+ static int sxgbe_set_eee(struct net_device *dev,
+-			 struct ethtool_eee *edata)
++			 struct ethtool_keee *edata)
+ {
+ 	struct sxgbe_priv_data *priv = netdev_priv(dev);
+ 
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_ethtool.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_ethtool.c
+@@ -887,7 +887,7 @@ static int stmmac_set_wol(struct net_dev
+ }
+ 
+ static int stmmac_ethtool_op_get_eee(struct net_device *dev,
+-				     struct ethtool_eee *edata)
++				     struct ethtool_keee *edata)
+ {
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 
+@@ -903,7 +903,7 @@ static int stmmac_ethtool_op_get_eee(str
+ }
+ 
+ static int stmmac_ethtool_op_set_eee(struct net_device *dev,
+-				     struct ethtool_eee *edata)
++				     struct ethtool_keee *edata)
+ {
+ 	struct stmmac_priv *priv = netdev_priv(dev);
+ 	int ret;
+--- a/drivers/net/ethernet/ti/am65-cpsw-ethtool.c
++++ b/drivers/net/ethernet/ti/am65-cpsw-ethtool.c
+@@ -513,14 +513,14 @@ am65_cpsw_set_link_ksettings(struct net_
+ 	return phylink_ethtool_ksettings_set(salve->phylink, ecmd);
+ }
+ 
+-static int am65_cpsw_get_eee(struct net_device *ndev, struct ethtool_eee *edata)
++static int am65_cpsw_get_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	struct am65_cpsw_slave_data *salve = am65_ndev_to_slave(ndev);
+ 
+ 	return phylink_ethtool_get_eee(salve->phylink, edata);
+ }
+ 
+-static int am65_cpsw_set_eee(struct net_device *ndev, struct ethtool_eee *edata)
++static int am65_cpsw_set_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	struct am65_cpsw_slave_data *salve = am65_ndev_to_slave(ndev);
+ 
+--- a/drivers/net/ethernet/ti/cpsw_ethtool.c
++++ b/drivers/net/ethernet/ti/cpsw_ethtool.c
+@@ -422,7 +422,7 @@ int cpsw_set_link_ksettings(struct net_d
+ 	return phy_ethtool_ksettings_set(cpsw->slaves[slave_no].phy, ecmd);
+ }
+ 
+-int cpsw_get_eee(struct net_device *ndev, struct ethtool_eee *edata)
++int cpsw_get_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	struct cpsw_priv *priv = netdev_priv(ndev);
+ 	struct cpsw_common *cpsw = priv->cpsw;
+@@ -434,7 +434,7 @@ int cpsw_get_eee(struct net_device *ndev
+ 		return -EOPNOTSUPP;
+ }
+ 
+-int cpsw_set_eee(struct net_device *ndev, struct ethtool_eee *edata)
++int cpsw_set_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	struct cpsw_priv *priv = netdev_priv(ndev);
+ 	struct cpsw_common *cpsw = priv->cpsw;
+--- a/drivers/net/ethernet/ti/cpsw_priv.h
++++ b/drivers/net/ethernet/ti/cpsw_priv.h
+@@ -496,8 +496,8 @@ int cpsw_get_link_ksettings(struct net_d
+ 			    struct ethtool_link_ksettings *ecmd);
+ int cpsw_set_link_ksettings(struct net_device *ndev,
+ 			    const struct ethtool_link_ksettings *ecmd);
+-int cpsw_get_eee(struct net_device *ndev, struct ethtool_eee *edata);
+-int cpsw_set_eee(struct net_device *ndev, struct ethtool_eee *edata);
++int cpsw_get_eee(struct net_device *ndev, struct ethtool_keee *edata);
++int cpsw_set_eee(struct net_device *ndev, struct ethtool_keee *edata);
+ int cpsw_nway_reset(struct net_device *ndev);
+ void cpsw_get_ringparam(struct net_device *ndev,
+ 			struct ethtool_ringparam *ering,
+--- a/drivers/net/ethernet/ti/icssg/icssg_ethtool.c
++++ b/drivers/net/ethernet/ti/icssg/icssg_ethtool.c
+@@ -45,7 +45,7 @@ static int emac_set_link_ksettings(struc
+ 	return phy_ethtool_set_link_ksettings(ndev, ecmd);
+ }
+ 
+-static int emac_get_eee(struct net_device *ndev, struct ethtool_eee *edata)
++static int emac_get_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	if (!ndev->phydev)
+ 		return -EOPNOTSUPP;
+@@ -53,7 +53,7 @@ static int emac_get_eee(struct net_devic
+ 	return phy_ethtool_get_eee(ndev->phydev, edata);
+ }
+ 
+-static int emac_set_eee(struct net_device *ndev, struct ethtool_eee *edata)
++static int emac_set_eee(struct net_device *ndev, struct ethtool_keee *edata)
+ {
+ 	if (!ndev->phydev)
+ 		return -EOPNOTSUPP;
+--- a/drivers/net/phy/marvell.c
++++ b/drivers/net/phy/marvell.c
+@@ -1503,7 +1503,7 @@ static int m88e1540_get_fld(struct phy_d
+ 
+ static int m88e1540_set_fld(struct phy_device *phydev, const u8 *msecs)
+ {
+-	struct ethtool_eee eee;
++	struct ethtool_keee eee;
+ 	int val, ret;
+ 
+ 	if (*msecs == ETHTOOL_PHY_FAST_LINK_DOWN_OFF)
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -1443,17 +1443,17 @@ EXPORT_SYMBOL(genphy_c45_eee_is_active);
+ /**
+  * genphy_c45_ethtool_get_eee - get EEE supported and status
+  * @phydev: target phy_device struct
+- * @data: ethtool_eee data
++ * @data: ethtool_keee data
+  *
+  * Description: it reports the Supported/Advertisement/LP Advertisement
+  * capabilities.
+  */
+ int genphy_c45_ethtool_get_eee(struct phy_device *phydev,
+-			       struct ethtool_eee *data)
++			       struct ethtool_keee *data)
+ {
+ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(adv) = {};
+ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(lp) = {};
+-	bool overflow = false, is_enabled;
++	bool is_enabled;
+ 	int ret;
+ 
+ 	ret = genphy_c45_eee_is_active(phydev, adv, lp, &is_enabled);
+@@ -1462,17 +1462,9 @@ int genphy_c45_ethtool_get_eee(struct ph
+ 
+ 	data->eee_enabled = is_enabled;
+ 	data->eee_active = ret;
+-
+-	if (!ethtool_convert_link_mode_to_legacy_u32(&data->supported,
+-						     phydev->supported_eee))
+-		overflow = true;
+-	if (!ethtool_convert_link_mode_to_legacy_u32(&data->advertised, adv))
+-		overflow = true;
+-	if (!ethtool_convert_link_mode_to_legacy_u32(&data->lp_advertised, lp))
+-		overflow = true;
+-
+-	if (overflow)
+-		phydev_warn(phydev, "Not all supported or advertised EEE link modes were passed to the user space\n");
++	linkmode_copy(data->supported, phydev->supported_eee);
++	linkmode_copy(data->advertised, adv);
++	linkmode_copy(data->lp_advertised, lp);
+ 
+ 	return 0;
+ }
+@@ -1481,7 +1473,7 @@ EXPORT_SYMBOL(genphy_c45_ethtool_get_eee
+ /**
+  * genphy_c45_ethtool_set_eee - set EEE supported and status
+  * @phydev: target phy_device struct
+- * @data: ethtool_eee data
++ * @data: ethtool_keee data
+  *
+  * Description: sets the Supported/Advertisement/LP Advertisement
+  * capabilities. If eee_enabled is false, no links modes are
+@@ -1490,29 +1482,27 @@ EXPORT_SYMBOL(genphy_c45_ethtool_get_eee
+  * non-destructive way.
+  */
+ int genphy_c45_ethtool_set_eee(struct phy_device *phydev,
+-			       struct ethtool_eee *data)
++			       struct ethtool_keee *data)
+ {
+ 	int ret;
+ 
+ 	if (data->eee_enabled) {
+-		if (data->advertised) {
+-			__ETHTOOL_DECLARE_LINK_MODE_MASK(adv);
++		unsigned long *adv = data->advertised;
+ 
+-			ethtool_convert_legacy_u32_to_link_mode(adv,
+-								data->advertised);
+-			linkmode_andnot(adv, adv, phydev->supported_eee);
+-			if (!linkmode_empty(adv)) {
++		if (!linkmode_empty(adv)) {
++			__ETHTOOL_DECLARE_LINK_MODE_MASK(tmp);
++			bool unsupp;
++
++			unsupp = linkmode_andnot(tmp, adv, phydev->supported_eee);
++			if (unsupp) {
+ 				phydev_warn(phydev, "At least some EEE link modes are not supported.\n");
+ 				return -EINVAL;
+ 			}
+-
+-			ethtool_convert_legacy_u32_to_link_mode(phydev->advertising_eee,
+-								data->advertised);
+ 		} else {
+-			linkmode_copy(phydev->advertising_eee,
+-				      phydev->supported_eee);
++			adv = phydev->supported_eee;
+ 		}
+ 
++		linkmode_copy(phydev->advertising_eee, adv);
+ 		phydev->eee_enabled = true;
+ 	} else {
+ 		phydev->eee_enabled = false;
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -1647,12 +1647,12 @@ EXPORT_SYMBOL(phy_get_eee_err);
+ /**
+  * phy_ethtool_get_eee - get EEE supported and status
+  * @phydev: target phy_device struct
+- * @data: ethtool_eee data
++ * @data: ethtool_keee data
+  *
+  * Description: it reportes the Supported/Advertisement/LP Advertisement
+  * capabilities.
+  */
+-int phy_ethtool_get_eee(struct phy_device *phydev, struct ethtool_eee *data)
++int phy_ethtool_get_eee(struct phy_device *phydev, struct ethtool_keee *data)
+ {
+ 	int ret;
+ 
+@@ -1670,11 +1670,11 @@ EXPORT_SYMBOL(phy_ethtool_get_eee);
+ /**
+  * phy_ethtool_set_eee - set EEE supported and status
+  * @phydev: target phy_device struct
+- * @data: ethtool_eee data
++ * @data: ethtool_keee data
+  *
+  * Description: it is to program the Advertisement EEE register.
+  */
+-int phy_ethtool_set_eee(struct phy_device *phydev, struct ethtool_eee *data)
++int phy_ethtool_set_eee(struct phy_device *phydev, struct ethtool_keee *data)
+ {
+ 	int ret;
+ 
+--- a/drivers/net/phy/phylink.c
++++ b/drivers/net/phy/phylink.c
+@@ -3074,9 +3074,9 @@ EXPORT_SYMBOL_GPL(phylink_init_eee);
+ /**
+  * phylink_ethtool_get_eee() - read the energy efficient ethernet parameters
+  * @pl: a pointer to a &struct phylink returned from phylink_create()
+- * @eee: a pointer to a &struct ethtool_eee for the read parameters
++ * @eee: a pointer to a &struct ethtool_keee for the read parameters
+  */
+-int phylink_ethtool_get_eee(struct phylink *pl, struct ethtool_eee *eee)
++int phylink_ethtool_get_eee(struct phylink *pl, struct ethtool_keee *eee)
+ {
+ 	int ret = -EOPNOTSUPP;
+ 
+@@ -3092,9 +3092,9 @@ EXPORT_SYMBOL_GPL(phylink_ethtool_get_ee
+ /**
+  * phylink_ethtool_set_eee() - set the energy efficient ethernet parameters
+  * @pl: a pointer to a &struct phylink returned from phylink_create()
+- * @eee: a pointer to a &struct ethtool_eee for the desired parameters
++ * @eee: a pointer to a &struct ethtool_keee for the desired parameters
+  */
+-int phylink_ethtool_set_eee(struct phylink *pl, struct ethtool_eee *eee)
++int phylink_ethtool_set_eee(struct phylink *pl, struct ethtool_keee *eee)
+ {
+ 	int ret = -EOPNOTSUPP;
+ 
+--- a/drivers/net/usb/ax88179_178a.c
++++ b/drivers/net/usb/ax88179_178a.c
+@@ -668,7 +668,7 @@ static int ax88179_set_link_ksettings(st
+ }
+ 
+ static int
+-ax88179_ethtool_get_eee(struct usbnet *dev, struct ethtool_eee *data)
++ax88179_ethtool_get_eee(struct usbnet *dev, struct ethtool_keee *data)
+ {
+ 	int val;
+ 
+@@ -677,29 +677,29 @@ ax88179_ethtool_get_eee(struct usbnet *d
+ 					    MDIO_MMD_PCS);
+ 	if (val < 0)
+ 		return val;
+-	data->supported = mmd_eee_cap_to_ethtool_sup_t(val);
++	data->supported_u32 = mmd_eee_cap_to_ethtool_sup_t(val);
+ 
+ 	/* Get advertisement EEE */
+ 	val = ax88179_phy_read_mmd_indirect(dev, MDIO_AN_EEE_ADV,
+ 					    MDIO_MMD_AN);
+ 	if (val < 0)
+ 		return val;
+-	data->advertised = mmd_eee_adv_to_ethtool_adv_t(val);
++	data->advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(val);
+ 
+ 	/* Get LP advertisement EEE */
+ 	val = ax88179_phy_read_mmd_indirect(dev, MDIO_AN_EEE_LPABLE,
+ 					    MDIO_MMD_AN);
+ 	if (val < 0)
+ 		return val;
+-	data->lp_advertised = mmd_eee_adv_to_ethtool_adv_t(val);
++	data->lp_advertised_u32 = mmd_eee_adv_to_ethtool_adv_t(val);
+ 
+ 	return 0;
+ }
+ 
+ static int
+-ax88179_ethtool_set_eee(struct usbnet *dev, struct ethtool_eee *data)
++ax88179_ethtool_set_eee(struct usbnet *dev, struct ethtool_keee *data)
+ {
+-	u16 tmp16 = ethtool_adv_to_mmd_eee_adv_t(data->advertised);
++	u16 tmp16 = ethtool_adv_to_mmd_eee_adv_t(data->advertised_u32);
+ 
+ 	return ax88179_phy_write_mmd_indirect(dev, MDIO_AN_EEE_ADV,
+ 					      MDIO_MMD_AN, tmp16);
+@@ -808,7 +808,7 @@ static void ax88179_enable_eee(struct us
+ 			  GMII_PHY_PAGE_SELECT, 2, &tmp16);
+ }
+ 
+-static int ax88179_get_eee(struct net_device *net, struct ethtool_eee *edata)
++static int ax88179_get_eee(struct net_device *net, struct ethtool_keee *edata)
+ {
+ 	struct usbnet *dev = netdev_priv(net);
+ 	struct ax88179_data *priv = dev->driver_priv;
+@@ -819,7 +819,7 @@ static int ax88179_get_eee(struct net_de
+ 	return ax88179_ethtool_get_eee(dev, edata);
+ }
+ 
+-static int ax88179_set_eee(struct net_device *net, struct ethtool_eee *edata)
++static int ax88179_set_eee(struct net_device *net, struct ethtool_keee *edata)
+ {
+ 	struct usbnet *dev = netdev_priv(net);
+ 	struct ax88179_data *priv = dev->driver_priv;
+@@ -1590,7 +1590,7 @@ static int ax88179_reset(struct usbnet *
+ 	u16 *tmp16;
+ 	u8 *tmp;
+ 	struct ax88179_data *ax179_data = dev->driver_priv;
+-	struct ethtool_eee eee_data;
++	struct ethtool_keee eee_data;
+ 
+ 	tmp16 = (u16 *)buf;
+ 	tmp = (u8 *)buf;
+@@ -1666,7 +1666,7 @@ static int ax88179_reset(struct usbnet *
+ 	ax88179_disable_eee(dev);
+ 
+ 	ax88179_ethtool_get_eee(dev, &eee_data);
+-	eee_data.advertised = 0;
++	eee_data.advertised_u32 = 0;
+ 	ax88179_ethtool_set_eee(dev, &eee_data);
+ 
+ 	/* Restart autoneg */
+--- a/drivers/net/usb/lan78xx.c
++++ b/drivers/net/usb/lan78xx.c
+@@ -1675,7 +1675,7 @@ static int lan78xx_set_wol(struct net_de
+ 	return ret;
+ }
+ 
+-static int lan78xx_get_eee(struct net_device *net, struct ethtool_eee *edata)
++static int lan78xx_get_eee(struct net_device *net, struct ethtool_keee *edata)
+ {
+ 	struct lan78xx_net *dev = netdev_priv(net);
+ 	struct phy_device *phydev = net->phydev;
+@@ -1713,7 +1713,7 @@ exit:
+ 	return ret;
+ }
+ 
+-static int lan78xx_set_eee(struct net_device *net, struct ethtool_eee *edata)
++static int lan78xx_set_eee(struct net_device *net, struct ethtool_keee *edata)
+ {
+ 	struct lan78xx_net *dev = netdev_priv(net);
+ 	int ret;
+--- a/drivers/net/usb/r8152.c
++++ b/drivers/net/usb/r8152.c
+@@ -892,8 +892,8 @@ struct r8152 {
+ 		void (*up)(struct r8152 *tp);
+ 		void (*down)(struct r8152 *tp);
+ 		void (*unload)(struct r8152 *tp);
+-		int (*eee_get)(struct r8152 *tp, struct ethtool_eee *eee);
+-		int (*eee_set)(struct r8152 *tp, struct ethtool_eee *eee);
++		int (*eee_get)(struct r8152 *tp, struct ethtool_keee *eee);
++		int (*eee_set)(struct r8152 *tp, struct ethtool_keee *eee);
+ 		bool (*in_nway)(struct r8152 *tp);
+ 		void (*hw_phy_cfg)(struct r8152 *tp);
+ 		void (*autosuspend_en)(struct r8152 *tp, bool enable);
+@@ -8954,7 +8954,7 @@ static void rtl8152_get_strings(struct n
+ 	}
+ }
+ 
+-static int r8152_get_eee(struct r8152 *tp, struct ethtool_eee *eee)
++static int r8152_get_eee(struct r8152 *tp, struct ethtool_keee *eee)
+ {
+ 	u32 lp, adv, supported = 0;
+ 	u16 val;
+@@ -8970,16 +8970,16 @@ static int r8152_get_eee(struct r8152 *t
+ 
+ 	eee->eee_enabled = tp->eee_en;
+ 	eee->eee_active = !!(supported & adv & lp);
+-	eee->supported = supported;
+-	eee->advertised = tp->eee_adv;
+-	eee->lp_advertised = lp;
++	eee->supported_u32 = supported;
++	eee->advertised_u32 = tp->eee_adv;
++	eee->lp_advertised_u32 = lp;
+ 
+ 	return 0;
+ }
+ 
+-static int r8152_set_eee(struct r8152 *tp, struct ethtool_eee *eee)
++static int r8152_set_eee(struct r8152 *tp, struct ethtool_keee *eee)
+ {
+-	u16 val = ethtool_adv_to_mmd_eee_adv_t(eee->advertised);
++	u16 val = ethtool_adv_to_mmd_eee_adv_t(eee->advertised_u32);
+ 
+ 	tp->eee_en = eee->eee_enabled;
+ 	tp->eee_adv = val;
+@@ -8989,7 +8989,7 @@ static int r8152_set_eee(struct r8152 *t
+ 	return 0;
+ }
+ 
+-static int r8153_get_eee(struct r8152 *tp, struct ethtool_eee *eee)
++static int r8153_get_eee(struct r8152 *tp, struct ethtool_keee *eee)
+ {
+ 	u32 lp, adv, supported = 0;
+ 	u16 val;
+@@ -9005,15 +9005,15 @@ static int r8153_get_eee(struct r8152 *t
+ 
+ 	eee->eee_enabled = tp->eee_en;
+ 	eee->eee_active = !!(supported & adv & lp);
+-	eee->supported = supported;
+-	eee->advertised = tp->eee_adv;
+-	eee->lp_advertised = lp;
++	eee->supported_u32 = supported;
++	eee->advertised_u32 = tp->eee_adv;
++	eee->lp_advertised_u32 = lp;
+ 
+ 	return 0;
+ }
+ 
+ static int
+-rtl_ethtool_get_eee(struct net_device *net, struct ethtool_eee *edata)
++rtl_ethtool_get_eee(struct net_device *net, struct ethtool_keee *edata)
+ {
+ 	struct r8152 *tp = netdev_priv(net);
+ 	int ret;
+@@ -9040,7 +9040,7 @@ out:
+ }
+ 
+ static int
+-rtl_ethtool_set_eee(struct net_device *net, struct ethtool_eee *edata)
++rtl_ethtool_set_eee(struct net_device *net, struct ethtool_keee *edata)
+ {
+ 	struct r8152 *tp = netdev_priv(net);
+ 	int ret;
+--- a/include/linux/ethtool.h
++++ b/include/linux/ethtool.h
+@@ -220,6 +220,19 @@ extern int
+ __ethtool_get_link_ksettings(struct net_device *dev,
+ 			     struct ethtool_link_ksettings *link_ksettings);
+ 
++struct ethtool_keee {
++	__ETHTOOL_DECLARE_LINK_MODE_MASK(supported);
++	__ETHTOOL_DECLARE_LINK_MODE_MASK(advertised);
++	__ETHTOOL_DECLARE_LINK_MODE_MASK(lp_advertised);
++	u32	supported_u32;
++	u32	advertised_u32;
++	u32	lp_advertised_u32;
++	u32	tx_lpi_timer;
++	bool	tx_lpi_enabled;
++	bool	eee_active;
++	bool	eee_enabled;
++};
++
+ struct kernel_ethtool_coalesce {
+ 	u8 use_cqe_mode_tx;
+ 	u8 use_cqe_mode_rx;
+@@ -864,8 +877,8 @@ struct ethtool_ops {
+ 				   struct ethtool_modinfo *);
+ 	int     (*get_module_eeprom)(struct net_device *,
+ 				     struct ethtool_eeprom *, u8 *);
+-	int	(*get_eee)(struct net_device *, struct ethtool_eee *);
+-	int	(*set_eee)(struct net_device *, struct ethtool_eee *);
++	int	(*get_eee)(struct net_device *dev, struct ethtool_keee *eee);
++	int	(*set_eee)(struct net_device *dev, struct ethtool_keee *eee);
+ 	int	(*get_tunable)(struct net_device *,
+ 			       const struct ethtool_tunable *, void *);
+ 	int	(*set_tunable)(struct net_device *,
+--- a/include/linux/phy.h
++++ b/include/linux/phy.h
+@@ -1950,9 +1950,9 @@ int genphy_c45_plca_get_status(struct ph
+ int genphy_c45_eee_is_active(struct phy_device *phydev, unsigned long *adv,
+ 			     unsigned long *lp, bool *is_enabled);
+ int genphy_c45_ethtool_get_eee(struct phy_device *phydev,
+-			       struct ethtool_eee *data);
++			       struct ethtool_keee *data);
+ int genphy_c45_ethtool_set_eee(struct phy_device *phydev,
+-			       struct ethtool_eee *data);
++			       struct ethtool_keee *data);
+ int genphy_c45_write_eee_adv(struct phy_device *phydev, unsigned long *adv);
+ int genphy_c45_an_config_eee_aneg(struct phy_device *phydev);
+ int genphy_c45_read_eee_adv(struct phy_device *phydev, unsigned long *adv);
+@@ -2030,8 +2030,8 @@ int phy_unregister_fixup_for_uid(u32 phy
+ 
+ int phy_init_eee(struct phy_device *phydev, bool clk_stop_enable);
+ int phy_get_eee_err(struct phy_device *phydev);
+-int phy_ethtool_set_eee(struct phy_device *phydev, struct ethtool_eee *data);
+-int phy_ethtool_get_eee(struct phy_device *phydev, struct ethtool_eee *data);
++int phy_ethtool_set_eee(struct phy_device *phydev, struct ethtool_keee *data);
++int phy_ethtool_get_eee(struct phy_device *phydev, struct ethtool_keee *data);
+ int phy_ethtool_set_wol(struct phy_device *phydev, struct ethtool_wolinfo *wol);
+ void phy_ethtool_get_wol(struct phy_device *phydev,
+ 			 struct ethtool_wolinfo *wol);
+--- a/include/linux/phylink.h
++++ b/include/linux/phylink.h
+@@ -635,8 +635,8 @@ int phylink_ethtool_set_pauseparam(struc
+ 				   struct ethtool_pauseparam *);
+ int phylink_get_eee_err(struct phylink *);
+ int phylink_init_eee(struct phylink *, bool);
+-int phylink_ethtool_get_eee(struct phylink *, struct ethtool_eee *);
+-int phylink_ethtool_set_eee(struct phylink *, struct ethtool_eee *);
++int phylink_ethtool_get_eee(struct phylink *link, struct ethtool_keee *eee);
++int phylink_ethtool_set_eee(struct phylink *link, struct ethtool_keee *eee);
+ int phylink_mii_ioctl(struct phylink *, struct ifreq *, int);
+ int phylink_speed_down(struct phylink *pl, bool sync);
+ int phylink_speed_up(struct phylink *pl);
+--- a/include/net/dsa.h
++++ b/include/net/dsa.h
+@@ -992,9 +992,9 @@ struct dsa_switch_ops {
+ 	 * Port's MAC EEE settings
+ 	 */
+ 	int	(*set_mac_eee)(struct dsa_switch *ds, int port,
+-			       struct ethtool_eee *e);
++			       struct ethtool_keee *e);
+ 	int	(*get_mac_eee)(struct dsa_switch *ds, int port,
+-			       struct ethtool_eee *e);
++			       struct ethtool_keee *e);
+ 
+ 	/* EEPROM access */
+ 	int	(*get_eeprom_len)(struct dsa_switch *ds);
+--- a/net/ethtool/common.c
++++ b/net/ethtool/common.c
+@@ -706,3 +706,8 @@ ethtool_forced_speed_maps_init(struct et
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(ethtool_forced_speed_maps_init);
++
++bool ethtool_eee_use_linkmodes(const struct ethtool_keee *eee)
++{
++	return !linkmode_empty(eee->supported);
++}
+--- a/net/ethtool/common.h
++++ b/net/ethtool/common.h
+@@ -55,5 +55,6 @@ int ethtool_get_module_eeprom_call(struc
+ 				   struct ethtool_eeprom *ee, u8 *data);
+ 
+ bool __ethtool_dev_mm_supported(struct net_device *dev);
++bool ethtool_eee_use_linkmodes(const struct ethtool_keee *eee);
+ 
+ #endif /* _ETHTOOL_COMMON_H */
+--- a/net/ethtool/eee.c
++++ b/net/ethtool/eee.c
+@@ -5,7 +5,7 @@
+ #include "bitset.h"
+ 
+ #define EEE_MODES_COUNT \
+-	(sizeof_field(struct ethtool_eee, supported) * BITS_PER_BYTE)
++	(sizeof_field(struct ethtool_keee, supported_u32) * BITS_PER_BYTE)
+ 
+ struct eee_req_info {
+ 	struct ethnl_req_info		base;
+@@ -13,7 +13,7 @@ struct eee_req_info {
+ 
+ struct eee_reply_data {
+ 	struct ethnl_reply_data		base;
+-	struct ethtool_eee		eee;
++	struct ethtool_keee		eee;
+ };
+ 
+ #define EEE_REPDATA(__reply_base) \
+@@ -30,6 +30,7 @@ static int eee_prepare_data(const struct
+ {
+ 	struct eee_reply_data *data = EEE_REPDATA(reply_base);
+ 	struct net_device *dev = reply_base->dev;
++	struct ethtool_keee *eee = &data->eee;
+ 	int ret;
+ 
+ 	if (!dev->ethtool_ops->get_eee)
+@@ -37,9 +38,18 @@ static int eee_prepare_data(const struct
+ 	ret = ethnl_ops_begin(dev);
+ 	if (ret < 0)
+ 		return ret;
+-	ret = dev->ethtool_ops->get_eee(dev, &data->eee);
++	ret = dev->ethtool_ops->get_eee(dev, eee);
+ 	ethnl_ops_complete(dev);
+ 
++	if (!ret && !ethtool_eee_use_linkmodes(eee)) {
++		ethtool_convert_legacy_u32_to_link_mode(eee->supported,
++							eee->supported_u32);
++		ethtool_convert_legacy_u32_to_link_mode(eee->advertised,
++							eee->advertised_u32);
++		ethtool_convert_legacy_u32_to_link_mode(eee->lp_advertised,
++							eee->lp_advertised_u32);
++	}
++
+ 	return ret;
+ }
+ 
+@@ -48,24 +58,26 @@ static int eee_reply_size(const struct e
+ {
+ 	bool compact = req_base->flags & ETHTOOL_FLAG_COMPACT_BITSETS;
+ 	const struct eee_reply_data *data = EEE_REPDATA(reply_base);
+-	const struct ethtool_eee *eee = &data->eee;
++	const struct ethtool_keee *eee = &data->eee;
+ 	int len = 0;
+ 	int ret;
+ 
+-	BUILD_BUG_ON(sizeof(eee->advertised) * BITS_PER_BYTE !=
++	BUILD_BUG_ON(sizeof(eee->advertised_u32) * BITS_PER_BYTE !=
+ 		     EEE_MODES_COUNT);
+-	BUILD_BUG_ON(sizeof(eee->lp_advertised) * BITS_PER_BYTE !=
++	BUILD_BUG_ON(sizeof(eee->lp_advertised_u32) * BITS_PER_BYTE !=
+ 		     EEE_MODES_COUNT);
+ 
+ 	/* MODES_OURS */
+-	ret = ethnl_bitset32_size(&eee->advertised, &eee->supported,
+-				  EEE_MODES_COUNT, link_mode_names, compact);
++	ret = ethnl_bitset_size(eee->advertised, eee->supported,
++				__ETHTOOL_LINK_MODE_MASK_NBITS,
++				link_mode_names, compact);
+ 	if (ret < 0)
+ 		return ret;
+ 	len += ret;
+ 	/* MODES_PEERS */
+-	ret = ethnl_bitset32_size(&eee->lp_advertised, NULL,
+-				  EEE_MODES_COUNT, link_mode_names, compact);
++	ret = ethnl_bitset_size(eee->lp_advertised, NULL,
++				__ETHTOOL_LINK_MODE_MASK_NBITS,
++				link_mode_names, compact);
+ 	if (ret < 0)
+ 		return ret;
+ 	len += ret;
+@@ -84,24 +96,26 @@ static int eee_fill_reply(struct sk_buff
+ {
+ 	bool compact = req_base->flags & ETHTOOL_FLAG_COMPACT_BITSETS;
+ 	const struct eee_reply_data *data = EEE_REPDATA(reply_base);
+-	const struct ethtool_eee *eee = &data->eee;
++	const struct ethtool_keee *eee = &data->eee;
+ 	int ret;
+ 
+-	ret = ethnl_put_bitset32(skb, ETHTOOL_A_EEE_MODES_OURS,
+-				 &eee->advertised, &eee->supported,
+-				 EEE_MODES_COUNT, link_mode_names, compact);
++	ret = ethnl_put_bitset(skb, ETHTOOL_A_EEE_MODES_OURS,
++			       eee->advertised, eee->supported,
++			       __ETHTOOL_LINK_MODE_MASK_NBITS,
++			       link_mode_names, compact);
+ 	if (ret < 0)
+ 		return ret;
+-	ret = ethnl_put_bitset32(skb, ETHTOOL_A_EEE_MODES_PEER,
+-				 &eee->lp_advertised, NULL, EEE_MODES_COUNT,
+-				 link_mode_names, compact);
++	ret = ethnl_put_bitset(skb, ETHTOOL_A_EEE_MODES_PEER,
++			       eee->lp_advertised, NULL,
++			       __ETHTOOL_LINK_MODE_MASK_NBITS,
++			       link_mode_names, compact);
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	if (nla_put_u8(skb, ETHTOOL_A_EEE_ACTIVE, !!eee->eee_active) ||
+-	    nla_put_u8(skb, ETHTOOL_A_EEE_ENABLED, !!eee->eee_enabled) ||
++	if (nla_put_u8(skb, ETHTOOL_A_EEE_ACTIVE, eee->eee_active) ||
++	    nla_put_u8(skb, ETHTOOL_A_EEE_ENABLED, eee->eee_enabled) ||
+ 	    nla_put_u8(skb, ETHTOOL_A_EEE_TX_LPI_ENABLED,
+-		       !!eee->tx_lpi_enabled) ||
++		       eee->tx_lpi_enabled) ||
+ 	    nla_put_u32(skb, ETHTOOL_A_EEE_TX_LPI_TIMER, eee->tx_lpi_timer))
+ 		return -EMSGSIZE;
+ 
+@@ -132,7 +146,7 @@ ethnl_set_eee(struct ethnl_req_info *req
+ {
+ 	struct net_device *dev = req_info->dev;
+ 	struct nlattr **tb = info->attrs;
+-	struct ethtool_eee eee = {};
++	struct ethtool_keee eee = {};
+ 	bool mod = false;
+ 	int ret;
+ 
+@@ -140,14 +154,21 @@ ethnl_set_eee(struct ethnl_req_info *req
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	ret = ethnl_update_bitset32(&eee.advertised, EEE_MODES_COUNT,
+-				    tb[ETHTOOL_A_EEE_MODES_OURS],
+-				    link_mode_names, info->extack, &mod);
++	if (ethtool_eee_use_linkmodes(&eee)) {
++		ret = ethnl_update_bitset(eee.advertised,
++					  __ETHTOOL_LINK_MODE_MASK_NBITS,
++					  tb[ETHTOOL_A_EEE_MODES_OURS],
++					  link_mode_names, info->extack, &mod);
++	} else {
++		ret = ethnl_update_bitset32(&eee.advertised_u32, EEE_MODES_COUNT,
++					    tb[ETHTOOL_A_EEE_MODES_OURS],
++					    link_mode_names, info->extack, &mod);
++	}
+ 	if (ret < 0)
+ 		return ret;
+-	ethnl_update_bool32(&eee.eee_enabled, tb[ETHTOOL_A_EEE_ENABLED], &mod);
+-	ethnl_update_bool32(&eee.tx_lpi_enabled,
+-			    tb[ETHTOOL_A_EEE_TX_LPI_ENABLED], &mod);
++	ethnl_update_bool(&eee.eee_enabled, tb[ETHTOOL_A_EEE_ENABLED], &mod);
++	ethnl_update_bool(&eee.tx_lpi_enabled, tb[ETHTOOL_A_EEE_TX_LPI_ENABLED],
++			  &mod);
+ 	ethnl_update_u32(&eee.tx_lpi_timer, tb[ETHTOOL_A_EEE_TX_LPI_TIMER],
+ 			 &mod);
+ 	if (!mod)
+--- a/net/ethtool/ioctl.c
++++ b/net/ethtool/ioctl.c
+@@ -1470,22 +1470,71 @@ static int ethtool_set_wol(struct net_de
+ 	return 0;
+ }
+ 
++static void eee_to_keee(struct ethtool_keee *keee,
++			const struct ethtool_eee *eee)
++{
++	memset(keee, 0, sizeof(*keee));
++
++	keee->supported_u32 = eee->supported;
++	keee->advertised_u32 = eee->advertised;
++	keee->lp_advertised_u32 = eee->lp_advertised;
++	keee->eee_active = eee->eee_active;
++	keee->eee_enabled = eee->eee_enabled;
++	keee->tx_lpi_enabled = eee->tx_lpi_enabled;
++	keee->tx_lpi_timer = eee->tx_lpi_timer;
++
++	ethtool_convert_legacy_u32_to_link_mode(keee->supported,
++						eee->supported);
++	ethtool_convert_legacy_u32_to_link_mode(keee->advertised,
++						eee->advertised);
++	ethtool_convert_legacy_u32_to_link_mode(keee->lp_advertised,
++						eee->lp_advertised);
++}
++
++static void keee_to_eee(struct ethtool_eee *eee,
++			const struct ethtool_keee *keee)
++{
++	memset(eee, 0, sizeof(*eee));
++
++	eee->eee_active = keee->eee_active;
++	eee->eee_enabled = keee->eee_enabled;
++	eee->tx_lpi_enabled = keee->tx_lpi_enabled;
++	eee->tx_lpi_timer = keee->tx_lpi_timer;
++
++	if (ethtool_eee_use_linkmodes(keee)) {
++		bool overflow;
++
++		overflow = !ethtool_convert_link_mode_to_legacy_u32(&eee->supported,
++								    keee->supported);
++		ethtool_convert_link_mode_to_legacy_u32(&eee->advertised,
++							keee->advertised);
++		ethtool_convert_link_mode_to_legacy_u32(&eee->lp_advertised,
++							keee->lp_advertised);
++		if (overflow)
++			pr_warn("Ethtool ioctl interface doesn't support passing EEE linkmodes beyond bit 32\n");
++	} else {
++		eee->supported = keee->supported_u32;
++		eee->advertised = keee->advertised_u32;
++		eee->lp_advertised = keee->lp_advertised_u32;
++	}
++}
++
+ static int ethtool_get_eee(struct net_device *dev, char __user *useraddr)
+ {
+-	struct ethtool_eee edata;
++	struct ethtool_keee keee;
++	struct ethtool_eee eee;
+ 	int rc;
+ 
+ 	if (!dev->ethtool_ops->get_eee)
+ 		return -EOPNOTSUPP;
+ 
+-	memset(&edata, 0, sizeof(struct ethtool_eee));
+-	edata.cmd = ETHTOOL_GEEE;
+-	rc = dev->ethtool_ops->get_eee(dev, &edata);
+-
++	memset(&keee, 0, sizeof(keee));
++	rc = dev->ethtool_ops->get_eee(dev, &keee);
+ 	if (rc)
+ 		return rc;
+ 
+-	if (copy_to_user(useraddr, &edata, sizeof(edata)))
++	keee_to_eee(&eee, &keee);
++	if (copy_to_user(useraddr, &eee, sizeof(eee)))
+ 		return -EFAULT;
+ 
+ 	return 0;
+@@ -1493,16 +1542,18 @@ static int ethtool_get_eee(struct net_de
+ 
+ static int ethtool_set_eee(struct net_device *dev, char __user *useraddr)
+ {
+-	struct ethtool_eee edata;
++	struct ethtool_keee keee;
++	struct ethtool_eee eee;
+ 	int ret;
+ 
+ 	if (!dev->ethtool_ops->set_eee)
+ 		return -EOPNOTSUPP;
+ 
+-	if (copy_from_user(&edata, useraddr, sizeof(edata)))
++	if (copy_from_user(&eee, useraddr, sizeof(eee)))
+ 		return -EFAULT;
+ 
+-	ret = dev->ethtool_ops->set_eee(dev, &edata);
++	eee_to_keee(&keee, &eee);
++	ret = dev->ethtool_ops->set_eee(dev, &keee);
+ 	if (!ret)
+ 		ethtool_notify(dev, ETHTOOL_MSG_EEE_NTF, NULL);
+ 	return ret;

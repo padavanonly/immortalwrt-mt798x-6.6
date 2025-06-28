@@ -69,7 +69,7 @@ index 4cab507..1ed34e1 100644
  	mcr |= MAC_MCR_TX_EN | MAC_MCR_RX_EN | MAC_MCR_FORCE_LINK;
  	mtk_w32(mac->hw, mcr, MTK_MAC_MCR(mac->id));
 +
-+	if (0)
++	if (mode == MLO_AN_PHY && phy)
 +		mtk_gdm_mac_setup_eee(mac, phy_init_eee(phy, false) >= 0);
  }
  
@@ -126,8 +126,8 @@ index 4cab507..1ed34e1 100644
  	.get_rxfh_indir_size	= mtk_get_rxfh_indir_size,
  	.get_rxfh		= mtk_get_rxfh,
  	.set_rxfh		= mtk_set_rxfh,
-+	
-+	
++	.get_eee		= mtk_get_eee,
++	.set_eee		= mtk_set_eee,
  };
  
  static const struct net_device_ops mtk_netdev_ops = {
@@ -135,7 +135,7 @@ index 4cab507..1ed34e1 100644
  	mac->interface = PHY_INTERFACE_MODE_NA;
  	mac->speed = SPEED_UNKNOWN;
  
-+	
++	mac->tx_lpi_timer = 1000;
 +
  	mac->phylink_config.dev = &eth->netdev[id]->dev;
  	mac->phylink_config.type = PHYLINK_NETDEV;

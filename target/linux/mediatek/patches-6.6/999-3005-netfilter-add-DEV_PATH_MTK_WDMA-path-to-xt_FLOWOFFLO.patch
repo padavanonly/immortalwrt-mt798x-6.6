@@ -1,0 +1,33 @@
+From 5f22a5096d559ecf6fd57b702d5fbae6c1f2f222 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 24 Jan 2025 13:34:31 +0800
+Subject: [PATCH] netfilter: add DEV_PATH_MTK_WDMA path to xt_FLOWOFFLOAD for
+ the RelayD
+
+Without this patch, nf_dev_path_info will populate an incorrect source
+MAC address while running RelayD. Consequently, traffic may experience
+stalls in both the software fastpath and the hardware path.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ net/netfilter/xt_FLOWOFFLOAD.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
+index 5fce866..146c5fb 100644
+--- a/net/netfilter/xt_FLOWOFFLOAD.c
++++ b/net/netfilter/xt_FLOWOFFLOAD.c
+@@ -391,6 +391,10 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+ 				break;
+ 			}
+ 			break;
++		case DEV_PATH_MTK_WDMA:
++			if (is_zero_ether_addr(info->h_source))
++				memcpy(info->h_source, path->dev->dev_addr, ETH_ALEN);
++			break;
+ 		default:
+ 			break;
+ 		}
+-- 
+2.45.2
+

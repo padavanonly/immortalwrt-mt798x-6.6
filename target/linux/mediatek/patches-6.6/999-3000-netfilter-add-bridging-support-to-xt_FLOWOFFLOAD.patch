@@ -1,0 +1,280 @@
+From f5f2e457435ec50bb9e1ef80c0768dea8caab4dc Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 6 Jun 2025 16:26:51 +0800
+Subject: [PATCH] netfilter: add bridging support to xt_FLOWOFFLOAD
+
+Without this patch, we are unable to use xt_FLOWOFFLOAD to perform
+bridging offload.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ net/bridge/br_fdb.c            |   1 +
+ net/netfilter/xt_FLOWOFFLOAD.c | 160 +++++++++++++++++++++++++++++----
+ 2 files changed, 145 insertions(+), 16 deletions(-)
+
+diff --git a/net/bridge/br_fdb.c b/net/bridge/br_fdb.c
+index a6d8cd9..0da839d 100644
+--- a/net/bridge/br_fdb.c
++++ b/net/bridge/br_fdb.c
+@@ -272,6 +272,7 @@ struct net_bridge_fdb_entry *br_fdb_find_rcu(struct net_bridge *br,
+ {
+ 	return fdb_find_rcu(&br->fdb_hash_tbl, addr, vid);
+ }
++EXPORT_SYMBOL_GPL(br_fdb_find_rcu);
+ 
+ /* When a static FDB entry is added, the mac address from the entry is
+  * added to the bridge private HW address list and all required ports
+diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
+index 08e0b94..704babb 100644
+--- a/net/netfilter/xt_FLOWOFFLOAD.c
++++ b/net/netfilter/xt_FLOWOFFLOAD.c
+@@ -15,6 +15,7 @@
+ #include <net/netfilter/nf_conntrack_extend.h>
+ #include <net/netfilter/nf_conntrack_helper.h>
+ #include <net/netfilter/nf_flow_table.h>
++#include "../bridge/br_private.h"
+ 
+ struct xt_flowoffload_hook {
+ 	struct hlist_node list;
+@@ -253,6 +254,28 @@ xt_flowoffload_skip(struct sk_buff *skb, int family)
+ 	return false;
+ }
+ 
++static bool xt_flowoffload_is_bridging(struct sk_buff *skb)
++{
++	struct net_bridge_port *port;
++	unsigned char *dmac = eth_hdr(skb)->h_dest;
++	u16 vlan_id = skb->vlan_tci & VLAN_VID_MASK;
++	bool bridging = false;
++
++	if (!netif_is_bridge_port(skb->dev))
++		return false;
++
++	rcu_read_lock();
++	port = br_port_get_rcu(skb->dev);
++	if (port) {
++		/* lookup fdb entry */
++		if (br_fdb_find_rcu(port->br, dmac, vlan_id))
++			bridging = true;
++	}
++	rcu_read_unlock();
++
++	return bridging;
++}
++
+ static enum flow_offload_xmit_type nf_xmit_type(struct dst_entry *dst)
+ {
+ 	if (dst_xfrm(dst))
+@@ -292,12 +315,12 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+ 
+ 	for (i = 0; i < stack->num_paths; i++) {
+ 		path = &stack->path[i];
++		info->indev = path->dev;
+ 		switch (path->type) {
+ 		case DEV_PATH_ETHERNET:
+ 		case DEV_PATH_DSA:
+ 		case DEV_PATH_VLAN:
+ 		case DEV_PATH_PPPOE:
+-			info->indev = path->dev;
+ 			if (is_zero_ether_addr(info->h_source))
+ 				memcpy(info->h_source, path->dev->dev_addr, ETH_ALEN);
+ 
+@@ -342,7 +365,6 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+ 			}
+ 			break;
+ 		default:
+-			info->indev = NULL;
+ 			break;
+ 		}
+ 	}
+@@ -369,6 +391,9 @@ static int nf_dev_fill_forward_path(const struct nf_flow_route *route,
+ 	if (!nf_is_valid_ether_device(dev))
+ 		goto out;
+ 
++	if (!is_zero_ether_addr(ha))
++		goto out;
++
+ 	n = dst_neigh_lookup(dst_cache, daddr);
+ 	if (!n)
+ 		return -1;
+@@ -386,23 +411,40 @@ static int nf_dev_fill_forward_path(const struct nf_flow_route *route,
+ 	return dev_fill_forward_path(dev, ha, stack);
+ }
+ 
+-static void nf_dev_forward_path(struct nf_flow_route *route,
+-				const struct nf_conn *ct,
+-				enum ip_conntrack_dir dir,
+-				struct net_device **devs)
++static int nf_dev_forward_path(struct sk_buff *skb,
++			       struct nf_flow_route *route,
++			       const struct nf_conn *ct,
++			       enum ip_conntrack_dir dir,
++			       struct net_device **devs)
+ {
+ 	const struct dst_entry *dst = route->tuple[dir].dst;
+ 	struct net_device_path_stack stack;
+ 	struct nf_forward_info info = {};
++	struct ethhdr *eth;
++	enum ip_conntrack_dir skb_dir;
+ 	unsigned char ha[ETH_ALEN];
+ 	int i;
+ 
++	memset(ha, 0, sizeof(ha));
++
++	if (xt_flowoffload_is_bridging(skb) && skb_mac_header_was_set(skb)) {
++		eth = eth_hdr(skb);
++		skb_dir = CTINFO2DIR(skb_get_nfct(skb) & NFCT_INFOMASK);
++		if (skb_dir != dir) {
++			memcpy(ha, eth->h_source, ETH_ALEN);
++			memcpy(info.h_source, eth->h_dest, ETH_ALEN);
++		} else {
++			memcpy(ha, eth->h_dest, ETH_ALEN);
++			memcpy(info.h_source, eth->h_source, ETH_ALEN);
++		}
++	}
++
+ 	if (nf_dev_fill_forward_path(route, dst, ct, dir, ha, &stack) >= 0)
+ 		nf_dev_path_info(&stack, &info, ha);
+ 
+ 	devs[!dir] = (struct net_device *)info.indev;
+ 	if (!info.indev)
+-		return;
++		return -ENOENT;
+ 
+ 	route->tuple[!dir].in.ifindex = info.indev->ifindex;
+ 	for (i = 0; i < info.num_encaps; i++) {
+@@ -419,13 +461,15 @@ static void nf_dev_forward_path(struct nf_flow_route *route,
+ 		route->tuple[dir].out.hw_ifindex = info.hw_outdev->ifindex;
+ 		route->tuple[dir].xmit_type = info.xmit_type;
+ 	}
++
++	return 0;
+ }
+ 
+ static int
+-xt_flowoffload_route(struct sk_buff *skb, const struct nf_conn *ct,
+-		     const struct xt_action_param *par,
+-		     struct nf_flow_route *route, enum ip_conntrack_dir dir,
+-		     struct net_device **devs)
++xt_flowoffload_route_routing(struct sk_buff *skb, const struct nf_conn *ct,
++			     const struct xt_action_param *par,
++			     struct nf_flow_route *route, enum ip_conntrack_dir dir,
++			     struct net_device **devs)
+ {
+ 	struct dst_entry *this_dst = skb_dst(skb);
+ 	struct dst_entry *other_dst = NULL;
+@@ -456,13 +500,91 @@ xt_flowoffload_route(struct sk_buff *skb, const struct nf_conn *ct,
+ 	nf_default_forward_path(route, this_dst, dir, devs);
+ 	nf_default_forward_path(route, other_dst, !dir, devs);
+ 
+-	if (route->tuple[dir].xmit_type	== FLOW_OFFLOAD_XMIT_NEIGH &&
++	if (route->tuple[dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH &&
++	    route->tuple[!dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH) {
++		if (nf_dev_forward_path(skb, route, ct, dir, devs))
++			return -ENOENT;
++		if (nf_dev_forward_path(skb, route, ct, !dir, devs))
++			return -ENOENT;
++	}
++
++	return 0;
++}
++
++static int
++xt_flowoffload_route_dir(struct sk_buff *skb, struct nf_flow_route *route,
++			 const struct nf_conn *ct, enum ip_conntrack_dir dir,
++			 const struct xt_action_param *par, int ifindex,
++			 struct net_device **devs)
++{
++	struct dst_entry *this_dst = skb_dst(skb);
++	struct dst_entry *dst = NULL;
++	struct flowi fl;
++
++	memset(&fl, 0, sizeof(fl));
++	switch (xt_family(par)) {
++	case NFPROTO_IPV4:
++		fl.u.ip4.daddr = ct->tuplehash[!dir].tuple.src.u3.ip;
++		fl.u.ip4.flowi4_oif = ifindex;
++		break;
++	case NFPROTO_IPV6:
++		fl.u.ip6.saddr = ct->tuplehash[!dir].tuple.dst.u3.in6;
++		fl.u.ip6.daddr = ct->tuplehash[!dir].tuple.src.u3.in6;
++		fl.u.ip6.flowi6_oif = ifindex;
++		break;
++	}
++
++	if (!dst_hold_safe(this_dst))
++		return -ENOENT;
++
++	nf_route(xt_net(par), &dst, &fl, false, xt_family(par));
++	if (!dst) {
++		dst_release(this_dst);
++		return -ENOENT;
++	}
++
++	nf_default_forward_path(route, dst, dir, devs);
++	dst_release(this_dst);
++
++	return 0;
++}
++
++static int
++xt_flowoffload_route_bridging(struct sk_buff *skb, const struct nf_conn *ct,
++			      const struct xt_action_param *par,
++			      struct nf_flow_route *route, enum ip_conntrack_dir dir,
++			      struct net_device **devs)
++{
++	int ret;
++
++	ret = xt_flowoffload_route_dir(skb, route, ct, dir, par,
++				       devs[dir]->ifindex,
++				       devs);
++	if (ret)
++		return ret;
++
++	ret = xt_flowoffload_route_dir(skb, route, ct, !dir, par,
++				       devs[!dir]->ifindex,
++				       devs);
++	if (ret)
++		goto err_route_dir1;
++
++	if (route->tuple[dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH &&
+ 	    route->tuple[!dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH) {
+-		nf_dev_forward_path(route, ct, dir, devs);
+-		nf_dev_forward_path(route, ct, !dir, devs);
++		if (nf_dev_forward_path(skb, route, ct, dir, devs) ||
++		    nf_dev_forward_path(skb, route, ct, !dir, devs)) {
++			ret = -ENOENT;
++			goto err_route_dir2;
++		}
+ 	}
+ 
+ 	return 0;
++
++err_route_dir2:
++	dst_release(route->tuple[!dir].dst);
++err_route_dir1:
++	dst_release(route->tuple[dir].dst);
++	return ret;
+ }
+ 
+ static unsigned int
+@@ -520,8 +642,14 @@ flowoffload_tg(struct sk_buff *skb, const struct xt_action_param *par)
+ 	if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status))
+ 		return XT_CONTINUE;
+ 
+-	if (xt_flowoffload_route(skb, ct, par, &route, dir, devs) < 0)
+-		goto err_flow_route;
++
++	if (xt_flowoffload_is_bridging(skb)) {
++		if (xt_flowoffload_route_bridging(skb, ct, par, &route, dir, devs) < 0)
++			goto err_flow_route;
++	} else {
++		if (xt_flowoffload_route_routing(skb, ct, par, &route, dir, devs) < 0)
++			goto err_flow_route;
++	}
+ 
+ 	flow = flow_offload_alloc(ct);
+ 	if (!flow)
+-- 
+2.45.2
+

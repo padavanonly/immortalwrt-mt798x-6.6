@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2022 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			compatible = "mediatek,mt7988a-mxl86252-rfb",
+						 "mediatek,mt7988a",
+						 "mediatek,mt7988";
+		};
+	};
+
+	fragment@1 {
+		target = <&mdio_bus>;
+		__overlay__ {
+			switch16: switch@16 {
+				compatible = "mxl,86252";
+				reg = <16>;
+				dsa,member = <0 0>;
+
+				ports {
+					port0: port@0 {
+						reg = <0>;
+						label = "mxl_lan0";
+						phy-handle = <&switchphy0>;
+						phy-mode = "internal";
+						status = "okay";
+					};
+
+					port1: port@1 {
+						reg = <1>;
+						label = "mxl_lan1";
+						phy-handle = <&switchphy1>;
+						phy-mode = "internal";
+						status = "okay";
+					};
+
+					port2: port@2 {
+						reg = <2>;
+						label = "mxl_lan2";
+						phy-handle = <&switchphy2>;
+						phy-mode = "internal";
+						status = "okay";
+					};
+
+					port3: port@3 {
+						reg = <3>;
+						label = "mxl_lan3";
+						phy-handle = <&switchphy3>;
+						phy-mode = "internal";
+						status = "okay";
+					};
+
+					port4: port@4 {
+						reg = <4>;
+						label = "mxl_lan4";
+						phy-handle = <&switchphy4>;
+						phy-mode = "internal";
+						status = "okay";
+					};
+
+					port8: port@8 {
+						reg = <8>;
+						label = "cpu";
+						phy-mode = "usxgmii";
+						ethernet = <&gmac2>;
+						dsa-tag-protocol = "mxl862_8021q";
+
+						fixed-link {
+							speed = <10000>;
+							full-duplex;
+						};
+					};
+				};
+
+				mdio {
+					switchphy0:switchphy@0 {
+						reg= <0>;
+					};
+					switchphy1:switchphy@1 {
+						reg= <1>;
+					};
+					switchphy2:switchphy@2 {
+						reg= <2>;
+					};
+					switchphy3:switchphy@3 {
+						reg= <3>;
+					};
+					switchphy4:switchphy@4 {
+						reg= <4>;
+					};
+				};
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&gmac2>;
+		__overlay__ {
+			phy-mode = "10gbase-r";
+			phy-connection-type = "10gbase-r";
+			status = "okay";
+
+			fixed-link {
+				speed = <10000>;
+				full-duplex;
+				pause;
+			};
+		};
+	};
+
+	fragment@3 {
+		target = <&switch>;
+		__overlay__ {
+			dsa,member = <1 0>;
+		};
+	};
+};

@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/phy/phy.h>
+#include <dt-bindings/reset/ti-syscon.h>
+#include <dt-bindings/clock/mediatek,mt7987-clk.h>
+#include <dt-bindings/pinctrl/mt65xx.h>
+
+&netsys {
+	ethwarp: syscon@15031000 {
+		compatible = "mediatek,mt7988-ethwarp", "syscon";
+		reg = <0 0x15031000 0 0x1000>;
+		#clock-cells = <1>;
+	};
+
+	eth: ethernet@15100000 {
+		compatible = "mediatek,mt7987-eth";
+		reg = <0 0x15100000 0 0x80000>,
+		      <0 0x15400000 0 0x20000>;
+		interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 191 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 192 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&ethsys CLK_ETHDMA_FE_EN>,
+			 <&ethsys CLK_ETHDMA_GP2_EN>,
+			 <&ethsys CLK_ETHDMA_GP1_EN>,
+			 <&ethsys CLK_ETHDMA_GP3_EN>,
+			 <&topckgen CLK_TOP_ETH_GMII_SEL>,
+			 <&topckgen CLK_TOP_ETH_REFCK_50M_SEL>,
+			 <&topckgen CLK_TOP_ETH_SYS_200M_SEL>,
+			 <&topckgen CLK_TOP_ETH_SYS_SEL>,
+			 <&topckgen CLK_TOP_ETH_XGMII_SEL>,
+			 <&topckgen CLK_TOP_ETH_MII_SEL>,
+			 <&topckgen CLK_TOP_NETSYS_SEL>,
+			 <&topckgen CLK_TOP_NETSYS_500M_SEL>,
+			 <&topckgen CLK_TOP_NETSYS_2X_SEL>;
+		clock-names = "fe", "gp2", "gp1", "gp3",
+			      "top_eth_gmii_sel", "top_eth_refck_50m_sel",
+			      "top_eth_sys_200m_sel", "top_eth_sys_sel",
+			      "top_eth_xgmii_sel", "top_eth_mii_sel",
+			      "top_netsys_sel", "top_netsys_500m_sel",
+			      "top_netsys_pao_2x_sel";
+		assigned-clocks = <&topckgen CLK_TOP_NETSYS_2X_SEL>,
+				  <&topckgen CLK_TOP_SGM_0_SEL>,
+				  <&topckgen CLK_TOP_SGM_1_SEL>;
+		assigned-clock-parents = <&apmixedsys CLK_APMIXED_NET2PLL>,
+					 <&apmixedsys CLK_APMIXED_SGMPLL>,
+					 <&apmixedsys CLK_APMIXED_SGMPLL>;
+		mediatek,ethsys = <&ethsys>;
+		mediatek,infracfg = <&topmisc>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mdio0_pins>;
+		#reset-cells = <1>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "disabled";
+
+		gmac0: mac@0 {
+			compatible = "mediatek,eth-mac";
+			reg = <0>;
+			pcs-handle = <&sgmiipcs0>;
+			status = "disabled";
+		};
+
+		gmac1: mac@1 {
+			compatible = "mediatek,eth-mac";
+			reg = <1>;
+			status = "disabled";
+		};
+
+		gmac2: mac@2 {
+			compatible = "mediatek,eth-mac";
+			reg = <2>;
+			pcs-handle = <&sgmiipcs1>;
+			status = "disabled";
+		};
+
+		mdio: mdio-bus {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+		};
+	};
+
+	hnat: hnat@15000000 {
+		compatible = "mediatek,mtk-hnat_v5";
+		reg = <0 0x15100000 0 0x80000>;
+		interrupts = <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>;
+		resets = <&ethsys 0>;
+		reset-names = "mtketh";
+		status = "disabled";
+	};
+
+	crypto: crypto@15600000 {
+		compatible = "inside-secure,safexcel-eip197b",
+			     "security-ip-197-srv";
+		reg = <0 0x15600000 0 0x180000>;
+		interrupts = <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 217 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "ring0", "ring1", "ring2", "ring3";
+		eth = <&eth>;
+		status = "disabled";
+	};
+};
+
+&crypto {
+	status = "okay";
+};
+
+&eth {
+	status = "okay";
+};
+
+&hnat {
+	mtketh-wan = "eth1";
+	mtketh-lan = "lan";
+	mtketh-max-gmac = <2>;
+	mtketh-ppe-num = <1>;
+	status = "okay";
+};
+

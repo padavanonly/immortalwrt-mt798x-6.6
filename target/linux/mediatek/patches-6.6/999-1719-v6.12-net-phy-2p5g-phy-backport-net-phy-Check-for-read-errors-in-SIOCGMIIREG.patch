@@ -1,0 +1,81 @@
+From 569bf6d481b0b823c3c9c3b8be77908fd7caf66b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Niklas=20S=C3=B6derlund?=
+ <niklas.soderlund+renesas@ragnatech.se>
+Date: Tue, 3 Sep 2024 19:15:36 +0200
+Subject: [PATCH] net: phy: Check for read errors in SIOCGMIIREG
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When reading registers from the PHY using the SIOCGMIIREG IOCTL any
+errors returned from either mdiobus_read() or mdiobus_c45_read() are
+ignored, and parts of the returned error is passed as the register value
+back to user-space.
+
+For example, if mdiobus_c45_read() is used with a bus that do not
+implement the read_c45() callback -EOPNOTSUPP is returned. This is
+however directly stored in mii_data->val_out and returned as the
+registers content. As val_out is a u16 the error code is truncated and
+returned as a plausible register value.
+
+Fix this by first checking the return value for errors before returning
+it as the register content.
+
+Before this patch,
+
+    # phytool read eth0/0:1/0
+    0xffa1
+
+After this change,
+
+    $ phytool read eth0/0:1/0
+    error: phy_read (-95)
+
+Signed-off-by: Niklas Söderlund <niklas.soderlund+renesas@ragnatech.se>
+Reviewed-by: Florian Fainelli <florian.fainelli@broadcom.com>
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Reviewed-by: Yoshihiro Shimoda <yoshihiro.shimoda.uh@renesas.com>
+Tested-by: Yoshihiro Shimoda <yoshihiro.shimoda.uh@renesas.com>
+Reviewed-by: Geert Uytterhoeven <geert+renesas@glider.be>
+Link: https://patch.msgid.link/20240903171536.628930-1-niklas.soderlund+renesas@ragnatech.se
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/phy/phy.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -328,6 +328,7 @@ int phy_mii_ioctl(struct phy_device *phy
+ 	u16 val = mii_data->val_in;
+ 	bool change_autoneg = false;
+ 	int prtad, devad;
++	int ret;
+ 
+ 	switch (cmd) {
+ 	case SIOCGMIIPHY:
+@@ -338,14 +339,19 @@ int phy_mii_ioctl(struct phy_device *phy
+ 		if (mdio_phy_id_is_c45(mii_data->phy_id)) {
+ 			prtad = mdio_phy_id_prtad(mii_data->phy_id);
+ 			devad = mdio_phy_id_devad(mii_data->phy_id);
+-			mii_data->val_out = mdiobus_c45_read(
+-				phydev->mdio.bus, prtad, devad,
+-				mii_data->reg_num);
++			ret = mdiobus_c45_read(phydev->mdio.bus, prtad, devad,
++					       mii_data->reg_num);
++
+ 		} else {
+-			mii_data->val_out = mdiobus_read(
+-				phydev->mdio.bus, mii_data->phy_id,
+-				mii_data->reg_num);
++			ret = mdiobus_read(phydev->mdio.bus, mii_data->phy_id,
++					   mii_data->reg_num);
+ 		}
++
++		if (ret < 0)
++			return ret;
++
++		mii_data->val_out = ret;
++
+ 		return 0;
+ 
+ 	case SIOCSMIIREG:

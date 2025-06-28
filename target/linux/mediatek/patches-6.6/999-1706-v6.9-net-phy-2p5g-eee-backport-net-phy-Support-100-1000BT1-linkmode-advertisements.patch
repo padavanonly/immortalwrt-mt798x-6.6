@@ -1,0 +1,41 @@
+From ac0c530619cefa68fba816dabbcf6f4ffbf60c3d Mon Sep 17 00:00:00 2001
+From: Dimitri Fedrau <dima.fedrau@gmail.com>
+Date: Sun, 18 Feb 2024 08:57:39 +0100
+Subject: [PATCH] net: phy: Support 100/1000BT1 linkmode advertisements
+
+Extend helper functions mii_t1_adv_m_mod_linkmode_t and
+linkmode_adv_to_mii_t1_adv_m_t to support 100BT1 and 1000BT1 linkmode
+advertisements.
+
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: Dimitri Fedrau <dima.fedrau@gmail.com>
+Link: https://lore.kernel.org/r/20240218075753.18067-3-dima.fedrau@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ include/linux/mdio.h | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+--- a/include/linux/mdio.h
++++ b/include/linux/mdio.h
+@@ -372,6 +372,10 @@ static inline void mii_t1_adv_m_mod_link
+ {
+ 	linkmode_mod_bit(ETHTOOL_LINK_MODE_10baseT1L_Full_BIT,
+ 			 advertising, lpa & MDIO_AN_T1_ADV_M_B10L);
++	linkmode_mod_bit(ETHTOOL_LINK_MODE_100baseT1_Full_BIT,
++			 advertising, lpa & MDIO_AN_T1_ADV_M_100BT1);
++	linkmode_mod_bit(ETHTOOL_LINK_MODE_1000baseT1_Full_BIT,
++			 advertising, lpa & MDIO_AN_T1_ADV_M_1000BT1);
+ }
+ 
+ /**
+@@ -408,6 +412,10 @@ static inline u32 linkmode_adv_to_mii_t1
+ 
+ 	if (linkmode_test_bit(ETHTOOL_LINK_MODE_10baseT1L_Full_BIT, advertising))
+ 		result |= MDIO_AN_T1_ADV_M_B10L;
++	if (linkmode_test_bit(ETHTOOL_LINK_MODE_100baseT1_Full_BIT, advertising))
++		result |= MDIO_AN_T1_ADV_M_100BT1;
++	if (linkmode_test_bit(ETHTOOL_LINK_MODE_1000baseT1_Full_BIT, advertising))
++		result |= MDIO_AN_T1_ADV_M_1000BT1;
+ 
+ 	return result;
+ }

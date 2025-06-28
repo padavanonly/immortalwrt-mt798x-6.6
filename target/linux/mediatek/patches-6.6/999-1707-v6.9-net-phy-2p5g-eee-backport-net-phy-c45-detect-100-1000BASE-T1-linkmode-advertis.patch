@@ -1,0 +1,28 @@
+From 8d9a577f0eea92f1b5b82874eabf93b505d02c78 Mon Sep 17 00:00:00 2001
+From: Dimitri Fedrau <dima.fedrau@gmail.com>
+Date: Sun, 18 Feb 2024 08:57:40 +0100
+Subject: [PATCH] net: phy: c45: detect 100/1000BASE-T1 linkmode advertisements
+
+Set 100BT1 and 1000BT1 linkmode advertisement bits to adv_l_mask to
+enable detection.
+
+Reviewed-by: Andrew Lunn <andrew@lunn.ch>
+Signed-off-by: Dimitri Fedrau <dima.fedrau@gmail.com>
+Link: https://lore.kernel.org/r/20240218075753.18067-4-dima.fedrau@gmail.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/phy/phy-c45.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -208,7 +208,8 @@ static int genphy_c45_baset1_an_config_a
+ 
+ 	adv_l_mask = MDIO_AN_T1_ADV_L_FORCE_MS | MDIO_AN_T1_ADV_L_PAUSE_CAP |
+ 		MDIO_AN_T1_ADV_L_PAUSE_ASYM;
+-	adv_m_mask = MDIO_AN_T1_ADV_M_MST | MDIO_AN_T1_ADV_M_B10L;
++	adv_m_mask = MDIO_AN_T1_ADV_M_1000BT1 | MDIO_AN_T1_ADV_M_100BT1 |
++		MDIO_AN_T1_ADV_M_MST | MDIO_AN_T1_ADV_M_B10L;
+ 
+ 	switch (phydev->master_slave_set) {
+ 	case MASTER_SLAVE_CFG_MASTER_FORCE:

@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+/*
+ * --------- Bananapi Bpi R4 Lite MikroBus ---------
+ * | 9  |                           GPIO7/PWM1 | 8 |
+ * | 10 | GPIO6                          GPIO5 | 7 |
+ * | 11 | GPIO49/SPI1_CS       GPIO3/UART1_RXD | 6 |
+ * | 12 | GPIO46/SPI1_CLK      GPIO4/UART1_TXD | 5 |
+ * | 13 | GPIO48/SPI1_MISO  I2C3 SCL (PCA9548) | 4 |
+ * | 14 | GPIO47/SPI1_MOSI  I2C3 SDA (PCA9548) | 3 |
+ * | 15 | +3.3V                            +5V | 2 |
+ * | 16 | GND                              GND | 1 |
+ * --=----------------------------------------------
+ */
+
+/ {
+	/* MikroBus SPI & UART */
+	fragment@0 {
+		target = <&pio>;
+		__overlay__ {
+			spic_mikrobus_pins: spic-mikrobus-pins {
+				mux {
+					function = "spi";
+					groups = "spi1_1";
+				};
+			};
+
+			uart1_mikrobus_pins: uart1-mikrobus-pins {
+				mux {
+					function = "uart";
+					groups = "uart1_0_lite";
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&spi1>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&spic_mikrobus_pins>;
+			status = "okay";
+
+                        spi_dev1: spi@0 {
+                                compatible = "rohm,dh2228fv";
+                                reg = <0>;
+                                spi-max-frequency = <52000000>;
+                        };
+		};
+	};
+
+	fragment@2 {
+		target = <&uart1>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart1_mikrobus_pins>;
+			status = "okay";
+		};
+	};
+};

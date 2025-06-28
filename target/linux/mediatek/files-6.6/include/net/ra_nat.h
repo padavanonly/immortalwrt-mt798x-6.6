@@ -88,7 +88,6 @@ enum foe_cpu_reason {
 	HIT_BIND_KEEPALIVE_DUP_OLD_HDR = 0x15,
 	/* FOE Hit bind & force to CPU */
 	HIT_BIND_FORCE_TO_CPU = 0x16,
-
 	/* Hit bind and remove tunnel IP header, */
 	/* but inner IP has option/next header */
 	HIT_BIND_WITH_OPTION_HEADER = 0x17,

@@ -1,0 +1,55 @@
+From b38061fe9cfa90a781e9e59fc761191fc8b469a1 Mon Sep 17 00:00:00 2001
+From: Heiner Kallweit <hkallweit1@gmail.com>
+Date: Tue, 20 Feb 2024 22:55:38 +0100
+Subject: [PATCH] net: phy: simplify genphy_c45_ethtool_set_eee
+
+Simplify the function, no functional change intended.
+
+- Remove not needed variable unsupp, I think code is even better
+  readable now.
+- Move setting phydev->eee_enabled out of the if clause
+- Simplify return value handling
+
+Signed-off-by: Heiner Kallweit <hkallweit1@gmail.com>
+Link: https://lore.kernel.org/r/442277c7-7431-4542-80b5-1d3d691714d7@gmail.com
+Signed-off-by: Paolo Abeni <pabeni@redhat.com>
+---
+ drivers/net/phy/phy-c45.c | 13 ++++---------
+ 1 file changed, 4 insertions(+), 9 deletions(-)
+
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -1561,10 +1561,8 @@ int genphy_c45_ethtool_set_eee(struct ph
+ 
+ 		if (!linkmode_empty(adv)) {
+ 			__ETHTOOL_DECLARE_LINK_MODE_MASK(tmp);
+-			bool unsupp;
+ 
+-			unsupp = linkmode_andnot(tmp, adv, phydev->supported_eee);
+-			if (unsupp) {
++			if (linkmode_andnot(tmp, adv, phydev->supported_eee)) {
+ 				phydev_warn(phydev, "At least some EEE link modes are not supported.\n");
+ 				return -EINVAL;
+ 			}
+@@ -1573,18 +1571,15 @@ int genphy_c45_ethtool_set_eee(struct ph
+ 		}
+ 
+ 		linkmode_copy(phydev->advertising_eee, adv);
+-		phydev->eee_enabled = true;
+-	} else {
+-		phydev->eee_enabled = false;
+ 	}
+ 
++	phydev->eee_enabled = data->eee_enabled;
++
+ 	ret = genphy_c45_an_config_eee_aneg(phydev);
+-	if (ret < 0)
+-		return ret;
+ 	if (ret > 0)
+ 		return phy_restart_aneg(phydev);
+ 
+-	return 0;
++	return ret;
+ }
+ EXPORT_SYMBOL(genphy_c45_ethtool_set_eee);
+ 

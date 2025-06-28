@@ -4,13 +4,14 @@
 #include "mt7981b-xiaomi-mi-router-wr30u.dtsi"
 
 / {
-	model = "Xiaomi Mi Router WR30U (OpenWrt U-Boot layout)";
+	model = "Xiaomi Mi Router WR30U";
 	compatible = "xiaomi,mi-router-wr30u-ubootmod", "mediatek,mt7981";
+};
 
-	chosen {
-		bootargs-append = " root=/dev/fit0 rootwait";
-		rootdisk = <&ubi_rootdisk>;
-	};
+&spi_nand {
+	mediatek,nmbm;
+	mediatek,bmt-max-ratio = <1>;
+	mediatek,bmt-max-reserved-blocks = <64>;
 };
 
 &partitions {
@@ -18,11 +19,5 @@
 		label = "ubi";
 		reg = <0x600000 0x7000000>;
 		compatible = "linux,ubi";
-
-		volumes {
-			ubi_rootdisk: ubi-volume-fit {
-				volname = "fit";
-			};
-		};
 	};
 };

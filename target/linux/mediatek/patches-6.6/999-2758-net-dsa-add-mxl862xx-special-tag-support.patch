@@ -1,0 +1,69 @@
+Subject: [PATCH] 999-2758-net-dsa-add-mxl862xx-special-tag-support
+
+---
+ include/net/dsa.h |  4 ++++
+ net/dsa/Kconfig   | 14 ++++++++++++++
+ net/dsa/Makefile  |  2 ++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/include/net/dsa.h b/include/net/dsa.h
+index dfc0fa9..7d6d437 100644
+--- a/include/net/dsa.h
++++ b/include/net/dsa.h
+@@ -56,6 +56,8 @@ struct phylink_link_state;
+ #define DSA_TAG_PROTO_RTL8_4T_VALUE		25
+ #define DSA_TAG_PROTO_RZN1_A5PSW_VALUE		26
+ #define DSA_TAG_PROTO_LAN937X_VALUE		27
++#define DSA_TAG_PROTO_MXL862_VALUE		29
++#define DSA_TAG_PROTO_MXL862_8021Q_VALUE	30
+ 
+ enum dsa_tag_protocol {
+ 	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
+@@ -86,6 +88,8 @@ enum dsa_tag_protocol {
+ 	DSA_TAG_PROTO_RTL8_4T		= DSA_TAG_PROTO_RTL8_4T_VALUE,
+ 	DSA_TAG_PROTO_RZN1_A5PSW	= DSA_TAG_PROTO_RZN1_A5PSW_VALUE,
+ 	DSA_TAG_PROTO_LAN937X		= DSA_TAG_PROTO_LAN937X_VALUE,
++	DSA_TAG_PROTO_MXL862		= DSA_TAG_PROTO_MXL862_VALUE,
++	DSA_TAG_PROTO_MXL862_8021Q	= DSA_TAG_PROTO_MXL862_8021Q_VALUE,
+ };
+ 
+ struct dsa_switch;
+diff --git a/net/dsa/Kconfig b/net/dsa/Kconfig
+index 8e698be..2b38977 100644
+--- a/net/dsa/Kconfig
++++ b/net/dsa/Kconfig
+@@ -172,4 +172,18 @@ config NET_DSA_TAG_XRS700X
+ 	  Say Y or M if you want to enable support for tagging frames for
+ 	  Arrow SpeedChips XRS700x switches that use a single byte tag trailer.
+ 
++config NET_DSA_TAG_MXL862
++	tristate "Tag driver for MxL862xx switches"
++	help
++	Say Y or M if you want to enable support for tagging frames for the
++	Maxlinear MxL862xx switches.
++
++config NET_DSA_TAG_MXL862_8021Q
++	tristate "Tag driver for MxL862xx switches, based on VLAN tags"
++	help
++	Say Y or M if you want to enable support for tagging frames for the
++	Maxlinear MxL862xx switches. This tagging variant is based on 4-byte wide VLAN
++	tags
++
+ endif
++
+diff --git a/net/dsa/Makefile b/net/dsa/Makefile
+index 12e3058..eb781ca 100644
+--- a/net/dsa/Makefile
++++ b/net/dsa/Makefile
+@@ -38,6 +38,8 @@ obj-$(CONFIG_NET_DSA_TAG_RZN1_A5PSW) += tag_rzn1_a5psw.o
+ obj-$(CONFIG_NET_DSA_TAG_SJA1105) += tag_sja1105.o
+ obj-$(CONFIG_NET_DSA_TAG_TRAILER) += tag_trailer.o
+ obj-$(CONFIG_NET_DSA_TAG_XRS700X) += tag_xrs700x.o
++obj-$(CONFIG_NET_DSA_TAG_MXL862) += tag_mxl862xx.o
++obj-$(CONFIG_NET_DSA_TAG_MXL862_8021Q) += tag_mxl862xx_8021q.o
+ 
+ # for tracing framework to find trace.h
+ CFLAGS_trace.o := -I$(src)
+-- 
+2.45.2
+

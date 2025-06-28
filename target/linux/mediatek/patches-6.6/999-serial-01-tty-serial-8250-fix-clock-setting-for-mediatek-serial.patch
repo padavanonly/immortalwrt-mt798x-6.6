@@ -1,0 +1,33 @@
+From 097e44d543467b45e03c5b976c6e6e0a8bd55012 Mon Sep 17 00:00:00 2001
+From: Sam Shih <sam.shih@mediatek.com>
+Date: Mon, 20 Jan 2025 19:51:07 +0800
+Subject: [PATCH 3/3] tty: serial: 8250: fix clock setting for mediatek serial
+ driver
+
+---
+ drivers/tty/serial/8250/8250_mtk.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/tty/serial/8250/8250_mtk.c b/drivers/tty/serial/8250/8250_mtk.c
+index 28f9a267..c9296ff0 100644
+--- a/drivers/tty/serial/8250/8250_mtk.c
++++ b/drivers/tty/serial/8250/8250_mtk.c
+@@ -475,13 +475,13 @@ static int mtk8250_probe_of(struct platform_device *pdev, struct uart_port *p,
+ 	int dmacnt;
+ #endif
+ 
+-	data->uart_clk = devm_clk_get(&pdev->dev, "baud");
++	data->uart_clk = devm_clk_get_enabled(&pdev->dev, "baud");
+ 	if (IS_ERR(data->uart_clk)) {
+ 		/*
+ 		 * For compatibility with older device trees try unnamed
+ 		 * clk when no baud clk can be found.
+ 		 */
+-		data->uart_clk = devm_clk_get(&pdev->dev, NULL);
++		data->uart_clk = devm_clk_get_enabled(&pdev->dev, NULL);
+ 		if (IS_ERR(data->uart_clk)) {
+ 			dev_warn(&pdev->dev, "Can't get uart clock\n");
+ 			return PTR_ERR(data->uart_clk);
+-- 
+2.45.2
+

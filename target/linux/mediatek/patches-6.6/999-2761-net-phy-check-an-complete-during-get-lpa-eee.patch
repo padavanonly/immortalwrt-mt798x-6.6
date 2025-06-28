@@ -1,0 +1,19 @@
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -797,6 +797,16 @@ static int genphy_c45_read_eee_lpa(struc
+ {
+ 	int val;
+ 
++	/* Auto negotiation complete bit must be set to read correct lpa's EEE.
++	 */
++	val = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_STAT1);
++	if (!(val & MDIO_AN_STAT1_COMPLETE)) {
++		/* Some devices rely on CL22 to detect AN complete. */
++		val = phy_read(phydev, MII_BMSR);
++		if(!(val & BMSR_ANEGCOMPLETE))
++			return 0;
++	}
++
+ 	if (linkmode_intersects(phydev->supported_eee, PHY_EEE_CAP1_FEATURES)) {
+ 		/* IEEE 802.3-2018 45.2.7.14 EEE link partner ability 1
+ 		 * (Register 7.61)

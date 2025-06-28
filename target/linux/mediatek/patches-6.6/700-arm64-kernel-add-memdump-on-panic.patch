@@ -1,0 +1,386 @@
+--- a/arch/arm64/include/asm/memdump.h
++++ b/arch/arm64/include/asm/memdump.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * Copyright (C) 2025 MediaTek Inc.
++ *
++ * Author: Weijie Gao <weijie.gao@mediatek.com>
++ */
++
++#ifndef _ARM64_MEMDUMP_H_
++#define _ARM64_MEMDUMP_H_
++
++struct pt_regs;
++
++void arm64_atf_memory_dump(int reboot_timeout);
++void arm64_atf_memory_dump_save_regs(struct pt_regs *regs);
++
++#endif /* _ARM64_MEMDUMP_H_ */
+--- a/arch/arm64/kernel/Makefile
++++ b/arch/arm64/kernel/Makefile
+@@ -66,7 +66,7 @@ obj-$(CONFIG_KEXEC_FILE)		+= machine_kex
+ obj-$(CONFIG_ARM64_RELOC_TEST)		+= arm64-reloc-test.o
+ arm64-reloc-test-y := reloc_test_core.o reloc_test_syms.o
+ obj-$(CONFIG_CRASH_DUMP)		+= crash_dump.o
+-obj-$(CONFIG_CRASH_CORE)		+= crash_core.o
++obj-y					+= crash_core.o
+ obj-$(CONFIG_ARM_SDE_INTERFACE)		+= sdei.o
+ obj-$(CONFIG_ARM64_PTR_AUTH)		+= pointer_auth.o
+ obj-$(CONFIG_ARM64_MTE)			+= mte.o
+@@ -87,5 +87,7 @@ ifeq ($(CONFIG_DEBUG_EFI),y)
+ AFLAGS_head.o += -DVMLINUX_PATH="\"$(realpath $(objtree)/vmlinux)\""
+ endif
+ 
++obj-y					+= memdump.o
++
+ # for cleaning
+ subdir- += vdso vdso32
+--- a/arch/arm64/kernel/memdump.c
++++ b/arch/arm64/kernel/memdump.c
+@@ -0,0 +1,201 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Copyright (C) 2025 MediaTek Inc.
++ *
++ * Author: Weijie Gao <weijie.gao@mediatek.com>
++ */
++
++#include <linux/kernel.h>
++#include <linux/arm-smccc.h>
++#include <linux/printk.h>
++#include <linux/crash_core.h>
++#include <linux/ioport.h>
++#include <linux/crc32.h>
++
++#define CONFIG_KEXEC_CORE
++#include <linux/kexec.h>
++#include <asm/kexec.h>
++#include <asm/cacheflush.h>
++
++/*
++ * MTK_SIP_EMERG_MEM_DUMP - Do emergency memory dump thru. ethernet
++ *
++ * parameters
++ * @x1:		reboot after memory dump
++ *
++ * no return
++ */
++#define MTK_SIP_EMERG_MEM_DUMP			0xC2000540
++
++/* core dump info */
++#define MEMDUMP_CORE_VER			2
++
++struct memdump_core_info {
++	u32 crc;
++	u32 len;
++	u32 ver;
++	u32 nr_cpus;
++	u32 nr_mem_ranges;
++	u32 panic_cpu;			/* v2 */
++	uintptr_t note_buf_pa;
++	size_t note_buf_size;
++	uintptr_t vmcoreinfo_note_pa;
++	size_t vmcoreinfo_note_size;
++	uintptr_t kernel_va;
++	uintptr_t kernel_pa;
++	size_t kernel_size;
++	uintptr_t mem_ranges_pa;
++	uintptr_t panic_regs_pa;	/* v2 */
++	u32 panic_regs_valid;		/* v2 */
++	u32 unused;			/* v2 */
++};
++
++struct memdump_mem_range {
++	u64 va_start;
++	u64 pa_start;
++	u64 pa_end;
++};
++
++struct crash_mem_priv {
++	unsigned int nr_ranges;
++	struct memdump_mem_range *ranges;
++};
++
++static struct memdump_core_info *mdump_core_info;
++static struct pt_regs *mdump_panic_regs;
++
++static int get_nr_ram_ranges_callback(struct resource *res, void *arg)
++{
++	unsigned int *nr_ranges = arg;
++
++	(*nr_ranges)++;
++	return 0;
++}
++
++static int log_ram_headers_callback(struct resource *res, void *arg)
++{
++	struct crash_mem_priv *cmem = arg;
++
++	cmem->ranges[cmem->nr_ranges].va_start = (u64)__va(res->start);
++	cmem->ranges[cmem->nr_ranges].pa_start = res->start;
++	cmem->ranges[cmem->nr_ranges].pa_end = res->end;
++	cmem->nr_ranges++;
++
++	return 0;
++}
++
++static void prepare_mdump_core_info(void)
++{
++	struct memdump_mem_range *mem_ranges;
++	struct crash_mem_priv cmpriv;
++	uint32_t cpu, nr_ranges = 0;
++	uintptr_t *note_buf;
++	size_t len;
++
++	walk_system_ram_res(0, -1, &nr_ranges, get_nr_ram_ranges_callback);
++
++	mdump_core_info->ver = MEMDUMP_CORE_VER;
++	mdump_core_info->nr_cpus = NR_CPUS;
++	mdump_core_info->panic_cpu = smp_processor_id();
++
++	note_buf = (uintptr_t *)((uintptr_t)mdump_core_info + sizeof(*mdump_core_info));
++	mdump_core_info->note_buf_pa = __pa(note_buf);
++	mdump_core_info->note_buf_size = sizeof(note_buf_t);
++
++	mdump_core_info->vmcoreinfo_note_pa = paddr_vmcoreinfo_note();
++	mdump_core_info->vmcoreinfo_note_size = VMCOREINFO_NOTE_SIZE;
++
++	mdump_core_info->kernel_va = (uintptr_t)_text;
++	mdump_core_info->kernel_pa = __pa_symbol(_text);
++	mdump_core_info->kernel_size = _end - _text;
++
++	for_each_present_cpu(cpu) {
++		note_buf[cpu] = per_cpu_ptr_to_phys(per_cpu_ptr(crash_notes, cpu));
++	}
++
++	mem_ranges = (struct memdump_mem_range *)((uintptr_t)note_buf + NR_CPUS * sizeof(uintptr_t));
++	mdump_core_info->mem_ranges_pa = __pa(mem_ranges);
++
++	cmpriv.nr_ranges = 0;
++	cmpriv.ranges = mem_ranges;
++
++	walk_system_ram_res(0, -1, &cmpriv, log_ram_headers_callback);
++
++	mdump_core_info->nr_mem_ranges = cmpriv.nr_ranges;
++
++	mdump_core_info->panic_regs_pa = __pa(mdump_panic_regs);
++
++	len = sizeof(*mdump_core_info) +
++	      NR_CPUS * sizeof(uintptr_t) +
++	      cmpriv.nr_ranges * sizeof(struct memdump_mem_range);
++
++	mdump_core_info->len = len;
++
++	mdump_core_info->crc = crc32(0xffffffff, mdump_core_info, len) ^ 0xffffffff;
++
++	dcache_clean_inval_poc((unsigned long)mdump_core_info, len);
++}
++
++void arm64_atf_memory_dump(int reboot_timeout)
++{
++	struct arm_smccc_res res;
++	struct pt_regs regs;
++
++	crash_setup_regs(&regs, NULL);
++	crash_save_vmcoreinfo();
++
++	/* for crashing cpu */
++	crash_save_cpu(&regs, smp_processor_id());
++
++	prepare_mdump_core_info();
++
++	pr_emerg("Starting Memory dump SMCC\n");
++
++	arm_smccc_smc(MTK_SIP_EMERG_MEM_DUMP, reboot_timeout,
++		      __pa(mdump_core_info), 0, 0, 0, 0, 0, &res);
++
++	pr_err("Memory dump SMCC failed\n");
++}
++
++void arm64_atf_memory_dump_save_regs(struct pt_regs *regs)
++{
++	mdump_core_info->panic_regs_valid = true;
++
++	memcpy(mdump_panic_regs, regs, sizeof(*regs));
++
++	dcache_clean_inval_poc((unsigned long)mdump_panic_regs, sizeof(*regs));
++}
++
++/* dummy functions */
++void machine_kexec_cleanup(struct kimage *kimage)
++{
++}
++
++void machine_crash_shutdown(struct pt_regs *regs)
++{
++}
++
++void machine_kexec(struct kimage *kimage)
++{
++	BUG();
++}
++
++static int __init memdump_core_info_init(void)
++{
++	mdump_core_info = (struct memdump_core_info *)get_zeroed_page(GFP_KERNEL);
++	if (!mdump_core_info) {
++		pr_warn("Memory allocation for memdump_core_info failed\n");
++		return -ENOMEM;
++	}
++
++	mdump_panic_regs = (struct pt_regs *)get_zeroed_page(GFP_KERNEL);
++	if (!mdump_panic_regs) {
++		pr_warn("Memory allocation for pt_regs failed\n");
++		free_page((unsigned long)mdump_core_info);
++		return -ENOMEM;
++	}
++
++	return 0;
++}
++
++subsys_initcall(memdump_core_info_init);
+--- a/arch/arm64/kernel/smp.c
++++ b/arch/arm64/kernel/smp.c
+@@ -31,6 +31,8 @@
+ #include <linux/of.h>
+ #include <linux/irq_work.h>
+ #include <linux/kernel_stat.h>
++
++#define CONFIG_KEXEC_CORE	1
+ #include <linux/kexec.h>
+ #include <linux/kvm_host.h>
+ 
+@@ -880,11 +882,11 @@ static void do_handle_IPI(int ipinr)
+ 		break;
+ 
+ 	case IPI_CPU_CRASH_STOP:
+-		if (IS_ENABLED(CONFIG_KEXEC_CORE)) {
++#ifdef CONFIG_KEXEC_CORE
+ 			ipi_cpu_crash_stop(cpu, get_irq_regs());
+ 
+ 			unreachable();
+-		}
++#endif
+ 		break;
+ 
+ #ifdef CONFIG_GENERIC_CLOCKEVENTS_BROADCAST
+--- a/arch/arm64/kernel/traps.c
++++ b/arch/arm64/kernel/traps.c
+@@ -49,6 +49,10 @@
+ #include <asm/system_misc.h>
+ #include <asm/sysreg.h>
+ 
++#ifdef CONFIG_ARM64
++#include <asm/memdump.h>
++#endif
++
+ static bool __kprobes __check_eq(unsigned long pstate)
+ {
+ 	return (pstate & PSR_Z_BIT) != 0;
+@@ -228,6 +232,10 @@ void die(const char *str, struct pt_regs
+ 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
+ 	oops_exit();
+ 
++#ifdef CONFIG_ARM64
++	arm64_atf_memory_dump_save_regs(regs);
++#endif
++
+ 	if (in_interrupt())
+ 		panic("%s: Fatal exception in interrupt", str);
+ 	if (panic_on_oops)
+--- a/kernel/Makefile
++++ b/kernel/Makefile
+@@ -68,8 +68,8 @@ obj-$(CONFIG_MODULE_SIG_FORMAT) += modul
+ obj-$(CONFIG_KALLSYMS) += kallsyms.o
+ obj-$(CONFIG_KALLSYMS_SELFTEST) += kallsyms_selftest.o
+ obj-$(CONFIG_BSD_PROCESS_ACCT) += acct.o
+-obj-$(CONFIG_CRASH_CORE) += crash_core.o
+-obj-$(CONFIG_KEXEC_CORE) += kexec_core.o
++obj-y += crash_core.o
++obj-y += kexec_core.o
+ obj-$(CONFIG_KEXEC) += kexec.o
+ obj-$(CONFIG_KEXEC_FILE) += kexec_file.o
+ obj-$(CONFIG_KEXEC_ELF) += kexec_elf.o
+--- a/kernel/crash_core.c
++++ b/kernel/crash_core.c
+@@ -4,6 +4,7 @@
+  * Copyright (C) 2002-2004 Eric Biederman  <ebiederm@xmission.com>
+  */
+ 
++#define CONFIG_CRASH_CORE	1
+ #include <linux/buildid.h>
+ #include <linux/crash_core.h>
+ #include <linux/init.h>
+--- a/kernel/kexec_core.c
++++ b/kernel/kexec_core.c
+@@ -12,6 +12,8 @@
+ #include <linux/file.h>
+ #include <linux/slab.h>
+ #include <linux/fs.h>
++
++#define CONFIG_KEXEC_CORE	1
+ #include <linux/kexec.h>
+ #include <linux/mutex.h>
+ #include <linux/list.h>
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -38,6 +38,10 @@
+ #include <trace/events/error_report.h>
+ #include <asm/sections.h>
+ 
++#ifdef CONFIG_ARM64
++#include <asm/memdump.h>
++#endif
++
+ #define PANIC_TIMER_STEP 100
+ #define PANIC_BLINK_SPD 18
+ 
+@@ -173,12 +177,16 @@ void __weak crash_smp_send_stop(void)
+ 	if (cpus_stopped)
+ 		return;
+ 
++#ifdef CONFIG_KEXEC_CORE
+ 	/*
+ 	 * Note smp_send_stop is the usual smp shutdown function, which
+ 	 * unfortunately means it may not be hardened to work in a panic
+ 	 * situation.
+ 	 */
+ 	smp_send_stop();
++#else
++	crash_smp_send_stop();
++#endif
+ 	cpus_stopped = 1;
+ }
+ 
+@@ -397,6 +405,10 @@ void panic(const char *fmt, ...)
+ 
+ 	panic_print_sys_info(true);
+ 
++#ifdef CONFIG_ARM64
++	arm64_atf_memory_dump(panic_timeout);
++#endif
++
+ 	if (!panic_blink)
+ 		panic_blink = no_blink;
+ 
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -60,6 +60,8 @@
+ #include "braille.h"
+ #include "internal.h"
+ 
++#define CONFIG_CRASH_CORE	1
++
+ int console_printk[4] = {
+ 	CONSOLE_LOGLEVEL_DEFAULT,	/* console_loglevel */
+ 	MESSAGE_LOGLEVEL_DEFAULT,	/* default_message_loglevel */
+--- a/lib/buildid.c
++++ b/lib/buildid.c
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-2.0
+ 
++#define CONFIG_CRASH_CORE	1
+ #include <linux/buildid.h>
+ #include <linux/cache.h>
+ #include <linux/elf.h>
