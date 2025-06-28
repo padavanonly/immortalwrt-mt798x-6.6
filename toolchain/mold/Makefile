@@ -3,9 +3,6 @@
 # See /LICENSE for more information.
 #
 include $(TOPDIR)/rules.mk
-
-PKG_NAME:=ld.mold
-
 include $(INCLUDE_DIR)/toolchain-build.mk
 
 define Host/Configure

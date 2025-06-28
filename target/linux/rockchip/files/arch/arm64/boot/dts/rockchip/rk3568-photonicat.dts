@@ -54,7 +54,6 @@
 		clock-names = "ext_clock";
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_enable_h &clk32k_out1>;
-		post-power-on-delay-ms = <200>;
 		reset-gpios = <&gpio2 RK_PB1 GPIO_ACTIVE_LOW>;
 	};
 
@@ -137,7 +136,6 @@
 		regulator-name = "vcc3v3_pi6c";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		startup-delay-us = <200000>;
 		vin-supply = <&vcc_syson>;
 	};
 
@@ -149,7 +147,6 @@
 		regulator-boot-on;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		startup-delay-us = <50000>;
 		vin-supply = <&vcc3v3_pi6c>;
 	};
 
@@ -248,7 +245,6 @@
 };
 
 &combphy2 {
-	rockchip,sgmii-mac-sel = <0>;
 	status = "okay";
 };
 
@@ -372,11 +368,7 @@
 	sgmii_phy: ethernet-phy@0 {
 		compatible = "ethernet-phy-ieee802.3-c22";
 		reg = <0>;
-		max-speed = <1000>;
 		motorcomm,led-data = <0xe004 0x0000 0x2600 0x0070 0x000a>;
-		eee-broken-10gt;
-		eee-broken-10gkx4;
-		eee-broken-10gkr;
 	};
 };
 
@@ -394,10 +386,6 @@
 };
 
 &pcie3x2 {
-	max-link-speed = <1>;
-	num-lanes = <1>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&pcie30x1m0_pins>;
 	reset-gpios = <&gpio0 RK_PC3 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie>;
 	status = "okay";
@@ -466,8 +454,7 @@
 
 &sdhci {
 	bus-width = <8>;
-	cap-mmc-highspeed;
-	max-frequency = <52000000>;
+	max-frequency = <200000000>;
 	non-removable;
 	pinctrl-names = "default";
 	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd>;
@@ -500,6 +487,7 @@
 	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_clk &sdmmc1_cmd>;
 	sd-uhs-sdr25;
 	sd-uhs-sdr50;
+	sd-uhs-sdr104;
 	vmmc-supply = <&vcc3v3_sys>;
 	vqmmc-supply = <&vcc_1v8>;
 	#address-cells = <1>;

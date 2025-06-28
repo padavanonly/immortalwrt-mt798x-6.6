@@ -499,8 +499,8 @@ define KernelPackage/phy-airoha-en8811h
   DEPENDS:=+airoha-en8811h-firmware +kmod-libphy
   KCONFIG:=CONFIG_AIR_EN8811H_PHY
   FILES:= \
-   $(LINUX_DIR)/drivers/net/phy/air_en8811.ko
-  AUTOLOAD:=$(call AutoLoad,20,air_en8811h,1)
+   $(LINUX_DIR)/drivers/net/phy/air_en8811h.ko
+  AUTOLOAD:=$(call AutoLoad,18,air_en8811h,1)
 endef
 
 define KernelPackage/phy-airoha-en8811h/description
@@ -1560,8 +1560,8 @@ $(eval $(call KernelPackage,bnx2x))
 
 define KernelPackage/bnxt-en
   SUBMENU:=$(NETWORK_DEVICES_MENU)
-  TITLE:=Broadcom NetXtreme-C/E network driver
-  DEPENDS:=@PCI_SUPPORT +kmod-hwmon-core +kmod-lib-crc32c +kmod-mdio +kmod-ptp
+  TITLE:=BCM 574xx/575xx 10/25/50-Gigabit ethernet adapter driver
+  DEPENDS:=@PCI_SUPPORT +kmod-lib-crc32c +kmod-mdio +kmod-ptp +kmod-lib-zlib-inflate +kmod-hwmon-core
   FILES:=$(LINUX_DIR)/drivers/net/ethernet/broadcom/bnxt/bnxt_en.ko
   KCONFIG:= \
 	CONFIG_BNXT \
@@ -1573,9 +1573,7 @@ define KernelPackage/bnxt-en
 endef
 
 define KernelPackage/bnxt-en/description
-  Supports Broadcom NetXtreme-C/E based Ethernet NICs including:
-  * BCM573xx
-  * BCM574xx
+  Broadcom 573xx/574xx/575xx 10/25/40/50-Gigabit ethernet adapter Driver
 endef
 
 $(eval $(call KernelPackage,bnxt-en))
@@ -1887,23 +1885,6 @@ endef
 
 $(eval $(call KernelPackage,igc))
 
-
-define KernelPackage/hinic
-  SUBMENU:=$(NETWORK_DEVICES_MENU)
-  TITLE:=Huawei Intelligent PCIE Network Interface Card support
-  DEPENDS:=@PCI_SUPPORT @TARGET_x86||TARGET_armsr_armv8
-  FILES:=$(LINUX_DIR)/drivers/net/ethernet/huawei/hinic/hinic.ko
-  KCONFIG:=CONFIG_HINIC
-  AUTOLOAD:=$(call AutoProbe,hinic)
-endef
-
-define KernelPackage/hinic/description
-  Kernel module for HiNIC PCIE Ethernet cards
-endef
-
-$(eval $(call KernelPackage,hinic))
-
-
 define KernelPackage/sfc
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Solarflare SFC9000/SFC9100/EF100-family support
@@ -2025,22 +2006,6 @@ endef
 
 $(eval $(call KernelPackage,mtk-t7xx))
 
-define KernelPackage/phy-airoha-an8801sb
-  SUBMENU:=$(NETWORK_DEVICES_MENU)
-  TITLE:=Airoha AN8801SB 1G Ethernet PHY
-  DEPENDS:=+kmod-libphy
-  KCONFIG:=CONFIG_AIROHA_AN8801_PHY
-  FILES:= \
-   $(LINUX_DIR)/drivers/net/phy/an8801.ko
-  AUTOLOAD:=$(call AutoLoad,18,an8801,1)
-endef
-
-define KernelPackage/phy-airoha-an8801sb/description
-  Kernel modules for Airoha AN8801SB 1G Ethernet PHY
-endef
-
-$(eval $(call KernelPackage,phy-airoha-an8801sb))
-
 define KernelPackage/atlantic
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Aquantia AQtion 10Gbps Ethernet NIC
@@ -2094,9 +2059,9 @@ define KernelPackage/mediatek_hnat
   AUTOLOAD:=$(call AutoLoad,20,mtkhnat)
   DEPENDS:=@TARGET_mediatek +kmod-nf-conntrack +wireless-tools +@KERNEL_WIRELESS_EXT
   KCONFIG:= \
-	CONFIG_BRIDGE_NETFILTER=y \
-	CONFIG_NETFILTER_FAMILY_BRIDGE=y \
-	CONFIG_NET_MEDIATEK_HNAT
+        CONFIG_BRIDGE_NETFILTER=y \
+        CONFIG_NETFILTER_FAMILY_BRIDGE=y \
+        CONFIG_NET_MEDIATEK_HNAT
   FILES:= \
         $(LINUX_DIR)/drivers/net/ethernet/mediatek/mtk_hnat/mtkhnat.ko
 endef

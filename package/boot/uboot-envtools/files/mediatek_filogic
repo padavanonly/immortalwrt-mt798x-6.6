@@ -36,6 +36,7 @@ case "$board" in
 abt,asr3000|\
 cetron,ct3003-ubootmod|\
 cmcc,a10-ubootmod|\
+cudy,tr3000-v1-ubootmod|\
 h3c,magic-nx30-pro|\
 imou,lc-hx3001|\
 jcg,q30-pro|\
@@ -52,6 +53,7 @@ tplink,tl-xdr6086|\
 tplink,tl-xdr6088|\
 tplink,tl-xtr8488|\
 xiaomi,mi-router-ax3000t-ubootmod|\
+xiaomi,mi-router-wr30u-ubootmod|\
 xiaomi,redmi-router-ax6000-ubootmod|\
 zyxel,ex5601-t0-ubootmod)
 	ubootenv_add_ubi_default
@@ -105,12 +107,6 @@ zbtlink,zbt-z8103ax)
 comfast,cf-e393ax)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x80000"
 	;;
-cudy,tr3000-v1|\
-cudy,tr3000-v1-256mb|\
-cudy,tr3000-v1-ubootmod)
-	local envdev=/dev/mtd$(find_mtd_index "u-boot-env")
-	ubootenv_add_uci_config "$envdev" "0x0" "0x80000" "0x80000"
-	;;
 dlink,aquila-pro-ai-m30-a1|\
 dlink,aquila-pro-ai-m60-a1)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x40000" "0x40000"
@@ -121,10 +117,8 @@ gatonetworks,gdsp)
 glinet,gl-mt3000)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x80000" "0x20000"
 	;;
-mercusys,mr80x-v3|\
 mercusys,mr90x-v1|\
 routerich,ax3000|\
-routerich,ax3000-v1|\
 tplink,re6000xd)
 	local envdev=/dev/mtd$(find_mtd_index "u-boot-env")
 	ubootenv_add_uci_config "$envdev" "0x0" "0x20000" "0x20000" "1"
@@ -142,15 +136,11 @@ smartrg,sdg-8734)
 	local envdev=$(find_mmc_part "u-boot-env" "mmcblk0")
 	ubootenv_add_uci_config "$envdev" "0x0" "0x8000" "0x8000"
 	;;
-tplink,archer-ax80-v1)
-	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000" "8"
-	;;
 ubnt,unifi-6-plus)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x80000" "0x10000"
 	;;
 xiaomi,mi-router-ax3000t|\
 xiaomi,mi-router-wr30u-stock|\
-xiaomi,mi-router-wr30u-ubootmod|\
 xiaomi,redmi-router-ax6000-stock)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x10000" "0x20000"
 	ubootenv_add_uci_sys_config "/dev/mtd2" "0x0" "0x10000" "0x20000"

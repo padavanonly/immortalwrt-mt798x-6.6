@@ -1,20 +1,12 @@
 PKG_NAME ?= trusted-firmware-a
 PKG_CPE_ID ?= cpe:/a:arm:trusted_firmware-a
 
-PKG_LTS ?=
-
-ifneq ($(PKG_LTS),)
-PKG_VERSION_PREFIX:=lts-v
-PKG_BUILD_DIR = $(BUILD_DIR)/$(PKG_NAME)-$(BUILD_VARIANT)/$(PKG_NAME)-$(PKG_VERSION_PREFIX)$(PKG_VERSION)
-else
-PKG_VERSION_PREFIX:=v
-PKG_BUILD_DIR = $(BUILD_DIR)/$(PKG_NAME)-$(BUILD_VARIANT)/$(PKG_NAME)-$(PKG_VERSION)
-endif
-
 ifndef PKG_SOURCE_PROTO
-PKG_SOURCE = trusted-firmware-a-$(PKG_VERSION_PREFIX)$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://codeload.github.com/TrustedFirmware-A/trusted-firmware-a/tar.gz/$(PKG_VERSION_PREFIX)$(PKG_VERSION)?
+PKG_SOURCE = trusted-firmware-a-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://codeload.github.com/TrustedFirmware-A/trusted-firmware-a/tar.gz/v$(PKG_VERSION)?
 endif
+
+PKG_BUILD_DIR = $(BUILD_DIR)/$(PKG_NAME)-$(BUILD_VARIANT)/$(PKG_NAME)-$(PKG_VERSION)
 
 PKG_TARGETS := bin
 PKG_FLAGS:=nonshared
@@ -90,7 +82,7 @@ define Build/Compile/Trusted-Firmware-A
 		OPENSSL_DIR=$(STAGING_DIR_HOST) \
 		$(if $(DTC),DTC="$(DTC)") \
 		PLAT=$(PLAT) \
-		BUILD_STRING="ImmortalWrt $(PKG_VERSION_PREFIX)$(PKG_VERSION)-$(PKG_RELEASE) ($(VARIANT))" \
+		BUILD_STRING="ImmortalWrt v$(PKG_VERSION)-$(PKG_RELEASE) ($(VARIANT))" \
 		$(if $(CONFIG_BINUTILS_VERSION_2_37)$(CONFIG_BINUTILS_VERSION_2_38),,LDFLAGS="-no-warn-rwx-segments") \
 		$(TFA_MAKE_FLAGS)
 endef

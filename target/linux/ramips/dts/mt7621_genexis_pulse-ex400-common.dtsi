@@ -41,18 +41,6 @@
 			gpios = <&gpio 11 GPIO_ACTIVE_HIGH>;
 		};
 	};
-
-	i2c_gpio: i2c-gpio {
-		compatible = "i2c-gpio";
-
-		sda-gpios = <&gpio 3 GPIO_ACTIVE_HIGH>;
-		scl-gpios = <&gpio 4 GPIO_ACTIVE_HIGH>;
-
-		i2c-gpio,delay-us = <50>;
-		i2c-gpio,timeout-ms = <100>;
-
-		/* Semtech SX9512 */
-	};
 };
 
 &pcie {
@@ -104,8 +92,7 @@
 };
 
 &i2c {
-	/* Uses i2c-gpio */
-	status = "disabled";
+	status = "okay";
 };
 
 &ethphy0 {
@@ -114,7 +101,7 @@
 
 &state_default {
 	gpio {
-		groups = "i2c", "uart2", "uart3";
+		groups = "uart2", "uart3";
 		function = "gpio";
 	};
 };
