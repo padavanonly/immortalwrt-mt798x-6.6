@@ -3,33 +3,26 @@ START=99
 STOP=0
 
 start() {
-	echo "do nothing"
+    echo "do nothing"
 }
 
 stop() {
-	ls /dev/mhi* 1>/dev/null 2>&1 || {
-		echo "[stop] no /dev/mhi* device, skip reset"
-		return
-	}
+    ls /dev/mhi* 1>/dev/null 2>&1 || {
+        echo "[stop] no /dev/mhi* device, skip reset"
+        return
+    }
 
-	for modem_no in 0 1 2; do
-		dev=$(uci -q get modem.modem${modem_no}.at_port)
-		[ -n "$dev" ] || continue          # at_port 未配置
-		[ -e "$dev" ] || continue          # 设备节点不存在
-
-		for i in $(seq 1 3); do
-			echo $dev
-			response=$(sms_tool -d "$dev" at "AT+CFUN=1,1")
-			echo "$response" | grep -qi "ok" && break
-			sleep 1
-		done
-
-		for i in $(seq 1 15); do
-			if [ ! -e "$dev" ]; then
-				echo "[$dev] Device disconnected after $i s"
-				break
-			fi
-			sleep 1
-		done
-	done
+    for modem_no in 0 1 2; do
+        dev=$(uci -q get modem.modem${modem_no}.at_port)
+        [ -n "$dev" ] || continue          # at_port 未配置
+        [ -e "$dev" ] || continue          # 设备节点不存在
+        sms_tool -d $dev at AT+CFUN=1,1
+        for i in $(seq 1 15); do
+            if [ ! -e "$dev" ]; then
+                echo "[$dev] Device disconnected after $i s"
+                break
+            fi
+            sleep 1
+        done
+    done
 }
