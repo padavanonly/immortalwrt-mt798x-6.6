@@ -3,6 +3,7 @@ START=99
 STOP=0
 
 start() {
+	echo "do nothing"
 }
 
 stop() {
