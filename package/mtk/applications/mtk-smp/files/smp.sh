@@ -1,5 +1,4 @@
 #!/bin/sh
-source /sbin/flowtable.sh
 OPTIMIZED_FOR="$1"
 CPU_LIST=`cat /proc/interrupts | sed -n '1p'`
 NUM_OF_CPU=0; for i in $CPU_LIST; do NUM_OF_CPU=`expr $NUM_OF_CPU + 1`; done;
