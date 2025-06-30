@@ -16,6 +16,6 @@ DEFAULT_PACKAGES += \
 		kmod-mediatek_hnat mtk-smp mtkhqos_util ip6tables-nft \
         	ebtables kmod-ebtables kmod-ebtables-ipv4 kmod-ebtables-ipv6 \
         	luci-app-wrtbwmon luci-app-eqos-mtk luci-app-turboacc-mtk \
-        	switch
+        	switch	ethtool-full
 
 $(eval $(call BuildTarget))
