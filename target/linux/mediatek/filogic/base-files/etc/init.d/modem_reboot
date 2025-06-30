@@ -18,11 +18,9 @@ stop() {
 		[ -e "$dev" ] || continue          # 设备节点不存在
 
 		for i in $(seq 1 3); do
-			resp=$(sms_tool -d "$dev" at "AT+CFUN=1,1" 2>&1)
-			echo "$resp" | grep -qi "ok" && {
-				echo "[$dev] AT+CFUN sent successfully (try #$i)"
-				break
-			}
+			echo $dev
+			response=$(sms_tool -d "$dev" at "AT+CFUN=1,1")
+			echo "$response" | grep -qi "ok" && break
 			sleep 1
 		done
 
