@@ -84,6 +84,33 @@ static inline int find_extif_from_devname(const char *name)
 	return 0;
 }
 
+static inline u16 get_vlan_from_dev(const struct net_device *dev)
+{
+        int i;
+        struct extdev_entry *ext_entry;
+
+        for (i = 0; i < MAX_EXT_DEVS && hnat_priv->ext_if[i]; i++) {
+                ext_entry = hnat_priv->ext_if[i];
+                if(dev == ext_entry->dev)
+                        return ext_entry->vlan_id;
+        }
+
+        return 0;
+}
+
+static inline void save_vlan_for_dev(const struct net_device *dev, u16 vlan_id)
+{
+        int i;
+        struct extdev_entry *ext_entry;
+        for (i = 0; i < MAX_EXT_DEVS && hnat_priv->ext_if[i]; i++) {
+                ext_entry = hnat_priv->ext_if[i];
+                if (dev == ext_entry->dev) {
+                        ext_entry->vlan_id = vlan_id;
+                        break;
+                }
+        }
+}
+
 static inline int get_index_from_dev(const struct net_device *dev)
 {
 	int i;
@@ -177,6 +204,7 @@ static inline int extif_set_dev(struct net_device *dev, int try_prefix)
 			strncpy(ext_entry->name, dev->name, IFNAMSIZ - 1);
 			dev_hold(dev);
 			ext_entry->dev = dev;
+			ext_entry->vlan_id = 0;
 			ext_if_add(ext_entry);
 
 			pr_info("%s prefix match (%s)\n", __func__, dev->name);
@@ -554,6 +582,9 @@ unsigned int do_hnat_ext_to_ge(struct sk_buff *skb, const struct net_device *in,
 		}
 
 		/*set where we come from*/
+		if (skb_vlan_tag_present(skb)){
+                        save_vlan_for_dev(skb->dev, skb->vlan_tci);
+                }
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), VLAN_CFI_MASK | (in->ifindex & VLAN_VID_MASK));
 		trace_printk(
 			"%s: vlan_prot=0x%x, vlan_tci=%x, in->name=%s, skb->dev->name=%s\n",
@@ -574,7 +605,7 @@ unsigned int do_hnat_ext_to_ge2(struct sk_buff *skb, const char *func)
 	struct ethhdr *eth = eth_hdr(skb);
 	struct net_device *dev;
 	struct foe_entry *entry;
-
+	u16 vlan;
 	trace_printk("%s: vlan_prot=0x%x, vlan_tci=%x\n", __func__,
 		     ntohs(skb->vlan_proto), skb->vlan_tci);
 
@@ -597,6 +628,10 @@ unsigned int do_hnat_ext_to_ge2(struct sk_buff *skb, const char *func)
 			if (unlikely(!skb))
 				return -1;
 		}
+		 /*Restore original vlan */
+                vlan = get_vlan_from_dev(skb->dev);
+                if (vlan !=0)
+                        __vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan);
 
 		if (IS_BOND(dev) &&
 		    (((hnat_priv->data->version == MTK_HNAT_V2 ||

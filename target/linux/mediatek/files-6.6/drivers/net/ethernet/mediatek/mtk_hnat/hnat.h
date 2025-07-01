@@ -984,6 +984,7 @@ struct mtk_hnat {
 struct extdev_entry {
 	char name[IFNAMSIZ];
 	struct net_device *dev;
+	u16 vlan_id;
 };
 
 struct tcpudphdr {

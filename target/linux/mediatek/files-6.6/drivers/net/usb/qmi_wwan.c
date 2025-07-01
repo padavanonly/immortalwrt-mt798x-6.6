@@ -613,6 +613,7 @@ static int qmi_wwan_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 	skb_reset_mac_header(skb);
 	eth_hdr(skb)->h_proto = proto;
 	eth_zero_addr(eth_hdr(skb)->h_source);
+	memcpy(eth_hdr(skb)->h_source, default_modem_addr, ETH_ALEN);
 fix_dest:
 	memcpy(eth_hdr(skb)->h_dest, dev->net->dev_addr, ETH_ALEN);
 	return 1;
