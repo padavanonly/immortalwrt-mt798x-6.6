@@ -37,7 +37,7 @@ mediatek_setup_interfaces()
 		;;
 	huasifei,wh3000-pro|\
 	*Airpi*)
-                ucidef_set_interfaces_lan_wan "eth1.1234 eth0 eth1" eth2
+                ucidef_set_interfaces_lan_wan "eth1.1234 eth0" eth1
                 ;;
 	asus,rt-ax52|\
 	asus,rt-ax59u|\
