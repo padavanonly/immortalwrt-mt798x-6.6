@@ -603,7 +603,7 @@ unsigned int do_hnat_ext_to_ge2(struct sk_buff *skb, const char *func)
 		}
 		 /*Restore original vlan */
                 if (ext_vlan !=0)
-                        __vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan);
+                        __vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), ext_vlan);
 
 		if (IS_BOND(dev) &&
 		    (((hnat_priv->data->version == MTK_HNAT_V2 ||
