@@ -548,24 +548,19 @@ unsigned int do_hnat_ext_to_ge(struct sk_buff *skb, const struct net_device *in,
 		set_to_ppe(skb);
 
 		vlan_id = skb_vlan_tag_get_id(skb);
-		if (vlan_id) {
+		if (unlikely(vlan_id)) {
 			skb = vlan_insert_tag(skb, skb->vlan_proto, skb->vlan_tci);
 			if (!skb)
 				return -1;
 		}
-
+		
 		/*set where we come from*/
-		if (skb_vlan_tag_present(skb)){
-                        ext_vlan = skb->vlan_tci;
-                }
-		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), VLAN_CFI_MASK | (in->ifindex & VLAN_VID_MASK));
-		trace_printk(
-			"%s: vlan_prot=0x%x, vlan_tci=%x, in->name=%s, skb->dev->name=%s\n",
-			__func__, ntohs(skb->vlan_proto), skb->vlan_tci,
-			in->name, hnat_priv->g_ppdev->name);
+		if (unlikely(skb_vlan_tag_present(skb))){
+		 	ext_vlan = skb->vlan_tci;
+		}
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), VLAN_CFI_MASK | (in->ifindex & VLAN_VID_MASK)); 
 		skb->dev = hnat_priv->g_ppdev;
 		dev_queue_xmit(skb);
-		trace_printk("%s: called from %s successfully\n", __func__, func);
 		return 0;
 	}
 
@@ -617,8 +612,6 @@ unsigned int do_hnat_ext_to_ge2(struct sk_buff *skb, const char *func)
 		set_from_extge(skb);
 		fix_skb_packet_type(skb, skb->dev, eth);
 		netif_rx(skb);
-		trace_printk("%s: called from %s successfully\n", __func__,
-			     func);
 		return 0;
 	} else {
 		/* MapE WAN --> LAN/WLAN PingPong. */
