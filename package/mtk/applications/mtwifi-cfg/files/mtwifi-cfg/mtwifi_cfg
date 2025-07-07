@@ -523,7 +523,7 @@ function mtwifi_cfg_setup(argv)
         else
             dats.MUTxRxEnable = 1
         end
-        dats.ITxBfEn = 0
+        dats.ITxBfEn = 1
     else
         dats.ETxBfEnCond = 0
         dats.MUTxRxEnable = 0
