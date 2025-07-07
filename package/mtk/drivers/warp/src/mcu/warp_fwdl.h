@@ -25,6 +25,8 @@ struct warp_entry;
 #define IS_WO_HOST_MODE (wo_host_exist != NULL)
 #define UNDEFINE_WED_IDX (0xff)
 #define MAX_REGION_SIZE 3
+#define MAX_FWDL_SIZE 0xfffffff
+
 
 struct fw_info_t {
 	u8 chip_id;
@@ -52,7 +54,6 @@ struct warp_fwdl_ctrl {
 	struct fwdl_region region[MAX_REGION_SIZE];
 	struct fwdl_region boot_setting;
 	struct wo_fwdl_host_mode_ctrl **wo_host_exist;
-	const struct firmware *fw_entry;
 	u8 *bin_ptr;
 	u32 bin_size;
 	u8 bin_mode;

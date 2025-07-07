@@ -211,6 +211,39 @@ int main(int argc, char *argv[])
 			printf("3: outfname1=%s, outfname2=%s, outfname3=%s\n", outfname1, outfname2, outfname3);
 
 			is_bin2h_fw = 1;
+		}else if (strncmp(chipset, "mt7988", 10) == 0) {
+			/* For bin input, select chipset folder inside /bin */
+			STRCAT(infname1, chipset);
+			STRCAT(infname1, "/");
+
+			printf("1: infname1=%s, infname2=%s, infname3=%s\n", infname1, infname2, infname3);
+
+			STRCAT(infname2, infname1);
+			STRCAT(outfname2, outfname1);
+			STRCAT(fw_name2, fw_name1);
+			STRCAT(infname3, infname1);
+			STRCAT(outfname3, outfname1);
+			STRCAT(fw_name3, fw_name1);
+
+			printf("2: infname1=%s, infname2=%s, infname3=%s\n", infname1, infname2, infname3);
+			printf("2: outfname1=%s, outfname2=%s, outfname3=%s\n", outfname1, outfname2, outfname3);
+
+			STRCAT(infname1, "7988_WOCPU0_RAM_CODE_release.bin");
+			STRCAT(outfname1, "WO0_firmware.h");
+			STRCAT(fw_name1, "WO0_FirmwareImage");
+
+			STRCAT(infname2, "7988_WOCPU1_RAM_CODE_release.bin");
+			STRCAT(outfname2, "WO1_firmware.h");
+			STRCAT(fw_name2, "WO1_FirmwareImage");
+
+			STRCAT(infname3, "7988_WOCPU2_RAM_CODE_release.bin");
+			STRCAT(outfname3, "WO2_firmware.h");
+			STRCAT(fw_name3, "WO2_FirmwareImage");
+
+			printf("3: infname1=%s, infname2=%s, infname3=%s\n", infname1, infname2, infname3);
+			printf("3: outfname1=%s, outfname2=%s, outfname3=%s\n", outfname1, outfname2, outfname3);
+
+			is_bin2h_fw = 1;
 		} else
 			printf("unknown chipset = %s\n", chipset);
 

@@ -72,34 +72,6 @@ bus_cputracer_remove(struct warp_bus *bus)
 
 #endif /*WARP_CPU_TRACER*/
 
-#ifdef WARP_ATC_SUPPORT
-#define BUS_MIRRO_DEV_NODE "mediatek,pcie-mirror"
-/*
-*
-*/
-static inline void
-bus_mirror_probe(struct warp_bus *bus)
-{
-	struct device_node *node = NULL;
-	/*CR mirror*/
-	node = of_find_compatible_node(NULL, NULL, BUS_MIRRO_DEV_NODE);
-	warp_dbg(WARP_DBG_INF, "%s(): get node=%p\n", __func__, &node);
-	/* iomap registers */
-	bus->base_addr = (unsigned long)of_iomap(node, 0);
-	warp_dbg(WARP_DBG_OFF, "%s(): bus base addr=%lx\n", __func__, bus->base_addr);
-	warp_bus_init_hw(bus);
-}
-
-/*
-*
-*/
-static inline void
-bus_mirror_remove(struct warp_bus *bus)
-{
-	iounmap((void *)bus->base_addr);
-}
-#endif /*WARP_ATC_SUPPORT*/
-
 /*
 *
 */
@@ -133,9 +105,6 @@ bus_config_init(struct warp_bus *bus)
 	memset(bus->wpdma_base, 0, size);
 
 	bus_setup(bus);
-#ifdef WARP_ATC_SUPPORT
-	bus_mirror_probe(bus);
-#endif /*WARP_ATC_SUPPORT*/
 #ifdef WARP_CPU_TRACER
 	bus_cputracer_probe(bus);
 #endif /*WARP_CPU_TRACER*/
@@ -152,9 +121,6 @@ bus_config_exit(struct warp_bus *bus)
 	if (!bus)
 		return 0;
 
-#ifdef WARP_ATC_SUPPORT
-	bus_mirror_remove(bus);
-#endif /*WARP_ATC_SUPPORT*/
 #ifdef WARP_CPU_TRACER
 	bus_cputracer_remove(bus);
 #endif

@@ -1,12 +1,12 @@
-#pragma once
 
-#include <stdint.h>
-#include <stddef.h>
+#ifndef __WOX_MCU_CFG_LS_H__
+#define __WOX_MCU_CFG_LS_H__
 
 /* CONST definition */
 #ifndef REG_CONST
 #define REG_CONST
 #endif
+typedef unsigned int uint32_t;
 
 typedef volatile struct wo2_mcu_cfg_ls_REG {
     /* 0x000 */
@@ -90,7 +90,7 @@ typedef volatile struct wo2_mcu_cfg_ls_REG {
     union {
         struct {
             REG_CONST uint32_t _RESERVED_0 : 5;
-            REG_CONST uint32_t _WO0_CPU_RSTB : 1;
+            REG_CONST uint32_t _WOX_CPU_RSTB : 1;
             REG_CONST uint32_t _RESERVED_2 : 26;
         };
         REG_CONST uint32_t DATA;
@@ -102,11 +102,11 @@ typedef volatile struct wo2_mcu_cfg_ls_REG {
     /* 0x060 */
     union {
         struct {
-            REG_CONST uint32_t _WO0_BOOT_ADDR : 16;
+            REG_CONST uint32_t _WOX_BOOT_ADDR : 16;
             REG_CONST uint32_t _RESERVED_1 : 16;
         };
         REG_CONST uint32_t DATA;
-    } WO0_BOOT_ADDR;
+    } WOX_BOOT_ADDR;
 
     /* 0x064 ~ 0x068 */
     REG_CONST uint32_t          RSV_064_068[2];
@@ -709,7 +709,7 @@ typedef volatile struct wo2_mcu_cfg_ls_REG {
 #define WOX_MCU_CFG_LS_WOX_MCCR_SET_OFFSET                     (0x018) // 4018
 #define WOX_MCU_CFG_LS_WOX_MCCR_CLR_OFFSET                     (0x01C) // 401C
 #define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_OFFSET              (0x050) // 4050
-#define WOX_MCU_CFG_LS_WO0_BOOT_ADDR_OFFSET                    (0x060) // 4060
+#define WOX_MCU_CFG_LS_WOX_BOOT_ADDR_OFFSET                    (0x060) // 4060
 #define WOX_MCU_CFG_LS_WOX_CFG_CTL2_OFFSET                     (0x06C) // 406C
 #define WOX_MCU_CFG_LS_WOX_GP_IRQ_OFFSET                       (0x080) // 4080
 #define WOX_MCU_CFG_LS_WOX_WED_CTL_OFFSET                      (0x084) // 4084
@@ -903,25 +903,25 @@ typedef volatile struct wo2_mcu_cfg_ls_REG {
   ---WOX_MCU_CFG_WO0_WO1 (0x15394000 + 0x050)---
 
     RESERVED0[4..0]              - (RO) Reserved bits
-    WO0_CPU_RSTB[5]              - (RW) WO0 CPU software reset (low active)
+    WOX_CPU_RSTB[5]              - (RW) WO0 CPU software reset (low active)
     RESERVED6[31..6]             - (RO) Reserved bits
 
  =====================================================================================*/
-#define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_WO0_CPU_RSTB_OFFSET WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_OFFSET
-#define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_WO0_CPU_RSTB_MASK   0x00000020                // WO0_CPU_RSTB[5]
-#define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_WO0_CPU_RSTB_SHFT   5
+#define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_WOX_CPU_RSTB_OFFSET WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_OFFSET
+#define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_WOX_CPU_RSTB_MASK   0x00000020                // WOX_CPU_RSTB[5]
+#define WOX_MCU_CFG_LS_WOX_MCU_CFG_WO0_WO1_WOX_CPU_RSTB_SHFT   5
 
 /* =====================================================================================
 
-  ---WO0_BOOT_ADDR (0x15394000 + 0x060)---
+  ---WOX_BOOT_ADDR (0x15394000 + 0x060)---
 
-    WO0_BOOT_ADDR[15..0]         - (RW) WO0 CPU Boot address MSB
+    WOX_BOOT_ADDR[15..0]         - (RW) WO0 CPU Boot address MSB
     RESERVED16[31..16]           - (RO) Reserved bits
 
  =====================================================================================*/
-#define WOX_MCU_CFG_LS_WO0_BOOT_ADDR_WO0_BOOT_ADDR_OFFSET      WOX_MCU_CFG_LS_WO0_BOOT_ADDR_OFFSET
-#define WOX_MCU_CFG_LS_WO0_BOOT_ADDR_WO0_BOOT_ADDR_MASK        0x0000FFFF                // WO0_BOOT_ADDR[15..0]
-#define WOX_MCU_CFG_LS_WO0_BOOT_ADDR_WO0_BOOT_ADDR_SHFT        0
+#define WOX_MCU_CFG_LS_WOX_BOOT_ADDR_WOX_BOOT_ADDR_OFFSET      WOX_MCU_CFG_LS_WOX_BOOT_ADDR_OFFSET
+#define WOX_MCU_CFG_LS_WOX_BOOT_ADDR_WOX_BOOT_ADDR_MASK        0x0000FFFF                // WOX_BOOT_ADDR[15..0]
+#define WOX_MCU_CFG_LS_WOX_BOOT_ADDR_WOX_BOOT_ADDR_SHFT        0
 
 /* =====================================================================================
 
@@ -1711,3 +1711,4 @@ typedef volatile struct wo2_mcu_cfg_ls_REG {
 #define WOX_MCU_CFG_LS_VDNR_BUS_DEBUG_CTRL_1_VDNR_DEBUG_CTRL_AO_IO_CTRL_MASK 0x000000FF                // VDNR_DEBUG_CTRL_AO_IO_CTRL[7..0]
 #define WOX_MCU_CFG_LS_VDNR_BUS_DEBUG_CTRL_1_VDNR_DEBUG_CTRL_AO_IO_CTRL_SHFT 0
 
+#endif

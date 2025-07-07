@@ -28,47 +28,14 @@ msgstr "U-APSD 省电模式"
 msgid "Kick low RSSI station threshold"
 msgstr "弱信号剔除阈值"
 
-
 msgid "Station associate threshold"
 msgstr "弱信号接入阈值"
 
-msgid "802.11V roam steering threshold"
-msgstr "802.11V漫游引导阈值"
-
-
-msgid "802.11V roam target bssid"
-msgstr "802.11V漫游引导目标BSSID"
-
-
-msgid "only supports mt_wifi driver"
-msgstr "仅支持MTK闭源驱动，漫游域相关参数自动生成无需设置.确认路由器自身lan ip均在同一网段"
-
 msgid "Wireless HWNAT"
 msgstr "无线硬件加速"
-
-msgid "Band Steering"
-msgstr "引导已连接的强信号双频2.4G设备至5G频段"
-
-msgid "WAPP related services (wapp/bs20)"
-msgstr "WAPP 相关服务（wapp/bs20）"
 
 msgid "Wireless configuration error"
 msgstr "无线网络设置错误"
 
 msgid "At least one MBSSID needs to be reserved"
 msgstr "至少需要保留1个MBSSID"
-
-msgid "MAC Address"
-msgstr "MAC 地址"
-
-msgid "driver default (%s)"
-msgstr "驱动默认（%s）"
-
-msgid "no override"
-msgstr "非绕过"
-
-msgid "Override default MAC address - the range of usable addresses might be limited by the driver"
-msgstr "覆盖默认 MAC 地址 - 可用地址的范围可能受限于驱动"
-
-msgid "Enables The 802.11k standard provides information to discover the best available access point"
-msgstr "启用 802.11k 自动寻找发现最佳可用接入点的信息"

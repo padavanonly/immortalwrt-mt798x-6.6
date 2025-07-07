@@ -102,9 +102,6 @@ static void warp_evt_hdlr_node_deq_and_delete(
 {
 	struct warp_evt_hdlr_node *cur_node, *prev_node = NULL;
 
-	if (hdlr_q == NULL || node == NULL)
-		return;
-
 	warp_dbg(WARP_DBG_INF, "%s(), evt_id:%d\n", __func__, node->evt_id);
 
 	spin_lock(&hdlr_q->q_lock);

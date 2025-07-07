@@ -346,15 +346,6 @@ warp_bus_set_hw_pcie(struct wed_entry *wed, struct warp_bus *bus, int idx)
 }
 
 /*
-* Reset PCIE reg in relative to warp_bus_set_hw()
-*/
-void
-warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,
-                        int idx)
-{
-}
-
-/*
 *
 */
 static void
@@ -378,7 +369,7 @@ warp_bus_set_hw_axi(struct wed_entry *wed, struct warp_bus *bus, int idx)
 void
 warp_bus_msi_set(u8 idx, u8 *enable)
 {
-	return;
+
 }
 
 /*

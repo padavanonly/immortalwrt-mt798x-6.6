@@ -1139,11 +1139,16 @@ static int mtk_get_hardware_id_from_l1profile(struct iwinfo_hardware_id *id)
 		id->device_id = 0x7981;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
-	} else if (!strcmp(buf, "MT7986")) {
+	} else if (!strcmp(buf, "MT7991")) {
 		id->vendor_id = 0x14c3;
-		id->device_id = 0x7986;
+		id->device_id = 0x7991;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
+	} else if (!strcmp(buf, "MT7990")) {
+                id->vendor_id = 0x14c3;
+                id->device_id = 0x7990;
+                id->subsystem_vendor_id = id->vendor_id;
+                id->subsystem_device_id = id->device_id;
 	} else {
 		return -1;
 	}

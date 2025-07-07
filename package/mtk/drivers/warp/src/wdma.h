@@ -19,8 +19,8 @@
 
 #include "warp_utility.h"
 
-#define WDMA_TX_BM_RING_SIZE 4095
-#define WDMA_RX_BM_RING_SIZE 512
+#define WDMA_TX_RING_SIZE 512
+#define WDMA_RX_RING_SIZE 512
 #define WDMA_RING_OFFSET 0x10
 #define WDMA_TX_RING_NUM 2
 #define WDMA_RX_RING_NUM 2
@@ -28,6 +28,7 @@
 #define WDMA_PORT4 0x4
 #define WDMA_PORT8 0x8
 #define WDMA_PORT9 0x9
+#define WDMA_PORT12 0xc
 #define WDMA_PORT13 0xd
 
 struct wdma_rx_ring_ctrl {
@@ -76,6 +77,10 @@ struct wdma_entry {
 #define WDMA_CTL_SD_LEN0		GENMASK(29, 16)
 #define WDMA_CTL_LAST_SEC0		BIT(30)
 #define WDMA_CTL_DMA_DONE		BIT(31)
+#define WDMA_TXD0_CTL_DMA_DONE		BIT(31)
+#define WDMA_TXD0_TX_INFO_DMA_DONE_DW1	BIT(29)
+#define WDMA_TXD1_CTL_DMA_DONE_DW2	BIT(31)
+#define WDMA_TXD1_TX_INFO_DMA_DONE2	BIT(31)
 
 struct WDMA_TXD {
 	__le32 sdp0;

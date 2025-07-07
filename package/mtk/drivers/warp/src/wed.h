@@ -27,8 +27,10 @@
 /*buffer mgmet initial token cnt*/
 /*max cr4 support token id, mt7622 can support up to 8192*/
 
+#ifdef WED_DYNAMIC_TXBM_SUPPORT
 #define WED_DYNBM_LOW_GRP			2
 #define WED_DYNBM_HIGH_GRP			(2*WED_DYNBM_LOW_GRP-1)
+#endif /*WED_DYNAMIC_TXBM_SUPPORT*/
 
 #define WED_PKT_NUM_GET(_wed) (_wed->res_ctrl.tx_ctrl.res.pkt_num)
 #define WED_TOKEN_NUM_GET(_wed) (_wed->res_ctrl.tx_ctrl.res.token_num)
@@ -36,8 +38,9 @@
 #define WED_TOKEN_GRPNUM_GET(_wed) (_wed->res_ctrl.tx_ctrl.res.tkn_vld_grp)
 #define WED_TOKEN_CNT_GET(_wed) (_wed->res_ctrl.tx_ctrl.res.wed_token_cnt)
 #define WED_DLY_INT_VALUE 0xC014C014
-#define WED_WDMA_RECYCLE_TIME 0xffff
 #define WED_RING_OFFSET 0x10
+#define WED_MIN_RX_RING_SIZE 4
+#define WED_CR_SIZE 4
 
 #define WED_CTL_SD_LEN1		GENMASK(13, 0)
 #define WED_CTL_LAST_SEC1	BIT(14)
@@ -54,6 +57,9 @@
 #define MAX_GROUP_SIZE 0x100
 
 #define ceil(_a, _b) (((_a%_b) > 0) ? ((_a/_b)+1) : (_a/_b))
+
+#define WARP_DMA_ADDR_L_SHIFT	0
+#define WARP_DMA_ADDR_H_SHIFT	32
 
 struct dybm_conf_t {
 	bool enable;
@@ -74,10 +80,22 @@ struct sw_conf_t {
 	struct dybm_conf_t rxbm;
 };
 
+#define WARP_TXDMAD_SDP0_L_MASK		(0xffffffff)
+#define WARP_TXDMAD_SDP1_L_MASK		(0xffffffff)
+
+#define WARP_TXDMAD_SDP0_H_MASK		(0xf)
+#define WARP_TXDMAD_SDP0_H_SHIFT	0
+#define WARP_TXDMAD_SDP1_H_MASK		(0xf)
+#define WARP_TXDMAD_SDP1_H_SHIFT	16
+
 struct warp_txdmad {
+	/* DW0 */
 	__le32 sdp0;
+	/* DW1 */
 	__le32 ctrl;
+	/* DW2  */
 	__le32 sdp1;
+	/* DW3 */
 	__le32 info;
 } __packed __aligned(4);
 
@@ -91,6 +109,7 @@ struct wed_bm_group_info {
  * token_id: used as token id or skb id
  */
 struct wed_pkt_info {
+	u32 token_id;
 	u32 len;
 	u32 desc_len;
 	u32 fd_len;
@@ -115,8 +134,6 @@ struct wed_dybm_stat_t {
 	u32 shk_unhanlded;
 	u32 max_vld_grp;
 	u32 min_vld_grp;
-	bool off_low_buf_int;
-	bool off_high_buf_int;
 };
 
 struct wed_buf_res {
@@ -145,36 +162,58 @@ struct wed_buf_res {
 	u32 recycle_grp_idx;
 
 	struct page_frag_cache tx_page;
-	/* TX_BM_HTH delay interrupt by timer */
-	struct timer_list bm2high_monitor;
+};
+
+struct wed_tx_bm {
+	void *hif_dev;
+	u32 ring_len;
+	u32 pkt_num;
+	u16 pkt_size;
+	u16 txd_len;
+	struct warp_dma_buf *desc;
+	struct warp_tx_ring *ring;
+	struct page_frag_cache tx_page;
+	struct idr id;
 };
 
 struct wed_tx_ring_ctrl {
 	u32 ring_num;
-	u32 ring_len;
 	u32 txd_len;
 	struct warp_dma_buf *desc;
 	struct warp_ring *ring;
 };
 
-struct wed_tx_ctrl {
-	struct wed_buf_res res;
-	struct wed_tx_ring_ctrl ring_ctrl;
+struct wed_pao_ctrl {
+	u32 hif_txd_segment_nums;
+	u8 hif_txd_src;
+	char *hif_txd_addr[32];
+	dma_addr_t hif_txd_addr_pa[32];
 };
 
-#define RX_TOKEN_ID_MASK (0xffff << 16)
-#define RX_TOKEN_ID_SHIFT 16
-#define TO_HOST_SHIFT 8
+struct wed_tx_ctrl {
+	struct wed_buf_res res; // v1
+	struct wed_tx_bm tx_bm; // v2
+	struct wed_tx_ring_ctrl ring_ctrl;
+	struct wed_pao_ctrl pao_ctrl;
+};
+
+#define TOKEN_ID_MASK		(0xffff << 16)
+#define TOKEN_ID_SHIFT		16
+#define TO_HOST_SHIFT			8
+
 struct warp_rxdmad {
+	/* DW0 */
 	__le32 sdp0;
+	/* DW1 */
 	__le32 sdl0;
+	/* DW2 */
 	__le32 token;
+	/* DW3 */
 	__le32 info;
 } __packed __aligned(4);
 
 struct wed_rx_ring_ctrl {
 	u32 ring_num;
-	u32 ring_len;
 	u32 rxd_len;
 	struct warp_dma_buf *desc;
 	struct warp_rx_ring *ring;
@@ -195,6 +234,21 @@ struct wed_rx_bm_res {
 	struct task_struct *monitor_task;
 	struct timer_list extend_monitor;
 	bool add_check;
+};
+
+#define WED_MSDU_PAGE_HASH_SIZE 127
+
+struct wed_rx_page_bm {
+	void *hif_dev;
+	u32 ring_len;
+	u32 page_num;
+	u16 rx_page_size;
+	u16 rxd_len;
+	struct warp_dma_buf *desc;
+	struct warp_rx_ring *ring;
+	spinlock_t lock;
+	struct list_head wed_page_hash[WED_MSDU_PAGE_HASH_SIZE];
+	struct page_frag_cache rx_page;
 };
 
 struct wed_rro_ctrl {
@@ -219,8 +273,11 @@ struct wed_rro_ctrl {
 struct wed_rx_ctrl {
 	struct wed_rx_bm_res res;
 	struct wed_rx_ring_ctrl ring_ctrl;
+	struct wed_rx_ring_ctrl rro_data_ring_ctrl;
+	struct wed_rx_ring_ctrl rro_page_ring_ctrl;
+	struct wed_rx_ring_ctrl rro_ind_cmd_ring_ctrl;
 	struct wed_rro_ctrl rro_ctrl;
-	//struct wed_rx_page_bm page_bm;
+	struct wed_rx_page_bm page_bm;
 	u32 budget_head_idx;
 	u32 budget_tail_idx;
 	struct wed_rx_bm_res extra;
@@ -267,17 +324,22 @@ struct wed_ser_moudle_busy_cnt {
 	/* TX */
 	u32 reset_wed_tx_dma;
 	u32 reset_wed_wdma_rx_drv;
+	u32 reset_wdma_rx;
 	u32 reset_wed_tx_bm;
 	u32 reset_wed_wpdma_tx_drv;
 	u32 reset_wed_rx_drv; /* tx free done */
+	u32 reset_pao;
 	/* RX */
 	u32 reset_wed_wpdma_rx_d_drv;
+	u32 reset_wed_rx_rro;
 	u32 reset_wed_rx_rro_qm;
+	u32 reset_wed_rx_rro_drv;
 	u32 reset_wed_rx_route_qm;
 	u32 reset_wdma_tx;
 	u32 reset_wdma_tx_drv;
 	u32 reset_wed_rx_dma;
 	u32 reset_wed_rx_bm;
+	u32 reset_wed_rx_page_bm;
 };
 
 struct wed_ser_ctrl {
@@ -306,6 +368,7 @@ struct wed_entry {
 	u8 eco;
 	struct platform_device *pdev;
 	unsigned long base_addr;
+	u32 cr_base_addr;
 	u32 hw_cap;
 	u32 irq;
 	u32 ext_int_mask;
@@ -368,6 +431,8 @@ enum {
 	WED_PROC_RX_DYNAMIC_FREE = 16,
 	WED_PROC_RX_DYNAMIC_ALLOC = 17,
 	WED_PROC_SER_ERR_CNT = 18,
+	WED_PROC_PAO_WCID_STAT = 19,
+	WED_PROC_PAO_SET_WCID_STAT = 20,
 	WED_PROC_END
 };
 

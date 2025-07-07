@@ -192,13 +192,7 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		warp_dbg(WARP_DBG_INF, "%s(): %s DMA TX.\n", __func__,
 			 (txrx ? "ENABLE" : "DISABLE"));
 		wed_cfg |= (1 << WED_GLO_CFG_FLD_TX_DMA_EN);
-
-		/* For support BMAC/HWIFI, we use DDONE2 to check free done event */
-		if (hw->mac_ver >= MAC_TYPE_BMAC)
-			wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_TX_DRV_EN |
-				1 << WED_WPDMA_GLO_CFG_FLD_RX_DDONE2_WR);
-		else
-			wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_TX_DRV_EN);
+		wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_TX_DRV_EN);
 
 		/*new txbm, not required to keep token id*/
 		wed_wpdma_cfg &= ~(1 << WED_WPDMA_GLO_CFG_FLD_TX_TKID_KEEP);
@@ -232,15 +226,6 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING0_PKT_PROC);
 		wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING0_CRX_SYNC);
 
-		if (hw->tx_free_done_ver <= 0x5) {
-			wed_wpdma_cfg |=
-				(1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_CHK |
-				1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_UNS_VER_FORCE_4);
-		} else {
-			wed_wpdma_cfg |=
-				(0x4 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_VER);
-		}
-
 #ifdef WED_RX_D_SUPPORT
 		warp_io_read32(wed, WED_WPDMA_RX_D_GLO_CFG, &d_cfg);
 		d_cfg |= (0x2 << WED_WPDMA_RX_D_GLO_CFG_FLD_INIT_PHASE_RXEN_SEL);
@@ -271,13 +256,6 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		wed_wpdma_cfg |= ((1 << WED_WPDMA_GLO_CFG_FLD_TX_DRV_EN) |
 				  (1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_EN));
 
-		/* For support BMAC/HWIFI, we use DDONE2 to check free done event */
-		/* Enable TX_DRV, RX_DRV and Write DDONE2 bit in RXDMAD */
-		if (hw->mac_ver >= MAC_TYPE_BMAC)
-			wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_TX_DRV_EN |
-							  1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_EN |
-							  1 << WED_WPDMA_GLO_CFG_FLD_RX_DDONE2_WR);
-
 		/*new txbm, not required to keep token id*/
 		wed_wpdma_cfg &= ~(1 << WED_WPDMA_GLO_CFG_FLD_TX_TKID_KEEP);
 
@@ -294,14 +272,6 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		wed_wdma_cfg |= (1 << WED_WDMA_GLO_CFG_FLD_RX_DRV_EN);
 		wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING0_PKT_PROC);
 		wed_wpdma_cfg |= (1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING0_CRX_SYNC);
-		if (hw->tx_free_done_ver <= 0x5) {
-			wed_wpdma_cfg |=
-				(1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_CHK |
-				1 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_UNS_VER_FORCE_4);
-		} else {
-			wed_wpdma_cfg |=
-				(0x4 << WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_VER);
-		}
 #ifdef WED_RX_D_SUPPORT
 
 		warp_io_read32(wed, WED_WPDMA_RX_D_GLO_CFG, &d_cfg);
@@ -330,7 +300,7 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 				mdelay(10);
 				ring = &ring_ctrl->ring[i];
 				warp_io_read32(wifi, ring->hw_cidx_addr, &d_cfg);
-				if (d_cfg == (ring_ctrl->ring_len - 1))
+				if (d_cfg == (ring->ring_lens - 1))
 					break;
 				else
 					j++;
@@ -436,8 +406,8 @@ warp_bfm_tkid_init_hw(struct wed_entry *wed)
 }
 
 
-void
-warp_bfm_init_hw(struct wed_entry *wed)
+int
+warp_tx_bm_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 {
 	u32 value = 0;
 
@@ -461,6 +431,8 @@ warp_bfm_init_hw(struct wed_entry *wed)
 	warp_io_read32(wed, WED_TX_TKID_CTRL, &value);
 	value &= ~(1 << WED_TX_TKID_CTRL_FLD_PAUSE);
 	warp_io_write32(wed, WED_TX_TKID_CTRL, value);
+
+	return 0;
 }
 
 /*
@@ -822,15 +794,12 @@ wdma_dma_ctrl(struct wdma_entry *wdma, u8 txrx)
 	if (txrx) {
 		/*reset wdma*/
 		wdma_cfg |= (1 << WDMA_GLO_CFG_FLD_RX_INFO1_PRESERVE);
+		wdma_cfg |= (1 << WDMA_GLO_CFG_FLD_RX_INFO2_PRESERVE);
 
 #ifdef WED_HW_RX_SUPPORT
 		if ((txrx == WARP_DMA_RX) || (txrx == WARP_DMA_TXRX))
 			wdma_cfg |= (1 << WDMA_GLO_CFG_FLD_TX_DMA_EN);
 #endif
-
-		/* WDMA workaround - CDM FIFO overrun issue  */
-		wdma_cfg &= ~(0xFF << WDMA_GLO_CFG_FLD_RESV_BUF);
-		wdma_cfg |= (0x80 << WDMA_GLO_CFG_FLD_RESV_BUF);
 	} else {
 		wdma_cfg &= ~(1 << WDMA_GLO_CFG_FLD_RX_INFO1_PRESERVE);
 		wdma_cfg &= ~(1 << WDMA_GLO_CFG_FLD_RX_INFO2_PRESERVE);
@@ -1375,8 +1344,6 @@ static int reset_wed_rx_d_drv(struct wed_entry *wed, u32 reset_type)
 	return ret;
 }
 
-
-
 static int reset_wed_rx_rro_qm(struct wed_entry *wed, u32 reset_type)
 {
 	int cnt = 0;
@@ -1412,9 +1379,6 @@ static int reset_wed_rx_rro_qm(struct wed_entry *wed, u32 reset_type)
 
 	return ret;
 }
-
-
-
 
 static int reset_wed_rx_route_qm(struct wed_entry *wed, u32 reset_type)
 {
@@ -1565,24 +1529,18 @@ static int reset_wdma_tx_drv(struct wed_entry *wed, u32 reset_type)
 static int
 reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 {
-	struct warp_entry *warp;
-	struct wdma_entry *wdma;
-	struct wed_ser_ctrl *ser_ctrl;
-	struct wed_ser_moudle_busy_cnt *busy_cnt;
-
-	if (wed == NULL || wed->warp == NULL)
-		return -1;
-
-	ser_ctrl = &wed->ser_ctrl;
-	busy_cnt = &ser_ctrl->ser_busy_cnt;
-	warp = wed->warp;
-	wdma = &warp->wdma;
+	struct warp_entry *warp = wed->warp;
+	struct wdma_entry *wdma = &warp->wdma;
+	struct wed_ser_ctrl *ser_ctrl = &wed->ser_ctrl;
+	struct wed_ser_moudle_busy_cnt *busy_cnt = &ser_ctrl->ser_busy_cnt;
 
 	int ret = 0;
 
 	/* WOCPU Enter SER */
+#ifdef CONFIG_WED_HW_RRO_SUPPORT
 	warp_woctrl_enter_state((struct warp_entry *)wed->warp, WO_STATE_SER_RESET);
-	warp_dbg(WARP_DBG_INF, "%s(): WOCPU Enter SER\n", __func__);
+	warp_dbg(WARP_DBG_ERR, "%s(): WOCPU Enter SER\n", __func__);
+#endif
 
 	ret = reset_wed_rx_d_drv(wed, reset_type);
 
@@ -1634,8 +1592,10 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 	}
 
 	/* WOCPU Enter SER */
+#ifdef CONFIG_WED_HW_RRO_SUPPORT
 	warp_woctrl_exit_state((struct warp_entry *)wed->warp, WO_STATE_SER_RESET);
-	warp_dbg(WARP_DBG_INF, "%s(): WOCPU Exit SER\n", __func__);
+	warp_dbg(WARP_DBG_ERR, "%s(): WOCPU Exit SER\n", __func__);
+#endif
 
 	return ret;
 }
@@ -1910,30 +1870,6 @@ wed_wpdma_inter_rx_init(struct wed_entry *wed, struct wifi_hw *hw)
 }
 
 /*
-* address translate controller
-*/
-void
-warp_atc_set_hw(struct wifi_entry *wifi, struct warp_bus *bus, int idx,
-		u8 enable)
-{
-	u32 value;
-	u32 addr;
-
-	addr = (idx) ? ATC1_MAP : ATC0_MAP;
-	/*Disable CR mirror mode*/
-	warp_io_read32(bus, addr, &value);
-	value &= ~(0xfffff << ATC_FLD_ADDR_REMAP);
-	value |= ((wifi->hw.wpdma_base & 0xfffff000));
-
-	if (enable)
-		value |= (1 << ATC_FLD_REMAP_EN);
-	else
-		value &= ~(1 << ATC_FLD_REMAP_EN);
-
-	warp_io_write32(bus, addr, value);
-}
-
-/*
 *
 */
 #define WED_WDMA_INT_TRIG_FLD_TX_DONE0  0
@@ -2061,15 +1997,10 @@ warp_eint_init_hw(struct wed_entry *wed)
 	value |= (1 << WED_EX_INT_STA_FLD_TF_LEN_ERR);
 	value |= (1 << WED_EX_INT_STA_FLD_TF_TKID_WO_PYLD);
 #ifdef WED_DYNAMIC_RXBM_SUPPORT
-	if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
-		if (wed->sub_ver != 3)
-		{
-			value |= (0x1 << WED_EX_INT_STA_FLD_RX_BM_H_BUF);
-			value |= (0x1 << WED_EX_INT_STA_FLD_RX_BM_L_BUF);
-		}
-		value |= (1 << WED_EX_INT_STA_FLD_RX_BM_DMAD_RD_ERR);
-		value |= (1 << WED_EX_INT_STA_FLD_RX_BM_FREE_AT_EMPTY);
-	}
+	value |= (0x1 << WED_EX_INT_STA_FLD_RX_BM_H_BUF);
+	value |= (0x1 << WED_EX_INT_STA_FLD_RX_BM_L_BUF);
+	value |= (1 << WED_EX_INT_STA_FLD_RX_BM_DMAD_RD_ERR);
+	value |= (1 << WED_EX_INT_STA_FLD_RX_BM_FREE_AT_EMPTY);
 #endif /*WED_DYNAMIC_RXBM_SUPPORT*/
 	value |= (1 << WED_EX_INT_STA_FLD_TX_DMA_W_RESP_ERR);
 	value |= (1 << WED_EX_INT_STA_FLD_TX_DMA_R_RESP_ERR);
@@ -2078,9 +2009,6 @@ warp_eint_init_hw(struct wed_entry *wed)
 	value |= (1 << WED_EX_INT_STA_FLD_RX_DRV_W_RESP_ERR);
 	value |= (1 << WED_EX_INT_STA_FLD_RX_DRV_R_RESP_ERR);
 	value |= (1 << WED_EX_INT_STA_FLD_TF_TKID_FIFO_INVLD);
-#ifdef WED_WDMA_RECYCLE
-	value |= (1 << WED_EX_INT_STA_FLD_RX_DRV_DMAD_RECYCLE);
-#endif /*WED_WDMA_RECYCLE*/
 
 	wed->ext_int_mask = value;
 #ifdef WED_RX_D_SUPPORT
@@ -2094,7 +2022,7 @@ warp_eint_init_hw(struct wed_entry *wed)
 *
 */
 void
-warp_eint_get_stat_hw(struct wed_entry *wed, u32 *state)
+warp_eint_get_stat_hw(struct wed_entry *wed, u32 *state, u32 *err_state)
 {
 #ifdef WED_RX_D_SUPPORT
 	u8 mode = WED_HWRRO_MODE;
@@ -2112,6 +2040,8 @@ warp_eint_get_stat_hw(struct wed_entry *wed, u32 *state)
 	warp_io_write32(wed, WED_EX_INT_STA, *state);
 
 	*state &= wed->ext_int_mask;
+
+	*err_state = 0;
 }
 
 /*
@@ -2126,13 +2056,11 @@ warp_eint_clr_dybm_stat_hw(struct wed_entry *wed)
 	warp_io_read32(wed, WED_EX_INT_STA, &state);
 
 #if defined(WED_DYNAMIC_TXBM_SUPPORT)
-	if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM)) {
-		if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH))
-			mask |= (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH);
+	if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH))
+		mask |= (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH);
 
-		if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH))
+	if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH))
 		mask |= (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH);
-	}
 #endif	/* WED_DYNAMIC_TXBM_SUPPORT */
 
 #if defined(WED_DYNAMIC_RXBM_SUPPORT)
@@ -2169,12 +2097,6 @@ warp_dma_ctrl_hw(struct wed_entry *wed, u8 txrx)
 #ifdef WED_HW_RX_SUPPORT
 	wdma_dma_ctrl(wdma, txrx);
 #endif
-}
-
-void
-warp_dma_ctrl_hw_after_fwdl(struct wed_entry *wed, u8 txrx)
-{
-
 }
 
 void
@@ -2216,24 +2138,6 @@ void
 warp_wed_init_hw(struct wed_entry *wed, struct wdma_entry *wdma)
 {
 	u32 wed_wdma_cfg;
-#ifdef WED_WDMA_RECYCLE
-	u32 value;
-	/*set wdma recycle threshold*/
-	value = (WED_WDMA_RECYCLE_TIME & 0xffff) <<
-		WED_WDMA_RX0_THRES_CFG_FLD_WAIT_BM_CNT_MAX;/*WED_WDMA_RX_THRES_CFG_FLD_WAIT_BM_CNT_MAX*/
-	value |= (((wdma->res_ctrl.rx_ctrl.rx_ring_ctrl.ring_len - 3) & 0xfff) <<
-		WED_WDMA_RX0_THRES_CFG_FLD_DRX_CRX_DISTANCE_THRES/*WED_WDMA_RX_THRES_CFG_FLD_DRX_CRX_DISTANCE_THRES*/);
-	warp_io_write32(wed, WED_WDMA_RX0_THRES_CFG, value);
-#ifdef WED_WDMA_SINGLE_RING
-	if (wifi_dbdc_support(wed->warp) == false) {	/* dbdc_mode is false, disable wdma ring1 by set to minimum length */
-		value = (WED_WDMA_RECYCLE_TIME & 0xffff) <<
-			WED_WDMA_RX0_THRES_CFG_FLD_WAIT_BM_CNT_MAX;/*WED_WDMA_RX_THRES_CFG_FLD_WAIT_BM_CNT_MAX*/
-		/* according to coda, this value should be exceed 2 */
-		value |= (WDMA_MIN_RING_LEN-3 << WED_WDMA_RX0_THRES_CFG_FLD_DRX_CRX_DISTANCE_THRES/*WED_WDMA_RX_THRES_CFG_FLD_DRX_CRX_DISTANCE_THRES*/);
-	}
-#endif	/* WED_WDMA_SINGLE_RING */
-	warp_io_write32(wed, WED_WDMA_RX1_THRES_CFG, value);
-#endif /*WED_WDMA_RECYCLE*/
 	/*cfg wdma recycle*/
 	warp_io_read32(wed, WED_WDMA_GLO_CFG, &wed_wdma_cfg);
 	wed_wdma_cfg &= ~(WED_WDMA_GLO_CFG_FLD_WDMA_BT_SIZE_MASK <<
@@ -2248,11 +2152,6 @@ warp_wed_init_hw(struct wed_entry *wed, struct wdma_entry *wdma)
 	/*enable skip state for fix dma busy issue*/
 	wed_wdma_cfg |= ((1 << WED_WDMA_GLO_CFG_FLD_IDLE_STATE_DMAD_SUPPLY_EN) |
 			 (1 << WED_WDMA_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_PREPARE));
-#ifdef WED_WDMA_RECYCLE
-	wed_wdma_cfg |= (1 << WED_WDMA_GLO_CFG_FLD_DYNAMIC_DMAD_RECYCLE) |
-			(1 << WED_WDMA_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_PREPARE) |
-			(1 << WED_WDMA_GLO_CFG_FLD_IDLE_STATE_DMAD_SUPPLY_EN);
-#endif /*WED_WDMA_RECYCLE*/
 #ifdef WED_HW_TX_SUPPORT
 	warp_io_write32(wed, WED_WDMA_GLO_CFG, wed_wdma_cfg);
 #endif /*WED_HW_TX_SUPPORT*/
@@ -2437,15 +2336,15 @@ warp_tx_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 		warp_dbg(WARP_DBG_OFF, "%s(): wed:%p wifi:%p: %x=%lx,%x=%d,%x=%d\n", __func__,
 			 wed, wifi,
 			 ring->hw_desc_base, (unsigned long)ring->cell[0].alloc_pa,
-			 ring->hw_cnt_addr, ring_ctrl->ring_len,
+			 ring->hw_cnt_addr, ring->ring_lens,
 			 ring->hw_cidx_addr, 0);
 		/*WPDMA*/
 		warp_io_write32(wifi, ring->hw_desc_base, ring->cell[0].alloc_pa);
-		warp_io_write32(wifi, ring->hw_cnt_addr, ring_ctrl->ring_len);
+		warp_io_write32(wifi, ring->hw_cnt_addr, ring->ring_lens);
 		warp_io_write32(wifi, ring->hw_cidx_addr, 0);
 		/*WED_WPDMA*/
 		warp_io_write32(wed, (ring->hw_desc_base - offset), ring->cell[0].alloc_pa);
-		warp_io_write32(wed, (ring->hw_cnt_addr - offset), ring_ctrl->ring_len);
+		warp_io_write32(wed, (ring->hw_cnt_addr - offset), ring->ring_lens);
 		warp_io_write32(wed, (ring->hw_cidx_addr - offset), 0);
 	}
 	return 0;
@@ -2497,19 +2396,18 @@ warp_rx_data_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 			 "%s(): wed:%p wifi:%p: %x=%lx,%x=%d,%x=%d\n", __func__,
 			 wed, wifi,
 			 ring->hw_desc_base, (unsigned long)ring->cell[0].alloc_pa,
-			 ring->hw_cnt_addr, ring_ctrl->ring_len,
+			 ring->hw_cnt_addr, ring->ring_lens,
 			 ring->hw_cidx_addr, 0);
 
 		/* WFDMA */
 		warp_io_write32(wifi, ring->hw_desc_base, ring->cell[0].alloc_pa);
-		warp_io_write32(wifi, ring->hw_cnt_addr, ring_ctrl->ring_len);
-		/* warp_io_write32(wifi, ring->hw_cidx_addr, ring_ctrl->ring_len - 1); */
+		warp_io_write32(wifi, ring->hw_cnt_addr, ring->ring_lens);
 
 		/* WED_WFDMA */
 		warp_io_write32(wed, (ring->hw_desc_base - offset),
 				ring->cell[0].alloc_pa);
 		warp_io_write32(wed, (ring->hw_cnt_addr - offset),
-				ring_ctrl->ring_len);
+				ring->ring_lens);
 	}
 
 	/* Reset Index of Ring */
@@ -2765,12 +2663,8 @@ warp_rx_dybm_addsub_acked(struct wed_entry *wed)
 		warp_dbg(WARP_DBG_ERR, "%s(): Cache drained!!!!\n", __func__);
 #endif
 		drained = true;
-	} else {
-		if ((value & 0xffff) != 0)
-			drained = false;
-		else
-			drained = true;	/* prevent 1st allocate trigger failed */
-	}
+	} else
+		drained = false;
 
 	return drained;
 }
@@ -2811,11 +2705,13 @@ warp_rx_dybm_r_fifo(
 	struct wed_rx_bm_res *res = &wed->res_ctrl.rx_ctrl.res;
 	struct wed_rx_bm_res *extra_res = &wed->res_ctrl.rx_ctrl.extra;
 
-	dma_sync_single_for_cpu(&wed->pdev->dev, desc->alloc_pa,
+	dma_sync_single_for_cpu(&wed->pdev->dev,
+							(dma_addr_t)desc->alloc_pa,
 							res->rxd_len*extra_res->ring_len, DMA_FROM_DEVICE);
 
 	if ((0xffff - extra_res->ring_len) >= stop_idx) {
-		dma_sync_single_for_cpu(&wed->pdev->dev, (dma_addr_t)(res->desc->alloc_pa + stop_idx*res->rxd_len),
+		dma_sync_single_for_cpu(&wed->pdev->dev,
+								(dma_addr_t)res->desc->alloc_pa + stop_idx*res->rxd_len,
 								res->rxd_len*extra_res->ring_len, DMA_FROM_DEVICE);
 		memcpy((u8 *)desc->alloc_va,
 				(u8 *)res->desc->alloc_va + stop_idx*res->rxd_len,
@@ -2823,9 +2719,11 @@ warp_rx_dybm_r_fifo(
 	} else {
 		u32 break_cnt = 0xffff - stop_idx + 1;
 
-		dma_sync_single_for_cpu(&wed->pdev->dev, (dma_addr_t)(res->desc->alloc_pa + stop_idx*res->rxd_len),
+		dma_sync_single_for_cpu(&wed->pdev->dev,
+								(dma_addr_t)res->desc->alloc_pa + stop_idx*res->rxd_len,
 								res->rxd_len*break_cnt, DMA_FROM_DEVICE);
-		dma_sync_single_for_cpu(&wed->pdev->dev, res->desc->alloc_pa,
+		dma_sync_single_for_cpu(&wed->pdev->dev,
+								(dma_addr_t)res->desc->alloc_pa,
 								res->rxd_len*(extra_res->ring_len-break_cnt), DMA_FROM_DEVICE);
 
 		memcpy((u8 *)desc->alloc_va,
@@ -2843,11 +2741,11 @@ warp_rx_dybm_r_fifo(
 #ifdef WARP_DVT
 	rxdmad = (struct warp_bm_rxdmad *)desc->alloc_va;
 	warp_dbg(WARP_DBG_OFF, "%s(): recycle token start:%d!\n", __func__,
-			 (rxdmad->token >> RX_TOKEN_ID_SHIFT));
+			 (rxdmad->token >> TOKEN_ID_SHIFT));
 
 	rxdmad = (struct warp_bm_rxdmad *)desc->alloc_va + (extra_res->ring_len - 1);
 	warp_dbg(WARP_DBG_OFF, "%s(): recycle token end:%d!\n", __func__,
-			 (rxdmad->token >> RX_TOKEN_ID_SHIFT));
+			 (rxdmad->token >> TOKEN_ID_SHIFT));
 #endif /* WARP_DVT */
 
 	return ret;
@@ -2991,31 +2889,6 @@ u32 warp_rxbm_left_query(struct wed_entry *wed)
 *
 */
 void
-warp_bus_init_hw(struct warp_bus *bus)
-{
-	u32 v1 = 0;
-	u32 v2 = 0;
-	/*debug only*/
-	warp_io_read32(bus, WED0_MAP, &v1);
-	warp_io_read32(bus, WED1_MAP, &v2);
-	warp_dbg(WARP_DBG_INF, "%s(): WED0_MAP: %x,WED1_MAP:%x\n", __func__, v1, v2);
-	/*default remap pcie0 to wed0*/
-	v1 = bus->wpdma_base[0] & 0xfffff000;
-	v1 &=  ~(1 << ATC_FLD_REMAP_EN);
-	v1 &=  ~(1 << ATC_FLD_REMAP);
-	/*default remap pcie1 to wed1*/
-	v2 = bus->wpdma_base[1] & 0xfffff000;
-	v2 &=  ~(1 << ATC_FLD_REMAP_EN);
-	v2 |= (1 << ATC_FLD_REMAP);
-	warp_dbg(WARP_DBG_INF, "%s(): PCIE0_MAP: %x,PCIE1_MAP:%x\n", __func__, v1, v2);
-	warp_io_write32(bus, ATC0_MAP, v1);
-	warp_io_write32(bus, ATC1_MAP, v2);
-}
-
-/*
-*
-*/
-void
 warp_trace_set_hw(struct warp_cputracer *tracer)
 {
 	u32 value = 0;
@@ -3080,10 +2953,6 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
 			reset_interface(wed, wdma);
 		}
 		break;
-
-	default:
-		break;
-
 	}
 
 	return ret;
@@ -3378,11 +3247,6 @@ warp_procinfo_dump_txinfo_hw(struct warp_entry *warp, struct seq_file *output)
 #endif	/* CONFIG_WARP_HW_DDR_PROF */
 	u32 cidx = 0, didx = 0, qcnt = 0, tcnt = 0;
 
-	if (output == NULL) {
-		warp_dbg(WARP_DBG_ERR, "%s(): seq_file's output is NULL\n", __func__);
-		return;
-	}
-
 	dump_string(output, "==========WED TX ring info:==========\n");
 	dump_io(output, wed, "WED_TX0_MIB", WED_TX0_MIB);
 	dump_io(output, wed, "WED_TX0_BASE", WED_TX0_CTRL0);
@@ -3576,7 +3440,6 @@ warp_procinfo_dump_txinfo_hw(struct warp_entry *warp, struct seq_file *output)
 	} else
 		seq_printf(output, "DDR access latency profiling is not enabled!\n");
 #endif	/* CONFIG_WARP_HW_DDR_PROF */
-
 }
 
 /*
@@ -3595,8 +3458,6 @@ void
 #endif	/* CONFIG_WARP_HW_DDR_PROF */
 	u32 cidx = 0, didx = 0, qcnt = 0, tcnt = 0, value = 0;
 
-	if (output == NULL)
-		goto err;
 	dump_string(output, "==========WED RX INT info:==========\n");
 	dump_io(output, wed, "WED_PCIE_INT_CTRL", WED_PCIE_INT_CTRL);
 	dump_io(output, wed, "WED_PCIE_INTS_REC", WED_PCIE_INTS_REC);
@@ -3807,9 +3668,6 @@ void
 	} else
 		seq_printf(output, "DDR access latency profiling is not enabled!\n");
 #endif	/* CONFIG_WARP_HW_DDR_PROF */
-
-err:
-	warp_dbg(WARP_DBG_ERR, "%s(): seq_file's output is NULL\n", __func__);
 }
 
 /*
@@ -4023,23 +3881,19 @@ dybm_eint_ctrl(struct wed_entry *wed, bool enable, u8 type)
 			mask = (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH);
 			break;
 		case WARP_DYBM_EINT_RXBM_H:
-			if (wed->sub_ver != 3)
-				mask = (0x1 << WED_EX_INT_STA_FLD_RX_BM_H_BUF);
+			mask = (0x1 << WED_EX_INT_STA_FLD_RX_BM_H_BUF);
 			break;
 		case WARP_DYBM_EINT_RXBM_L:
-			if (wed->sub_ver != 3)
-				mask = (0x1 << WED_EX_INT_STA_FLD_RX_BM_L_BUF);
+			mask = (0x1 << WED_EX_INT_STA_FLD_RX_BM_L_BUF);
 			break;
 		case WARP_DYBM_EINT_TKID_H:
 			mask = (0x1 << WED_EX_INT_STA_FLD_TX_TKID_HTH);
 			break;
 		case WARP_DYBM_EINT_RXBM_HL:
-			if (wed->sub_ver != 3)
-				mask = ((0x1 << WED_EX_INT_STA_FLD_RX_BM_H_BUF) | (0x1 << WED_EX_INT_STA_FLD_RX_BM_L_BUF));
+			mask = ((0x1 << WED_EX_INT_STA_FLD_RX_BM_H_BUF) | (0x1 << WED_EX_INT_STA_FLD_RX_BM_L_BUF));
 			break;
 		case WARP_DYBM_EINT_TKID_L:
-			if (wed->sub_ver != 3)
-				mask = (0x1 << WED_EX_INT_STA_FLD_TX_TKID_LTH);
+			mask = (0x1 << WED_EX_INT_STA_FLD_TX_TKID_LTH);
 			break;
 		default:
 			mask = ((0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH) | (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH));
@@ -4058,17 +3912,16 @@ dybm_eint_ctrl(struct wed_entry *wed, bool enable, u8 type)
 *
 */
 void
-warp_eint_work_hw(struct wed_entry *wed, u32 status)
+warp_eint_work_hw(struct wed_entry *wed, u32 status, u32 err_status)
 {
-#ifdef WED_DYNAMIC_RXBM_SUPPORT
-	if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
+#ifdef WED_RX_SUPPORT
 
-		if (status & (1 << WED_EX_INT_STA_FLD_RX_BM_FREE_AT_EMPTY))
-			warp_dbg(WARP_DBG_ERR, "%s(): rx bm free at empty!\n", __func__);
+	if (status & (1 << WED_EX_INT_STA_FLD_RX_BM_FREE_AT_EMPTY))
+		warp_dbg(WARP_DBG_ERR, "%s(): rx bm free at empty!\n", __func__);
 
-		if (status & (1 << WED_EX_INT_STA_FLD_RX_BM_DMAD_RD_ERR))
-			warp_dbg(WARP_DBG_ERR, "%s(): rx bm dmad rd err!\n", __func__);
-}
+	if (status & (1 << WED_EX_INT_STA_FLD_RX_BM_DMAD_RD_ERR))
+		warp_dbg(WARP_DBG_ERR, "%s(): rx bm dmad rd err!\n", __func__);
+
 #endif
 
 	if (status & (1 << WED_EX_INT_STA_FLD_TF_LEN_ERR))
@@ -4128,7 +3981,7 @@ warp_eint_work_hw(struct wed_entry *wed, u32 status)
 //				warp_dbg(WARP_DBG_ERR, "%s(): DYBM high threshold INT but BM will exceed capability. dismissed!\n", __func__);
 //			}
 		} else
-#endif /* WED_DYNAMIC_RXBM_SUPPORT */
+#endif /* WED_DYNAMIC_TXBM_SUPPORT */
 			warp_dbg(WARP_DBG_ERR, "%s(): DYRXBM low threshold INT w/o enabled!\n", __func__);
 	}
 
@@ -4191,10 +4044,6 @@ warp_eint_work_hw(struct wed_entry *wed, u32 status)
 
 	if (status & (1 << WED_EX_INT_STA_FLD_RX_DRV_BM_DMAD_COHERENT))
 		warp_dbg(WARP_DBG_ERR, "%s(): rx drv buffer mgmt dmad coherent!\n", __func__);
-#ifdef WED_WDMA_RECYCLE
-	if (status & (1 << WED_WPDMA_RX_D_GLO_CFG_FLD_DYNAMIC_DMAD_RECYCLE /*WED_EX_INT_STA_FLD_RX_DRV_DMA_RECYCLE*/))
-		warp_dbg(WARP_DBG_LOU, "%s(): rx drv dma recycle!\n", __func__);
-#endif /*WED_WDMA_RECYCLE*/
 }
 
 #ifdef WARP_CPU_TRACER

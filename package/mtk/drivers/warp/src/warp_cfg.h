@@ -32,20 +32,17 @@
 #elif defined(CONFIG_WARP_V3)
 #define CFG_RX_D_SUPPORT		1
 #define CONFIG_WARP_CCIF_SUPPORT	1
-#define CFG_PAO_SUPPORT		1
+#define CFG_PAO_SUPPORT			1
+#define CFG_RX_HW_RRO 			1
+#define CFG_RX_HW_RRO_DBG		0
+/* MEMCPY must also enable CFG_RX_HW_RRO_DBG */
+#define CFG_RX_HW_RRO_DBG_MEMCPY	0
 #else
 #define CFG_RX_D_SUPPORT		0
 #define CONFIG_WARP_CCIF_SUPPORT 	0
 #endif
 
-
-/*Label 2*/
-/*address translate control (cr mirror)*/
-#ifdef CONFIG_WARP_ATC_SUPPORT
-#define CFG_ATC_SUPPORT 1
-#else
-#define CFG_ATC_SUPPORT 0
-#endif
+/*Label 2 ATC is removed*/
 
 #define CFG_DELAY_INT_SUPPORT	0
 
@@ -56,16 +53,10 @@
 /*Label 4*/
 #define CFG_DYNAMIC_BM_SUPPORT	1
 
-#ifdef CONFIG_WARP_WDMA_RECYCLE_SUPPORT
-#define CFG_WDMA_RECYCLE		1
-#else
-#define CFG_WDMA_RECYCLE		0
-#endif
-
 /*should remove when feature is ready or fix*/
 #define CFG_WORK_AROUND_128_ALIGN	1
 /*should not enable since hw fixed*/
-#define CFG_WORK_AROUND_INT_POLL	1
+#define CFG_WORK_AROUND_INT_POLL	0
 /*should not enable since hw fixed*/
 #define CFG_WORK_AROUND_WDMA_RETURN_IDLE 0
 
@@ -112,12 +103,19 @@
 #define WED_HWRRO_MODE_WOCPU 2
 #define WED_HWRRO_MODE 2
 
-#ifdef CFG_PAO_SUPPORT
+#if (defined(CFG_PAO_SUPPORT) && CFG_PAO_SUPPORT)
 #define WED_PAO_SUPPORT
 #endif
 
-#if (CFG_INTER_AGENT_SUPPORT && CFG_TX_SUPPORT && CFG_RX_SUPPORT && CFG_ATC_SUPPORT)
-#define WARP_ATC_SUPPORT
+#if (defined(CFG_RX_HW_RRO) && CFG_RX_HW_RRO)
+#define WED_RX_HW_RRO
+#endif
+
+#if (defined(CFG_RX_HW_RRO_DBG) && CFG_RX_HW_RRO_DBG)
+#define WED_RX_HW_RRO_DBG
+#if (defined(CFG_RX_HW_RRO_DBG_MEMCPY) && CFG_RX_HW_RRO_DBG_MEMCPY)
+#define WED_RX_HW_RRO_DBG_MEMCPY
+#endif
 #endif
 
 #if (CFG_INTER_AGENT_SUPPORT && CFG_TX_SUPPORT && CFG_RX_SUPPORT && CFG_DELAY_INT_SUPPORT)
@@ -133,14 +131,12 @@
 #endif
 
 #if (CFG_INTER_AGENT_SUPPORT && CFG_TX_SUPPORT && CFG_RX_SUPPORT && CFG_HW_TX_SUPPORT && CFG_DYNAMIC_BM_SUPPORT)
+#ifdef CONFIG_WARP_V2
 #define WED_DYNAMIC_TXBM_SUPPORT
 #define WED_DYNAMIC_RXBM_SUPPORT
 #endif
-
-#if (CFG_INTER_AGENT_SUPPORT && CFG_TX_SUPPORT && CFG_RX_SUPPORT && CFG_HW_TX_SUPPORT && CFG_WDMA_RECYCLE)
-#define WED_WDMA_RECYCLE
 #endif
 
 #define WED_WDMA_SINGLE_RING
-#define WARP_SUSPEND_RESUME
+
 //#define WARP_DVT

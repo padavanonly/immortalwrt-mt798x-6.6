@@ -22,11 +22,7 @@ int mt_mtd_write_nm_wifi(char *name, loff_t to, size_t len, const u_char *buf)
 	struct erase_info ei;
 	u_char *bak = NULL;
 
-	mtd = get_mtd_device_nm("Factory");
-
-	if (IS_ERR(mtd))
-		mtd = get_mtd_device_nm("factory");
-
+	mtd = get_mtd_device_nm(name);
 	if (IS_ERR(mtd))
 		return -1;
 
@@ -86,13 +82,9 @@ int mt_mtd_read_nm_wifi(char *name, loff_t from, size_t len, u_char *buf)
 	size_t rdlen;
 	struct mtd_info *mtd;
 
-	mtd = get_mtd_device_nm("Factory");
-
-        if (IS_ERR(mtd))
-                mtd = get_mtd_device_nm("factory");
-
-        if (IS_ERR(mtd))
-                return -1;
+	mtd = get_mtd_device_nm(name);
+	if (IS_ERR(mtd))
+		return -1;
 
 	ret = mtd_read(mtd, from, len, &rdlen, buf);
 

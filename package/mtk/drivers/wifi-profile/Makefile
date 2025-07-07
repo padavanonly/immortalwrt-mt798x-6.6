@@ -131,6 +131,8 @@ define Package/wifi-dats/install
 	if [ "$$(CONFIG_first_card_name)" = "MT7986" -o "$$(CONFIG_second_card_name)" = "MT7986" ] ; then \
 		if [ "$$(CONFIG_MTK_WIFI_SKU_TYPE)" = "AX4200" ] ; then \
 			$(INSTALL_DATA) ./files/mt7986-ax4200/* $(1)/etc/wireless/mediatek/; \
+		elif [ "$$(CONFIG_MTK_WIFI_SKU_TYPE)" = "AX7800" ] ; then \
+			$(INSTALL_DATA) ./files/mt7986-ax7800/* $(1)/etc/wireless/mediatek/; \
 		else \
 			$(INSTALL_DATA) ./files/mt7986/* $(1)/etc/wireless/mediatek/; \
 		fi ; \
@@ -139,6 +141,10 @@ define Package/wifi-dats/install
 	if [ "$$(CONFIG_first_card_name)" = "MT7981" -o "$$(CONFIG_second_card_name)" = "MT7981" ] ; then \
 		$(INSTALL_DATA) ./files/mt7981/* $(1)/etc/wireless/mediatek/; \
 	fi
+
+	if [ "$$(CONFIG_first_card_name)" = "MT7990" -o "$$(CONFIG_second_card_name)" = "MT7990" ] ; then \
+                $(INSTALL_DATA) ./files/mt7988-be14000/* $(1)/etc/wireless/mediatek/; \
+        fi
 
 	if [ -f "$(1)/etc/wireless/mediatek/l1profile.dat" ]; then \
 		mv $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile.dat ; \

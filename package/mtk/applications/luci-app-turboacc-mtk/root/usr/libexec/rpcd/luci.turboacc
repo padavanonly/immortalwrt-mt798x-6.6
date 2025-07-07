@@ -44,7 +44,7 @@ local methods = {
 				local ethernet_hnat = readfile("/sys/kernel/debug/hnat/hook_toggle")
 				ethernet_hnat = (ethernet_hnat ~= "enabled") and " / Ethernet HNAT Disabled" or ""
 
-				local wireless_hnat = (sys.call("grep -q 'WHNAT=1' '/etc/wireless/mediatek/'*_card*.dat") ~= 0) and " / Wireless HNAT Disabled" or ""
+				local wireless_hnat = (sys.call("grep -q 'WHNAT=1' '/etc/wireless/mediatek/'*.dat") ~= 0) and " / Wireless HNAT Disabled" or ""
 				if (ethernet_hnat == "") or (wireless_hnat == "") then
 					fptype = "MediaTek HNAT" .. ethernet_hnat .. wireless_hnat
 				end

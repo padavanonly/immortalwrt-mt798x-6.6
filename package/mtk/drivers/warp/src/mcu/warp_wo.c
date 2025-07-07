@@ -85,9 +85,9 @@ static int tx_dma_cb_init(
 	dma_cb->pkt_size = bus->tx_ring.pkt_len;
 
 #if (KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE)
-	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC|GFP_DMA32);
 #else
-	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC|GFP_DMA32);
 #endif
 	if (unlikely(!dma_cb->pkt)) {
 		warp_dbg(WARP_DBG_ERR, "%s(): allocate bus pkt\n", __func__);
@@ -195,9 +195,11 @@ static int rx_dma_cb_init(
 
 #if CCIF_PAGE_ALLOC
 #if (KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE)
-	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_rx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_rx_page,
+							dma_cb->pkt_size, GFP_ATOMIC | GFP_DMA32);
 #else
-	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_rx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_rx_page,
+							dma_cb->pkt_size, GFP_ATOMIC | GFP_DMA32);
 #endif
 
 	if (unlikely(!dma_cb->pkt)) {
@@ -226,7 +228,7 @@ static int rx_dma_cb_init(
 	dma_cb->alloc_va = desc->alloc_va + (idx * dma_cb->alloc_size);
 	dma_cb->alloc_pa = desc->alloc_pa + (idx * dma_cb->alloc_size);
 	rxd = (struct bus_dmad *) dma_cb->alloc_va;
-	/*txd, ddone set to 0*/
+	/* txd, ddone set to 0 */
 	ctrl = (bus->rx_ring.pkt_len << WED_CTL_SD_LEN0_SHIFT) & WED_CTL_SD_LEN0;
 	ctrl |= WED_CTL_LAST_SEC0;
 	WRITE_ONCE(rxd->sdp0, cpu_to_le32(dma_cb->pkt_pa));
@@ -442,7 +444,7 @@ static void bus_rx_task(unsigned long data)
 				cmd.msg = sendmsg_buf;
 				cmd.param.to_id = MODULE_ID_WO;
 				cmd.param.wait_type = WARP_MSG_WAIT_TYPE_NONE;
-				cmd.param.timeout = WARP_MSG_TIMEOUT_DEFAULT;
+				cmd.param.timeout = 3000;
 				cmd.param.rsp_hdlr = NULL;
 
 				warp_msg_send_cmd(warp->idx , &cmd);
@@ -466,7 +468,8 @@ static void bus_rx_task(unsigned long data)
 				rx_ctrl->dbg_ddone_check = 0;
 			}
 			} else {
-				warp_dbg(WARP_DBG_ERR, "wriong ddone bit 0x%x: %d ", cidx, (rxd->ctrl & WED_CTL_DMA_DONE));
+				warp_dbg(WARP_DBG_ERR, "wrong ddone bit 0x%x: %d ", cidx,
+					 (rxd->ctrl & WED_CTL_DMA_DONE));
 			}
 		}
 
@@ -681,14 +684,14 @@ static void wo_exception_init(struct woif_entry *woif)
 	warp_os_alloc_mem((unsigned char **)&exp_ctrl->log , exp_ctrl->log_size, GFP_ATOMIC);
 
 	if (unlikely(!exp_ctrl->log)){
-		warp_dbg(WARP_DBG_OFF, "%s(): alloc exp_ctrl->log error\n", __func__);
+		warp_dbg(WARP_DBG_ERR, "%s(): alloc exp_ctrl->log error\n", __func__);
 		return;
 	}
 	memset(exp_ctrl->log, 0, exp_ctrl->log_size);
 	exp_ctrl->phys = dma_map_single(&bus->pdev->dev, exp_ctrl->log,
 		exp_ctrl->log_size, DMA_FROM_DEVICE);
 	if (unlikely(dma_mapping_error(&bus->pdev->dev, exp_ctrl->phys))) {
-		warp_dbg(WARP_DBG_OFF, "%s(): dma map error\n", __func__);
+		warp_dbg(WARP_DBG_ERR, "%s(): dma map error\n", __func__);
 		return;
 	}
 
@@ -700,10 +703,10 @@ static void wo_exception_init(struct woif_entry *woif)
 	cmd.msg_len = sizeof(struct wo_cmd_query);
 	cmd.param.to_id = MODULE_ID_WO;
 	cmd.param.wait_type = WARP_MSG_WAIT_TYPE_NONE;
-	cmd.param.timeout = WARP_MSG_TIMEOUT_DEFAULT;
+	cmd.param.timeout = 3000;
 	cmd.param.rsp_hdlr = NULL;
 	warp_msg_send_cmd(woif->idx , &cmd);
-	warp_dbg(WARP_DBG_OFF, "%s(%d): exp log= 0x%p, phy_addr= %pad size= %d\n", __func__,
+	warp_dbg(WARP_DBG_INF, "%s(%d): exp log= 0x%p, phy_addr= %pad size= %d\n", __func__,
 		woif->idx, exp_ctrl->log, &exp_ctrl->phys, exp_ctrl->log_size);
 }
 

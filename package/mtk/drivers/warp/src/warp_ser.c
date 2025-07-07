@@ -74,14 +74,14 @@ wed_ser_check(struct wed_entry *wed)
 	    ser_ctrl->wdma_err_cnt > WED_MAX_ERR_CNT) {
 
 		ser_ctrl->wpdma_ser_cnt++;
-		warp_dbg(WARP_DBG_OFF, "%s(): wed_wpdma_tx_drv error !\n", __func__);
+		warp_dbg(WARP_DBG_INF, "%s(): wed_wpdma_tx_drv error !\n", __func__);
 		return true;
 	}
 
 	if (ser_ctrl->tx_bm_err_cnt > WED_MAX_ERR_CNT) {
 
 		ser_ctrl->tx_bm_ser_cnt++;
-		warp_dbg(WARP_DBG_OFF, "%s(): wed_tx_bm error !\n", __func__);
+		warp_dbg(WARP_DBG_INF, "%s(): wed_tx_bm error !\n", __func__);
 		return true;
 	}
 
@@ -91,9 +91,13 @@ wed_ser_check(struct wed_entry *wed)
 			/* WO hearbeat counter */
 			ser_ctrl->wo_no_response = wed_wo_heartbeat_check(wed);
 
-			if (ser_ctrl->wo_no_response != 0)
+			if (ser_ctrl->wo_no_response != 0) {
 				warp_dbg(WARP_DBG_ERR, "%s(): WO MCU heartbeat is not responding!!!\n", __func__);
+				if (warp->woif.wo_ctrl.cur_state != WO_STATE_WF_RESET)
+					wifi_hb_check_notify(&warp->wifi);
 
+				warp->woif.wo_ctrl.cur_state = WO_STATE_WF_RESET;
+			}
 			ser_ctrl->wo_check_countdown = WED_WO_CHECK_COUNTDOWN;
 		} else
 			ser_ctrl->wo_check_countdown--;
@@ -184,20 +188,13 @@ wed_ser_err_cnt_bm_update(
 {
 	struct wed_ser_state *state = &ser_ctrl->state;
 	/*check TX_BM*/
-#ifdef WED_WDMA_RECYCLE
-	unsigned int recy_diff = WED_RECYCLE_DIFF(ser_ctrl->period_time);
-	if (((new_state->wdma_rx0_recycle_mib - state->wdma_rx0_recycle_mib) <=
-	     recy_diff) &&
-	    ((new_state->wdma_rx1_recycle_mib - state->wdma_rx1_recycle_mib) <= recy_diff))
-		goto normal;
-#else
+
 	if (state->wdma_stat != 0x9 || new_state->wdma_stat != 0x9)
 		goto normal;
 
 	if ((state->wdma_rx0_mib != new_state->wdma_rx0_mib) ||
 	    (state->wdma_rx1_mib != new_state->wdma_rx1_mib))
 		goto normal;
-#endif /*WED_WDMA_RECYCLE*/
 
 	if (new_state->bm_tx_stat != 0)
 		goto normal;
@@ -258,19 +255,17 @@ wed_ser_detect(struct wed_entry *wed)
 
 	/*check ser should trigger or not*/
 	if (wed_ser_check(wed) == true) {
-		warp_dbg(WARP_DBG_OFF, "%s(): wed_ser_detect!!!, wed->irq=%d\n", __func__,
-			 wed->irq);
-		warp_dbg(WARP_DBG_OFF, "%s(): please check CONSYS Qcnt/status!!!, wed->irq=%d\n", __func__,
-			 wed->irq);
+		warp_dbg(WARP_DBG_INF, "%s(): please check CONSYS Qcnt/status!!!, wed->irq=%d\n",
+			__func__, wed->irq);
 		if (wed->ser_ctrl.recovery == true) {
 			warp_ser_trigger_hw(&warp->wifi);
 		} else {
 			wed_ser_dump(wed);
 			wed->ser_ctrl.period_time = 3000;
-			warp_dbg(WARP_DBG_OFF,
-				 "%s(): not recovery ~, delay periodic check to 3 sec for debug!", __func__);
-			warp_dbg(WARP_DBG_OFF,
-				 "%s(): only WED SER detect, WED not trigger SER!", __func__);
+			warp_dbg(WARP_DBG_INF,
+				 "%s(): delay periodic check to 3 sec for debug!", __func__);
+			warp_dbg(WARP_DBG_INF,
+				 "%s(): only WED irq detect, WED not trigger recover!", __func__);
 		}
 	}
 	return ;
@@ -289,7 +284,7 @@ wed_ser_task(void *data)
 		wed_ser_detect(wed);
 		msleep(ser_ctrl->period_time);
 	}
-	warp_dbg(WARP_DBG_OFF, "%s(): wed_ser exist, wed->irq=%d!\n", __func__,
+	warp_dbg(WARP_DBG_ERR, "%s(): wed_ser exist, wed->irq=%d!\n", __func__,
 		 wed->irq);
 	return 0;
 }
@@ -301,40 +296,42 @@ void
 wed_ser_dump(struct wed_entry *wed)
 {
 	struct wed_ser_ctrl *ser_ctrl = &wed->ser_ctrl;
-	struct wed_ser_state *state = &ser_ctrl->state;
+	struct wed_ser_state *state;
 
-	warp_dbg(WARP_DBG_OFF, "======wed ser status========\n");
-	warp_dbg(WARP_DBG_OFF, "wpdma_tx_drv_ser_cnt\t:%d\n", ser_ctrl->wpdma_ser_cnt);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_ser_cnt\t:%d\n", ser_ctrl->wdma_ser_cnt);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_ser_cnt\t:%d\n", ser_ctrl->tx_dma_ser_cnt);
-	warp_dbg(WARP_DBG_OFF, "bm_tx_ser_cnt\t\t:%d\n", ser_ctrl->tx_bm_ser_cnt);
-	warp_dbg(WARP_DBG_OFF, "======current ser indicate========\n");
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_err_cnt\t:%d\n", ser_ctrl->tx_dma_err_cnt);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_err_cnt\t:%d\n", ser_ctrl->wdma_err_cnt);
-	warp_dbg(WARP_DBG_OFF, "wpdma_tx_drv_idle_cnt\t:%d\n",
+	state = &ser_ctrl->state;
+
+	warp_dbg(WARP_DBG_INF, "======wed ser status========\n");
+	warp_dbg(WARP_DBG_INF, "wpdma_tx_drv_ser_cnt\t:%d\n", ser_ctrl->wpdma_ser_cnt);
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_ser_cnt\t:%d\n", ser_ctrl->wdma_ser_cnt);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_ser_cnt\t:%d\n", ser_ctrl->tx_dma_ser_cnt);
+	warp_dbg(WARP_DBG_INF, "bm_tx_ser_cnt\t\t:%d\n", ser_ctrl->tx_bm_ser_cnt);
+	warp_dbg(WARP_DBG_INF, "======current ser indicate========\n");
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_err_cnt\t:%d\n", ser_ctrl->tx_dma_err_cnt);
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_err_cnt\t:%d\n", ser_ctrl->wdma_err_cnt);
+	warp_dbg(WARP_DBG_INF, "wpdma_tx_drv_idle_cnt\t:%d\n",
 		 ser_ctrl->wpdma_idle_cnt);
-	warp_dbg(WARP_DBG_OFF, "bm_err_cnt\t\t:%d\n", ser_ctrl->tx_bm_err_cnt);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_state\t:%d\n", state->tx_dma_stat);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_tx0_mib\t:%d\n", state->tx0_mib);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_tx0_cidx\t:%d\n", state->tx0_cidx);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_tx0_didx\t:%d\n", state->tx0_didx);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_tx1_mib\t:%d\n", state->tx1_mib);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_tx1_cidx\t:%d\n", state->tx1_cidx);
-	warp_dbg(WARP_DBG_OFF, "wed_tx_dma_tx1_didx\t:%d\n", state->tx1_didx);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_state\t:%d\n", state->wdma_stat);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_rx0_mib\t:%d\n", state->wdma_rx0_mib);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_rx1_mib\t:%d\n", state->wdma_rx1_mib);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_rx0_rc_mib\t:%d\n",
+	warp_dbg(WARP_DBG_INF, "bm_err_cnt\t\t:%d\n", ser_ctrl->tx_bm_err_cnt);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_state\t:%d\n", state->tx_dma_stat);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_tx0_mib\t:%d\n", state->tx0_mib);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_tx0_cidx\t:%d\n", state->tx0_cidx);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_tx0_didx\t:%d\n", state->tx0_didx);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_tx1_mib\t:%d\n", state->tx1_mib);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_tx1_cidx\t:%d\n", state->tx1_cidx);
+	warp_dbg(WARP_DBG_INF, "wed_tx_dma_tx1_didx\t:%d\n", state->tx1_didx);
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_state\t:%d\n", state->wdma_stat);
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_rx0_mib\t:%d\n", state->wdma_rx0_mib);
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_rx1_mib\t:%d\n", state->wdma_rx1_mib);
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_rx0_rc_mib\t:%d\n",
 		 state->wdma_rx0_recycle_mib);
-	warp_dbg(WARP_DBG_OFF, "wdma_rx_drv_rx1_rc_mib\t:%d\n",
+	warp_dbg(WARP_DBG_INF, "wdma_rx_drv_rx1_rc_mib\t:%d\n",
 		 state->wdma_rx1_recycle_mib);
-	warp_dbg(WARP_DBG_OFF, "wpdma_tx_drv_state\t:%d\n", state->wpdma_stat);
-	warp_dbg(WARP_DBG_OFF, "wpdma_tx_drv_tx0_mib\t:%d\n", state->wpdma_tx0_mib);
-	warp_dbg(WARP_DBG_OFF, "wpdma_tx_drv_tx0_mib\t:%d\n", state->wpdma_tx1_mib);
-	warp_dbg(WARP_DBG_OFF, "bm_tx_state\t\t:%d\n", state->bm_tx_stat);
-	warp_dbg(WARP_DBG_OFF, "txfree_to_bm_mib\t:%d\n", state->txfree_to_bm_mib);
-	warp_dbg(WARP_DBG_OFF, "txbm_to_wdma_mib\t:%d\n", state->txbm_to_wdma_mib);
-	warp_dbg(WARP_DBG_OFF, "txbm_to_wdma_diff\t:%d\n",
+	warp_dbg(WARP_DBG_INF, "wpdma_tx_drv_state\t:%d\n", state->wpdma_stat);
+	warp_dbg(WARP_DBG_INF, "wpdma_tx_drv_tx0_mib\t:%d\n", state->wpdma_tx0_mib);
+	warp_dbg(WARP_DBG_INF, "wpdma_tx_drv_tx0_mib\t:%d\n", state->wpdma_tx1_mib);
+	warp_dbg(WARP_DBG_INF, "bm_tx_state\t\t:%d\n", state->bm_tx_stat);
+	warp_dbg(WARP_DBG_INF, "txfree_to_bm_mib\t:%d\n", state->txfree_to_bm_mib);
+	warp_dbg(WARP_DBG_INF, "txbm_to_wdma_mib\t:%d\n", state->txbm_to_wdma_mib);
+	warp_dbg(WARP_DBG_INF, "txbm_to_wdma_diff\t:%d\n",
 		 (state->txbm_to_wdma_mib - state->txfree_to_bm_mib));
 }
 

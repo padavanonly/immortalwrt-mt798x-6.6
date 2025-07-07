@@ -376,11 +376,6 @@ static int warp_msg_wait_node_enq(
 
 	node->next = NULL;
 	node->uni_id = (++msg_q->current_uni_id);
-	if (node->uni_id == 0) {
-		/* Bypass "node->uni_id = 0" case */
-		node->uni_id++;
-		msg_q->current_uni_id++;
-	}
 	msg_q->size++;
 
 	spin_unlock_bh(&msg_q->wait_lock);
@@ -480,9 +475,14 @@ static int warp_msg_send_cmd_with_header(
 	u16 header_len = sizeof(struct warp_cmd_header);
 	u16 sendmsg_len = header_len + msg_cmd->msg_len;
 	int result;
+	u8 *sendmsg_buf;
+	struct warp_cmd_header *cmd_header;
 
-	u8 sendmsg_buf[WARP_MSG_MAX_BUFFER_LEN];
-	struct warp_cmd_header *cmd_header = (struct warp_cmd_header *)sendmsg_buf;
+	result = warp_os_alloc_mem(&sendmsg_buf, WARP_MSG_MAX_BUFFER_LEN, GFP_ATOMIC);
+	if (result)
+		return WARP_FAIL_STATUS;
+
+	cmd_header = (struct warp_cmd_header *)sendmsg_buf;
 
 	warp_dbg(WARP_DBG_INF, "%s(), uni_id:%d, msg_len:%d, header_len:%d, sendmsg_buf:%d\n",
 		__func__, uni_id, msg_cmd->msg_len, header_len, (u32)sizeof(sendmsg_buf));
@@ -490,7 +490,8 @@ static int warp_msg_send_cmd_with_header(
 	if (sendmsg_len > WARP_MSG_MAX_BUFFER_LEN) {
 		warp_dbg(WARP_DBG_ERR, "%s(), invaid length, msg_len:%d, header_len:%d, sendmsg_buf:%d\n",
 			__func__, msg_cmd->msg_len, header_len, (u32)sizeof(sendmsg_buf));
-		return WARP_INVALID_LENGTH_STATUS;
+		result = WARP_INVALID_LENGTH_STATUS;
+		goto end;
 	}
 
 	/* header */
@@ -537,6 +538,8 @@ static int warp_msg_send_cmd_with_header(
 			result = WARP_INVALID_PARA_STATUS;
 			break;
 	}
+end:
+	warp_os_free_mem(sendmsg_buf);
 	return result;
 }
 
@@ -594,14 +597,7 @@ void warp_msg_handle_rsp(u8 wed_idx, u8 from_id, unsigned char *msg, u32 msg_len
 		msg + sizeof(struct warp_cmd_header) : NULL;
 
 	wait_queue = get_warp_msg_wait_queue(from_id, wed_idx);
-
-	if (!wait_queue) {
-		warp_dbg(WARP_DBG_ERR, "%s(): get wait_queue fail!\n", __func__);
-		return;
-	}
-
-	if (wait_queue->state != MSG_Q_INITED) {
-
+	if (wait_queue == NULL || wait_queue->state != MSG_Q_INITED) {
 		warp_dbg(WARP_DBG_ERR, "%s(): queue state isn't inited\n", __func__);
 		return;
 	}
@@ -657,8 +653,10 @@ static void warp_msg_wait_queue_init(u8 wed_idx) {
 	for (to_id = 0; to_id < MAX_MODULE_ID; to_id ++){
 		wait_queue = get_warp_msg_wait_queue(to_id, wed_idx);
 
-		if (!wait_queue)
-			continue;
+		if (wait_queue == NULL) {
+			warp_dbg(WARP_DBG_ERR, "%s(): wait_queue is NULL, return.\n", __func__);
+			return;
+		}
 
 		memset(wait_queue, 0, sizeof(struct warp_msg_wait_queue));
 		spin_lock_init(&wait_queue->wait_lock);
@@ -677,18 +675,18 @@ static void warp_msg_wait_queue_deinit(u8 wed_idx) {
 	for (to_id = 0; to_id < MAX_MODULE_ID; to_id ++){
 		wait_queue = get_warp_msg_wait_queue(to_id, wed_idx);
 
-		if (!wait_queue)
-			continue;
+		if (wait_queue == NULL) {
+			warp_dbg(WARP_DBG_ERR, "%s(), wait_queue is NULL\n", __func__);
+		} else {
+			// Remove each entity
+			while (wait_queue->size > 0)
+				warp_msg_wait_node_deq(wait_queue, wait_queue->head);
 
-		// Remove each entity
-		while (wait_queue->size > 0) {
-			warp_msg_wait_node_deq(wait_queue, wait_queue->head);
+			wait_queue->head = NULL;
+			wait_queue->size = 0;
+			wait_queue->current_uni_id = 0;
+			wait_queue->state = MSG_Q_UNKNOWN;
 		}
-
-		wait_queue->head = NULL;
-		wait_queue->size = 0;
-		wait_queue->current_uni_id = 0;
-		wait_queue->state = MSG_Q_UNKNOWN;
 	}
 }
 
@@ -789,12 +787,7 @@ int warp_msg_send_cmd(u8 wed_idx, struct warp_msg_cmd *msg_cmd)
 
 	wait_queue = get_warp_msg_wait_queue(msg_cmd->param.to_id, wed_idx);
 
-	if (!wait_queue) {
-		warp_dbg(WARP_DBG_ERR, "%s(): get wait_queue fail!\n", __func__);
-		return WARP_FAIL_STATUS;
-	}
-
-	if (wait_queue->state != MSG_Q_INITED) {
+	if (wait_queue == NULL || wait_queue->state != MSG_Q_INITED) {
 
 		warp_dbg(WARP_DBG_OFF, "%s(): queue state isn't inited\n", __func__);
 		return WARP_FAIL_STATUS;
@@ -817,11 +810,10 @@ int warp_msg_send_cmd(u8 wed_idx, struct warp_msg_cmd *msg_cmd)
 		warp_dbg(WARP_DBG_OFF, "%s(): cmd_id:%d send failed!\n",
 				 __func__, msg_cmd->param.cmd_id);
 
-		if (uni_id)
+		if (uni_id) {
 			warp_msg_get_wait_node_by_uni_id(wait_queue, uni_id);
-
-		warp_msg_wait_node_deinit(node);
-
+			warp_msg_wait_node_deinit(node);
+		}
 		goto end;
 	}
 

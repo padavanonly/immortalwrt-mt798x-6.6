@@ -16,34 +16,62 @@
 #include <linux/ctype.h>
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
+#include <linux/version.h>
 #include "warp_utility.h"
 #include "wdma.h"
 #include "wed.h"
 #include "warp.h"
 #include "warp_hw.h"
+#ifdef WED_PAO_SUPPORT
+#include "regs/reg_v3/pao_hw.h"
+#endif
 #include <linux/stdarg.h>
 #include "mcu/warp_woif.h"
 #include "mcu/warp_wo.h"
 #include "warp_meminfo_list.h"
 
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+#define HAVE_PROC_OPS
+#endif
 
 /*define proc*/
-#define PROC_ROOT_DIR	"warp_ctrl"	/*global dir for warp*/
-#define PROC_TRACE_DIR	"tracer"		/*tracer */
-#define PROC_WHNAT_DIR	"warp"			/*specific for each warp*/
-#define PROC_CFG_DIR	"cfg"			/*all of related H/W status*/
-#define PROC_CR_DIR		"cr"			/*get specific domain cr*/
-#define PROC_CTRL_DIR	"ctrl"			/*get/set control warp*/
-#define PROC_STAT_DIR	"stat"			/*all of status for debug*/
-#define PROC_TX_DIR		"tx"			/*tx top information*/
-#define PROC_RX_DIR		"rx"			/*rx top information*/
-#define PROC_WED_DIR	"wed"			/*wed specific information*/
-#define PROC_WDMA_DIR	"wdma"			/*wdma specic information*/
-#define PROC_RXBM_DIR	"rxbm"			/*rxbm specic information*/
-#define PROC_WO_DIR     "wo"			/*wo specic information*/
-#define PROC_WOEE_DIR	"wo_aee"			/*wo exception information*/
-#define PROC_CONF_DIR	"conf"			/*WARP configuration*/
+#define PROC_ROOT_DIR		"warp_ctrl"	/* global dir for warp */
+#define PROC_TRACE_DIR		"tracer"	/* tracer */
+#define PROC_WHNAT_DIR		"warp"		/* specific for each warp */
+#define PROC_CFG_DIR		"cfg"		/* all of related H/W status */
+#define PROC_CR_DIR		"cr"		/* get specific domain cr */
+#define PROC_CTRL_DIR		"ctrl"		/* get/set control warp */
+#define PROC_STAT_DIR		"stat"		/* all of status for debug */
+#define PROC_TX_DIR		"tx"		/* tx top information */
+#define PROC_RX_DIR		"rx"		/* rx top information */
+#define PROC_WED_DIR		"wed"		/* wed specific information */
+#define PROC_WDMA_DIR		"wdma"		/* wdma specic information */
+#define PROC_RXBM_DIR		"rxbm"		/* rxbm specic information */
+#define PROC_WO_DIR     	"wo"		/* wo specic information */
+#define PROC_WOEE_DIR		"wo_aee"	/* wo exception information */
+#define PROC_CONF_DIR		"conf"		/* WARP configuration */
+#define PROC_AMSDU_FIFO_DIR	"amsdu_fifo"	/* AMSDU FIFO information */
+#define PROC_AMSDU_ENG0_DIR	"amsdu_eng0"	/* AMSDU ENGINE0 information */
+#define PROC_AMSDU_ENG1_DIR	"amsdu_eng1"	/* AMSDU ENGINE1 information */
+#define PROC_AMSDU_ENG2_DIR	"amsdu_eng2"	/* AMSDU ENGINE2 information */
+#define PROC_AMSDU_ENG3_DIR	"amsdu_eng3"	/* AMSDU ENGINE3 information */
+#define PROC_AMSDU_ENG4_DIR	"amsdu_eng4"	/* AMSDU ENGINE4 information */
+#define PROC_AMSDU_ENG5_DIR	"amsdu_eng5"	/* AMSDU ENGINE5 information */
+#define PROC_AMSDU_ENG6_DIR	"amsdu_eng6"	/* AMSDU ENGINE6 information */
+#define PROC_AMSDU_ENG7_DIR	"amsdu_eng7"	/* AMSDU ENGINE7 information */
+#define PROC_AMSDU_ENG8_DIR	"amsdu_eng8"	/* AMSDU ENGINE8 information */
+#define PROC_QMEM_DIR		"qmem"		/* QMEM information */
+#define PROC_QMEM_HEAD_DIR	"qmem_head"	/* QMEM head pointer information */
+#define PROC_QMEM_TAIL_DIR	"qmem_tail"	/* QMEM tail pointer information */
+#define PROC_QMEM_PRE_DIR	"qmem_pre"	/* QMEM pre pointer information */
+#define PROC_HIFTXD_FETCH_DIR	"hiftxd_fetch"	/* HIFTXD fetch module information */
+#define PROC_RTQM_IGRS0_DIR	"rtqm_igrs0"    /* Route QM IGRS0 information */
+#define PROC_RTQM_IGRS1_DIR	"rtqm_igrs1"    /* Route QM IGRS1 information */
+#define PROC_RTQM_IGRS2_DIR	"rtqm_igrs2"    /* Route QM IGRS2 information */
+#define PROC_RTQM_IGRS3_DIR	"rtqm_igrs3"    /* Route QM IGRS3 information */
+#define PROC_RTQM_ENQ_DIR	"rtqm_enq"	/* Route QM ENQ information */
+#define PROC_RTQM_DEQ_DIR	"rtqm_deq"	/* Route QM DEQ information */
+#define PROC_RROQM_DIR		"rro"		/* RRO related information */
 
 /*define CR type */
 enum {
@@ -161,8 +189,8 @@ wdma_proc_show(struct seq_file *seq, void *v)
 	struct wdma_entry *wdma = (struct wdma_entry *)seq->private;
 
 	seq_printf(seq, "wdma: %p\n", wdma);
-	seq_printf(seq, "WDMA_PROC_BASIC\t: echo 0 > wdma\n");
-	seq_printf(seq, "WDMA_PROC_RX_CELL\t: echo 1 [ringid] [idx] > wdma\n");
+	seq_puts(seq, "WDMA_PROC_BASIC\t: echo 0 > wdma\n");
+	seq_puts(seq, "WDMA_PROC_RX_CELL\t: echo 1 [ringid] [idx] > wdma\n");
 
 	return 0;
 }
@@ -172,8 +200,8 @@ wdma_proc_show(struct seq_file *seq, void *v)
 */
 static int
 wdma_proc_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, wdma_proc_show, PDE_DATA(file_inode(file)));
+{	
+	return single_open(file, wdma_proc_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -184,10 +212,10 @@ wdma_proc_write(struct file *file, const char __user *buff,
 		size_t len1, loff_t *ppos)
 
 {
-	char value[64] = "";
-	char *end = NULL;
+	char value[64] = {0};
+	char *end;
 	char choice;
-	struct wdma_entry *wdma = (struct wdma_entry *)PDE_DATA(file_inode(file));
+	struct wdma_entry *wdma = (struct wdma_entry *)pde_data(file_inode(file));
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		choice = warp_str_tol(value, &end, 10);
@@ -213,31 +241,33 @@ wed_proc_show(struct seq_file *seq, void *v)
 	seq_printf(seq, "wed: %p\n", wed);
 	seq_printf(seq, "WED_VERSION: %d.%d \n", wed->ver, wed->sub_ver);
 	seq_printf(seq, "WED_BRANCH/ECO: %d/%d \n", wed->branch, wed->eco);
-	seq_printf(seq, "WED_PROC_TX_RING_BASIC\t: echo 0 > wed\n");
-	seq_printf(seq, "WED_PROC_TX_BUF_BASIC\t: echo 1 > wed\n");
-	seq_printf(seq, "WED_PROC_TX_BUF_INFO\t: echo 2 [tkid] > wed\n");
-	seq_printf(seq, "WED_PROC_TX_RING_CELL\t: echo 3 [ringid] [idx] > wed\n");
-	seq_printf(seq, "WED_PROC_TX_RING_RAW\t: echo 4 [ringid] [idx] > wed\n");
-	seq_printf(seq, "WED_PROC_DBG_INFO\t: echo 5 > wed\n");
-	seq_printf(seq, "WED_PROC_TX_FREE_CNT\t: echo 8 > wed\n");
-	seq_printf(seq, "WED_PROC_TX_RESET\t: echo 9 > wed\n");
-	seq_printf(seq, "WED_PROC_RX_RESET\t: echo 10 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_RING_BASIC\t: echo 0 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_BUF_BASIC\t: echo 1 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_BUF_INFO\t: echo 2 [tkid] > wed\n");
+	seq_puts(seq, "WED_PROC_TX_RING_CELL\t: echo 3 [ringid] [idx] > wed\n");
+	seq_puts(seq, "WED_PROC_TX_RING_RAW\t: echo 4 [ringid] [idx] > wed\n");
+	seq_puts(seq, "WED_PROC_DBG_INFO\t: echo 5 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_FREE_CNT\t: echo 8 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_RESET\t: echo 9 > wed\n");
+	seq_puts(seq, "WED_PROC_RX_RESET\t: echo 10 > wed\n");
 #if defined(CONFIG_WARP_HW_DDR_PROF)
-	seq_printf(seq, "WED_PROC_TX_DDR_PROF\t: echo 11 > wed\n");
-	seq_printf(seq, "WED_PROC_RX_DDR_PROF\t: echo 12 > wed\n");
-	seq_printf(seq, "WED_PROC_OFF_DDR_PROF\t: echo 13 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_DDR_PROF\t: echo 11 > wed\n");
+	seq_puts(seq, "WED_PROC_RX_DDR_PROF\t: echo 12 > wed\n");
+	seq_puts(seq, "WED_PROC_OFF_DDR_PROF\t: echo 13 > wed\n");
 #endif /* CONFIG_WARP_HW_DDR_PROF */
 #ifdef WED_DYNAMIC_TXBM_SUPPORT
-	seq_printf(seq, "WED_PROC_TX_DYNAMIC_FREE\t: echo 6 > wed\n");
-	seq_printf(seq, "WED_PROC_TX_DYNAMIC_ALLOC\t: echo 7 > wed\n");
-	seq_printf(seq, "WED_PROC_TXBM_STAT\t: echo 14 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_DYNAMIC_FREE\t: echo 6 > wed\n");
+	seq_puts(seq, "WED_PROC_TX_DYNAMIC_ALLOC\t: echo 7 > wed\n");
+	seq_puts(seq, "WED_PROC_TXBM_STAT\t: echo 14 > wed\n");
 #endif	/* WED_DYNAMIC_TXBM_SUPPORT */
 #ifdef WED_DYNAMIC_RXBM_SUPPORT
-	seq_printf(seq, "WED_PROC_RXBM_STAT\t: echo 15 > wed\n");
-	seq_printf(seq, "WED_PROC_RX_DYNAMIC_RECYCLE\t: echo 16 > wed\n");
-	seq_printf(seq, "WED_PROC_RX_DYNAMIC_ALLOC\t: echo 17 > wed\n");
+	seq_puts(seq, "WED_PROC_RXBM_STAT\t: echo 15 > wed\n");
+	seq_puts(seq, "WED_PROC_RX_DYNAMIC_RECYCLE\t: echo 16 > wed\n");
+	seq_puts(seq, "WED_PROC_RX_DYNAMIC_ALLOC\t: echo 17 > wed\n");
 #endif	/* WED_DYNAMIC_RXBM_SUPPORT */
-	seq_printf(seq, "WED_PROC_SER_ERR_CNT\t: echo 18 > wed\n");
+	seq_puts(seq, "WED_PROC_SER_ERR_CNT\t: echo 18 > wed\n");
+	seq_puts(seq, "WED_PROC_PAO_WCID_STAT\t: echo 19 [wcid] > wed\n");
+	seq_puts(seq, "WED_PROC_PAO_SET_WCID_STAT\t: echo 20 [wcid] [amsdu_num] [amsdu_len] [vlan] [hdrt]> wed\n");
 	return 0;
 }
 
@@ -263,7 +293,7 @@ warp_proc_handle(struct seq_file *seq, struct warp_entry *entry)
 static int
 wed_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, wed_proc_show, PDE_DATA(file_inode(file)));
+	return single_open(file, wed_proc_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -273,10 +303,10 @@ static ssize_t
 wed_proc_write(struct file *file, const char __user *buff,
 	       size_t len1, loff_t *ppos)
 {
-	char value[64] = "";
-	char *end = NULL;
+	char value[64] = {0};
+	char *end;
 	char choice;
-	struct wed_entry *wed = (struct wed_entry *)PDE_DATA(file_inode(file));
+	struct wed_entry *wed = (struct wed_entry *)pde_data(file_inode(file));
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		choice = warp_str_tol(value, &end, 10);
@@ -303,13 +333,14 @@ warp_proc_cr_show(struct seq_file *seq, void *v)
 	 1. read wo0 heartbit: echo 3 0 0x200 > /proc/warp_ctrl/warp0/cr
 	 2. read wo1 heartbit: echo 3 0 0x204 > /proc/warp_ctrl/warp0/cr
 	 */
+	seq_printf(seq, "WED\t: PA base addr=%x\n", warp->wed.cr_base_addr);
 	seq_printf(seq, "WED\t: base addr=%lx\n", warp->wed.base_addr);
 	seq_printf(seq, "WDMA\t: base addr=%lx\n", warp->wdma.base_addr);
 	seq_printf(seq, "WIFI\t: base addr=%lx\n", warp->wifi.base_addr);
 #ifdef CONFIG_WED_HW_RRO_SUPPORT
 	seq_printf(seq, "WOCPU\t: base addr=%lx\n", (unsigned long)warp->woif.fwdl_ctrl.boot_setting.base_addr);
 #endif
-	seq_printf(seq, "echo [0:WED|1:WDMA|2:WIFI|3:WOCPU] [0:READ|1:WRITE] [ADDR] {VALUE} > cr\n");
+	seq_puts(seq, "echo [0:WED|1:WDMA|2:WIFI|3:WOCPU] [0:READ|1:WRITE] [ADDR] {VALUE} > cr\n");
 
 	return 0;
 }
@@ -320,7 +351,7 @@ warp_proc_cr_show(struct seq_file *seq, void *v)
 static int
 warp_proc_cr_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_cr_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_cr_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -339,29 +370,18 @@ warp_proc_cr_write(struct file *file, const char __user *buff,
 	char *s = value;
 	unsigned long addr;
 	u32 cr_value = 0;
-	struct warp_entry *warp = (struct warp_entry *)PDE_DATA(file_inode(file));
+	struct warp_entry *warp = (struct warp_entry *)pde_data(file_inode(file));
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
-
 		type = warp_str_tol(token, &end, 10);
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
-
 		is_write = warp_str_tol(token, &end, 10);
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
-
 		addr = warp_str_tol(token, &end, 16);
+
 		if (is_write) {
 			token = strsep(&s, " ");
-			if(!token)
-				goto end;
-
 			cr_value = warp_str_tol(token, &end, 16);
 		}
 
@@ -370,7 +390,6 @@ warp_proc_cr_write(struct file *file, const char __user *buff,
 			 __func__, type, is_write, addr, cr_value, cr_value);
 	}
 
-end:
 	return len1;
 }
 
@@ -399,12 +418,6 @@ warp_proc_ctrl_handle(
 			cfg->hw_tx_en = en;
 		}
 		break;
-	case TYPE_CR_MIRROR_EN:
-		if (cfg->atc_en != en) {
-			wifi_chip_atc_set(&entry->wifi, en);
-			cfg->atc_en = en;
-		}
-		break;
 	default:
 		warp_dbg(WARP_DBG_OFF, "%s(): set wrong type: %d!\n", __func__, type);
 		break;
@@ -421,8 +434,7 @@ warp_proc_ctrl_show(struct seq_file *seq, void *v)
 	/*usage*/
 
 	seq_printf(seq, "HW_TX_EN\t: %s\n", warp->cfg.hw_tx_en ? "TRUE" : "FALSE");
-	seq_printf(seq, "ATC_EN\t: %s\n", warp->cfg.atc_en ? "TRUE" : "FALSE");
-	seq_printf(seq, "echo [0:HW_TX_EN |1:ATC_EN] [0:FALSE|1:TRUE] > ctrl\n");
+	seq_puts(seq, "echo [0:HW_TX_EN] [0:FALSE|1:TRUE] > ctrl\n");
 
 	return 0;
 }
@@ -433,7 +445,7 @@ warp_proc_ctrl_show(struct seq_file *seq, void *v)
 static int
 warp_proc_ctrl_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_ctrl_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_ctrl_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -450,25 +462,19 @@ warp_proc_ctrl_write(struct file *file, const char __user *buff,
 	char is_true;
 	char type;
 	char *s = value;
-	struct warp_entry *warp = (struct warp_entry *)PDE_DATA(file_inode(file));
+	struct warp_entry *warp = (struct warp_entry *)pde_data(file_inode(file));
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
-
 		type = warp_str_tol(token, &end, 10);
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
-
 		is_true = warp_str_tol(token, &end, 10);
+
 		warp_proc_ctrl_handle(warp, type, is_true);
 		warp_dbg(WARP_DBG_OFF, "%s():Type=%d,IsTrue=%d\n",
 			 __func__, type, is_true);
 	}
 
-end:
 	return len1;
 }
 
@@ -485,14 +491,14 @@ warp_proc_trace_show(struct seq_file *seq, void *v)
 	struct warp_ctrl *ctrl = (struct warp_ctrl *)seq->private;
 	struct warp_cputracer *tracer = &ctrl->bus.tracer;
 
-	seq_printf(seq, "CFG:\n");
+	seq_puts(seq, "CFG:\n");
 	seq_printf(seq, "Irq ID: %d\n", tracer->irq);
 	seq_printf(seq, "BaseAddr: %lx\n", tracer->base_addr);
 	seq_printf(seq, "Address: 0x%x\n", tracer->trace_addr);
 	seq_printf(seq, "Mask: 0x%x\n", tracer->trace_mask);
-	seq_printf(seq, "echo 0 [ 0 | 1 ] > trace, for enable or disable trace\n");
-	seq_printf(seq, "echo 1 [ phy_addr] > trace, for set watch address\n");
-	seq_printf(seq, "echo 2 [ mask ] > trace, for set watch mask\n");
+	seq_puts(seq, "echo 0 [ 0 | 1 ] > trace, for enable or disable trace\n");
+	seq_puts(seq, "echo 1 [ phy_addr] > trace, for set watch address\n");
+	seq_puts(seq, "echo 2 [ mask ] > trace, for set watch mask\n");
 
 	return 0;
 }
@@ -504,7 +510,7 @@ warp_proc_trace_show(struct seq_file *seq, void *v)
 static int
 warp_proc_trace_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_trace_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_trace_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -521,18 +527,13 @@ warp_proc_trace_write(struct file *file, const char __user *buff,
 	char *token;
 	char *s = value;
 	unsigned int tmp;
-	struct warp_ctrl *ctrl = (struct warp_ctrl *)PDE_DATA(file_inode(file));
+	struct warp_ctrl *ctrl = (struct warp_ctrl *)pde_data(file_inode(file));
 	struct warp_cputracer *tracer = &ctrl->bus.tracer;
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
-
 		choice = warp_str_tol(token, &end, 10);
 		token = strsep(&s, " ");
-		if(!token)
-			goto end;
 
 		switch (choice) {
 		case WHNAT_TRACE_EN:
@@ -558,7 +559,6 @@ warp_proc_trace_write(struct file *file, const char __user *buff,
 		warp_trace_set_hw(tracer);
 	}
 
-end:
 	return len1;
 }
 
@@ -573,14 +573,14 @@ warp_proc_conf_show(struct seq_file *seq, void *v)
 
 	for (idx = 0 ; idx < ctrl->warp_num ; idx++) {
 		seq_printf(seq, "[ S/W settings for warp%d ]\n", idx);
-		seq_printf(seq, "\t[ TXBM ]\n");
+		seq_puts(seq, "\t[ TXBM ]\n");
 		if (ctrl->sw_conf[idx].txbm.vld_group)
 			seq_printf(seq, "\tInitial total size: %d\n", ctrl->sw_conf[idx].txbm.vld_group);
 		if (ctrl->sw_conf[idx].txbm.max_group)
 			seq_printf(seq, "\tMaximum total size: %d\n", ctrl->sw_conf[idx].txbm.max_group);
 		seq_printf(seq, "\tRX WDMA ring depth: %d\n", ctrl->sw_conf[idx].rx_wdma_ring_depth);
-		seq_printf(seq, "\t\tDynamic TXBM enabled: %s\n", (ctrl->sw_conf[idx].txbm.enable == true) ? "true" : "false");
-		if (ctrl->sw_conf[idx].txbm.enable == true) {
+		seq_printf(seq, "\t\tDynamic TXBM enabled: %s\n", (ctrl->sw_conf[idx].txbm.enable) ? "True" : "False");
+		if (ctrl->sw_conf[idx].txbm.enable) {
 			seq_printf(seq, "\t\tMaximum group number: %d \n", ctrl->sw_conf[idx].txbm.max_group);
 			seq_printf(seq, "\t\tExtend/Shrink quota: %d \n", ctrl->sw_conf[idx].txbm.alt_quota);
 			seq_printf(seq, "\t\tBuffer low threshold: %d\n", ctrl->sw_conf[idx].txbm.buf_low);
@@ -588,14 +588,13 @@ warp_proc_conf_show(struct seq_file *seq, void *v)
 			seq_printf(seq, "\t\tBudge refill watermark: %d\n", ctrl->sw_conf[idx].txbm.budget_refill_watermark);
 			seq_printf(seq, "\t\tBudge limit: %d (Dynamically applied)\n", ctrl->sw_conf[idx].txbm.budget_limit);
 		}
-
 		seq_printf(seq, "\t[ RXBM ]\n");
 		if (ctrl->sw_conf[idx].rxbm.vld_group)
 			seq_printf(seq, "\tInitial total size: %d\n", ctrl->sw_conf[idx].rxbm.vld_group);
 		if (ctrl->sw_conf[idx].rxbm.max_group)
 			seq_printf(seq, "\tMaximum total size: %d\n", ctrl->sw_conf[idx].rxbm.max_group);
 		seq_printf(seq, "\tTX WDMA ring depth: %d\n", ctrl->sw_conf[idx].tx_wdma_ring_depth);
-		seq_printf(seq, "\t\tDynamic RXBM enabled: %s\n", (ctrl->sw_conf[idx].rxbm.enable == true) ? "true" : "false");
+		seq_printf(seq, "\t\tDynamic RXBM enabled: %s\n", (ctrl->sw_conf[idx].rxbm.enable) ? "True" : "False");
 		if (ctrl->sw_conf[idx].rxbm.enable) {
 			seq_printf(seq, "\t\tMaximum group number: %d \n", ctrl->sw_conf[idx].rxbm.max_group);
 			seq_printf(seq, "\t\tExtend/Shrink quota: %d \n", ctrl->sw_conf[idx].rxbm.alt_quota);
@@ -607,15 +606,14 @@ warp_proc_conf_show(struct seq_file *seq, void *v)
 		}
 	}
 
-	seq_printf(seq, "\nConfiguration format: $(warp_idx):$(bm):$(option)=$(value) in decimal\n");
-	seq_printf(seq, "\tBM module: 0-TX BM ; 1-RX BM\n");
-	seq_printf(seq, "\tOptions: 0-Dynamic TXBM on/off ;\n");
-	seq_printf(seq, "\t\t1-WDMA RX ring depth ; 2-WDMA TX ring depth ;\n");
-	seq_printf(seq, "\t\t3-extend/shrink quota ; 4-budget limitation ;\n");
-	seq_printf(seq, "\t\t5-budget refill watermark ; 6-extend threshold ;\n");
-	seq_printf(seq, "\t\t7-shrink threshold ; 8-initial group size ;\n");
-	seq_printf(seq, "\t\t9-max available groups ; 10-recycle postponed\n");
-	seq_printf(seq, "\t\t11-Alloc to free interval-\n");
+	seq_puts(seq, "\nConfiguration format: $(warp_idx):$(bm):$(option)=$(value) in decimal\n");
+	seq_puts(seq, "\tBM module: 0-TX BM ; 1-RX BM\n");
+	seq_puts(seq, "\tOptions: 0-Dynamic TXBM on/off ;\n");
+	seq_puts(seq, "\t\t1-WDMA RX ring depth ; 2-WDMA TX ring depth ;\n");
+	seq_puts(seq, "\t\t3-extend/shrink quota ; 4-budget limitation ;\n");
+	seq_puts(seq, "\t\t5-budget refill watermark ; 6-extend threshold ;\n");
+	seq_puts(seq, "\t\t7-shrink threshold ; 8-initial group size ;\n");
+	seq_puts(seq, "\t\t9-max available groups ; 10-recycle postponed\n");
 
 	return 0;
 }
@@ -626,7 +624,7 @@ warp_proc_conf_show(struct seq_file *seq, void *v)
 static int
 warp_proc_conf_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_conf_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_conf_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -640,10 +638,11 @@ warp_proc_conf_write(struct file *file, const char __user *buff,
 	char value[64];
 	char *end;
 	u8 choice = 0, warp_idx = 0, bm = 0;
+	int ret = 0;
 	char *token;
 	char *s = value;
 	unsigned int tmp;
-	struct warp_ctrl *ctrl = (struct warp_ctrl *)PDE_DATA(file_inode(file));
+	struct warp_ctrl *ctrl = (struct warp_ctrl *)pde_data(file_inode(file));
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		token = strsep(&s, ":");
@@ -675,8 +674,10 @@ warp_proc_conf_write(struct file *file, const char __user *buff,
 					dybm_conf = &sw_conf->txbm;
 				else {
 					dybm_conf = &sw_conf->rxbm;
-					if (!snprintf(bm_str, 3, "%s", "RX"))
-						warp_dbg(WARP_DBG_OFF, "get bm_str failed\n");
+					ret = snprintf(bm_str, 3, "%s", "RX");
+					if (ret < 0)
+						warp_dbg(WARP_DBG_ERR, "%s is wrong string.\n",
+							bm_str);
 				}
 
 				switch (choice) {
@@ -779,12 +780,14 @@ warp_proc_state_show(struct seq_file *seq, void *v)
 
 	warp_proc_handle(seq, warp);
 
-	seq_printf(seq, "echo [LOG_LEVEL] > stat\n");
-	seq_printf(seq, "LOG_LEVEL:\n");
-	seq_printf(seq, "(0):WARP_DBG_OFF\n");
-	seq_printf(seq, "(1):WARP_DBG_ERR\n");
-	seq_printf(seq, "(2):WARP_DBG_INF\n");
-	seq_printf(seq, "(3):WARP_DBG_LOU\n");
+	seq_puts(seq, "echo [LOG_LEVEL] > stat\n");
+	seq_puts(seq, "LOG_LEVEL:\n");
+	seq_puts(seq, "(0):WARP_DBG_OFF\n");
+	seq_puts(seq, "(1):WARP_DBG_ERR\n");
+	seq_puts(seq, "(2):WARP_DBG_WAR\n");
+	seq_puts(seq, "(3):WARP_DBG_INF\n");
+	seq_puts(seq, "(4):WARP_DBG_LOU\n");
+	seq_puts(seq, "(5):WARP_DBG_ALL\n");
 	return 0;
 }
 
@@ -794,7 +797,7 @@ warp_proc_state_show(struct seq_file *seq, void *v)
 static int
 warp_proc_state_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_state_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_state_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -808,7 +811,7 @@ warp_proc_state_write(struct file *file, const char __user *buff,
 	char value[64];
 	char *end;
 	char log;
-	struct warp_entry *warp = (struct warp_entry *)PDE_DATA(file_inode(file));
+	struct warp_entry *warp = (struct warp_entry *)pde_data(file_inode(file));
 
 	if (buff && !copy_from_user(value, buff, len1)) {
 		log = warp_str_tol(value, &end, 10);
@@ -846,7 +849,7 @@ warp_proc_cfg_show(struct seq_file *seq, void *v)
 static int
 warp_proc_cfg_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_cfg_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_cfg_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -867,7 +870,7 @@ warp_proc_tx_show(struct seq_file *seq, void *v)
 static int
 warp_proc_tx_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_tx_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_tx_show, pde_data(file_inode(file)));
 }
 
 /*
@@ -888,11 +891,11 @@ warp_proc_rx_show(struct seq_file *seq, void *v)
 static int
 warp_proc_rx_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_rx_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_rx_show, pde_data(file_inode(file)));
 }
 
 
-
+#ifdef WED_RX_D_SUPPORT
 static ssize_t
 rxbm_proc_write(struct file *file, const char __user *buff,
 		     size_t len1, loff_t *ppos)
@@ -928,9 +931,10 @@ warp_proc_rxbm_show(struct seq_file *seq, void *v)
 static int
 rxbm_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, warp_proc_rxbm_show, PDE_DATA(file_inode(file)));
+	return single_open(file, warp_proc_rxbm_show, pde_data(file_inode(file)));
 }
 
+#ifdef CONFIG_WED_HW_RRO_SUPPORT
 
 /*
 *
@@ -943,7 +947,7 @@ wo_ee_proc_show(struct seq_file *seq, void *v)
 	int size = 0;
 
 	if (wo_dump->log == NULL) {
-		seq_printf(seq, "Error: no wo exception log\n");
+		seq_puts(seq, "Error: no wo exception log\n");
 		return 0;
 	}
 
@@ -951,7 +955,7 @@ wo_ee_proc_show(struct seq_file *seq, void *v)
 	if (size > 0) {
 		seq_printf(seq, "=== wo log dump size= %d ====\n", size);
 		seq_printf(seq, "%s", (u8*) wo_dump->log);
-		seq_printf(seq, "\n=== log end===\n");
+		seq_puts(seq, "\n=== log end===\n");
 	}
 	return 0;
 }
@@ -962,7 +966,7 @@ wo_ee_proc_show(struct seq_file *seq, void *v)
 static int
 wo_ee_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, wo_ee_proc_show, PDE_DATA(file_inode(file)));
+	return single_open(file, wo_ee_proc_show, pde_data(file_inode(file)));
 }
 
 
@@ -980,7 +984,7 @@ wo_proc_show(struct seq_file *seq, void *v)
 
 	warp_fwdl_get_wo_heartbeat(&woif->fwdl_ctrl, &heartbeat, warp->idx);
 
-	seq_printf(seq, "########## WO Firmware ##########\n");
+	seq_puts(seq, "########## WO Firmware ##########\n");
 	seq_printf(seq, "Chip ID: 0x%04x\n", woif->fwdl_ctrl.fw_info.chip_id);
 	seq_printf(seq, "ECO version:%d\n", woif->fwdl_ctrl.fw_info.eco_ver);
 	fw_info_str[0] = '\0';
@@ -991,30 +995,30 @@ wo_proc_show(struct seq_file *seq, void *v)
 	for (i = 0 ; i < sizeof(woif->fwdl_ctrl.fw_info.ram_built_date) ; i++)
 		strncat(fw_info_str, woif->fwdl_ctrl.fw_info.ram_built_date+i, sizeof(u8));
 	seq_printf(seq, "Build date: %s\n", fw_info_str);
-	seq_printf(seq, "#################################\n");
+	seq_puts(seq, "#################################\n");
 	seq_printf(seq, "WO MCU status: %s(%4x)\n\n",
 				(warp->wed.ser_ctrl.wo_no_response) ? "No response" : "Alive",
 				heartbeat);
 #endif	/* CONFIG_WED_HW_RRO_SUPPORT */
-	seq_printf(seq, "echo devinfo [IDX] > wo\n");
-	seq_printf(seq, "echo bssinfo [IDX] > wo\n");
-	seq_printf(seq, "echo starec [IDX] > wo\n");
-	seq_printf(seq, "echo starec_ba [IDX] > wo\n");
-	seq_printf(seq, "echo bainfo > wo\n");
-	seq_printf(seq, "echo bactrl > wo\n");
-	seq_printf(seq, "echo fbcmdq > wo\n");
-	seq_printf(seq, "echo logflush > wo\n");
-	seq_printf(seq, "echo logctrl [idx] > wo, idx=0~3: OFF, UART, HOST, BOTH\n");
-	seq_printf(seq, "echo cpustat.en [0|1] > wo, 0: OFF, 1: on\n");
-	seq_printf(seq, "echo cpustat.dump > wo, dump cpu stat\n");
-	seq_printf(seq, "echo pclrdump > wo, dump wo and lr \n");
-	seq_printf(seq, "echo state > wo, dump RX statistics\n");
-	seq_printf(seq, "echo rxcnt_ctrl [0|1|2] [wo timer factor] > wo\n"
+	seq_puts(seq, "echo devinfo [IDX] > wo\n");
+	seq_puts(seq, "echo bssinfo [IDX] > wo\n");
+	seq_puts(seq, "echo starec [IDX] > wo\n");
+	seq_puts(seq, "echo starec_ba [IDX] > wo\n");
+	seq_puts(seq, "echo bainfo > wo\n");
+	seq_puts(seq, "echo bactrl > wo\n");
+	seq_puts(seq, "echo fbcmdq > wo\n");
+	seq_puts(seq, "echo logflush > wo\n");
+	seq_puts(seq, "echo logctrl [idx] > wo, idx=0~3: OFF, UART, HOST, BOTH\n");
+	seq_puts(seq, "echo cpustat.en [0|1] > wo, 0: OFF, 1: on\n");
+	seq_puts(seq, "echo cpustat.dump > wo, dump cpu stat\n");
+	seq_puts(seq, "echo pclrdump > wo, dump wo and lr\n");
+	seq_puts(seq, "echo state > wo, dump RX statistics\n");
+	seq_puts(seq, "echo rxcnt_ctrl [0|1|2] [wo timer factor] > wo\n"
 			"\t\t0: disable\n"
 			"\t\t1: enable rxcnt report update from wo, 0 <= wo timer factor <= 20, unit is 150ms\n"
 			"\t\t2: enable rxcnt report query from host\n");
-	seq_printf(seq, "echo rxcnt_info [TID] [WCID] > wo\n");
-	seq_printf(seq, "echo ccif_ring > wo\n");
+	seq_puts(seq, "echo rxcnt_info [TID] [WCID] > wo\n");
+	seq_puts(seq, "echo ccif_ring > wo\n");
 
 	return 0;
 }
@@ -1026,14 +1030,14 @@ wo_proc_show(struct seq_file *seq, void *v)
 static int
 wo_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, wo_proc_show, PDE_DATA(file_inode(file)));
+	return single_open(file, wo_proc_show, pde_data(file_inode(file)));
 }
 
 static ssize_t
 wo_proc_write(struct file *file, const char __user *usr_buff, size_t len1, loff_t *ppos)
 {
 	u8 *buffer = NULL, *type = NULL, *sub_str = NULL, *input[11] = {0};
-	struct warp_entry *warp = (struct warp_entry *)PDE_DATA(file_inode(file));
+	struct warp_entry *warp = (struct warp_entry *)pde_data(file_inode(file));
 	int scan_num = 0, input_idx = 0, input_total = 0;
 	struct warp_msg_cmd cmd = {0};
 	u8 sendmsg_buf[128] = {0};
@@ -1163,119 +1167,260 @@ error:
 
 	return len1;
 }
-
+#endif
+#endif /*CONFIG_WED_HW_RRO_SUPPORT*/
 
 /*
  * global file operation
 */
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_trace_fops = {
 	.proc_open = warp_proc_trace_open,
-	.proc_write  = warp_proc_trace_write,
-	.proc_read	= seq_read,
+	.proc_write = warp_proc_trace_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_trace_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_trace_open,
+	.write  = warp_proc_trace_write,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_conf_fops = {
 	.proc_open = warp_proc_conf_open,
-	.proc_write  = warp_proc_conf_write,
-	.proc_read	= seq_read,
+	.proc_write = warp_proc_conf_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_conf_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_conf_open,
+	.write  = warp_proc_conf_write,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_cr_fops = {
 	.proc_open = warp_proc_cr_open,
-	.proc_write  = warp_proc_cr_write,
-	.proc_read  = seq_read,
+	.proc_write = warp_proc_cr_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_cr_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_cr_open,
+	.write  = warp_proc_cr_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_stat_fops = {
 	.proc_open = warp_proc_state_open,
-	.proc_write  = warp_proc_state_write,
-	.proc_read  = seq_read,
+	.proc_write = warp_proc_state_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_stat_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_state_open,
+	.write  = warp_proc_state_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_cfg_fops = {
 	.proc_open = warp_proc_cfg_open,
-	.proc_read  = seq_read,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_cfg_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_cfg_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_tx_fops = {
 	.proc_open = warp_proc_tx_open,
-	.proc_read  = seq_read,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_tx_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_tx_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_warp_rx_fops = {
 	.proc_open = warp_proc_rx_open,
-	.proc_read  = seq_read,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_warp_rx_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_rx_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_wed_fops = {
 	.proc_open = wed_proc_open,
-	.proc_write  = wed_proc_write,
-	.proc_read  = seq_read,
+	.proc_write = wed_proc_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_wed_fops = {
+	.owner = THIS_MODULE,
+	.open = wed_proc_open,
+	.write  = wed_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
-static const struct proc_ops  proc_wdma_fops = {
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_wdma_fops = {
 	.proc_open = wdma_proc_open,
-	.proc_write  = wdma_proc_write,
-	.proc_read  = seq_read,
+	.proc_write = wdma_proc_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_wdma_fops = {
+	.owner = THIS_MODULE,
+	.open = wdma_proc_open,
+	.write  = wdma_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_ctrl_fops = {
 	.proc_open = warp_proc_ctrl_open,
-	.proc_write  = warp_proc_ctrl_write,
-	.proc_read  = seq_read,
+	.proc_write = warp_proc_ctrl_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_ctrl_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_ctrl_open,
+	.write  = warp_proc_ctrl_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef WED_RX_D_SUPPORT
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_rxbm_fops = {
 	.proc_open = rxbm_proc_open,
-	.proc_write  = rxbm_proc_write,
-	.proc_read  = seq_read,
+	.proc_write = rxbm_proc_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_rxbm_fops = {
+	.owner = THIS_MODULE,
+	.open = rxbm_proc_open,
+	.write  = rxbm_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_wo_fops = {
 	.proc_open = wo_proc_open,
-	.proc_write  = wo_proc_write,
-	.proc_read  = seq_read,
+	.proc_write = wo_proc_write,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations proc_wo_fops = {
+	.owner = THIS_MODULE,
+	.open = wo_proc_open,
+	.write  = wo_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
+#ifdef HAVE_PROC_OPS
 static const struct proc_ops proc_woee_fops = {
 	.proc_open = wo_ee_proc_open,
-	.proc_read  = seq_read,
+	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
-
-
-
-
+#else
+static const struct file_operations proc_woee_fops = {
+	.owner = THIS_MODULE,
+	.open = wo_ee_proc_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
+#endif
 
 /*
  *  proc register/unregister
 */
+
+#ifdef CONFIG_WED_HW_RRO_SUPPORT
 
 /*
 *
@@ -1284,22 +1429,16 @@ int
 wo_exep_proc_init(struct warp_entry *warp)
 {
 	struct proc_dir_entry *proc;
-	struct proc_dir_entry *parent_proc;
+	struct proc_dir_entry *parent_proc =(struct proc_dir_entry *) warp->proc;
 
-	if (warp == NULL)
-		return -1;
-
-	parent_proc =(struct proc_dir_entry *) warp->proc;
-
-
-	proc = proc_create_data(PROC_WOEE_DIR, 400, parent_proc, &proc_woee_fops, warp);
+	proc = proc_create_data(PROC_WOEE_DIR, 0, parent_proc, &proc_woee_fops, warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_OFF, "create %s failed!!!\n", PROC_WOEE_DIR);
 		goto err0;
 	}
 	warp->proc_wo_ee_dump = (void *) proc;
-	warp_dbg(WARP_DBG_OFF, "wo_exep_proc_init done  %pK\n", parent_proc);
+	warp_dbg(WARP_DBG_INF, "wo_exep_proc_init done: %pK\n", parent_proc);
 
 	return 0;
 err0:
@@ -1313,14 +1452,8 @@ err0:
 void
 wo_exep_proc_exit(struct warp_entry *warp)
 {
-	struct proc_dir_entry *proc;
-	struct proc_dir_entry *proc_wo_ee_dump;
-
-	if (warp == NULL)
-		return;
-
-	proc = (struct proc_dir_entry *)warp->proc;
-	proc_wo_ee_dump = (struct proc_dir_entry *) warp->proc_wo_ee_dump;
+	struct proc_dir_entry *proc = (struct proc_dir_entry *)warp->proc;
+	struct proc_dir_entry *proc_wo_ee_dump = (struct proc_dir_entry *) warp->proc_wo_ee_dump;
 
 	if (proc && proc_wo_ee_dump) {
 		remove_proc_entry(PROC_WOEE_DIR, proc);
@@ -1337,21 +1470,16 @@ int
 wo_proc_init(struct warp_entry *warp)
 {
 	struct proc_dir_entry *proc;
-	struct proc_dir_entry *parent_proc;
+	struct proc_dir_entry *parent_proc =(struct proc_dir_entry *) warp->proc;
 
-	if (warp == NULL)
-		return -1;
-
-	parent_proc =(struct proc_dir_entry *) warp->proc;
-
-	proc = proc_create_data(PROC_WO_DIR, 400, parent_proc, &proc_wo_fops,warp);
+	proc = proc_create_data(PROC_WO_DIR, 0, parent_proc, &proc_wo_fops,warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_OFF, "create %s failed!!!\n", PROC_WO_DIR);
 		goto err0;
 	}
 	warp->proc_wo = (void *) proc;
-	warp_dbg(WARP_DBG_OFF, "wo_proc_init done  %pK\n", parent_proc);
+	warp_dbg(WARP_DBG_INF, "wo_proc_init done  %pK\n", parent_proc);
 
 	return 0;
 err0:
@@ -1365,21 +1493,15 @@ err0:
 void
 wo_proc_exit(struct warp_entry *warp)
 {
-	struct proc_dir_entry *proc;
-	struct proc_dir_entry *proc_wo;
-
-	if (warp == NULL)
-		return;
-
-	proc = (struct proc_dir_entry *)warp->proc;
-	proc_wo = (struct proc_dir_entry *)warp->proc_wo;
+	struct proc_dir_entry *proc = (struct proc_dir_entry *)warp->proc;
+	struct proc_dir_entry *proc_wo = (struct proc_dir_entry *)warp->proc_wo;
 
 	if (proc && proc_wo) {
 		remove_proc_entry(PROC_WO_DIR, proc);
 		warp->proc_wo = NULL;
 	}
 }
-
+#endif
 
 int
 rxbm_proc_init(struct warp_entry *warp,  struct wed_entry *wed)
@@ -1387,7 +1509,7 @@ rxbm_proc_init(struct warp_entry *warp,  struct wed_entry *wed)
 	struct proc_dir_entry *root = (struct proc_dir_entry *)warp->proc;
 	struct proc_dir_entry *proc;
 
-	proc = proc_create_data(PROC_RXBM_DIR, 400, root, &proc_rxbm_fops, wed);
+	proc = proc_create_data(PROC_RXBM_DIR, 0, root, &proc_rxbm_fops, wed);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!\n", PROC_RXBM_DIR);
@@ -1407,14 +1529,8 @@ rxbm_proc_init(struct warp_entry *warp,  struct wed_entry *wed)
 void
 rxbm_proc_exit(struct warp_entry *warp, struct wed_entry *wed)
 {
-	struct proc_dir_entry *root;
-	struct proc_dir_entry *proc;
-
-	if (warp == NULL || wed == NULL)
-		return;
-
-	root = (struct proc_dir_entry *)warp->proc;
-	proc = (struct proc_dir_entry *)wed->res_ctrl.proc_rxbm;
+	struct proc_dir_entry *root = (struct proc_dir_entry *)warp->proc;
+	struct proc_dir_entry *proc = (struct proc_dir_entry *)wed->res_ctrl.proc_rxbm;
 
 	if (proc && root) {
 		remove_proc_entry(PROC_RXBM_DIR, root);
@@ -1422,6 +1538,7 @@ rxbm_proc_exit(struct warp_entry *warp, struct wed_entry *wed)
 	}
 }
 
+#endif
 
 
 int
@@ -1430,7 +1547,7 @@ wdma_entry_proc_init(struct warp_entry *warp, struct wdma_entry *wdma)
 	struct proc_dir_entry *root = (struct proc_dir_entry *)warp->proc;
 	struct proc_dir_entry *proc;
 
-	proc = proc_create_data(PROC_WDMA_DIR, 400, root, &proc_wdma_fops, wdma);
+	proc = proc_create_data(PROC_WDMA_DIR, 0, root, &proc_wdma_fops, wdma);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!\n", PROC_WDMA_DIR);
@@ -1448,14 +1565,8 @@ wdma_entry_proc_init(struct warp_entry *warp, struct wdma_entry *wdma)
 void
 wdma_entry_proc_exit(struct warp_entry *warp, struct wdma_entry *wdma)
 {
-	struct proc_dir_entry *root;
-	struct proc_dir_entry *proc;
-
-	if (warp == NULL || wdma == NULL)
-		return;
-
-	root = (struct proc_dir_entry *)warp->proc;
-	proc = (struct proc_dir_entry *)wdma->proc;
+	struct proc_dir_entry *root = (struct proc_dir_entry *)warp->proc;
+	struct proc_dir_entry *proc = (struct proc_dir_entry *)wdma->proc;
 
 	if (proc && root)
 		remove_proc_entry(PROC_WDMA_DIR, root);
@@ -1470,7 +1581,7 @@ wed_entry_proc_init(struct warp_entry *warp, struct wed_entry *wed)
 	struct proc_dir_entry *root = (struct proc_dir_entry *)warp->proc;
 	struct proc_dir_entry *proc;
 
-	proc = proc_create_data(PROC_WED_DIR, 400, root, &proc_wed_fops, wed);
+	proc = proc_create_data(PROC_WED_DIR, 0, root, &proc_wed_fops, wed);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!\n", PROC_WED_DIR);
@@ -1488,18 +1599,815 @@ wed_entry_proc_init(struct warp_entry *warp, struct wed_entry *wed)
 void
 wed_entry_proc_exit(struct warp_entry *warp, struct wed_entry *wed)
 {
-	struct proc_dir_entry *root;
-	struct proc_dir_entry *proc;
-
-	if (warp == NULL || wed == NULL)
-		return;
-
-	root = (struct proc_dir_entry *)warp->proc;
-	proc = (struct proc_dir_entry *)wed->proc;
+	struct proc_dir_entry *root = (struct proc_dir_entry *)warp->proc;
+	struct proc_dir_entry *proc = (struct proc_dir_entry *)wed->proc;
 
 	if (proc && root)
 		remove_proc_entry(PROC_WED_DIR, root);
 }
+
+#ifdef WED_PAO_SUPPORT
+static ssize_t
+warp_pao_amsdu_fifo_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MIN_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_fifo_cnt(wed, buf, len);
+	
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return len;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_fifo = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_fifo_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_fifo = {
+	.read = warp_pao_amsdu_fifo_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng0_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng0_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng0 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng0_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng0 = {
+	.read = warp_pao_amsdu_eng0_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng1_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng1_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng1 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng1_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng1 = {
+	.read = warp_pao_amsdu_eng1_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng2_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng2_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng2 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng2_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng2 = {
+	.read = warp_pao_amsdu_eng2_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng3_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng3_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng3 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng3_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng3 = {
+	.read = warp_pao_amsdu_eng3_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng4_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng4_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng4 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng4_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng4 = {
+	.read = warp_pao_amsdu_eng4_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng5_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng5_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng5 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng5_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng5 = {
+	.read = warp_pao_amsdu_eng5_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng6_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng6_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng6 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng6_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng6 = {
+	.read = warp_pao_amsdu_eng6_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng7_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng7_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng7 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng7_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng7 = {
+	.read = warp_pao_amsdu_eng7_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_amsdu_eng8_read_debugfs(struct file *file,
+				char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_amsdu_eng8_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_amsdu_eng8 = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_amsdu_eng8_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_amsdu_eng8 = {
+	.read = warp_pao_amsdu_eng8_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_qmem_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_qmem_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_qmem = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_qmem_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_qmem = {
+	.read = warp_pao_qmem_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_qmem_head_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_qmem_head_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_qmem_head = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_qmem_head_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_qmem_head = {
+	.read = warp_pao_qmem_head_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_qmem_tail_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_qmem_tail_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_qmem_tail = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_qmem_tail_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_qmem_tail = {
+	.read = warp_pao_qmem_tail_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_qmem_pre_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_qmem_pre_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_qmem_pre = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_qmem_pre_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_qmem_pre = {
+	.read = warp_pao_qmem_pre_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_pao_hiftxd_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_pao_hiftxd_in_cnt(wed, buf, len);
+	len = warp_pao_hiftxd_ou0_cnt(wed, buf, len);
+	len = warp_pao_hiftxd_ou1_cnt(wed, buf, len);
+	len = warp_pao_hiftxd_buf_cnt(wed, buf, len);
+	len = warp_pao_hiftxd_msdu_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_pao_hiftxd = {
+	.proc_open = simple_open,
+	.proc_read = warp_pao_hiftxd_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_pao_hiftxd = {
+	.read = warp_pao_hiftxd_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+#endif
+
+#ifdef WED_RX_HW_RRO
+static ssize_t
+warp_rtqm_igrs0_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rtqm_igrs0_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rtqm_igrs0 = {
+	.proc_open = simple_open,
+	.proc_read = warp_rtqm_igrs0_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rtqm_igrs0 = {
+	.read = warp_rtqm_igrs0_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_rtqm_igrs1_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rtqm_igrs1_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rtqm_igrs1 = {
+	.proc_open = simple_open,
+	.proc_read = warp_rtqm_igrs1_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rtqm_igrs1 = {
+	.read = warp_rtqm_igrs1_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_rtqm_igrs2_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rtqm_igrs2_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rtqm_igrs2 = {
+	.proc_open = simple_open,
+	.proc_read = warp_rtqm_igrs2_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rtqm_igrs2 = {
+	.read = warp_rtqm_igrs2_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_rtqm_igrs3_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rtqm_igrs3_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rtqm_igrs3 = {
+	.proc_open = simple_open,
+	.proc_read = warp_rtqm_igrs3_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rtqm_igrs3 = {
+	.read = warp_rtqm_igrs3_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_rtqm_enq_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rtqm_enq_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rtqm_enq = {
+	.proc_open = simple_open,
+	.proc_read = warp_rtqm_enq_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rtqm_enq = {
+	.read = warp_rtqm_enq_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_rtqm_deq_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rtqm_deq_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rtqm_deq = {
+	.proc_open = simple_open,
+	.proc_read = warp_rtqm_deq_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rtqm_deq = {
+	.read = warp_rtqm_deq_read_debugfs,
+	.open = simple_open,
+};
+#endif
+
+static ssize_t
+warp_rro_read_debugfs(struct file *file,
+			char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct warp_entry *entry = pde_data(file_inode(file));
+	struct wed_entry *wed = &entry->wed;
+	char *buf;
+	ssize_t len = 0, ret;
+
+	buf = kzalloc(DEBUGFS_MAX_BUF_SIZE, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	len = warp_rro_cnt(wed, buf, len);
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret;
+
+	return 0;
+}
+
+#ifdef HAVE_PROC_OPS
+static const struct proc_ops proc_warp_rro = {
+	.proc_open = simple_open,
+	.proc_read = warp_rro_read_debugfs,
+};
+#else
+static const struct file_operations proc_warp_rro = {
+	.read = warp_rro_read_debugfs,
+	.open = simple_open,
+};
+#endif
+#endif
 
 /*
 *
@@ -1508,29 +2416,21 @@ int
 warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 {
 	int ret = 0;
-	struct proc_dir_entry *root;
+	struct proc_dir_entry *root = (struct proc_dir_entry *)warp_ctrl->proc;
 	struct proc_dir_entry *proc;
 	char name[64] = "";
-
-	if (warp_ctrl == NULL || warp == NULL)
-		return -1;
-
-	root = (struct proc_dir_entry *)warp_ctrl->proc;
-	if (root == NULL)
-		return -1;
+#ifdef WED_RX_HW_RRO
+	struct wifi_entry *wifi = &warp->wifi;
+#endif
 
 	memset(&proc_settings, 0, sizeof(struct proc_global));
 
 	ret = snprintf(name, sizeof(name), "%s%d", PROC_WHNAT_DIR, warp->idx);
 	if (ret < 0)
 		return -1;
-
 	proc = proc_mkdir(name, root);
 	warp->proc = (void *)proc;
-	if (warp->proc == NULL)
-		return -1;
-
-	proc = proc_create_data(PROC_STAT_DIR, 400, warp->proc, &proc_warp_stat_fops,
+	proc = proc_create_data(PROC_STAT_DIR, 0, warp->proc, &proc_warp_stat_fops,
 				warp);
 
 	if (!proc) {
@@ -1539,7 +2439,7 @@ warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	}
 
 	warp->proc_stat = (void *)proc;
-	proc = proc_create_data(PROC_CR_DIR, 400, warp->proc, &proc_warp_cr_fops, warp);
+	proc = proc_create_data(PROC_CR_DIR, 0, warp->proc, &proc_warp_cr_fops, warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_CR_DIR);
@@ -1547,7 +2447,7 @@ warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	}
 
 	warp->proc_cr = (void *)proc;
-	proc = proc_create_data(PROC_CFG_DIR, 400, warp->proc, &proc_warp_cfg_fops, warp);
+	proc = proc_create_data(PROC_CFG_DIR, 0, warp->proc, &proc_warp_cfg_fops, warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_CFG_DIR);
@@ -1555,7 +2455,7 @@ warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	}
 
 	warp->proc_cfg = (void *)proc;
-	proc = proc_create_data(PROC_TX_DIR, 400, warp->proc, &proc_warp_tx_fops, warp);
+	proc = proc_create_data(PROC_TX_DIR, 0, warp->proc, &proc_warp_tx_fops, warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_TX_DIR);
@@ -1563,7 +2463,7 @@ warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	}
 
 	warp->proc_tx = (void *)proc;
-	proc = proc_create_data(PROC_RX_DIR, 400, warp->proc, &proc_warp_rx_fops, warp);
+	proc = proc_create_data(PROC_RX_DIR, 0, warp->proc, &proc_warp_rx_fops, warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RX_DIR);
@@ -1571,7 +2471,7 @@ warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	}
 
 	warp->proc_rx = (void *)proc;
-	proc = proc_create_data(PROC_CTRL_DIR, 400, warp->proc, &proc_ctrl_fops, warp);
+	proc = proc_create_data(PROC_CTRL_DIR, 0, warp->proc, &proc_ctrl_fops, warp);
 
 	if (!proc) {
 		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_CTRL_DIR);
@@ -1579,8 +2479,286 @@ warp_entry_proc_init(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	}
 
 	warp->proc_ctrl = (void *)proc;
+
+#ifdef WED_PAO_SUPPORT
+
+	proc = proc_create_data(PROC_AMSDU_FIFO_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_fifo, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_FIFO_DIR);
+		goto err6;
+	}
+
+	warp->proc_amsdu_fifo = (void *)proc;
+	
+	proc = proc_create_data(PROC_AMSDU_ENG0_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng0, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG0_DIR);
+		goto err7;
+	}
+
+	warp->proc_amsdu_eng0 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG1_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng1, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG1_DIR);
+		goto err8;
+	}
+
+	warp->proc_amsdu_eng1 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG2_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng2, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG2_DIR);
+		goto err9;
+	}
+
+	warp->proc_amsdu_eng2 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG3_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng3, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG3_DIR);
+		goto err10;
+	}
+
+	warp->proc_amsdu_eng3 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG4_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng4, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG4_DIR);
+		goto err11;
+	}
+
+	warp->proc_amsdu_eng4 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG5_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng5, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG5_DIR);
+		goto err12;
+	}
+
+	warp->proc_amsdu_eng5 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG6_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng6, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG6_DIR);
+		goto err13;
+	}
+
+	warp->proc_amsdu_eng6 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG7_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng7, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG7_DIR);
+		goto err14;
+	}
+
+	warp->proc_amsdu_eng7 = (void *)proc;
+
+	proc = proc_create_data(PROC_AMSDU_ENG8_DIR, 0, warp->proc,
+					&proc_warp_pao_amsdu_eng8, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_AMSDU_ENG8_DIR);
+		goto err15;
+	}
+
+	warp->proc_amsdu_eng8 = (void *)proc;
+
+	proc = proc_create_data(PROC_QMEM_DIR, 0, warp->proc,
+					&proc_warp_pao_qmem, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_QMEM_DIR);
+		goto err16;
+	}
+
+	warp->proc_qmem = (void *)proc;
+
+	proc = proc_create_data(PROC_QMEM_HEAD_DIR, 0, warp->proc,
+					&proc_warp_pao_qmem_head, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_QMEM_HEAD_DIR);
+		goto err17;
+	}
+
+	warp->proc_qmem_head = (void *)proc;
+
+	proc = proc_create_data(PROC_QMEM_TAIL_DIR, 0, warp->proc,
+					&proc_warp_pao_qmem_tail, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_QMEM_TAIL_DIR);
+		goto err18;
+	}
+
+	warp->proc_qmem_tail = (void *)proc;
+
+	proc = proc_create_data(PROC_QMEM_PRE_DIR, 0, warp->proc,
+					&proc_warp_pao_qmem_pre, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_QMEM_PRE_DIR);
+		goto err19;
+	}
+
+	warp->proc_qmem_pre = (void *)proc;
+
+	proc = proc_create_data(PROC_HIFTXD_FETCH_DIR, 0, warp->proc,
+					&proc_warp_pao_hiftxd, warp);
+
+	if (!proc) {
+		warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_HIFTXD_FETCH_DIR);
+		goto err20;
+	}
+
+	warp->proc_hiftxd = (void *)proc;
+#endif
+
+#ifdef WED_RX_HW_RRO
+	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+		proc = proc_create_data(PROC_RTQM_IGRS0_DIR, 0, warp->proc,
+						&proc_warp_rtqm_igrs0, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RTQM_IGRS0_DIR);
+			goto err21;
+		}
+
+		warp->proc_rtqm_igrs0 = (void *)proc;
+
+		proc = proc_create_data(PROC_RTQM_IGRS1_DIR, 0, warp->proc,
+						&proc_warp_rtqm_igrs1, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RTQM_IGRS1_DIR);
+			goto err22;
+		}
+
+		warp->proc_rtqm_igrs1 = (void *)proc;
+
+		proc = proc_create_data(PROC_RTQM_IGRS2_DIR, 0, warp->proc,
+						&proc_warp_rtqm_igrs2, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RTQM_IGRS2_DIR);
+			goto err23;
+		}
+
+		warp->proc_rtqm_igrs2 = (void *)proc;
+
+		proc = proc_create_data(PROC_RTQM_IGRS3_DIR, 0, warp->proc,
+						&proc_warp_rtqm_igrs3, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RTQM_IGRS3_DIR);
+			goto err24;
+		}
+
+		warp->proc_rtqm_igrs3 = (void *)proc;
+
+		proc = proc_create_data(PROC_RTQM_ENQ_DIR, 0, warp->proc,
+						&proc_warp_rtqm_enq, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RTQM_ENQ_DIR);
+			goto err25;
+		}
+
+		warp->proc_rtqm_enq = (void *)proc;
+
+		proc = proc_create_data(PROC_RTQM_DEQ_DIR, 0, warp->proc,
+						&proc_warp_rtqm_deq, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RTQM_DEQ_DIR);
+			goto err26;
+		}
+
+		warp->proc_rtqm_deq = (void *)proc;
+
+		proc = proc_create_data(PROC_RROQM_DIR, 0, warp->proc,
+						&proc_warp_rro, warp);
+
+		if (!proc) {
+			warp_dbg(WARP_DBG_ERR, "create %s failed!!!\n", PROC_RROQM_DIR);
+			goto err27;
+		}
+
+		warp->proc_rro = (void *)proc;
+	}
+#endif
+
 	warp_dbg(WARP_DBG_INF, "create %s ok!!!\n", name);
 	return 0;
+
+#ifdef WED_RX_HW_RRO
+err27:
+	remove_proc_entry(PROC_RTQM_DEQ_DIR, warp->proc);
+err26:
+	remove_proc_entry(PROC_RTQM_ENQ_DIR, warp->proc);
+err25:
+	remove_proc_entry(PROC_RTQM_IGRS3_DIR, warp->proc);
+err24:
+	remove_proc_entry(PROC_RTQM_IGRS2_DIR, warp->proc);
+err23:
+	remove_proc_entry(PROC_RTQM_IGRS1_DIR, warp->proc);
+err22:
+	remove_proc_entry(PROC_RTQM_IGRS0_DIR, warp->proc);
+err21:
+	remove_proc_entry(PROC_HIFTXD_FETCH_DIR, warp->proc);
+#endif
+
+#ifdef WED_PAO_SUPPORT
+err20:
+	remove_proc_entry(PROC_QMEM_PRE_DIR, warp->proc);
+err19:
+	remove_proc_entry(PROC_QMEM_TAIL_DIR, warp->proc);
+err18:
+	remove_proc_entry(PROC_QMEM_HEAD_DIR, warp->proc);
+err17:
+	remove_proc_entry(PROC_QMEM_DIR, warp->proc);
+err16:
+	remove_proc_entry(PROC_AMSDU_ENG8_DIR, warp->proc);
+err15:
+	remove_proc_entry(PROC_AMSDU_ENG7_DIR, warp->proc);
+err14:
+	remove_proc_entry(PROC_AMSDU_ENG6_DIR, warp->proc);
+err13:
+	remove_proc_entry(PROC_AMSDU_ENG5_DIR, warp->proc);
+err12:
+	remove_proc_entry(PROC_AMSDU_ENG4_DIR, warp->proc);
+err11:
+	remove_proc_entry(PROC_AMSDU_ENG3_DIR, warp->proc);
+err10:
+	remove_proc_entry(PROC_AMSDU_ENG2_DIR, warp->proc);
+err9:
+	remove_proc_entry(PROC_AMSDU_ENG1_DIR, warp->proc);
+err8:
+	remove_proc_entry(PROC_AMSDU_ENG0_DIR, warp->proc);
+err7:
+	remove_proc_entry(PROC_AMSDU_FIFO_DIR, warp->proc);
+err6:
+	remove_proc_entry(PROC_CTRL_DIR, warp->proc);
+#endif
 err5:
 	remove_proc_entry(PROC_RX_DIR, warp->proc);
 err4:
@@ -1604,6 +2782,9 @@ warp_entry_proc_exit(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 	struct proc_dir_entry *root = (struct proc_dir_entry *)warp_ctrl->proc;
 	struct proc_dir_entry *proc = (struct proc_dir_entry *)warp->proc;
 	char name[64] = "";
+#ifdef WED_RX_HW_RRO
+	struct wifi_entry *wifi = &warp->wifi;
+#endif
 
 	if (warp->proc_cfg) {
 		remove_proc_entry(PROC_CFG_DIR, proc);
@@ -1635,6 +2816,122 @@ warp_entry_proc_exit(struct warp_ctrl *warp_ctrl, struct warp_entry *warp)
 		warp->proc_ctrl = NULL;
 	}
 
+#ifdef WED_PAO_SUPPORT
+	if (warp->proc_amsdu_fifo) {
+		remove_proc_entry(PROC_AMSDU_FIFO_DIR, proc);
+		warp->proc_amsdu_fifo = NULL;
+	}
+
+	if (warp->proc_amsdu_eng0) {
+		remove_proc_entry(PROC_AMSDU_ENG0_DIR, proc);
+		warp->proc_amsdu_eng0 = NULL;
+	}
+	
+	if (warp->proc_amsdu_eng1) {
+		remove_proc_entry(PROC_AMSDU_ENG1_DIR, proc);
+		warp->proc_amsdu_eng1 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng2) {
+		remove_proc_entry(PROC_AMSDU_ENG2_DIR, proc);
+		warp->proc_amsdu_eng2 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng3) {
+		remove_proc_entry(PROC_AMSDU_ENG3_DIR, proc);
+		warp->proc_amsdu_eng3 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng4) {
+		remove_proc_entry(PROC_AMSDU_ENG4_DIR, proc);
+		warp->proc_amsdu_eng4 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng5) {
+		remove_proc_entry(PROC_AMSDU_ENG5_DIR, proc);
+		warp->proc_amsdu_eng5 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng6) {
+		remove_proc_entry(PROC_AMSDU_ENG6_DIR, proc);
+		warp->proc_amsdu_eng6 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng7) {
+		remove_proc_entry(PROC_AMSDU_ENG7_DIR, proc);
+		warp->proc_amsdu_eng7 = NULL;
+	}
+
+	if (warp->proc_amsdu_eng8) {
+		remove_proc_entry(PROC_AMSDU_ENG8_DIR, proc);
+		warp->proc_amsdu_eng8 = NULL;
+	}
+
+	if (warp->proc_qmem) {
+		remove_proc_entry(PROC_QMEM_DIR, proc);
+		warp->proc_qmem = NULL;
+	}
+
+	if (warp->proc_qmem_head) {
+		remove_proc_entry(PROC_QMEM_HEAD_DIR, proc);
+		warp->proc_qmem = NULL;
+	}
+
+	if (warp->proc_qmem_tail) {
+		remove_proc_entry(PROC_QMEM_TAIL_DIR, proc);
+		warp->proc_qmem = NULL;
+	}
+
+	if (warp->proc_qmem_pre) {
+		remove_proc_entry(PROC_QMEM_PRE_DIR, proc);
+		warp->proc_qmem = NULL;
+	}
+
+	if (warp->proc_hiftxd) {
+		remove_proc_entry(PROC_HIFTXD_FETCH_DIR, proc);
+		warp->proc_hiftxd = NULL;
+	}
+#endif
+
+#ifdef WED_RX_HW_RRO
+	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+		if (warp->proc_rtqm_igrs0) {
+			remove_proc_entry(PROC_RTQM_IGRS0_DIR, proc);
+			warp->proc_rtqm_igrs0 = NULL;
+		}
+
+		if (warp->proc_rtqm_igrs1) {
+			remove_proc_entry(PROC_RTQM_IGRS1_DIR, proc);
+			warp->proc_rtqm_igrs1 = NULL;
+		}
+
+		if (warp->proc_rtqm_igrs2) {
+			remove_proc_entry(PROC_RTQM_IGRS2_DIR, proc);
+			warp->proc_rtqm_igrs2 = NULL;
+		}
+
+		if (warp->proc_rtqm_igrs3) {
+			remove_proc_entry(PROC_RTQM_IGRS3_DIR, proc);
+			warp->proc_rtqm_igrs3 = NULL;
+		}
+
+		if (warp->proc_rtqm_enq) {
+			remove_proc_entry(PROC_RTQM_ENQ_DIR, proc);
+			warp->proc_rtqm_enq = NULL;
+		}
+
+		if (warp->proc_rtqm_deq) {
+			remove_proc_entry(PROC_RTQM_DEQ_DIR, proc);
+			warp->proc_rtqm_deq = NULL;
+		}
+
+		if (warp->proc_rro) {
+			remove_proc_entry(PROC_RROQM_DIR, proc);
+			warp->proc_rro = NULL;
+		}
+	}
+#endif
+
 	ret = snprintf(name, sizeof(name), "%s%d", PROC_WHNAT_DIR, warp->idx);
 	if (ret < 0)
 		return;
@@ -1661,7 +2958,7 @@ warp_ctrl_proc_init(struct warp_ctrl *warp_ctrl)
 	}
 
 	warp_ctrl->proc = (void *)proc;
-	proc = proc_create_data(PROC_TRACE_DIR, 400, warp_ctrl->proc,
+	proc = proc_create_data(PROC_TRACE_DIR, 0, warp_ctrl->proc,
 				&proc_warp_trace_fops, warp_ctrl);
 
 	if (!proc)
@@ -1669,7 +2966,7 @@ warp_ctrl_proc_init(struct warp_ctrl *warp_ctrl)
 
 	warp_ctrl->proc_trace = proc;
 
-	proc = proc_create_data(PROC_CONF_DIR, 400, warp_ctrl->proc,
+	proc = proc_create_data(PROC_CONF_DIR, 0, warp_ctrl->proc,
 				&proc_warp_conf_fops, warp_ctrl);
 
 	if (!proc)

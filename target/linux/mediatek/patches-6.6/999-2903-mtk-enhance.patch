@@ -67,7 +67,7 @@
 +#include <net/netfilter/nf_conntrack.h>
 +#include <net/netfilter/nf_conntrack_acct.h>
 +static struct hnat_desc {
-+       u32 entry : 14;
++       u32 entry : 18;
 +       #if defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
 +       u32 fill : 4;
 +       #endif
@@ -80,8 +80,8 @@
 +       u32 magic_tag_protect : 16;
 +       u32 wdmaid : 8;
 +       u32 rxid : 2;
-+       u32 wcid : 10;
-+       u32 bssid : 6;
++       u32 wcid : 30;
++       u32 bssid : 32;
 + } __packed;
 +#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
 +#define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)
@@ -161,7 +161,7 @@
  }
  
 +static struct hnat_desc {
-+	u32 entry : 14;
++	u32 entry : 18;
 +	#if defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
 +	u32 fill : 4;
 +	#endif
@@ -174,8 +174,8 @@
 +	u32 magic_tag_protect : 16;
 +	u32 wdmaid : 8;
 +	u32 rxid : 2;
-+	u32 wcid : 10;
-+	u32 bssid : 6;
++	u32 wcid : 30;
++	u32 bssid : 32;
 +} __packed;
 +#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
 +#define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)
@@ -255,7 +255,7 @@
  }
  
 +static struct hnat_desc {
-+	u32 entry : 14;
++	u32 entry : 15;
 +	#if defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
 +	u32 fill : 4;
 +	#endif
@@ -268,8 +268,8 @@
 +	u32 magic_tag_protect : 16;
 +	u32 wdmaid : 8;
 +	u32 rxid : 2;
-+	u32 wcid : 10;
-+	u32 bssid : 6;
++	u32 wcid : 30;
++	u32 bssid : 32;
 +} __packed;
 +#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
 +#define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)

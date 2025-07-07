@@ -18,6 +18,7 @@
 #include <net/ra_nat.h>
 
 extern int (*ra_sw_nat_hook_tx)(struct sk_buff *skb, int gmac_no);
+extern int (*hnat_set_wdma_pse_port_state)(int wdma_idx, int up);
 
 /*TX hook structure*/
 struct wlan_tx_info {
@@ -45,7 +46,10 @@ struct ring_ctrl {
 	u32 cnt;
 	u32 cidx;
 	u32 didx;
+	u32 lens;
+	u32 attr_mask;
 	dma_addr_t cb_alloc_pa;
+	bool attr_enable;
 };
 
 struct rro_ctrl {
@@ -71,6 +75,7 @@ struct wifi_hw {
 	u32 chip_id;
 	u32 tx_ring_num;
 	u32 tx_token_nums;
+	u32 tx_buf_nums;
 	u32 sw_tx_token_nums;
 	u32 hw_rx_token_num;
 	u32 rx_page_nums;
@@ -96,6 +101,7 @@ struct wifi_hw {
 	u32 rx_pkt_size;
 	u16 rx_page_size;
 	u32 max_rxd_size;
+	u32 sign_base_cr;
 	u8 rx_rro_data_ring_num;
 	u8 rx_rro_page_ring_num;
 	u8 rx_rro_ind_cmd_ring_num;
@@ -106,9 +112,6 @@ struct wifi_hw {
 	struct ring_ctrl rx_rro_ind_cmd;
 	struct rro_ctrl rro_ctl;
 
-	bool msi_enable;
-	u32 hif_type;
-	u32 irq;
 	unsigned long wpdma_base;
 	unsigned long base_phy_addr;
 	unsigned long base_addr;
@@ -117,17 +120,39 @@ struct wifi_hw {
 	u8 wfdma_tx_done_trig1_bit;
 	u8 wfdma_tx_done_free_notify_trig_bit;
 	u8 wfdma_rx_done_trig0_bit;
+	u8 wfdma_rx_done_trig0_enable;
 	u8 wfdma_rx_done_trig1_bit;
+	u8 wfdma_rx_done_trig1_enable;
 	u8 wfdma_rro_rx_done_trig0_bit;
 	u8 wfdma_rro_rx_done_trig1_bit;
 	u8 wfdma_rro_rx_pg_trig0_bit;
 	u8 wfdma_rro_rx_pg_trig1_bit;
 	u8 wfdma_rro_rx_pg_trig2_bit;
-	bool dbdc_mode;
-	u8 max_amsdu_nums;
-	u32 max_amsdu_len;
-	u8 mac_ver;
+
+	u32 hif_type;
+	u32 irq;
 	u32 hw_cap;
+	u32 max_amsdu_len;
+	u32 max_wcid_nums;
+	u32 wed_v1_compatible_en_addr;
+	u32 wed_v1_compatible_en_msk;
+	u32 wed_v1_compatible_tx0_addr;
+	u32 wed_v1_compatible_tx0_msk;
+	u32 wed_v1_compatible_tx0_id;
+	u32 wed_v1_compatible_tx1_addr;
+	u32 wed_v1_compatible_tx1_msk;
+	u32 wed_v1_compatible_tx1_id;
+	u32 wed_v1_compatible_rx1_addr;
+	u32 wed_v1_compatible_rx1_msk;
+	u32 wed_v1_compatible_rx1_id;
+
+	u8 max_amsdu_nums;
+	u8 mac_ver;
+	u8 src;
+	bool msi_enable;
+	bool dbdc_mode;
+	bool rm_vlan;
+	bool hdtr_mode;
 };
 
 struct wifi_ops {
@@ -152,6 +177,10 @@ struct wifi_ops {
 	void (*rxinfo_wrapper)(u8 *rx_info, struct wlan_rx_info *info);
 	void (*do_wifi_reset)(void *priv_data);
 	void (*update_wo_rxcnt)(void *priv_data, void *wo_rxcnt);
+	void (*request_irq)(void *priv_data, u32 irq);
+	void (*free_irq)(void *priv_data, u32 irq);
+	void (*hb_check_notify)(void *priv_data);
+	void (*fbuf_v1_init)(u8 *fbuf, dma_addr_t pkt_pa, u32 tkid, u8 src);
 };
 
 enum {
@@ -160,6 +189,12 @@ enum {
 	BUS_TYPE_MAX
 };
 
+enum {
+	WIFI_FREE_IRQ = 0,
+	WIFI_REQUEST_IRQ = 1,
+};
+
+
 struct wifi_entry {
 	unsigned long base_addr;
 	struct wifi_hw hw;
@@ -167,27 +202,33 @@ struct wifi_entry {
 };
 
 /*default SER status*/
-#define WIFI_ERR_RECOV_NONE 			0x10
-#define WIFI_ERR_RECOV_STOP_IDLE 		0
-#define WIFI_ERR_RECOV_STOP_PDMA0 		1
-#define WIFI_ERR_RECOV_RESET_PDMA0 		2
-#define WIFI_ERR_RECOV_STOP_IDLE_DONE 		3
+#define WIFI_ERR_RECOV_NONE				0x10
+#define WIFI_ERR_RECOV_STOP_IDLE		0
+#define WIFI_ERR_RECOV_STOP_PDMA0		1
+#define WIFI_ERR_RECOV_RESET_PDMA0		2
+#define WIFI_ERR_RECOV_STOP_IDLE_DONE		3
+#define WIFI_ETH_ERR_STOP_WED_RX_TRAFFIC	4
+#define WIFI_ETH_ERR_START_WED_RX_TRAFFIC	5
+
 
 /*wifi related hal*/
 int wifi_tx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *tx_info,
 		       u32 wdma_rx_port);
-void wifi_tx_tuple_reset(struct wifi_entry *wifi);
 void wifi_tx_ring_info_dump(struct wifi_entry *wifi, u8 ring_id, u32 idx);
 void wifi_chip_atc_set(struct wifi_entry *wifi, bool enable);
 void wifi_chip_probe(struct wifi_entry *wifi, u32 irq, u8 warp_ver, u8 warp_sub_ver,
 		     u8 warp_branch, int warp_hw_caps);
 void wifi_chip_remove(struct wifi_entry *wifi);
+void wifi_chip_set_irq(struct wifi_entry *wifi, bool irq_set, u32 irq_number);
 bool wifi_hw_tx_allow(struct wifi_entry *wifi, u8 *tx_info);
 void wifi_rx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *rx_info);
 void wifi_chip_reset(struct wifi_entry *wifi);
 void wifi_chip_update_wo_rxcnt(struct wifi_entry *wifi, void *wo_rxcnt);
-
+void wifi_hb_check_notify(struct wifi_entry *wifi);
 
 #define to_wifi_entry(_hw) container_of(_hw, struct wifi_entry, hw)
+
+/* hnat related hal */
+int wdma_pse_port_config_state(u8 wdma_idx, bool up_state);
 
 #endif /*_WARP_WIFI_H_*/

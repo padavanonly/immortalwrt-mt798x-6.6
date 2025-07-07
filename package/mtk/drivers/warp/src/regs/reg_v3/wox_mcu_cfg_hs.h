@@ -1,12 +1,12 @@
-#pragma once
 
-#include <stdint.h>
-#include <stddef.h>
+#ifndef __WOX_MCU_CFG_HS_H__
+#define __WOX_MCU_CFG_HS_H__
 
 /* CONST definition */
 #ifndef REG_CONST
 #define REG_CONST
 #endif
+typedef unsigned int uint32_t;
 
 typedef volatile struct wo2_mcu_cfg_hs_REG {
     /* 0x000 ~ 0x06c */
@@ -15,14 +15,14 @@ typedef volatile struct wo2_mcu_cfg_hs_REG {
     /* 0x070 */
     union {
         struct {
-            REG_CONST uint32_t _WO0_APSRC_IDLE : 1;
-            REG_CONST uint32_t _WO0_APSRC_REQ : 1;
-            REG_CONST uint32_t _WO0_APSRC_POWOFF : 1;
-            REG_CONST uint32_t _WO0_APSRC_DDREN : 1;
+            REG_CONST uint32_t _WOX_APSRC_IDLE : 1;
+            REG_CONST uint32_t _WOX_APSRC_REQ : 1;
+            REG_CONST uint32_t _WOX_APSRC_POWOFF : 1;
+            REG_CONST uint32_t _WOX_APSRC_DDREN : 1;
             REG_CONST uint32_t _RESERVED_4 : 28;
         };
         REG_CONST uint32_t DATA;
-    } WO0_APSRC;
+    } WOX_APSRC;
 
     /* 0x074 ~ 0x108 */
     REG_CONST uint32_t          RSV_074_108[38];
@@ -65,33 +65,33 @@ typedef volatile struct wo2_mcu_cfg_hs_REG {
     } WOX_MCU_CG;
 } wo2_mcu_cfg_hs_REG_T;
 
-#define WOX_MCU_CFG_HS_WO0_APSRC_OFFSET                        (0x0070) // 5070
+#define WOX_MCU_CFG_HS_WOX_APSRC_OFFSET                        (0x0070) // 5070
 #define WOX_MCU_CFG_HS_MCSR_OFFSET                             (0x010C) // 510C
 #define WOX_MCU_CFG_HS_WOX_MCU_CG_OFFSET                       (0x029C) // 529C
 
 /* =====================================================================================
 
-  ---WO0_APSRC (0x15395000 + 0x0070)---
+  ---WOX_APSRC (0x15395000 + 0x0070)---
 
-    WO0_APSRC_IDLE[0]            - (RW) WO0 APSRC idle
-    WO0_APSRC_REQ[1]             - (RW) WO0 APSRC request
-    WO0_APSRC_POWOFF[2]          - (RW) WO0 APSRC power off
-    WO0_APSRC_DDREN[3]           - (RW) WO0 APSRC DDREN
+    WOX_APSRC_IDLE[0]            - (RW) WO0 APSRC idle
+    WOX_APSRC_REQ[1]             - (RW) WO0 APSRC request
+    WOX_APSRC_POWOFF[2]          - (RW) WO0 APSRC power off
+    WOX_APSRC_DDREN[3]           - (RW) WO0 APSRC DDREN
     RESERVED4[31..4]             - (RO) Reserved bits
 
  =====================================================================================*/
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_DDREN_OFFSET        WOX_MCU_CFG_HS_WO0_APSRC_OFFSET
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_DDREN_MASK          0x00000008                // WO0_APSRC_DDREN[3]
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_DDREN_SHFT          3
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_POWOFF_OFFSET       WOX_MCU_CFG_HS_WO0_APSRC_OFFSET
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_POWOFF_MASK         0x00000004                // WO0_APSRC_POWOFF[2]
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_POWOFF_SHFT         2
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_REQ_OFFSET          WOX_MCU_CFG_HS_WO0_APSRC_OFFSET
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_REQ_MASK            0x00000002                // WO0_APSRC_REQ[1]
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_REQ_SHFT            1
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_IDLE_OFFSET         WOX_MCU_CFG_HS_WO0_APSRC_OFFSET
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_IDLE_MASK           0x00000001                // WO0_APSRC_IDLE[0]
-#define WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_IDLE_SHFT           0
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_DDREN_OFFSET        WOX_MCU_CFG_HS_WOX_APSRC_OFFSET
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_DDREN_MASK          0x00000008                // WOX_APSRC_DDREN[3]
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_DDREN_SHFT          3
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_POWOFF_OFFSET       WOX_MCU_CFG_HS_WOX_APSRC_OFFSET
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_POWOFF_MASK         0x00000004                // WOX_APSRC_POWOFF[2]
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_POWOFF_SHFT         2
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_REQ_OFFSET          WOX_MCU_CFG_HS_WOX_APSRC_OFFSET
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_REQ_MASK            0x00000002                // WOX_APSRC_REQ[1]
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_REQ_SHFT            1
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_IDLE_OFFSET         WOX_MCU_CFG_HS_WOX_APSRC_OFFSET
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_IDLE_MASK           0x00000001                // WOX_APSRC_IDLE[0]
+#define WOX_MCU_CFG_HS_WOX_APSRC_WOX_APSRC_IDLE_SHFT           0
 
 /* =====================================================================================
 
@@ -172,3 +172,4 @@ typedef volatile struct wo2_mcu_cfg_hs_REG {
 #define WOX_MCU_CFG_HS_WOX_MCU_CG_WO0CPU_GT_CKEN_MASK          0x00000001                // WO0CPU_GT_CKEN[0]
 #define WOX_MCU_CFG_HS_WOX_MCU_CG_WO0CPU_GT_CKEN_SHFT          0
 
+#endif

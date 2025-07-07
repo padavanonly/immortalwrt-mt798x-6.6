@@ -235,7 +235,14 @@ tx_dma_cb_init(struct wdma_entry *entry,
 	dma_cb->alloc_pa = desc->alloc_pa + (idx * dma_cb->alloc_size);
 
 	txd = (struct WDMA_TXD *)dma_cb->alloc_va;
-	txd->ctrl = cpu_to_le32(WDMA_CTL_DMA_DONE);
+	txd->ctrl = cpu_to_le32(WDMA_TXD0_CTL_DMA_DONE);
+#ifdef CONFIG_WARP_V3
+	txd->tx_info = cpu_to_le32(WDMA_TXD0_TX_INFO_DMA_DONE_DW1);
+	/* 2nd TXD (As 128-bit size per TXD) */
+	txd += 1;
+	txd->ctrl = cpu_to_le32(WDMA_TXD1_CTL_DMA_DONE_DW2);
+	txd->tx_info = cpu_to_le32(WDMA_TXD1_TX_INFO_DMA_DONE2);
+#endif
 
 	return 0;
 }
@@ -372,7 +379,7 @@ wdma_init(struct platform_device *pdev, u8 idx, struct wdma_entry *wdma, u8 ver)
 	wdma->base_phy_addr = res.start;
 	wdma->base_addr = (unsigned long)of_iomap(node, idx);
 	wdma->pdev = pdev;
-	warp_dbg(WARP_DBG_OFF, "%s(): wdma(%d) base_addr=0x%lx, base_phy_addr=0x%lx\n",
+	warp_dbg(WARP_DBG_INF, "%s(): wdma(%d) base_addr=0x%lx, base_phy_addr=0x%lx\n",
 		__func__, idx, wdma->base_addr, wdma->base_phy_addr);
 
 	wdma->ver = ver;
@@ -390,8 +397,18 @@ wdma_init(struct platform_device *pdev, u8 idx, struct wdma_entry *wdma, u8 ver)
 			wdma->wdma_tx_port = WDMA_PORT3;
 			wdma->wdma_rx_port = WDMA_PORT13;
 		}
+	} else if (ver == 0x3) {
+		if (idx == WARP_WED1) {
+			wdma->wdma_tx_port = WDMA_PORT3;
+			wdma->wdma_rx_port = WDMA_PORT8;
+		} else if (idx == WARP_WED2) {
+			wdma->wdma_tx_port = WDMA_PORT3;
+			wdma->wdma_rx_port = WDMA_PORT9;
+		} else if (idx == WARP_WED3) {
+			wdma->wdma_tx_port = WDMA_PORT3;
+			wdma->wdma_rx_port = WDMA_PORT13;
+		}
 	}
-
 	/* initial wdma ring resource */
 	wdma_ring_init(wdma);
 
@@ -429,15 +446,13 @@ wdma_ring_init(struct wdma_entry *wdma)
 	/* initial default value */
 	if (wdma->ver >= 2) {
 		rx_ctrl->rx_ring_ctrl.rxd_len = sizeof(struct WDMA_RXD) * 2;
-		rx_ctrl->rx_ring_ctrl.ring_len = sw_conf->rx_wdma_ring_depth;
 		tx_ctrl->tx_ring_ctrl.txd_len = sizeof(struct WDMA_TXD) * 2;
-		tx_ctrl->tx_ring_ctrl.ring_len = sw_conf->tx_wdma_ring_depth;
 	} else {
 		rx_ctrl->rx_ring_ctrl.rxd_len = sizeof(struct WDMA_RXD);
-		rx_ctrl->rx_ring_ctrl.ring_len = WDMA_TX_BM_RING_SIZE;
 		tx_ctrl->tx_ring_ctrl.txd_len = sizeof(struct WDMA_TXD);
-		tx_ctrl->tx_ring_ctrl.ring_len = WDMA_RX_BM_RING_SIZE;
 	}
+	rx_ctrl->rx_ring_ctrl.ring_len = sw_conf->rx_wdma_ring_depth;
+	tx_ctrl->tx_ring_ctrl.ring_len = sw_conf->tx_wdma_ring_depth;
 	rx_ctrl->rx_ring_ctrl.ring_num = WDMA_RX_RING_NUM;
 	tx_ctrl->tx_ring_ctrl.ring_num = WDMA_TX_RING_NUM;
 

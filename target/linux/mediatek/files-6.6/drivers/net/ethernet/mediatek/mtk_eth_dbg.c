@@ -68,7 +68,7 @@ static int qdma_pppq_show(struct seq_file *m, void *v)
 	int i;
 
 	seq_puts(m, "Usage of the QDMA PPPQ for the HW path:\n");
-	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++)
+	for (i = 0; i < 64; i++)
 		seq_printf(m, "qdma_txq%d:	%5d Mbps %8d refcnt\n",
 			   i, eth->qdma_shaper.speed[i],
 			   atomic_read(&eth->qdma_shaper.refcnt[i]));
@@ -150,7 +150,7 @@ static ssize_t qdma_sched_show(struct file *file, char __user *user_buf,
 			 "EN\tScheduling\tMAX\tQueue#\n%d\t%s%16d\t", enable,
 			 (scheduling == 1) ? "WRR" : "SP", max_rate);
 
-	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
+	for (i = 0; i < 64; i++) {
 		mtk_w32(eth, (i / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
 		sch_reg = mtk_r32(eth, soc->reg_map->qdma.qtx_sch +
 				       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
@@ -877,7 +877,7 @@ int mtketh_debugfs_init(struct mtk_eth *eth)
 				    &qdma_sched_fops);
 	}
 
-	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
+	for (i = 0; i < 64; i++) {
 		ret = snprintf(name, sizeof(name), "qdma_txq%d", i);
 		if (ret != strlen(name)) {
 			ret = -ENOMEM;

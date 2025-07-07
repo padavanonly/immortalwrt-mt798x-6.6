@@ -92,37 +92,27 @@ static FREE_LIST_POOL FreeEntrylist;
 
 static inline MEM_INFO_LIST_ENTRY *GetEntryFromFreeList(MEM_INFO_LIST *MIList)
 {
-	MEM_INFO_LIST_ENTRY *pEntry = NULL;
-	MEM_INFO_LIST_ENTRY *pheadEntry = NULL;
-	FREE_LIST_POOL *pFreeEntrylist;
+	MEM_INFO_LIST_ENTRY *pEntry = 0;
+	MEM_INFO_LIST_ENTRY *pheadEntry = 0;
+	FREE_LIST_POOL *pFreeEntrylist = MIList->pFreeEntrylist;
 	unsigned long IrqFlags = 0;
 	u32 i;
-
-	if (MIList == NULL)
-		return NULL;
-
-	pFreeEntrylist = MIList->pFreeEntrylist;
-	if (pFreeEntrylist == NULL)
-		return NULL;
 
 	spin_lock_irqsave((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags);
 
 	if (DlListEmpty(&pFreeEntrylist->head.mList)) {
-		MEM_INFO_LIST_POOL *Pool = NULL;
-		MEM_INFO_LIST_POOL *pFreepool = NULL;
+		MEM_INFO_LIST_POOL *Pool = 0;
+		MEM_INFO_LIST_POOL *pFreepool = 0;
 
 		warp_dbg(WARP_DBG_ERR, "%s: allocated new pool\n", __func__);
 		Pool = kmalloc(sizeof(MEM_INFO_LIST_POOL), GFP_ATOMIC);
-		if (Pool == NULL)
-			goto err;
-
-		pFreepool = &pFreeEntrylist->Poolhead;
-		if (pFreepool == NULL)
-			goto err;
-
-		DlListAdd(&pFreepool->List, &Pool->List);
-		pheadEntry = &pFreeEntrylist->head;
-
+		if (Pool == NULL) {
+			warp_dbg(WARP_DBG_ERR, "%s: alloc fail, please check memory\n", __func__);
+		} else {
+			pFreepool = &pFreeEntrylist->Poolhead;
+			DlListAdd(&pFreepool->List, &Pool->List);
+			pheadEntry = &pFreeEntrylist->head;
+		}
 		for (i = 0; i < POOL_ENTRY_NUMBER; i++) {
 			pEntry = &Pool->Entry[i];
 			DlListAdd(&pheadEntry->mList, &pEntry->mList);
@@ -133,21 +123,14 @@ static inline MEM_INFO_LIST_ENTRY *GetEntryFromFreeList(MEM_INFO_LIST *MIList)
 
 	pheadEntry = &pFreeEntrylist->head;
 	pEntry = DlListFirst(&pheadEntry->mList, MEM_INFO_LIST_ENTRY, mList);
-	if (pEntry == NULL)
-		goto err;
-
-	DlListDel(&pEntry->mList);
-
 	if (pEntry != NULL)
+		DlListDel(&pEntry->mList);
+
+	if (pEntry != 0)
 		pFreeEntrylist->EntryNumber -= 1;
 
-	spin_unlock_irqrestore((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags);
+	spin_unlock_irqrestore((spinlock_t *)&pFreeEntrylist->Lock, (unsigned long)IrqFlags);
 	return pEntry;
-
-err:
-	spin_unlock_irqrestore((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags);
-	warp_dbg(WARP_DBG_ERR, "%s: some NULL pointer is happened\n", __func__);
-	return NULL;
 }
 
 static inline u32 HashF(void *pMemAddr)
@@ -195,9 +178,6 @@ static inline void MIListInit(MEM_INFO_LIST *MIList)
 {
 	u32 i;
 
-	if (MIList == NULL)
-		goto err;
-
 	for (i = 0; i < MEM_HASH_SIZE; i++)
 		DlListInit(&MIList->pHead[i].mList);
 
@@ -214,13 +194,13 @@ static inline void MIListInit(MEM_INFO_LIST *MIList)
 		MEM_INFO_LIST_ENTRY *newEntry = 0;
 
 		Pool = kmalloc(sizeof(MEM_INFO_LIST_POOL), 0);
-                if (Pool == NULL)
-                        goto err;
-
-		pFreepool = &FreeEntrylist.Poolhead;
-		DlListAdd(&pFreepool->List, &Pool->List);
-		pEntry = &FreeEntrylist.head;
-
+		if (Pool == NULL) {
+			warp_dbg(WARP_DBG_ERR, "%s: alloc fail, please check memory\n", __func__);
+		} else {
+			pFreepool = &FreeEntrylist.Poolhead;
+			DlListAdd(&pFreepool->List, &Pool->List);
+			pEntry = &FreeEntrylist.head;
+		}
 		for (i = 0; i < POOL_ENTRY_NUMBER; i++) {
 			newEntry = &Pool->Entry[i];
 			DlListAdd(&pEntry->mList, &newEntry->mList);
@@ -230,11 +210,6 @@ static inline void MIListInit(MEM_INFO_LIST *MIList)
 	}
 
 	MIList->pFreeEntrylist = &FreeEntrylist;
-	return;
-
-err:
-	warp_dbg(WARP_DBG_ERR, "%s: some NULL pointer is happened\n", __func__);
-	return;
 }
 static inline void MIListExit(MEM_INFO_LIST *MIList)
 {
@@ -324,17 +299,18 @@ static inline void ShowMIList(MEM_INFO_LIST *MIList)
 	u32 i, total = 0;
 	MEM_INFO_LIST_ENTRY *pEntry = NULL;
 
+	for (i = 0; i < MEM_HASH_SIZE; i++) {
+		DlListForEach(pEntry, &MIList->pHead[i].mList, MEM_INFO_LIST_ENTRY, mList)
+		if (pEntry->MemSize == 0)
+			warp_dbg(WARP_DBG_OFF, "%u: addr = %p, caller is %pS\n",
+				total, pEntry->pMemAddr, pEntry->pCaller);
 
-for (i = 0; i < MEM_HASH_SIZE; i++) {
-	DlListForEach(pEntry, &MIList->pHead[i].mList, MEM_INFO_LIST_ENTRY, mList)
-			if (pEntry->MemSize == 0) {
-			warp_dbg(WARP_DBG_OFF, "%u: addr = %p, caller is %pS\n", ++total, pEntry->pMemAddr, pEntry->pCaller);
-				}
-			else {
-			warp_dbg(WARP_DBG_OFF, "%u: addr = %p, size = %u, caller is %pS\n", ++total, pEntry->pMemAddr, pEntry->MemSize, pEntry->pCaller);
-				}
-}
-
+		else {
+			warp_dbg(WARP_DBG_OFF, "%u: addr = %p, size = %u, caller is %pS\n",
+				total, pEntry->pMemAddr, pEntry->MemSize, pEntry->pCaller);
+		}
+		total++;
+	}
 	warp_dbg(WARP_DBG_OFF, "the number of allocated memory = %u\n", MIList->EntryNumber);
 	warp_dbg(WARP_DBG_OFF, "the number of free pool entry = %u\n", MIList->pFreeEntrylist->EntryNumber);
 

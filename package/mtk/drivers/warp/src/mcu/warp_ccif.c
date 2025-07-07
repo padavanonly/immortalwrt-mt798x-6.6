@@ -84,8 +84,8 @@ static int ccif_init(struct woif_bus *bus, u8 idx,
 	ccif->base_addr = (unsigned long)of_iomap(node, idx);
 	ccif->irq = irq_of_parse_and_map(node, idx);
 
-	warp_dbg(WARP_DBG_INF, "%s(): ccif: %p, addr: %lx, irq:%d!\n",
-		__func__, ccif, ccif->base_addr, ccif->irq);
+	warp_dbg(WARP_DBG_INF, "%s(): ccif: %p, addr: %lx, irq:%d, idx:%d!\n",
+		__func__, ccif, ccif->base_addr, ccif->irq, idx);
 
 	/*initial virtual ring*/
 	warp_ccif_tx_ring_get_hw(ccif, bus_to_tx_ring(bus));
@@ -150,7 +150,7 @@ static void ccif_exit(struct woif_bus *bus)
 		disable_irq(ccif->irq);
 		free_irq(ccif->irq, bus);
 		if (ccif->base_addr)
-			iounmap(ccif->base_addr);
+			iounmap((void *)ccif->base_addr);
 		warp_os_free_mem(ccif);
 	}
 

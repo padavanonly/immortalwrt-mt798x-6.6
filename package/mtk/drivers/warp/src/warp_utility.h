@@ -31,9 +31,13 @@
 #include <linux/wait.h>
 #include <linux/interrupt.h>
 #include <linux/timer.h>
+#include <linux/idr.h>
 #include <warp_cfg.h>
 
 #define MAX_NAME_SIZE 64
+
+#define DEBUGFS_MAX_BUF_SIZE 2048
+#define DEBUGFS_MIN_BUF_SIZE 1024
 
 /*warp status code*/
 
@@ -44,11 +48,12 @@
 #define WARP_FAIL_STATUS (-1)
 #define WARP_OK_STATUS (0)
 #define WARP_ALREADY_DONE_STATUS (1)
-#define PDE_DATA(i) pde_data(i)
+
 enum {
 	WARP_DBG_START,
 	WARP_DBG_OFF = WARP_DBG_START,
 	WARP_DBG_ERR,
+	WARP_DBG_WAR,
 	WARP_DBG_INF,
 	WARP_DBG_LOU,
 	WARP_DBG_ALL,
@@ -107,6 +112,19 @@ struct warp_ring {
 	u32 hw_cidx_addr;
 	u32 hw_didx_addr;
 	u32 hw_cnt_addr;
+	u32 ring_lens;
+};
+
+/* TODO: merge warp_ring and warp_tx_ring */
+struct warp_tx_ring {
+	bool recycled;
+	struct warp_dma_cb *cell;
+	u32 hw_desc_base;
+	u32 hw_cidx_addr;
+	u32 hw_didx_addr;
+	u32 hw_cnt_addr;
+	u32 ring_lens;
+	struct warp_dma_cb *head;
 };
 
 #define WED_BUS_RING_SIZE 256
@@ -115,6 +133,7 @@ struct warp_bus_ring {
 	u32 hw_cidx_addr;
 	u32 hw_didx_addr;
 	u32 hw_cnt_addr;
+	u32 ring_lens;
 	struct warp_dma_cb cell[WED_BUS_RING_SIZE];
 	struct warp_dma_buf desc;
 };
@@ -122,11 +141,16 @@ struct warp_bus_ring {
 
 struct warp_rx_ring {
 	bool recycled;
+	bool spare;
 	struct warp_dma_cb *cell;
+	void *hw_desc_base_va;
 	u32 hw_desc_base;
 	u32 hw_cidx_addr;
 	u32 hw_didx_addr;
 	u32 hw_cnt_addr;
+	u32 ring_lens;
+	dma_addr_t hw_desc_base_pa;
+	dma_addr_t cb_alloc_pa;
 	struct warp_dma_cb *head;
 };
 

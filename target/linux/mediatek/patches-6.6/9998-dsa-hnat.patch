@@ -1,0 +1,72 @@
+diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-25 23:35:35.238002373 +0800
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-25 23:43:56.711002613 +0800
+@@ -1610,6 +1610,19 @@
+ 			};
+ 		};
+ 
++		hnat: hnat@15000000 {
++                       compatible = "mediatek,mtk-hnat_v5";
++                       reg = <0 0x15100000 0 0x80000>;
++                       resets = <&ethsys 0>;
++                       reset-names = "mtketh";
++                       mtketh-wan = "eth1";
++		       mtketh-lan = "lan";
++		       mtketh-lan2 = "eth2";
++		       mtketh-max-gmac = <3>;
++		       mtketh-ppe-num = <3>;
++		       ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4","phy";
++               };
++
+ 		wo_ccif0: syscon@151a5000 {
+ 			compatible = "mediatek,mt7988-wo-ccif", "syscon";
+ 			reg = <0 0x151a5000 0 0x1000>;
+diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-25 23:35:35.248002373 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-06-25 23:48:58.495002756 +0800
+@@ -41,8 +41,9 @@
+ #endif
+ static int mtk_wifi_num = 0;
+ static int mtk_rest_cnt = 0;
+-atomic_t eth1_in_br = ATOMIC_INIT(2);
+-EXPORT_SYMBOL(eth1_in_br);
++atomic_t eth1_in_br = ATOMIC_INIT(0);
++struct net_device *ppd_dev;
++EXPORT_SYMBOL(ppd_dev);
+ static int mtk_msg_level = -1;
+ module_param_named(msg_level, mtk_msg_level, int, 0);
+ MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
+@@ -2445,7 +2446,7 @@
+ 	int done = 0, bytes = 0;
+ 	dma_addr_t dma_addr = DMA_MAPPING_ERROR;
+ 	int ppe_idx = 0;
+-
++	int sent_ppd = 0;
+ 	if (unlikely(!ring))
+ 		goto rx_done;
+ 
+@@ -2483,8 +2484,10 @@
+ 		}
+ 
+ 		if ( (mac == 4) || ((FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5)) == HIT_BIND_FORCE_TO_CPU))
+-		mac = atomic_read(&eth1_in_br);
+-
++		{
++		mac = 0;
++		sent_ppd = 1;
++		}
+ 		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
+ 			     !eth->netdev[mac]))
+ 			goto release_desc;
+@@ -2642,7 +2645,10 @@
+ 			hw_lro_stats_update(ring->ring_no, &trxd);
+ 			hw_lro_flush_stats_update(ring->ring_no, &trxd);
+ 		}
+-
++		if (sent_ppd && ppd_dev){
++			skb->protocol = eth_hdr(skb)->h_proto;
++			skb->dev = ppd_dev;
++		}
+ 		skb_record_rx_queue(skb, 0);
+ 		napi_gro_receive(napi, skb);
+ 

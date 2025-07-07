@@ -286,7 +286,7 @@ warp_get_pcie_slot(struct pci_dev *pdev)
 void
 warp_bus_msi_set(u8 idx, u8 *enable)
 {
-	return;
+
 }
 
 /*
@@ -345,15 +345,6 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 	warp_io_write32(wed, WED_PCIE_INT_CTRL, value);
 
 	return;
-}
-
-/*
-* Reset PCIE reg in relative to warp_bus_set_hw()
-*/
-void
-warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,
-                        int idx)
-{
 }
 
 /*

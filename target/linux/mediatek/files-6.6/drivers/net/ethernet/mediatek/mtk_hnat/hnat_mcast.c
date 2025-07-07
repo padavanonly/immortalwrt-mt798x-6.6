@@ -289,7 +289,7 @@ int hnat_mcast_enable(u32 ppe_id)
 	if (!pmcast)
 		return -1;
 
-	if (hnat_priv->data->version == MTK_HNAT_V1)
+	if (hnat_priv->data->version == MTK_HNAT_V1_1)
 		pmcast->max_entry = 0x10;
 	else
 		pmcast->max_entry = MAX_MCAST_ENTRY;
@@ -297,16 +297,16 @@ int hnat_mcast_enable(u32 ppe_id)
 	INIT_WORK(&pmcast->work, hnat_mcast_nlmsg_handler);
 	pmcast->queue = create_singlethread_workqueue("ppe_mcast");
 	if (!pmcast->queue)
-		goto err;
+		goto err1;
 
 	pmcast->msock = hnat_mcast_netlink_open(&init_net);
 	if (!pmcast->msock)
-		goto err;
+		goto err2;
 
 	hnat_priv->pmcast = pmcast;
 
 	/* mt7629 should checkout mcast entry life time manualy */
-	if (hnat_priv->data->version == MTK_HNAT_V3) {
+	if (hnat_priv->data->version == MTK_HNAT_V1_3) {
 		timer_setup(&hnat_priv->hnat_mcast_check_timer,
 			    hnat_mcast_check_timestamp, 0);
 		hnat_priv->hnat_mcast_check_timer.expires = jiffies;
@@ -325,11 +325,10 @@ int hnat_mcast_enable(u32 ppe_id)
 	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_MCAST_PPSE, MC_P3_PPSE, 5);
 
 	return 0;
-err:
+err2:
 	if (pmcast->queue)
 		destroy_workqueue(pmcast->queue);
-	if (pmcast->msock)
-		sock_release(pmcast->msock);
+err1:
 	kfree(pmcast);
 
 	return -1;
@@ -342,7 +341,7 @@ int hnat_mcast_disable(void)
 	if (!pmcast)
 		return -EINVAL;
 
-	if (hnat_priv->data->version == MTK_HNAT_V3)
+	if (hnat_priv->data->version == MTK_HNAT_V1_3)
 		del_timer_sync(&hnat_priv->hnat_mcast_check_timer);
 
 	flush_work(&pmcast->work);

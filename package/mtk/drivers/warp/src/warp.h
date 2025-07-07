@@ -31,8 +31,10 @@
 #include "mcu/warp_ccif.h"
 #endif
 
+#define WARP_VERSION_CODE		0x0300
+#define WARP_VERSION(VER, SUB_VER)	(((VER) << 8) + (SUB_VER))
+
 struct warp_cfg {
-	char atc_en; /*address translate control enable*/
 	char hw_tx_en; /*hw tx wed enable*/
 };
 
@@ -63,6 +65,28 @@ struct warp_entry {
 	void *proc_ctrl;
 	void *proc_wo;
 	void *proc_wo_ee_dump;
+	void *proc_amsdu_fifo;
+	void *proc_amsdu_eng0;
+	void *proc_amsdu_eng1;
+	void *proc_amsdu_eng2;
+	void *proc_amsdu_eng3;
+	void *proc_amsdu_eng4;
+	void *proc_amsdu_eng5;
+	void *proc_amsdu_eng6;
+	void *proc_amsdu_eng7;
+	void *proc_amsdu_eng8;
+	void *proc_qmem;
+	void *proc_qmem_head;
+	void *proc_qmem_tail;
+	void *proc_qmem_pre;
+	void *proc_hiftxd;
+	void *proc_rtqm_igrs0;
+	void *proc_rtqm_igrs1;
+	void *proc_rtqm_igrs2;
+	void *proc_rtqm_igrs3;
+	void *proc_rtqm_enq;
+	void *proc_rtqm_deq;
+	void *proc_rro;
 };
 
 struct warp_ctrl {
@@ -84,7 +108,9 @@ enum {
 	WARP_DMA_DISABLE,
 	WARP_DMA_TX,
 	WARP_DMA_RX,
-	WARP_DMA_TXRX
+	WARP_DMA_TXRX,
+	WARP_DMA_TX_DISABLE,
+	WARP_DMA_RX_DISABLE,
 };
 
 enum {
@@ -106,7 +132,6 @@ enum {
 	WARP_DYBM_VLD_GRP,
 	WARP_DYBM_MAX_GRP,
 	WARP_DYBM_RECYCLE_POSTPONED,
-	WARP_DYBM_ALLOC_FREE_INTERVAL,
 	WARP_SW_CONF_MAX,
 };
 
@@ -191,6 +216,12 @@ void
 warp_ser_handler(void *priv_data, u32 ser_status);
 
 /*
+* for warp 3.0
+*/
+int
+warp_reset_handler(void *priv_data, u32 ser_status);
+
+/*
 *
 */
 void
@@ -208,20 +239,6 @@ warp_dma_handler_after_fwdl(void *priv_data, int dma_ctrl);
 void
 warp_isr_handler(void *priv_data);
 
-#ifdef WARP_SUSPEND_RESUME
-/*
-*
-*/
-void
-warp_gen4m_suspend_handler(void *priv_data);
-
-/*
-*
-*/
-int
-warp_gen4m_resume_handler(struct wifi_hw *hw, struct wifi_ops *ops);
-#endif /*WARP_SUSPEND_RESUME*/
-
 /*
 *
 */
@@ -237,12 +254,6 @@ warp_resume_handler(void *priv_data);
 /*
 *
 */
-int
-warp_rro_write_dma_idx(void *priv_data, u32 val);
-
-/*
-*
-*/
 void
 warp_hb_chk_handler(void *priv_data, u8 *stop);
 
@@ -251,5 +262,25 @@ warp_hb_chk_handler(void *priv_data, u8 *stop);
 */
 void
 wed_wo_ops_register(struct wo_ops *ops);
+
+
+int
+warp_rro_write_dma_idx(void *priv_data, u32 val);
+
+int
+warp_set_pao_sta_info(void *priv_data, u16 wcid,
+	u8 max_amsdu_nums, u32 max_amsdu_len, int remove_vlan, int hdrt_mode);
+
+int
+warp_set_pn_check(void *priv_data, u32 se_id, bool enble_wed_pn_chk);
+
+int
+warp_msg_send_cmd_handler(u8 wed_idx, struct warp_msg_cmd *msg_cmd);
+
+bool
+warp_mcu_wo_support(void);
+
+int
+warp_get_wdma_rx_ring_dep(void *priv_data);
 
 #endif /*_WARP_H*/

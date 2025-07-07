@@ -55,18 +55,6 @@ enum {
 int bus_config_init(struct warp_bus *bus);
 int bus_config_exit(struct warp_bus *bus);
 
-
-#define ADDR_MIRROR_BASE 0
-
-#define ATC0_MAP	(ADDR_MIRROR_BASE + 0x0)
-#define ATC1_MAP	(ADDR_MIRROR_BASE + 0x4)
-#define WED0_MAP	(ADDR_MIRROR_BASE + 0x8)
-#define WED1_MAP	(ADDR_MIRROR_BASE + 0xC)
-
-#define ATC_FLD_REMAP_EN		0
-#define ATC_FLD_REMAP			1
-#define ATC_FLD_ADDR_REMAP	12
-
 #define CPU_TRACER_BASE 0
 
 #define CPU_TRACER_CFG	(CPU_TRACER_BASE + 0x0)
@@ -74,8 +62,6 @@ int bus_config_exit(struct warp_bus *bus);
 #define CPU_TRACER_WP_MASK (CPU_TRACER_BASE + 0x10)
 #define CPU_TRACER_TO_TIME (CPU_TRACER_BASE + 0x4)
 #define CPU_TRACER_CR_TIME (CPU_TRACER_BASE + 0x8)
-
-
 
 #define CPU_TRACER_CON_BUS_DBG_EN      0
 #define CPU_TRACER_CON_TIMEOUT_EN      1

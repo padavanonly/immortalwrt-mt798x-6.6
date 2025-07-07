@@ -1,12 +1,12 @@
-#pragma once
 
-#include <stdint.h>
-#include <stddef.h>
+#ifndef __WOX_AP2WO_MCU_CCIF4_H__
+#define __WOX_AP2WO_MCU_CCIF4_H__
 
 /* CONST definition */
 #ifndef REG_CONST
 #define REG_CONST
 #endif
+typedef unsigned int uint32_t;
 
 typedef volatile struct WOX_AP2WO_MCU_CCIF4_REG {
     /* 0x000 ~ 0x000 */
@@ -496,3 +496,4 @@ typedef volatile struct WOX_AP2WO_MCU_CCIF4_REG {
 #define WOX_AP2WO_MCU_CCIF4_CPUB2CPUA_SHADOW8_CPUB2CPUA_SHADOW2_MASK 0xFFFFFFFF                // CPUB2CPUA_SHADOW2[31..0]
 #define WOX_AP2WO_MCU_CCIF4_CPUB2CPUA_SHADOW8_CPUB2CPUA_SHADOW2_SHFT 0
 
+#endif

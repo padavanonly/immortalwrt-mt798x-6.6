@@ -22,7 +22,7 @@
 #include "warp_evt.h"
 
 #define WARP_MSG_TIMEOUT_DEFAULT 3000  /* millisecond */
-#define WARP_MSG_MAX_BUFFER_LEN 1500
+#define WARP_MSG_MAX_BUFFER_LEN 2048
 
 /* cmd which sends to warp */
 enum warp_cmd_id {

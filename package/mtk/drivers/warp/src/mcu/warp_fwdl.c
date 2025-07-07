@@ -69,19 +69,29 @@ static int get_region_info(struct fwdl_region *region, const char *compat, u8 dt
 	int rc;
 
 	node = of_find_compatible_node(NULL, NULL, compat);
-	if (!node)
+	if (!node) {
+		warp_dbg(WARP_DBG_ERR,
+		"%s(!node): wed_idx = %d, base_addr = 0x%p, size = 0x%x, "
+		"res.start = 0x%llx, shared:%d\n",
+		__func__, dts_idx, region->base_addr, region->size,
+		region->base_addr_pa, region->shared);
 		return -1;
-
+	}
 	rc = of_address_to_resource(node, dts_idx, &res);
-	if (rc)
+	if (rc){
+		warp_dbg(WARP_DBG_ERR,
+		"%s(rc = %d): wed_idx = %d, base_addr = 0x%p, size = 0x%x, "
+		"res.start = 0x%llx, shared:%d\n",
+		__func__, rc, dts_idx, region->base_addr, region->size,
+		region->base_addr_pa, region->shared);
 		return -1;
-
+	}
 	region->base_addr = ioremap(res.start, resource_size(&res));
 	region->base_addr_pa = res.start;
 	region->size = resource_size(&res);
 	of_property_read_u32_index(node, "shared", 0, &region->shared);
 
-	warp_dbg(WARP_DBG_OFF,
+	warp_dbg(WARP_DBG_INF,
 		"%s(): wed_idx = %d, base_addr = 0x%p, size = 0x%x, "
 		"res.start = 0x%llx, shared:%d\n",
 		__func__, dts_idx, region->base_addr, region->size,
@@ -99,18 +109,26 @@ static int warp_fwdl_ctrl_init_mcu_mode(struct warp_fwdl_ctrl *ctrl, u8 wed_idx)
 	warp_get_dts_idx(&dts_idx);
 
 	ret = get_region_info(&ctrl->region[0], warp_get_wo_emi_node(wed_idx), 0);
-	if (ret)
+	if (ret) {
+		warp_dbg(WARP_DBG_OFF, "warp_get_wo_emi_node fail\n");
 		return ret;
+	}
 
 	ret = get_region_info(&ctrl->region[1], warp_get_wo_ilm_node(wed_idx), dts_idx);
-	if (ret)
+	if (ret) {
+		warp_dbg(WARP_DBG_OFF, "warp_get_wo_ilm_node fail\n");
 		return ret;
+	}
 
 	ret = get_region_info(&ctrl->region[2], WOCPU_DATA_DEV_NODE, 0);
-	if (ret)
+	if (ret) {
+		warp_dbg(WARP_DBG_OFF, "WOCPU_DATA_DEV_NODE fail\n");
 		return ret;
+	}
 
-	ret = get_region_info(&ctrl->boot_setting, WOCPU_BOOT_DEV_NODE, dts_idx);
+	ret = get_region_info(&ctrl->boot_setting, WOCPU_BOOT_DEV_NODE, wed_idx);
+	if (ret)
+		warp_dbg(WARP_DBG_OFF, "WOCPU_BOOT_DEV_NODE fail\n");
 
 	return ret;
 }
@@ -159,23 +177,32 @@ err_out:
 
 static int warp_fw_init(struct warp_entry *warp)
 {
+	const struct firmware *fw_entry;
 	int ret = -1;
+	int print_ret = 0;
 	struct platform_device *pdev = warp->wed.pdev;
 	struct warp_fwdl_ctrl *ctrl = &warp->woif.fwdl_ctrl;
 	char bin_name[100] = {0}, chip_name[7] = {0};
 
 #ifdef WARP_CHIP_SET
-	if (!snprintf(chip_name, strlen(WARP_CHIP_SET)+1, "%s", WARP_CHIP_SET))
-		goto err_out;
+	print_ret = snprintf(chip_name, strlen(WARP_CHIP_SET)+1, "%s", WARP_CHIP_SET);
+	if (print_ret)
+		warp_dbg(WARP_DBG_ERR, "%s:print error\n", __func__);
 
-	if (warp->wed.sub_ver > 0 && warp->wed.ver >= 2) {
-		memcpy(bin_name, &chip_name[2], strlen(WARP_CHIP_SET)-2);
-		if(!snprintf(&bin_name[(strlen(WARP_CHIP_SET)-2)], sizeof(bin_name)-strlen(WARP_CHIP_SET)-2, "_WOCPU%d_RAM_CODE_release.bin", warp->idx))
-			goto err_out;
-	} else {
+	if (warp->wed.ver == 2 && warp->wed.sub_ver == 0 ) {
 		memcpy(bin_name, chip_name, strlen(WARP_CHIP_SET));
-		if(!snprintf(&bin_name[strlen(WARP_CHIP_SET)], sizeof(bin_name)-strlen(WARP_CHIP_SET), "_WOCPU%d_RAM_CODE_release.bin", warp->idx))
-			goto err_out;
+		print_ret = snprintf(&bin_name[strlen(WARP_CHIP_SET)],
+				sizeof(bin_name)-strlen(WARP_CHIP_SET),
+				"_WOCPU%d_RAM_CODE_release.bin", warp->idx);
+		if (print_ret)
+			warp_dbg(WARP_DBG_ERR, "%s:print error\n", __func__);
+	} else {
+		memcpy(bin_name, &chip_name[2], strlen(WARP_CHIP_SET)-2);
+		print_ret = snprintf(&bin_name[(strlen(WARP_CHIP_SET)-2)],
+				sizeof(bin_name)-strlen(WARP_CHIP_SET)-2,
+				"_WOCPU%d_RAM_CODE_release.bin", warp->idx);
+		if (print_ret)
+			warp_dbg(WARP_DBG_ERR, "%s:print error\n", __func__);
 	}
 #else
 	goto err_out;
@@ -185,16 +212,14 @@ static int warp_fw_init(struct warp_entry *warp)
 		"loading %s from /lib/firmware/!\n", bin_name);
 
 	/*  surpress warning message */
-	if (request_firmware_direct(&ctrl->fw_entry, bin_name, &pdev->dev) != 0) {
+	if (request_firmware_direct(&fw_entry, bin_name, &pdev->dev) != 0) {
 #ifdef CONFIG_WARP_WO_EMBEDDED_LOAD
 		warp_dbg(WARP_DBG_OFF,
 			"%s:fw not available(/lib/firmware/%s), loading embedded version!\n",
 			__func__, bin_name);
 
-		ctrl->bin_ptr = warp_get_wo_bin_ptr(warp->idx);
 		ctrl->bin_size = warp_get_wo_bin_size(warp->idx);
 		ctrl->bin_mode = WO_FW_EMBEDDED;
-		ret = 0;
 #else
 		warp_dbg(WARP_DBG_OFF,
 				 "%s:fw not available(/lib/firmware/%s)!\n", __func__, bin_name);
@@ -202,10 +227,29 @@ static int warp_fw_init(struct warp_entry *warp)
 		goto err_out;
 #endif	/* CONFIG_WARP_WO_EMBEDDED_LOAD */
 	} else {
-		ctrl->bin_ptr = ctrl->fw_entry->data;
-		ctrl->bin_size = ctrl->fw_entry->size;
+		ctrl->bin_size = fw_entry->size;
 		ctrl->bin_mode = WO_FW_BIN;
+	}
+
+	ctrl->bin_ptr = (u8 *)kmalloc(ctrl->bin_size, GFP_KERNEL);
+	if (ctrl->bin_ptr) {
+		memset(ctrl->bin_ptr, 0, ctrl->bin_size);
+
+#ifdef CONFIG_WARP_WO_EMBEDDED_LOAD
+		if (ctrl->bin_mode == WO_FW_EMBEDDED) {
+			memcpy(ctrl->bin_ptr,
+				warp_get_wo_bin_ptr(warp->idx), ctrl->bin_size);
+		} else
+#endif	/* CONFIG_WARP_WO_EMBEDDED_LOAD */
+		{
+			memcpy(ctrl->bin_ptr, fw_entry->data, ctrl->bin_size);
+			release_firmware(fw_entry);
+		}
+
 		ret = 0;
+	} else {
+		warp_dbg(WARP_DBG_ERR,
+			"%s:allocate memory for firmware failed!\n", __func__);
 	}
 
 err_out:
@@ -220,7 +264,7 @@ static int warp_fwdl_mcu_mode(struct warp_fwdl_ctrl *ctrl, struct wed_entry *wed
 	u32 num_of_region = 0, i, offset = 0;
 	static u8 shared_dl_flag[MAX_REGION_SIZE] = {0};
 
-	warp_dbg(WARP_DBG_OFF, "%s(): mcu mode, need fwdl\n", __func__);
+	warp_dbg(WARP_DBG_INF, "%s(): mcu mode, need fwdl\n", __func__);
 
 	if (warp_fw_init(wed->warp) == 0) {
 		img_ptr_tail = ctrl->bin_ptr + ctrl->bin_size;
@@ -280,6 +324,10 @@ static int warp_fwdl_mcu_mode(struct warp_fwdl_ctrl *ctrl, struct wed_entry *wed
 			img_get_32bit(&dl_len, &img_ptr, 1);
 			warp_dbg(WARP_DBG_OFF, "\tDownload size: %d\n", dl_len);
 
+			if (dl_len > MAX_FWDL_SIZE) {
+				warp_dbg(WARP_DBG_ERR, "\terror:wrong fwdl size:%d\n", dl_len);
+				return -1;
+			}
 			img_get_8bit(&dl_feature_set, &img_ptr, 1);
 
 			for (j = 0; j < MAX_REGION_SIZE; j++) {
@@ -288,20 +336,13 @@ static int warp_fwdl_mcu_mode(struct warp_fwdl_ctrl *ctrl, struct wed_entry *wed
 				if (!region->base_addr) {
 					break;
 				} else if (dl_addr == region->base_addr_pa) {
-					//To sanitize dl_len
-					if (dl_len < region->size) {
-						if (!region->shared) {
-							memcpy(region->base_addr, ctrl->bin_ptr + offset, dl_len);
-						} else {
-							if (!shared_dl_flag[i]) {
-								memcpy(region->base_addr, ctrl->bin_ptr + offset, dl_len);
-								shared_dl_flag[i] = true;
-							}
-
-						}
+					if (!region->shared) {
+						memcpy(region->base_addr, ctrl->bin_ptr + offset, dl_len);
 					} else {
-						warp_dbg(WARP_DBG_OFF, "\tDownload size for this range is out-of-bounds\n");
-						return -1;
+						if (!shared_dl_flag[i]) {
+							memcpy(region->base_addr, ctrl->bin_ptr + offset, dl_len);
+							shared_dl_flag[i] = true;
+						}
 					}
 				}
 			}
@@ -318,13 +359,9 @@ static int warp_fwdl_mcu_mode(struct warp_fwdl_ctrl *ctrl, struct wed_entry *wed
 
 		warp_fwdl_write_start_address(ctrl, ctrl->region[0].base_addr_pa, wed_idx);
 		warp_fwdl_reset(ctrl, 1, wed_idx);
-
-#ifndef CONFIG_WARP_WO_EMBEDDED_LOAD
-		release_firmware(ctrl->fw_entry);
-#endif	/* CONFIG_WARP_WO_EMBEDDED_LOAD */
 	} else
 		warp_dbg(WARP_DBG_ERR, "[%s]Prepare firmware failed!\n", __func__);
-
+	
 	return 0;
 }
 
@@ -340,7 +377,7 @@ static int warp_fwdl_ready_check_mcu_mode(struct warp_fwdl_ctrl *ctrl,
 	int32_t ret = 0;
 	u32 v = 0;
 	unsigned long timeout = jiffies+FW_DL_TIMEOUT;
-	warp_dbg(WARP_DBG_OFF, "%s(): waiting for wocpu\n", __func__);
+	warp_dbg(WARP_DBG_INF, "%s(): waiting for wocpu\n", __func__);
 	do {
 		warp_dummy_cr_get(wed, WED_DUMMY_CR_FWDL, &v);
 	} while (v != 0 && !time_after(jiffies, timeout));
@@ -352,6 +389,10 @@ static int warp_fwdl_ready_check_mcu_mode(struct warp_fwdl_ctrl *ctrl,
 		warp_dbg(WARP_DBG_OFF, "%s(): wocpu is ready\n", __func__);
 	}
 
+	if (ctrl->bin_ptr) {
+		kfree(ctrl->bin_ptr);
+		ctrl->bin_ptr = NULL;
+	}
 	/*unmap */
 	if (ctrl->region[0].base_addr) {
 		iounmap(ctrl->region[0].base_addr);
