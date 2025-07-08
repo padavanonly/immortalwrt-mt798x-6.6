@@ -2193,7 +2193,7 @@ define Device/nradio_c8-668gl
   DEVICE_VENDOR := NRadio
   DEVICE_MODEL := C8-668GL
   DEVICE_DTS := mt7981b-nradio-c8-668gl
-  DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
+  DEVICE_DTS_DIR := ../dts
   SUPPORTED_DEVICES := nradio,c8-668gl
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \
 	kmod-usb-serial-option kmod-usb-net-cdc-ether kmod-usb-net-qmi-wwan \
