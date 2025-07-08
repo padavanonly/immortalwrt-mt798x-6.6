@@ -2188,3 +2188,16 @@ ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 endif
 endef
 TARGET_DEVICES += wirelesstag_zx7981pd-ubootmod
+
+define Device/nradio_c8-668gl
+  DEVICE_VENDOR := NRadio
+  DEVICE_MODEL := C8-668GL
+  DEVICE_DTS := mt7981b-nradio-c8-668gl
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \
+	kmod-usb-serial-option kmod-usb-net-cdc-ether kmod-usb-net-qmi-wwan \
+	kmod-usb3
+  IMAGE_SIZE := 131072k
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata | check-size
+endef
+TARGET_DEVICES += nradio_c8-668gl
