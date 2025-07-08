@@ -11,7 +11,7 @@
 #include "mt7981.dtsi"
 
 / {
-	model = "Aripi EMMC 16G";
+	model = "Aripi";
 	compatible = "Airpi,emmc-16g", "mediatek,mt7981";
 
 	aliases {
