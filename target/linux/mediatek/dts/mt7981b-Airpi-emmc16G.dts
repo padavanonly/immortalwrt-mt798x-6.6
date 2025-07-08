@@ -146,6 +146,13 @@
         };
 };
 
+&fan {
+	interrupt-parent = <&pio>;
+	interrupts = <7 IRQ_TYPE_EDGE_FALLING>;
+	pwms = <&pwm 2 10000 0>;
+	status = "okay";
+};
+
 &pio {
 	mmc0_pins_default: mmc0-pins-default {
 		mux {
@@ -160,6 +167,20 @@
 			groups = "emmc_45";
 		};
 	};
+
+	pwm2_pins: pwm2-pins {
+		mux {
+			function = "pwm";
+			groups = "pwm2";
+		};
+	};
+};
+
+
+&pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm2_pins>;
+	status = "okay";
 };
 
 &uart0 {
