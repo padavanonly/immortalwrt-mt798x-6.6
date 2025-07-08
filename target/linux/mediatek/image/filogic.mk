@@ -2204,6 +2204,7 @@ define Device/nradio_c8-668gl
   IMAGE_SIZE := 131072k
   KERNEL_IN_UBI := 1
   IMAGES += factory.bin
+  IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata | check-size
 endef
 TARGET_DEVICES += nradio_c8-668gl
