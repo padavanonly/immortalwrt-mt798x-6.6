@@ -918,7 +918,7 @@
 				      "dma_ck";
 			#address-cells = <2>;
 			#size-cells = <2>;
-			status = "disabled";
+			status = "okay";
 		};
 
 		afe: audio-controller@11210000 {
