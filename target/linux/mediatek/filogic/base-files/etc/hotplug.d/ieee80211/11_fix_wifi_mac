@@ -138,6 +138,7 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && echo "$addr_2g" > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && echo "$addr_5g" > /sys${DEVPATH}/macaddress
 		;;
+        nradio,c8-668gl|\
 	nokia,ea0326gmp)
 		addr=$(cat /sys/class/net/eth0/address)
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
