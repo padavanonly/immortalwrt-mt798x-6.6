@@ -6,7 +6,7 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: change default rx buffer length
 Change default RX buffer length from 2K to 1.5K.
 
 This adjustment can improve the SW path peak throughput and reduce the
-total CPU usage. 
+total CPU usage.
 ---
  drivers/net/ethernet/mediatek/mtk_eth_soc.c | 75 +++++++++++----------
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  4 ++

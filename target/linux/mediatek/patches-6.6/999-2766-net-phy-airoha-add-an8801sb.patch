@@ -1,0 +1,41 @@
+From f64d341fd52cbfcf49c38a98826f3d1fd23cf6a0 Mon Sep 17 00:00:00 2001
+From: Mason Chang <mason-cw.chang@mediatek.com>
+Date: Fri, 28 Mar 2025 15:26:45 +0800
+Subject: [PATCH] net: phy: airoha: add an8801sb
+
+---
+ drivers/net/phy/Kconfig  | 5 +++++
+ drivers/net/phy/Makefile | 1 +
+ 2 files changed, 6 insertions(+)
+
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index 2eb4f6f..be03345 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -144,6 +144,11 @@ source "drivers/net/phy/mtk/mt753x/Kconfig"
+ 
+ comment "MII PHY device drivers"
+ 
++config AIROHA_AN8801_PHY
++	tristate "Drivers for Airoha AN8801 Gigabit PHYs"
++	help
++	  Currently supports the Airoha AN8801 PHY.
++
+ config AIROHA_EN8801SC_PHY
+ 	tristate "Airoha EN8801SC Gigabit PHY"
+ 	help
+diff --git a/drivers/net/phy/Makefile b/drivers/net/phy/Makefile
+index b484406..65a9eef 100644
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -49,6 +49,7 @@ obj-y				+= $(sfp-obj-y) $(sfp-obj-m)
+ 
+ obj-$(CONFIG_ADIN_PHY)		+= adin.o
+ obj-$(CONFIG_ADIN1100_PHY)	+= adin1100.o
++obj-$(CONFIG_AIROHA_AN8801_PHY)	+= an8801.o
+ obj-$(CONFIG_AIROHA_EN8801SC_PHY)   += en8801sc.o
+ obj-$(CONFIG_AIR_AN8855_PHY)		+= air_an8855.o
+ obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811h.o
+-- 
+2.45.2
+

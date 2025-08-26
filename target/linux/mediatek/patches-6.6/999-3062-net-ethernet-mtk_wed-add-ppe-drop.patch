@@ -1,0 +1,94 @@
+From 94ade40f0e50da47a12f0648301a9211f9e0daaa Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 21 Feb 2025 11:48:53 +0800
+Subject: [PATCH] net: ethernet: mtk_wed: add ppe drop
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h | 12 ++++++++++++
+ drivers/net/ethernet/mediatek/mtk_wed.c     |  9 +++++++++
+ include/linux/soc/mediatek/mtk_wed.h        |  4 ++++
+ 3 files changed, 25 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 8626083..4fe800b 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1890,6 +1890,18 @@ void mtk_w32(struct mtk_eth *eth, u32 val, unsigned reg);
+ u32 mtk_r32(struct mtk_eth *eth, unsigned reg);
+ u32 mtk_m32(struct mtk_eth *eth, u32 mask, u32 set, unsigned int reg);
+ 
++static inline void mtk_ppe_drop_config(struct mtk_eth *eth, u32 config)
++{
++	if (mtk_is_netsys_v1(eth))
++		return;
++
++	mtk_w32(eth, config, PSE_PPE_DROP(0));
++	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE1))
++		mtk_w32(eth, config, PSE_PPE_DROP(1));
++	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE2))
++		mtk_w32(eth, config, PSE_PPE_DROP(2));
++}
++
+ int mtk_gmac_sgmii_path_setup(struct mtk_eth *eth, int mac_id);
+ int mtk_gmac_2p5gphy_path_setup(struct mtk_eth *eth, int mac_id);
+ int mtk_gmac_gephy_path_setup(struct mtk_eth *eth, int mac_id);
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index e48d8f9..6f229a2 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -2285,6 +2285,14 @@ mtk_wed_ppe_check(struct mtk_wed_device *dev, struct sk_buff *skb,
+ 	mtk_ppe_check_skb(eth->ppe[dev->hw->index], skb, hash);
+ }
+ 
++static void
++mtk_wed_ppe_drop(struct mtk_wed_device *dev, bool enable)
++{
++	u32 val = mtk_wed_is_v3_1(dev->hw) ? 0x100 : 0x2300;
++
++	mtk_ppe_drop_config(dev->hw->eth, enable ? val : 0x0);
++}
++
+ static void
+ mtk_wed_configure_irq(struct mtk_wed_device *dev, u32 irq_mask)
+ {
+@@ -3172,6 +3180,7 @@ void mtk_wed_add_hw(struct device_node *np, struct mtk_eth *eth,
+ 		.irq_set_mask = mtk_wed_irq_set_mask,
+ 		.detach = mtk_wed_detach,
+ 		.ppe_check = mtk_wed_ppe_check,
++		.ppe_drop = mtk_wed_ppe_drop,
+ 		.get_hw_version = mtk_wed_get_hw_version,
+ 		.setup_tc = mtk_wed_setup_tc,
+ 		.start_hw_rro = mtk_wed_start_hw_rro,
+diff --git a/include/linux/soc/mediatek/mtk_wed.h b/include/linux/soc/mediatek/mtk_wed.h
+index 7b40626..e153e76 100644
+--- a/include/linux/soc/mediatek/mtk_wed.h
++++ b/include/linux/soc/mediatek/mtk_wed.h
+@@ -221,6 +221,7 @@ struct mtk_wed_ops {
+ 	void (*detach)(struct mtk_wed_device *dev);
+ 	void (*ppe_check)(struct mtk_wed_device *dev, struct sk_buff *skb,
+ 			  u32 reason, u32 hash);
++	void (*ppe_drop)(struct mtk_wed_device *dev, bool enable);
+ 
+ 	void (*stop)(struct mtk_wed_device *dev);
+ 	void (*start)(struct mtk_wed_device *dev, u32 irq_mask);
+@@ -332,6 +333,8 @@ static inline bool mtk_wed_is_amsdu_supported(struct mtk_wed_device *dev)
+ 	(_dev)->ops->rx_ring_setup(_dev, _ring, _regs, _reset)
+ #define mtk_wed_device_ppe_check(_dev, _skb, _reason, _hash) \
+ 	(_dev)->ops->ppe_check(_dev, _skb, _reason, _hash)
++#define mtk_wed_device_ppe_drop(_dev, _enable) \
++	(_dev)->ops->ppe_drop(_dev, _enable)
+ #define mtk_wed_device_update_msg(_dev, _id, _msg, _len) \
+ 	(_dev)->ops->msg_update(_dev, _id, _msg, _len)
+ #define mtk_wed_device_stop(_dev) (_dev)->ops->stop(_dev)
+@@ -364,6 +367,7 @@ static inline bool mtk_wed_device_active(struct mtk_wed_device *dev)
+ #define mtk_wed_device_irq_set_mask(_dev, _mask) do {} while (0)
+ #define mtk_wed_device_rx_ring_setup(_dev, _ring, _regs, _reset) -ENODEV
+ #define mtk_wed_device_ppe_check(_dev, _skb, _reason, _hash)  do {} while (0)
++#define mtk_wed_device_ppe_drop(_dev, _enable)  do {} while (0)
+ #define mtk_wed_device_update_msg(_dev, _id, _msg, _len) -ENODEV
+ #define mtk_wed_device_stop(_dev) do {} while (0)
+ #define mtk_wed_device_dma_reset(_dev) do {} while (0)
+-- 
+2.45.2
+

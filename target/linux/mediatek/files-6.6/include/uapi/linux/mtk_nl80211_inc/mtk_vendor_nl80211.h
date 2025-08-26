@@ -150,7 +150,13 @@
  * @MTK_NL80211_VENDOR_SUBCMD_CONFIG: command to config setting before interface up
  * @MTK_NL80211_VENDOR_SUBCMD_GET_CONNECTED_STA_MLD: command to get connected sta mld
  * it requires mtk_nl80211_vendor_attrs_sta_mld attributes
-* @MTK_NL80211_VENDOR_SUBCMD_GET_AP_BSS: command to get configurations of ap bss
+ * @MTK_NL80211_VENDOR_SUBCMD_GET_AP_BSS: command to get configurations of ap bss
+ * @MTK_NL80211_VENDOR_SUBCMD_SET_SWACI_LNA: command to set software aci lna
+ * it requires mtk_nl80211_vendor_attrs_swaci_lna attributes
+ * @MTK_NL80211_VENDOR_SUBCMD_SET_NPCA: command to config npca
+ * it requires mtk_nl80211_vendor_attrs_npca attributes
+ * @MTK_NL80211_VENDOR_SUBCMD_SET_DSO: command to config dso
+ * it requires mtk_nl80211_vendor_attrs_dso attributes
  */
 enum mtk_nl80211_vendor_commands {
 	MTK_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -227,6 +233,10 @@ enum mtk_nl80211_vendor_commands {
 	MTK_NL80211_VENDOR_SUBCMD_GET_CONNECTED_STA_MLD,
 	MTK_NL80211_VENDOR_SUBCMD_GET_AP_BSS,
 	MTK_NL80211_VENDOR_SUBCMD_CLEAN_STATION,
+	MTK_NL80211_VENDOR_SUBCMD_SET_SWACI_LNA,
+	MTK_NL80211_VENDOR_SUBCMD_SET_AP_MLD,
+	MTK_NL80211_VENDOR_SUBCMD_SET_NPCA,
+	MTK_NL80211_VENDOR_SUBCMD_SET_DSO,
 	/* add new commands above here */
 	/* used to define NL80211_CMD_MAX below */
 	__MTK_NL80211_VENDOR_CMD_AFTER_LAST,
@@ -307,7 +317,7 @@ struct mlo_link_information {
 	unsigned long long tx_bytes;
 	unsigned long rx_packets;
 	unsigned long tx_packets;
-	char rssi[4];
+	signed char rssi[4];
 	unsigned char snr[4];
 	unsigned long tx_rate;
 	unsigned long rx_rate;
@@ -327,13 +337,17 @@ struct station_information {
 	unsigned long long tx_bytes;
 	unsigned long rx_packets;
 	unsigned long tx_packets;
-	char rssi[4];
+	signed char rssi[4];
 	unsigned char snr[4];
 	unsigned long tx_rate;
 	unsigned long rx_rate;
 	unsigned char cap_phymode;
 	unsigned char mlo_enable;
 	unsigned char mld_mac[6];
+	signed char SignalStrength;
+	unsigned long ErrorsSent;
+	unsigned long ErrorsReceived;
+	unsigned long RetryCount;
 	struct mlo_link_information mlo_link[3];
 };
 
@@ -388,6 +402,7 @@ struct GNU_PACKED mtk_andlink_wifi_sta_info {
  * @MTK_NL80211_VENDOR_ATTR_STA: STA's information and counters, struct wifi_station.
  * @MTK_NL80211_VENDOR_ATTR_STA_MAC: the mac address of station to be queried.
  * @MTK_NL80211_VENDOR_ATTR_STA_INFO: the queried station information structure, struct station_information.
+ * @MTK_NL80211_VENDOR_ATTR_STA_INFO_GTBAPP_FORMAT: the queried station information structure for gtb application, struct wifi_sta_info.
  * @MTK_NL80211_VENDOR_ATTR_STA_INFO_ANDLINK_FORMAT:query all sta info, struct GNU_PACKED mtk_andlink_wifi_sta_info
  */
 enum mtk_nl80211_vendor_attrs_sta {
@@ -397,6 +412,7 @@ enum mtk_nl80211_vendor_attrs_sta {
 	/* add attributes here, update the policy in nl80211.c */
 	MTK_NL80211_VENDOR_ATTR_STA_MAC,
 	MTK_NL80211_VENDOR_ATTR_STA_INFO,
+	MTK_NL80211_VENDOR_ATTR_STA_INFO_GTBAPP_FORMAT,
 	MTK_NL80211_VENDOR_ATTR_STA_INFO_ANDLINK_FORMAT,
 
 	__MTK_NL80211_VENDOR_ATTR_STA_LAST,
@@ -426,6 +442,12 @@ enum mtk_nl80211_vendor_attrs_sta {
  * @MTK_NL80211_VENDOR_ATTR_FTM_ROLE: select iSTA or rSTA role to set parameters.
  * @MTK_NL80211_VENDOR_ATTR_FTM_TOAE_CFG: TOAE Calibration for FTM.
  * @MTK_NL80211_VENDOR_ATTR_FTM_TESTMODE: cmd for FTM test mode.
+ * @MTK_NL80211_VENDOR_ATTR_FTM_FTMR_TIMEOUT: set rSTA 2nd FTMR timeout value.
+ * @MTK_NL80211_VENDOR_ATTR_FTM_NON_ASAP_DELAY_TIME: non-ASAP iFTMR delay time (for Partial TSF).
+ * @MTK_NL80211_VENDOR_ATTR_FTM_DUMP_PARAMS: dump all FTM setting.
+ * @MTK_NL80211_VENDOR_ATTR_FTM_NTB_RANGING_PARAMS: Params in Ranging Parameters element for iFTMR.
+ * @MTK_NL80211_VENDOR_ATTR_FTM_NTB_MEAS_EXP: Min/Max time between measurement in NTB Specific subelement for iFTMR.
+ * @MTK_NL80211_VENDOR_ATTR_FTM_NTB_RANG_REQ: for iSTA to request 11az NTB range request.
  */
 enum mtk_nl80211_vendor_attrs_ftm {
 	MTK_NL80211_VENDOR_ATTR_FTM_INVALID = 0,
@@ -445,6 +467,12 @@ enum mtk_nl80211_vendor_attrs_ftm {
 	MTK_NL80211_VENDOR_ATTR_FTM_ROLE,
 	MTK_NL80211_VENDOR_ATTR_FTM_TOAE_CFG,
 	MTK_NL80211_VENDOR_ATTR_FTM_TESTMODE,
+	MTK_NL80211_VENDOR_ATTR_FTM_FTMR_TIMEOUT,
+	MTK_NL80211_VENDOR_ATTR_FTM_NON_ASAP_DELAY_TIME,
+	MTK_NL80211_VENDOR_ATTR_FTM_DUMP_PARAMS,
+	MTK_NL80211_VENDOR_ATTR_FTM_NTB_RANGING_PARAMS,
+	MTK_NL80211_VENDOR_ATTR_FTM_NTB_MEAS_EXP,
+	MTK_NL80211_VENDOR_ATTR_FTM_NTB_RANG_REQ,
 
 	__MTK_NL80211_VENDOR_ATTR_FTM_LAST,
 	MTK_NL80211_VENDOR_ATTR_FTM_MAX = __MTK_NL80211_VENDOR_ATTR_FTM_LAST - 1
@@ -538,6 +566,14 @@ enum mtk_nl80211_vendor_events {
 	MTK_NL80211_VENDOR_EVENT_SEND_MLO_STA_LINK_MAC,
 	MTK_NL80211_VENDOR_EVENT_MLO_RECONF,
 	MTK_NL80211_VENDOR_EVENT_ANDLINK,
+	/*ref: nl80211_radar_event start*/
+	MTK_NL80211_VENDOR_EVENT_RADAR_DETECTED,
+	MTK_NL80211_VENDOR_EVENT_RADAR_CAC_FINISHED,
+	MTK_NL80211_VENDOR_EVENT_RADAR_CAC_ABORTED,
+	MTK_NL80211_VENDOR_EVENT_RADAR_NOP_FINISHED,
+	MTK_NL80211_VENDOR_EVENT_RADAR_PRE_CAC_EXPIRED,
+	MTK_NL80211_VENDOR_EVENT_RADAR_CAC_STARTED,
+	/*ref: nl80211_radar_event end*/
 
 	/* add new events above here */
 	/* used to define NL80211_EVENT_MAX below */
@@ -1002,6 +1038,24 @@ enum mtk_nl80211_vendor_attrs_ap_mld {
 };
 
 /**
+ * enum mtk_nl80211_vendor_attrs_set_ap_mld - This enum defines
+ * attributes required for MTK_NL80211_VENDOR_SUBCMD_SET_AP_MLD.
+ * Information in these attributes is used to set AP or MLD.
+ *
+ * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_INDEX: used to set MLD AP's mld index
+ * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_ADDRESS: used to set MLD group addr
+ * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_EML_MODE: used to set MLD AP's EML mode
+ */
+enum mtk_nl80211_vendor_attrs_set_ap_mld {
+	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_INVALID = 0,
+	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_INDEX,
+	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_ADDRESS,
+	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_EML_MODE,
+
+	__MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_LAST,
+	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_ATTR_MAX = __MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_LAST - 1,
+};
+/**
  * structure ba_mactid_param - This structure defines the payload format of
  * MTK_NL80211_VENDOR_ATTR_AP_BA_SETUP_INFO &
  * MTK_NL80211_VENDOR_ATTR_AP_BA_ORITEARDOWN_INFO &
@@ -1153,6 +1207,7 @@ enum mtk_nl80211_vendor_attrs_ap_ba {
  * MTK_NL80211_VENDOR_ATTR_AP_SET_11BEONLY : set 11be only
  * MTK_NL80211_VENDOR_ATTR_AP_SET_NO_AGMODE : set NO AG Mode
  * MTK_NL80211_VENDOR_ATTR_AP_SET_NO_NMODE : set NO N Mode
+ * MTK_NL80211_VENDOR_ATTR_AP_SET_NO_BMODE : set NO B Mode
  */
 enum mtk_nl80211_vendor_attrs_ap_bss {
 /* don't change the order or add anything between, this is ABI! */
@@ -1188,6 +1243,7 @@ enum mtk_nl80211_vendor_attrs_ap_bss {
 	MTK_NL80211_VENDOR_ATTR_AP_SET_11BEONLY,
 	MTK_NL80211_VENDOR_ATTR_AP_SET_NO_AGMODE,
 	MTK_NL80211_VENDOR_ATTR_AP_SET_NO_NMODE,
+	MTK_NL80211_VENDOR_ATTR_AP_SET_NO_BMODE,
 	__MTK_NL80211_VENDOR_ATTR_AP_BSS_AFTER_LAST,
 	MTK_NL80211_VENDOR_AP_BSS_ATTR_MAX = __MTK_NL80211_VENDOR_ATTR_AP_BSS_AFTER_LAST - 1
 };
@@ -1206,8 +1262,10 @@ enum mtk_nl80211_vendor_attrs_ap_bss {
  * @MTK_NL80211_VENDOR_ATTR_AP_OFDMA_ACK_TOUT_INFO: u32, ACK timeout by OFDMA mode attributes
  * @MTK_NL80211_VENDOR_ATTR_AP_2G_CSA_SUPPORT: u8, 2G CSA support enable attributes
  * @MTK_NL80211_VENDOR_ATTR_AP_MRU_INFO: u8, MRU enable attributes
+ * @MTK_NL80211_VENDOR_ATTR_AP_AI_ANTINOISE: u16, ANTINOISE enable attributes
  * @MTK_NL80211_VENDOR_ATTR_AP_BSS_MAX_STA_NUM:u16, set bss max sta num
  * @MTK_NL80211_VENDOR_ATTR_AP_PHY_MODE: u8, per band phymode support enable attributes
+ * @MTK_NL80211_VENDOR_ATTR_AP_CSA_SUPPORT: u8, CSA support enable attributes
  */
 enum mtk_nl80211_vendor_attrs_ap_radio {
 	MTK_NL80211_VENDOR_ATTR_AP_RADIO_INVALID = 0,
@@ -1220,8 +1278,10 @@ enum mtk_nl80211_vendor_attrs_ap_radio {
 	MTK_NL80211_VENDOR_ATTR_AP_OFDMA_ACK_TOUT_INFO,
 	MTK_NL80211_VENDOR_ATTR_AP_2G_CSA_SUPPORT,
 	MTK_NL80211_VENDOR_ATTR_AP_MRU_INFO,
+	MTK_NL80211_VENDOR_ATTR_AP_AI_ANTINOISE,
 	MTK_NL80211_VENDOR_ATTR_AP_BSS_MAX_STA_NUM,
 	MTK_NL80211_VENDOR_ATTR_AP_PHY_MODE,
+	MTK_NL80211_VENDOR_ATTR_AP_CSA_SUPPORT,
 
 	__MTK_NL80211_VENDOR_ATTR_AP_RADIO_AFTER_LAST,
 	MTK_NL80211_VENDOR_AP_RADIO_ATTR_MAX = __MTK_NL80211_VENDOR_ATTR_AP_RADIO_AFTER_LAST - 1
@@ -1511,6 +1571,8 @@ enum mtk_vendor_attr_ap_wireless {
  * @MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_ACK_PLCY: u8, 0-4
  * @MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_PPDU_TYPE: u8, 0-4
  * @MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_HE_TXOP_RTS_THLD: u16, HE TXOP RTS threshold
+ * @MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_EXTRA_LTF_DISABLE: u8, 0-disable, 1-enable
+ * @MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_EXTRA_LTF: u8, 4 or 8
  */
 enum mtk_nl80211_vendor_attrs_ap_rfeature {
 /* don't change the order or add anything between, this is ABI! */
@@ -1521,6 +1583,8 @@ enum mtk_nl80211_vendor_attrs_ap_rfeature {
 	MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_ACK_PLCY,
 	MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_PPDU_TYPE,
 	MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_HE_TXOP_RTS_THLD,
+	MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_EXTRA_LTF_DISABLE,
+	MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_EXTRA_LTF,
 	__MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_AFTER_LAST,
 	MTK_NL80211_VENDOR_AP_RFEATURE_ATTR_MAX =
 	__MTK_NL80211_VENDOR_ATTR_AP_RFEATURE_AFTER_LAST - 1
@@ -1582,6 +1646,8 @@ enum mtk_nl80211_vendor_attr_get_band_info {
  * @MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_BASIC_RATE: u64, basic rates.
  * @MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_SUPP_RATE: max length 12 bytes, support rates.
  * @MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_CURRENT_CHANNEL_INFO: customized channel stats.
+ * @MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_BW: run time bw.
+ * @MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_COUNTRYCODE: countrycode get.
  */
 enum mtk_nl80211_vendor_attr_get_runtime_info {
 	/* don't change the order or add anything between, this is ABI! */
@@ -1608,6 +1674,8 @@ enum mtk_nl80211_vendor_attr_get_runtime_info {
 	MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_BASIC_RATE,
 	MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_SUPP_RATE,
 	MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_CURRENT_CHANNEL_INFO,
+	MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_BW,
+	MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_GET_COUNTRYCODE,
 
 	__MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_LAST,
 	MTK_NL80211_VENDOR_ATTR_GET_RUNTIME_INFO_MAX =
@@ -1854,8 +1922,26 @@ enum mtk_nl80211_vendor_attr_event_cosr {
 	__MTK_NL80211_VENDOR_ATTR_COSR_LAST - 1
 };
 
+enum mtk_nl80211_vendor_attr_radar_notify {
+	MTK_NL80211_VENDOR_ATTR_RADAR_INVALLD = 0,
+	MTK_NL80211_VENDOR_ATTR_RADAR_FREQ,
+	MTK_NL80211_VENDOR_ATTR_RADAR_FREQ_OFFSET,
+	MTK_NL80211_VENDOR_ATTR_RADAR_CHANNEL_TYPE,
+	MTK_NL80211_VENDOR_ATTR_RADAR_CHANNEL_WIDTH,
+	MTK_NL80211_VENDOR_ATTR_RADAR_CHANNEL_CENTER_FREQ1,
+	MTK_NL80211_VENDOR_ATTR_RADAR_CHANNEL_CENTER_FREQ2,
+
+	__MTK_NL80211_VENDOR_ATTR_RADAR_LAST,
+	MTK_NL80211_VENDOR_ATTR_RADAR_MAX =
+	__MTK_NL80211_VENDOR_ATTR_RADAR_LAST - 1
+};
+
 #ifndef MAX_NUM_OF_CHANNELS
+#ifdef NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT
+#define MAX_NUM_OF_CHANNELS 300
+#else
 #define MAX_NUM_OF_CHANNELS 59
+#endif
 #endif
 /**
  * structure ch_list_info - This structure defines the payload format of
@@ -1880,6 +1966,7 @@ struct GNU_PACKED ch_list_info {
  * @MTK_NL80211_VENDOR_ATTR_CHAN_SET_BW: u32, channel bandwidth
  * @MTK_NL80211_VENDOR_ATTR_CHAN_SET_HT_EXTCHAN: u8, HT 40 extension channel
  * @MTK_NL80211_VENDOR_ATTR_CHAN_SET_HT_COEX: u8, HT 20/40 coex
+ * @MTK_NL80211_VENDOR_ATTR_CHAN_SET_BYPASS_CAC: u8, bypass CAC check or not
  */
 enum mtk_nl80211_vendor_attrs_chan_set {
 /* don't change the order or add anything between, this is ABI! */
@@ -1890,6 +1977,7 @@ enum mtk_nl80211_vendor_attrs_chan_set {
 	MTK_NL80211_VENDOR_ATTR_CHAN_SET_BW,
 	MTK_NL80211_VENDOR_ATTR_CHAN_SET_HT_EXTCHAN,
 	MTK_NL80211_VENDOR_ATTR_CHAN_SET_HT_COEX,
+	MTK_NL80211_VENDOR_ATTR_CHAN_SET_BYPASS_CAC,
 
 	__MTK_NL80211_VENDOR_ATTR_CHAN_LAST,
 	MTK_NL80211_VENDOR_ATTR_CHAN_MAX = __MTK_NL80211_VENDOR_ATTR_CHAN_LAST - 1
@@ -1918,6 +2006,16 @@ enum mtk_nl80211_vendor_attrs_chan_set {
  *	for periodic ACS executing; Periodic ACS scan can be triggered only when the current
  *	connected station number less than the threshold; A zero setting for the station
  *	number threshold means the station number won't be considered.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_DATA_RATE_WT: u16, The weight of data rate in calculating scores.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_PRIO_WT: u16, The weight of channel priority in calculating scores.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_TX_POWER_CONS: u8, whether consider TX power when calculating the data rate.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_MAX_ACS_TIMES: u8, maximum times of execute ACS in every 8 hours.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_SWITCH_THR: u8, If the score of the channel selected
+ *	by ACS does not exceed the threshold compared.to the score of the original
+ *	working channel, it will not switch.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_ICE_CH_UTIL_THR: u8, If the percentage of busy time
+ *	in the measurement exceeds the threshold, the channel is considered busy in emergency case.
+ * @MTK_NL80211_VENDOR_ATTR_AUTO_CH_OBSS_WT: u16, The weight of other BSS in calculating scores.
  */
 enum mtk_nl80211_vendor_attr_auto_ch_sel {
 	/* don't change the order or add anything between, this is ABI! */
@@ -1934,6 +2032,14 @@ enum mtk_nl80211_vendor_attr_auto_ch_sel {
 	MTK_NL80211_VENDOR_ATTR_AUTO_CH_SKIP_LIST,
 	MTK_NL80211_VENDOR_ATTR_AUTO_CH_CH_UTIL_THR,
 	MTK_NL80211_VENDOR_ATTR_AUTO_CH_STA_NUM_THR,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_DATA_RATE_WT,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_PRIO_WT,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_TX_POWER_CONS,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_MAX_ACS_TIMES,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_SWITCH_THR,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_ICE_CH_UTIL_THR,
+	MTK_NL80211_VENDOR_ATTR_AUTO_CH_OBSS_WT,
+
 	__MTK_NL80211_VENDOR_ATTR_AUTO_CH_SEL_LAST,
 	MTK_NL80211_VENDOR_ATTR_AUTO_CH_SEL_MAX =
 	__MTK_NL80211_VENDOR_ATTR_AUTO_CH_SEL_LAST - 1
@@ -2252,6 +2358,8 @@ enum mtk_nl80211_vendor_attr_easymesh {
  *MTK_NL80211_VENDOR_ATTR_ACL_SHOW_ALL: without value, send to driver and query list content.
  *MTK_NL80211_VENDOR_ATTR_ACL_CLEAR_ALL: without value, clear all stas in list
  *MTK_NL80211_VENDOR_ATTR_ACL_LIST_INFO: str, contain acl policy and all stas' mac in the list.
+ *MTK_NL80211_VENDOR_ATTR_ACL_BL_ADD_MAC Add Entry in MAP BL Table to use BS2.0 force Steering
+ *MTK_NL80211_VENDOR_ATTR_ACL_BL_DEL_MAC delete  Entry in MAP BL Table to use BS2.0 force Steering
  */
 enum mtk_nl80211_vendor_attr_acl_mode {
 	MTK_NL80211_VENDOR_ATTR_ACL_INVALID,
@@ -2261,6 +2369,8 @@ enum mtk_nl80211_vendor_attr_acl_mode {
 	MTK_NL80211_VENDOR_ATTR_ACL_SHOW_ALL = 4,
 	MTK_NL80211_VENDOR_ATTR_ACL_CLEAR_ALL = 5,
 	MTK_NL80211_VENDOR_ATTR_ACL_LIST_INFO = 6,
+	MTK_NL80211_VENDOR_ATTR_ACL_BL_ADD_MAC = 7,
+	MTK_NL80211_VENDOR_ATTR_ACL_BL_DEL_MAC = 8,
 	__MTK_NL80211_VENDOR_ATTR_AP_ACL_AFTER_LAST,
 	MTK_NL80211_VENDOR_AP_ACL_ATTR_MAX = __MTK_NL80211_VENDOR_ATTR_AP_ACL_AFTER_LAST - 1
 };
@@ -2876,4 +2986,73 @@ enum mtk_nl80211_vendor_attrs_sta_mld {
 	__MTK_NL80211_VENDOR_ATTR_CONNECTED_STA_MLD_LAST,
 	MTK_NL80211_VENDOR_ATTR_CONNECTED_STA_MLD_MAX = __MTK_NL80211_VENDOR_ATTR_CONNECTED_STA_MLD_LAST - 1
 };
+/**
+ * enum mtk_nl80211_vendor_attrs_swaci_lna - This enum defines
+ * attributes required for MTK_NL80211_VENDOR_SUBCMD_SET_SWACI_LNA.
+ * Information in these attributes is used to set AP Power configuration
+ * to driver from user application.
+ *
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_SCENARIO, Force ACI L/ AACI/ Normal/ ACI small setting shortcut.
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_DUTY_TH, Duty cycle ACI/AACI TH.
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_SCEN_ADC_RCPI_TH, Cond D : ADC ??RCPI th / ADC valid TH (For interf. Scenario decision)
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_ACI_IB_RCPI_TH, Cond E: IB ??RCPI TH (For ACI).
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_AACI_IB_RCPI_TH, Cond F: RCPI TH (For AACI).
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_INST_IB_RCPI_TH, Cond G: InstIB ??RCPI TH.
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_INTERF_CNT_TH, Total Interf Cnt Thr/ ACIL cnt Thr/ AACI cnt Thr.
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_VALID_RCPI_TH, Valid RCPI TH (By BW flexibility)
+ * @MTK_NL80211_VENDOR_ATTR_SWACI_LNA_CONF, config values.
+ */
+enum mtk_nl80211_vendor_attrs_swaci_lna {
+/* don't change the order or add anything between, this is ABI! */
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_INVALID = 0,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_ENABLE,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_SCENARIO,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_DUTY_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_SCEN_ADC_RCPI_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_ACI_IB_RCPI_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_AACI_IB_RCPI_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_INST_IB_RCPI_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_INTERF_CNT_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_VALID_RCPI_TH,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_CONF,
+	__MTK_NL80211_VENDOR_ATTR_SWACI_LNA_AFTER_LAST,
+	MTK_NL80211_VENDOR_ATTR_SWACI_LNA_MAX = __MTK_NL80211_VENDOR_ATTR_SWACI_LNA_AFTER_LAST - 1
+};
+/**
+ * enum mtk_nl80211_vendor_attrs_npca - This enum defines
+ * attributes required for MTK_NL80211_VENDOR_SUBCMD_SET_NPCA.
+ * Information in these attributes is used to set NPCA configuration
+ * to driver from user application.
+ *
+ */
+enum mtk_nl80211_vendor_attrs_npca {
+/* don't change the order or add anything between, this is ABI! */
+	MTK_NL80211_VENDOR_ATTR_NPCA_INVALID = 0,
+	MTK_NL80211_VENDOR_ATTR_NPCA_GLB_MODE,
+	MTK_NL80211_VENDOR_ATTR_NPCA_GLB_THRES,
+	MTK_NL80211_VENDOR_ATTR_NPCA_GLB_CH_SWT,
+	MTK_NL80211_VENDOR_ATTR_NPCA_GLB_BYPASS,
+	MTK_NL80211_VENDOR_ATTR_NPCA_GLB_SRAM_ADDR,
+	MTK_NL80211_VENDOR_ATTR_NPCA_GLB_SRAM_COLOR,
+	MTK_NL80211_VENDOR_ATTR_NPCA_STA_COLOR,
+	MTK_NL80211_VENDOR_ATTR_NPCA_STA_ADDR,
+	__MTK_NL80211_VENDOR_ATTR_NPCA_AFTER_LAST,
+	MTK_NL80211_VENDOR_ATTR_NPCA_MAX = __MTK_NL80211_VENDOR_ATTR_NPCA_AFTER_LAST - 1
+};
+/**
+ * enum mtk_nl80211_vendor_attrs_dso - This enum defines
+ * attributes required for MTK_NL80211_VENDOR_SUBCMD_SET_DSO.
+ * Information in these attributes is used to set DSO configuration
+ * to driver from user application.
+ *
+ */
+enum mtk_nl80211_vendor_attrs_dso {
+/* don't change the order or add anything between, this is ABI! */
+	MTK_NL80211_VENDOR_ATTR_DSO_INVALID = 0,
+	MTK_NL80211_VENDOR_ATTR_DSO_GLB_EN,
+	MTK_NL80211_VENDOR_ATTR_DSO_STA_CAP,
+	__MTK_NL80211_VENDOR_ATTR_DSO_AFTER_LAST,
+	MTK_NL80211_VENDOR_ATTR_DSO_MAX = __MTK_NL80211_VENDOR_ATTR_DSO_AFTER_LAST - 1
+};
+
 #endif /* __MTK_VENDOR_NL80211_H */

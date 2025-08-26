@@ -1,0 +1,41 @@
+diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-24 21:23:51.246002507 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-25 22:02:07.254002094 +0800
+@@ -40,7 +40,8 @@
+ #include "mtk_eth_reset.h"
+ #include "mtk_hnat/nf_hnat_mtk.h"
+ #endif
+-
++struct net_device *ppd_dev;
++EXPORT_SYMBOL(ppd_dev);
+ static int mtk_msg_level = -1;
+ module_param_named(msg_level, mtk_msg_level, int, 0);
+ MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
+@@ -2489,11 +2490,11 @@
+ 		}
+ 
+ 		if ( (mac == 4) || ((FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5)) == HIT_BIND_FORCE_TO_CPU)) 
+-			
+-		{
+-			mac = 1;
++			{
+ 			sent_ppd = 1;
+-		}
++			mac =0;
++			}
++
+ 
+ 		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
+ 			     !eth->netdev[mac]))
+@@ -2656,9 +2657,9 @@
+ 			hw_lro_flush_stats_update(ring->ring_no, &trxd);
+ 		}
+ 
+-		if (sent_ppd){
++		if (sent_ppd && ppd_dev){
+ 			skb->protocol = eth_hdr(skb)->h_proto;
+-			skb->dev = eth->netdev[1];
++			skb->dev = ppd_dev;
+ 		}
+ 		skb_record_rx_queue(skb, 0);
+ 		napi_gro_receive(napi, skb);

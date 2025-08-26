@@ -1,0 +1,25 @@
+From 5ff5298c29208a7d745a0f3f47b18d0a906eedad Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Wed, 6 Aug 2025 11:06:41 +0800
+Subject: [PATCH] Refactor wed amsdu init value
+
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index e2d9405a1..f34f7cd27 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -615,7 +615,7 @@ mtk_wed_amsdu_init(struct mtk_wed_device *dev)
+ 
+ 	if (mtk_wed_is_v3(dev->hw)) {
+ 		/* init all sta parameter */
+-		wed_w32(dev, MTK_WED_AMSDU_STA_INFO_INIT, MTK_WED_AMSDU_STA_RMVL |
++		wed_w32(dev, MTK_WED_AMSDU_STA_INFO_INIT,
+ 			MTK_WED_AMSDU_STA_WTBL_HDRT_MODE |
+ 			FIELD_PREP(MTK_WED_AMSDU_STA_MAX_AMSDU_LEN,
+ 				   dev->wlan.amsdu_max_len >> 8) |
+-- 
+2.45.2
+

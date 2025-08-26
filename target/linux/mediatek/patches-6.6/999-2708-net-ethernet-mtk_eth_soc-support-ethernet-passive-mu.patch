@@ -15,8 +15,6 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  21 +++
  2 files changed, 189 insertions(+), 1 deletion(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index ce55435..47743c1 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 @@ -24,6 +24,7 @@
@@ -27,7 +25,7 @@ index ce55435..47743c1 100644
  #include <linux/jhash.h>
  #include <linux/bitfield.h>
  #include <net/dsa.h>
-@@ -4832,6 +4833,152 @@ static const struct net_device_ops mtk_netdev_ops = {
+@@ -4888,6 +4889,207 @@ static const struct net_device_ops mtk_n
  	.ndo_select_queue	= mtk_select_queue,
  };
  
@@ -37,35 +35,36 @@ index ce55435..47743c1 100644
 +	struct mtk_mac *mac = mux->mac;
 +	struct mtk_eth *eth = mac->hw;
 +	struct net_device *dev = eth->netdev[mac->id];
-+	unsigned int channel;
++	unsigned int new_channel;
++	int sfp_present;
 +
-+	if (IS_ERR(mux->gpio[0]) || IS_ERR(mux->gpio[1]))
-+		goto exit;
++	if (IS_ERR(mux->mod_def0_gpio) || IS_ERR(mux->chan_sel_gpio))
++		goto reschedule;
 +
-+	channel = gpiod_get_value_cansleep(mux->gpio[0]);
-+	if (mux->channel == channel || !netif_running(dev))
-+		goto exit;
++	sfp_present = gpiod_get_value_cansleep(mux->mod_def0_gpio);
++	new_channel = sfp_present ? mux->sfp_present_channel : !mux->sfp_present_channel;
++
++	if (mux->channel == new_channel || !netif_running(dev))
++		goto reschedule;
 +
 +	rtnl_lock();
 +
 +	mtk_stop(dev);
 +
-+	if (channel == 0 || channel == 1) {
-+		mac->of_node = mux->data[channel]->of_node;
-+		mac->phylink = mux->data[channel]->phylink;
-+	};
++	mac->of_node = mux->data[new_channel]->of_node;
++	mac->phylink = mux->data[new_channel]->phylink;
 +
-+	dev_info(eth->dev, "ethernet mux: switch to channel%d\n", channel);
++	dev_info(eth->dev, "ethernet mux: switch to channel%d\n", new_channel);
 +
-+	gpiod_set_value_cansleep(mux->gpio[1], channel);
++	gpiod_set_value_cansleep(mux->chan_sel_gpio, new_channel);
 +
 +	mtk_open(dev);
 +
 +	rtnl_unlock();
 +
-+	mux->channel = channel;
++	mux->channel = new_channel;
 +
-+exit:
++reschedule:
 +	mod_delayed_work(system_wq, &mux->poll, msecs_to_jiffies(100));
 +}
 +
@@ -96,13 +95,10 @@ index ce55435..47743c1 100644
 +		return -ENOMEM;
 +	}
 +
-+	mux->data[id] = data;
-+
-+	/* phylink create */
 +	err = of_get_phy_mode(np, &phy_mode);
 +	if (err) {
 +		dev_err(eth->dev, "incorrect phy-mode\n");
-+		return -EINVAL;
++		goto err_free_data;
 +	}
 +
 +	phylink = phylink_create(&mux->mac->phylink_config,
@@ -110,13 +106,53 @@ index ce55435..47743c1 100644
 +				 phy_mode, &mtk_phylink_ops);
 +	if (IS_ERR(phylink)) {
 +		dev_err(eth->dev, "failed to create phylink structure\n");
-+		return PTR_ERR(phylink);
++		err = PTR_ERR(phylink);
++		goto err_free_data;
 +	}
 +
 +	data->of_node = np;
 +	data->phylink = phylink;
++	mux->data[id] = data;
 +
 +	return 0;
++
++err_free_data:
++	kfree(data);
++	return err;
++}
++
++static void mtk_release_mux(struct mtk_eth *eth, int id)
++{
++	struct mtk_mux *mux = eth->mux[id];
++	int i;
++
++	if (!mux)
++		return;
++
++	cancel_delayed_work_sync(&mux->poll);
++
++	if (!IS_ERR_OR_NULL(mux->mod_def0_gpio))
++		gpiod_put(mux->mod_def0_gpio);
++
++	if (!IS_ERR_OR_NULL(mux->chan_sel_gpio))
++		gpiod_put(mux->chan_sel_gpio);
++
++	for (i = 0; i < 2; i++) {
++		if (mux->data[i]) {
++			if (mux->data[i]->phylink)
++				phylink_destroy(mux->data[i]->phylink);
++			kfree(mux->data[i]);
++		}
++	}
++	kfree(mux);
++	eth->mux[id] = NULL;
++}
++
++static void mtk_release_all_muxes(struct mtk_eth *eth)
++{
++	int i;
++	for (i = 0; i < MTK_MAX_DEVS; i++)
++		mtk_release_mux(eth, i);
 +}
 +
 +static int mtk_add_mux(struct mtk_eth *eth, struct device_node *np)
@@ -145,42 +181,59 @@ index ce55435..47743c1 100644
 +	}
 +
 +	eth->mux[id] = mux;
-+
 +	mux->mac = eth->mac[id];
 +	mux->channel = 0;
 +
-+	mux->gpio[0] = fwnode_gpiod_get_index(of_fwnode_handle(np),
-+					      "mod-def0", 0,
-+					      GPIOD_IN, "?");
-+	if (IS_ERR(mux->gpio[0]))
-+		dev_err(eth->dev, "failed to requset gpio for mod-def0\n");
++	mux->mod_def0_gpio = fwnode_gpiod_get_index(of_fwnode_handle(np),
++				"mod-def0", 0, GPIOD_IN |
++				GPIOD_FLAGS_BIT_NONEXCLUSIVE, "?");
 +
-+	mux->gpio[1] = fwnode_gpiod_get_index(of_fwnode_handle(np),
-+					      "chan-sel", 0,
-+					      GPIOD_OUT_LOW, "?");
-+	if (IS_ERR(mux->gpio[1]))
++	if (IS_ERR(mux->mod_def0_gpio)) {
++		dev_err(eth->dev, "failed to requset gpio for mod-def0\n");
++		err = PTR_ERR(mux->mod_def0_gpio);
++		goto err_free_mux;
++	}
++
++	mux->chan_sel_gpio = fwnode_gpiod_get_index(of_fwnode_handle(np),
++				"chan-sel", 0, GPIOD_OUT_LOW, "?");
++
++	if (IS_ERR(mux->chan_sel_gpio)) {
 +		dev_err(eth->dev, "failed to requset gpio for chan-sel\n");
++		err = PTR_ERR(mux->chan_sel_gpio);
++		goto err_put_mod_def0;
++	}
++
++	of_property_read_u32(np, "sfp-present-channel",
++		&mux->sfp_present_channel);
 +
 +	for_each_child_of_node(np, child) {
 +		err = mtk_add_mux_channel(mux, child);
 +		if (err) {
 +			dev_err(eth->dev, "failed to add mtk_mux\n");
 +			of_node_put(child);
-+			return -ECHILD;
++			goto err_put_chan_sel;
 +		}
-+		of_node_put(child);
 +	}
 +
 +	INIT_DELAYED_WORK(&mux->poll, mux_poll);
 +	mod_delayed_work(system_wq, &mux->poll, msecs_to_jiffies(3000));
 +
 +	return 0;
++
++err_put_chan_sel:
++	gpiod_put(mux->chan_sel_gpio);
++err_put_mod_def0:
++	gpiod_put(mux->mod_def0_gpio);
++err_free_mux:
++	kfree(mux);
++	eth->mux[id] = NULL;
++	return err;
 +}
 +
  static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
  {
  	const __be32 *_id = of_get_property(np, "reg", NULL);
-@@ -5125,7 +5272,7 @@ static int mtk_sgmii_init(struct mtk_eth *eth)
+@@ -5188,7 +5390,7 @@ static int mtk_sgmii_init(struct mtk_eth
  static int mtk_probe(struct platform_device *pdev)
  {
  	struct resource *res = NULL, *res_sram;
@@ -189,8 +242,8 @@ index ce55435..47743c1 100644
  	struct mtk_eth *eth;
  	int err, i;
  
-@@ -5340,6 +5487,26 @@ static int mtk_probe(struct platform_device *pdev)
- 			goto err_deinit_hw;
+@@ -5428,6 +5630,26 @@ static int mtk_probe(struct platform_dev
+ 			goto err_free_dev;
  	}
  
 +	mux_np = of_get_child_by_name(eth->dev->of_node, "mux-bus");
@@ -213,14 +266,28 @@ index ce55435..47743c1 100644
 +		};
 +	}
 +
- 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_SHARED_INT)) {
- 		err = devm_request_irq(eth->dev, eth->irq[0],
- 				       mtk_handle_irq, 0,
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 7369139..46668fa 100644
+ 	if (eth->soc->offload_version) {
+ 		u8 ppe_num = eth->soc->ppe_num;
+ 
+@@ -5483,6 +5705,7 @@ static int mtk_probe(struct platform_dev
+ 
+ err_deinit_ppe:
+ 	mtk_ppe_deinit(eth);
++	mtk_release_all_muxes(eth);
+ 	mtk_mdio_cleanup(eth);
+ err_free_dev:
+ 	mtk_free_dev(eth);
+@@ -5523,6 +5746,7 @@ static int mtk_remove(struct platform_de
+ 	netif_napi_del(&eth->rx_napi);
+ 	mtk_cleanup(eth);
+ 	mtk_mdio_cleanup(eth);
++	mtk_release_all_muxes(eth);
+ 
+ 	return 0;
+ }
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -719,6 +719,7 @@ struct mtk_tx_dma_v2 {
+@@ -735,6 +735,7 @@ struct mtk_tx_dma_v2 {
  
  struct mtk_eth;
  struct mtk_mac;
@@ -228,7 +295,7 @@ index 7369139..46668fa 100644
  
  struct mtk_xdp_stats {
  	u64 rx_xdp_redirect;
-@@ -1364,6 +1365,7 @@ struct mtk_eth {
+@@ -1381,6 +1382,7 @@ struct mtk_eth {
  	struct net_device		dummy_dev;
  	struct net_device		*netdev[MTK_MAX_DEVS];
  	struct mtk_mac			*mac[MTK_MAX_DEVS];
@@ -236,7 +303,7 @@ index 7369139..46668fa 100644
  	int				irq[3];
  	u32				msg_enable;
  	unsigned long			sysclk;
-@@ -1446,6 +1448,25 @@ struct mtk_mac {
+@@ -1463,6 +1465,27 @@ struct mtk_mac {
  	struct notifier_block		device_notifier;
  };
  
@@ -253,15 +320,14 @@ index 7369139..46668fa 100644
 + */
 +struct mtk_mux {
 +	struct delayed_work		poll;
-+	struct gpio_desc		*gpio[2];
++	struct gpio_desc		*mod_def0_gpio;
++	struct gpio_desc		*chan_sel_gpio;
 +	struct mtk_mux_data		*data[2];
 +	struct mtk_mac			*mac;
 +	unsigned int			channel;
++	unsigned int			sfp_present_channel;
 +};
 +
  /* the struct describing the SoC. these are declared in the soc_xyz.c files */
  extern const struct of_device_id of_mtk_match[];
  
--- 
-2.45.2
-

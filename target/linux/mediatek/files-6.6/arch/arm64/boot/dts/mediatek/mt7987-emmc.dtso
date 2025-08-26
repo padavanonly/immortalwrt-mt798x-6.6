@@ -26,13 +26,6 @@
 	};
 
 	fragment@2 {
-		target-path = "/soc/spi@11008800";
-		__overlay__ {
-			status = "disabled";
-		};
-	};
-
-	fragment@3 {
 		target-path = "/soc/mmc@11230000";
 		__overlay__ {
 			pinctrl-names = "default", "state_uhs";
@@ -60,6 +53,21 @@
 								compatible = "u-boot,env";
 							};
 						};
+
+						block-partition-factory {
+							partname = "factory";
+
+							nvmem-layout {
+								compatible = "fixed-layout";
+								#address-cells = <1>;
+								#size-cells = <1>;
+
+								eeprom_factory_0: eeprom@0 {
+									reg = <0x0 0x1e00>;
+								};
+							};
+						};
+
 						emmc_rootfs: block-partition-production {
 							partname = "production";
 						};
@@ -69,10 +77,24 @@
 		};
 	};
 
-        fragment@4 {
+        fragment@3 {
 		target-path = "/chosen";
 		__overlay__ {
 			rootdisk-emmc = <&emmc_rootfs>;
+		};
+	};
+
+	fragment@4 {
+		target = <&pcie0>;
+		__overlay__ {
+			slot0: pcie@0,0 {
+				reg = <0x0000 0 0 0 0>;
+				mt7996@0,0 {
+					reg = <0x0000 0 0 0 0>;
+					nvmem-cells = <&eeprom_factory_0>;
+					nvmem-cell-names = "eeprom";
+				};
+			};
 		};
 	};
 };

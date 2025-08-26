@@ -12,10 +12,6 @@ KERNEL_PATCHVER:=6.6
 
 include $(INCLUDE_DIR)/target.mk
 DEFAULT_PACKAGES += \
-		kmod-leds-gpio kmod-gpio-button-hotplug autocore kmod-sfp \
-		kmod-mediatek_hnat mtk-smp mtkhqos_util ip6tables-nft \
-        	ebtables kmod-ebtables kmod-ebtables-ipv4 kmod-ebtables-ipv6 \
-        	luci-app-wrtbwmon luci-app-eqos-mtk luci-app-turboacc-mtk \
-        	switch	ethtool-full
+	kmod-leds-gpio kmod-gpio-button-hotplug
 
 $(eval $(call BuildTarget))

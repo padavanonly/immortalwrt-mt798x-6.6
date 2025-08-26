@@ -126,9 +126,16 @@ end
 
 function set_idx_dat(dats, apidx, dat, cfg)
     if cfg ~= nil then
-        dats[dat..tostring(apidx)] = cfg
+        local key
+        if apidx == 0 then
+            key = dat
+        else
+            key = dat .. tostring(apidx)
+        end
+        dats[key] = cfg
     end
 end
+
 
 function vif_in_dev(vif, dev)
     if (vif == dev.main_ifname
@@ -155,6 +162,16 @@ function is_ax_mode(cfg)
         return false
     end
     if string.sub(cfg.config.htmode,1,2) == "HE" then
+        return true
+    end
+    return false
+end
+
+function is_be_mode(cfg)
+    if not cfg.config.htmode then
+        return false
+    end
+    if string.sub(cfg.config.htmode,1,2) == "BE" then
         return true
     end
     return false
@@ -405,20 +422,27 @@ function mtwifi_cfg_setup(argv)
     local WirelessMode
 
     if cfg.config.band == "2g" then
-        WirelessMode = 9 -- PHY_11BGN_MIXED
-        if is_ax_mode(cfg) then
-            WirelessMode = 22 -- PHY_11AX_24G
-        end
-    elseif cfg.config.band == "5g" then
-        WirelessMode = 15 -- PHY_11VHT_N_MIXED
-        if is_ax_mode(cfg) then
-            WirelessMode = 23 -- PHY_11AX_5G
-        end
-    elseif cfg.config.band == "6g" then
-        if is_ax_mode(cfg) then
-            WirelessMode = 24 -- PHY_11AX_6G
-        end
+    WirelessMode = 9  -- PHY_11BGN_MIXED
+    if is_ax_mode(cfg) then
+        WirelessMode = 22 -- PHY_11AX_24G
+    elseif is_be_mode(cfg) then
+        WirelessMode = 22 -- PHY_11BE_24G
     end
+elseif cfg.config.band == "5g" then
+    WirelessMode = 15 -- PHY_11VHT_N_MIXED
+    if is_ax_mode(cfg) then
+        WirelessMode = 23 -- PHY_11AX_5G
+    elseif is_be_mode(cfg) then
+        WirelessMode = 23 -- PHY_11BE_5G
+    end
+elseif cfg.config.band == "6g" then
+    if is_ax_mode(cfg) then
+        WirelessMode = 24 -- PHY_11AX_6G
+    elseif is_be_mode(cfg) then
+        WirelessMode = 24 -- PHY_11BE_6G
+    end
+end
+
 
     if not WirelessMode then
         nixio.syslog("err", "mtwifi-cfg: invalid wireless mode!")
@@ -530,7 +554,7 @@ function mtwifi_cfg_setup(argv)
         dats.ITxBfEn = 0
     end
 
-    if is_ax_mode(cfg) and cfg.config.twt then
+    if (is_ax_mode(cfg) or is_be_mode(cfg)) and cfg.config.twt then
         dats.TWTSupport = cfg.config.twt
     else
         dats.TWTSupport = 0
@@ -590,7 +614,7 @@ function mtwifi_cfg_setup(argv)
                 set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or "")
             end
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
-            set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
+            set_idx_dat(dats, apidx-1, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
@@ -608,7 +632,7 @@ function mtwifi_cfg_setup(argv)
             set_dat(dats, apidx, "DtimPeriod",v.config.dtim_period)
             set_dat(dats, apidx, "WirelessMode", WirelessMode)
 
-            if is_ax_mode(cfg) then
+            if is_ax_mode(cfg) or is_be_mode(cfg) then
                 set_dat(dats, apidx, "HT_BAWinSize", 1024)
             else
                 set_dat(dats, apidx, "HT_BAWinSize", 64)

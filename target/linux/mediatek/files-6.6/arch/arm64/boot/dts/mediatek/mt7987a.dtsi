@@ -19,61 +19,8 @@
 
 };
 
-&afe {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pcm_pins>;
-	status = "okay";
-};
-
 &boottrap {
 	status = "okay";
-};
-
-&fan {
-	pwms = <&pwm 0 50000 0>;
-	status = "disabled";
-};
-
-/* use pwm0 as led: share with fan/pwm_rgb */
-&pwm_led {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pwm_pins>;
-	status = "okay";
-
-	led {
-		pwms = <&pwm 0 50000 0>;
-		max-brightness = <255>;
-		active-low;
-		linux,default-trigger = "default-on";
-	};
-};
-
-/* use pwm0/1/2 as multicolor LED: share with fan/pwm_led */
-&pwm_rgb {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pwm_rgb_pins>;
-	status = "disabled";
-
-	multi-led {
-		color = <LED_COLOR_ID_RGB>;
-		function = LED_FUNCTION_INDICATOR;
-		max-brightness = <255>;
-
-		led-red {
-			pwms = <&pwm 0 50000>;
-			color = <LED_COLOR_ID_RED>;
-		};
-
-		led-green {
-			pwms = <&pwm 1 50000>;
-			color = <LED_COLOR_ID_GREEN>;
-		};
-
-		led-blue {
-			pwms = <&pwm 2 50000>;
-			color = <LED_COLOR_ID_BLUE>;
-		};
-	};
 };
 
 &i2c0 {
@@ -93,6 +40,8 @@
 &pcie0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie0_pins>;
+	wifi-reset-gpios = <&pio 38 GPIO_ACTIVE_HIGH>;
+        wifi-reset-msleep = <100>;
 	status = "okay";
 };
 
@@ -106,17 +55,13 @@
 	status = "okay";
 };
 
-&spi1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&spic_pins>;
-	status = "okay";
-};
-
 &trng {
 	status = "okay";
 };
 
 &uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_pins>;
 	status = "okay";
 };
 

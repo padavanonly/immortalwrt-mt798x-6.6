@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -13,7 +13,6 @@
 	Module Name: wifi_offload
 	warp_fwdl.c
 */
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 #include "warp.h"
 #include "warp_hw.h"
 #include <linux/firmware.h>
@@ -250,6 +249,7 @@ static int warp_fw_init(struct warp_entry *warp)
 	} else {
 		warp_dbg(WARP_DBG_ERR,
 			"%s:allocate memory for firmware failed!\n", __func__);
+		goto err_out;
 	}
 
 err_out:
@@ -546,4 +546,3 @@ int warp_fwdl_clear(struct warp_entry *warp)
 	return fwdl_ops->fwdl_clear(ctrl);
 }
 
-#endif

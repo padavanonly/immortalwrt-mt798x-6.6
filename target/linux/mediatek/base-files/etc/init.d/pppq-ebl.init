@@ -1,0 +1,15 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+NAME=pppq_ebl
+
+#if hnat is not exist, switch module to mtk_ppe
+module=hnat
+[ -d /sys/kernel/debug/${module} ] || {
+	module=mtk_ppe
+}
+
+start_service() {
+	echo 2 > /sys/kernel/debug/${module}/qos_toggle
+}

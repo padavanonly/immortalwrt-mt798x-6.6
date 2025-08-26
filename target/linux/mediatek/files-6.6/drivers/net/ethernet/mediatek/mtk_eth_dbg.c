@@ -26,6 +26,7 @@
 #include <linux/of_mdio.h>
 #include <linux/of_address.h>
 
+
 #include "mtk_eth_soc.h"
 #include "mtk_eth_dbg.h"
 #include "mtk_wed_regs.h"
@@ -153,7 +154,7 @@ static ssize_t qdma_sched_show(struct file *file, char __user *user_buf,
 	for (i = 0; i < 64; i++) {
 		mtk_w32(eth, (i / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
 		sch_reg = mtk_r32(eth, soc->reg_map->qdma.qtx_sch +
-				       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
+				       (i % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
 		if (mtk_is_netsys_v2_or_greater(eth))
 			scheduler = FIELD_GET(MTK_QTX_SCH_TX_SEL_V2, sch_reg);
 		else
@@ -386,6 +387,8 @@ static ssize_t qdma_queue_write(struct file *file, const char __user *buf,
 		qtx_sch |= FIELD_PREP(MTK_QTX_SCH_TX_SEL_V2, scheduler);
 	else
 		qtx_sch |= FIELD_PREP(MTK_QTX_SCH_TX_SEL, scheduler);
+
+	qtx_sch |= FIELD_PREP(MTK_QTX_SCH_LEAKY_BUCKET_SIZE, 3);
 
 	if (min_enable)
 		qtx_sch |= MTK_QTX_SCH_MIN_RATE_EN;
@@ -811,6 +814,22 @@ static ssize_t mtketh_debugfs_reset(struct file *file, const char __user *ptr,
 	return count;
 }
 
+static int tx_full_cnt_read(struct seq_file *m, void *v)
+{
+	struct mtk_eth *eth = m->private;
+	int cnt;
+
+	cnt = atomic_xchg(&eth->tx_ring.full_count, 0);
+	seq_printf(m, "tx ring full count: %d\n", cnt);
+
+	return 0;
+}
+
+static int tx_full_cnt_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, tx_full_cnt_read, inode->i_private);
+}
+
 static const struct file_operations fops_reg_w = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
@@ -830,6 +849,14 @@ static const struct file_operations fops_mt7530sw_reg_w = {
 	.open = simple_open,
 	.write = mtketh_mt7530sw_debugfs_write,
 	.llseek = noop_llseek,
+};
+
+static const struct file_operations fops_tx_full_cnt = {
+	.owner = THIS_MODULE,
+	.open = tx_full_cnt_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
 void mtketh_debugfs_exit(struct mtk_eth *eth)
@@ -854,6 +881,8 @@ int mtketh_debugfs_init(struct mtk_eth *eth)
 			    eth_debug.root, eth, &fops_reg_w);
 	debugfs_create_file("reset", 0444,
 			    eth_debug.root, eth, &fops_eth_reset);
+	debugfs_create_file("tx_full_cnt", 0444,
+			    eth_debug.root, eth, &fops_tx_full_cnt);
 	if (mt7530_exist(eth)) {
 		debugfs_create_file("mt7530sw_regs", 0444,
 				    eth_debug.root, eth,

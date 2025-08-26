@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -15,7 +15,6 @@
 */
 
 #include "warp_utility.h"
-#ifdef CONFIG_WARP_CCIF_SUPPORT
 #include "warp.h"
 #include "warp_wo.h"
 #include "warp_ccif.h"
@@ -188,4 +187,3 @@ void ccif_bus_register(struct woif_bus *bus)
 	bus->clear_int = ccif_clear_int;
 }
 
-#endif

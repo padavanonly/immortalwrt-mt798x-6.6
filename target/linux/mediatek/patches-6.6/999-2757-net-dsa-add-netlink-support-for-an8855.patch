@@ -1,0 +1,208 @@
+Subject: [PATCH] 999-2757-net-dsa-add-netlink-support-for-an8855
+
+---
+ drivers/net/dsa/Makefile |   2 +-
+ drivers/net/dsa/an8855.c | 124 ++++++++++++++++++++++++++++++++++++++-
+ drivers/net/dsa/an8855.h |   9 +++
+ 3 files changed, 133 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/dsa/Makefile b/drivers/net/dsa/Makefile
+index 5c86427..66b60a0 100644
+--- a/drivers/net/dsa/Makefile
++++ b/drivers/net/dsa/Makefile
+@@ -5,7 +5,7 @@ obj-$(CONFIG_NET_DSA_LOOP)	+= dsa_loop.o
+ ifdef CONFIG_NET_DSA_LOOP
+ obj-$(CONFIG_FIXED_PHY)		+= dsa_loop_bdinfo.o
+ endif
+-obj-$(CONFIG_NET_DSA_AN8855)	+= an8855.o
++obj-$(CONFIG_NET_DSA_AN8855)	+= an8855.o an8855_nl.o
+ obj-$(CONFIG_NET_DSA_LANTIQ_GSWIP) += lantiq_gswip.o
+ obj-$(CONFIG_NET_DSA_MT7530)	+= mt7530.o mt7530_nl.o
+ obj-$(CONFIG_NET_DSA_MT7530_MDIO) += mt7530-mdio.o
+diff --git a/drivers/net/dsa/an8855.c b/drivers/net/dsa/an8855.c
+index 7dd62e1..f4be803 100644
+--- a/drivers/net/dsa/an8855.c
++++ b/drivers/net/dsa/an8855.c
+@@ -16,9 +16,18 @@
+ #include <linux/phylink.h>
+ #include <linux/platform_device.h>
+ #include <linux/regmap.h>
++#include <linux/proc_fs.h>
++#include <linux/mfd/airoha-an8855-mfd.h>
+ #include <net/dsa.h>
+ 
+ #include "an8855.h"
++#include "an8855_nl.h"
++
++#define ARHT_CHIP_NAME                  "an8855"
++#define ARHT_PROC_DIR                   "air_sw"
++#define ARHT_PROC_NODE_DEVICE           "device"
++
++struct proc_dir_entry *proc_an8855_dsa_dir;
+ 
+ static const struct an8855_mib_desc an8855_mib[] = {
+ 	MIB_DESC(1, AN8855_PORT_MIB_TX_DROP, "TxDrop"),
+@@ -128,6 +137,65 @@ static int an8855_fdb_cmd(struct an8855_priv *priv, u32 cmd,
+ 	return 0;
+ }
+ 
++void an8855_write(struct an8855_priv *priv, u32 reg, u32 val)
++{
++	regmap_write(priv->regmap, reg, val);
++}
++
++u32 an8855_read(struct an8855_priv *priv, u32 reg)
++{
++	u32 val;
++	int ret;
++
++	ret = regmap_read(priv->regmap, reg, &val);
++	if (ret)
++		return ret;
++
++	return val;
++}
++
++int an8855_phy_cl22_read(struct an8855_priv *priv, int port, int regnum)
++{
++	struct device *parent = priv->ds->dev->parent;
++	struct an8855_mfd_priv *mfd_priv = dev_get_drvdata(parent);
++	struct mii_bus *bus = mfd_priv->bus;
++
++	port += mfd_priv->switch_addr;
++	return mdiobus_read(bus, port, regnum);
++}
++
++int an8855_phy_cl22_write(struct an8855_priv *priv, int port, int regnum,
++			    u16 val)
++{
++	struct device *parent = priv->ds->dev->parent;
++	struct an8855_mfd_priv *mfd_priv = dev_get_drvdata(parent);
++	struct mii_bus *bus = mfd_priv->bus;
++
++	port += mfd_priv->switch_addr;
++	return mdiobus_write(bus, port, regnum, val);
++}
++
++int an8855_phy_cl45_read(struct an8855_priv *priv, int port, int devad, int regnum)
++{
++	struct device *parent = priv->ds->dev->parent;
++	struct an8855_mfd_priv *mfd_priv = dev_get_drvdata(parent);
++	struct mii_bus *bus = mfd_priv->bus;
++
++	port += mfd_priv->switch_addr;
++	return mdiobus_c45_read(bus, port, devad, regnum);
++}
++
++int an8855_phy_cl45_write(struct an8855_priv *priv, int port, int devad, int regnum,
++		      u16 val)
++{
++	struct device *parent = priv->ds->dev->parent;
++	struct an8855_mfd_priv *mfd_priv = dev_get_drvdata(parent);
++	struct mii_bus *bus = mfd_priv->bus;
++
++	port += mfd_priv->switch_addr;
++	return mdiobus_c45_write(bus, port, devad, regnum, val);
++}
++
+ static void
+ an8855_port_stp_state_set(struct dsa_switch *ds, int port, u8 state)
+ {
+@@ -2152,6 +2220,41 @@ static void an8855_pcs_an_restart(struct phylink_pcs *pcs)
+ 	return;
+ }
+ 
++static int an8855_proc_device_read(struct seq_file *seq, void *v)
++{
++	seq_printf(seq, "%s\n", ARHT_CHIP_NAME);
++
++	return 0;
++}
++
++static int an8855_proc_device_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, an8855_proc_device_read, 0);
++}
++
++static const struct proc_ops an8855_proc_device_fops = {
++	.proc_open	= an8855_proc_device_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++};
++
++static int an8855_proc_device_init(void)
++{
++	if (!proc_an8855_dsa_dir)
++		proc_an8855_dsa_dir = proc_mkdir(ARHT_PROC_DIR, 0);
++
++	proc_create(ARHT_PROC_NODE_DEVICE, 0400, proc_an8855_dsa_dir,
++			&an8855_proc_device_fops);
++
++	return 0;
++}
++
++static void an8855_proc_device_exit(void)
++{
++	remove_proc_entry(ARHT_PROC_NODE_DEVICE, 0);
++}
++
+ static const struct phylink_pcs_ops an8855_pcs_ops = {
+ 	.pcs_inband_caps = an8855_pcs_inband_caps,
+ 	.pcs_get_state = an8855_pcs_get_state,
+@@ -2275,7 +2378,22 @@ static int an8855_switch_probe(struct platform_device *pdev)
+ 
+ 	dev_set_drvdata(priv->dev, priv);
+ 
+-	return dsa_register_switch(priv->ds);
++	ret = dsa_register_switch(priv->ds);
++	if (ret) {
++		dev_err(priv->dev, "Failed to register DSA switch: %d\n", ret);
++		return ret;
++	}
++
++	ret = an8855_nl_init(&priv);
++	if (ret) {
++		dev_err(priv->dev, "Failed to initialize netlink with DSA: %d\n", ret);
++		dsa_unregister_switch(priv->ds);
++		return ret;
++	}
++
++	an8855_proc_device_init();
++
++	return 0;
+ }
+ 
+ static int an8855_switch_remove(struct platform_device *pdev)
+@@ -2286,6 +2404,10 @@ static int an8855_switch_remove(struct platform_device *pdev)
+ 		return 0;
+ 
+ 	dsa_unregister_switch(priv->ds);
++
++	an8855_nl_exit();
++	an8855_proc_device_exit();
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/net/dsa/an8855.h b/drivers/net/dsa/an8855.h
+index 2462b9d..47bfea7 100644
+--- a/drivers/net/dsa/an8855.h
++++ b/drivers/net/dsa/an8855.h
+@@ -780,4 +780,13 @@ struct an8855_priv {
+ 	bool phy_require_calib;
+ };
+ 
++u32 an8855_read(struct an8855_priv *priv, u32 reg);
++void an8855_write(struct an8855_priv *priv, u32 reg, u32 val);
++int an8855_phy_cl22_read(struct an8855_priv *priv, int port, int regnum);
++int an8855_phy_cl22_write(struct an8855_priv *priv, int port, int regnum,
++	u16 val);
++int an8855_phy_cl45_read(struct an8855_priv *priv, int port, int devad, int regnum);
++int an8855_phy_cl45_write(struct an8855_priv *priv, int port, int devad, int regnum,
++	u16 val);
++
+ #endif /* __AN8855_H */
+-- 
+2.45.2
+

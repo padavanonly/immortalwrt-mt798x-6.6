@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -18,9 +18,6 @@
 #include "warp_hw.h"
 #include "warp_meminfo_list.h"
 
-
-/*global definition*/
-#define WDMA_DEV_NODE "mediatek,wed-wdma"
 
 /*
 *
@@ -284,7 +281,7 @@ tx_ring_reset(struct wdma_entry *entry, u32 idx,
 	struct wdma_tx_ring_ctrl *ring_ctrl)
 {
 	u32 i = 0;
-	struct warp_dma_buf *desc = &ring_ctrl->desc[i];
+	struct warp_dma_buf *desc = &ring_ctrl->desc[idx];
 	struct warp_ring *ring = &ring_ctrl->ring[idx];
 
 	for (i = 0; i < ring_ctrl->ring_len; i++)
@@ -358,6 +355,61 @@ err:
 }
 #endif
 
+int
+wdma_ring_init(struct wdma_entry *wdma)
+{
+	struct wdma_res_ctrl *res = &wdma->res_ctrl;
+	struct wdma_tx_ctrl *tx_ctrl = &res->tx_ctrl;
+	struct wdma_rx_ctrl *rx_ctrl = &res->rx_ctrl;
+	struct sw_conf_t *sw_conf = wdma->sw_conf;
+
+	/* initial default value */
+	if (wdma->ver >= 2) {
+		rx_ctrl->rx_ring_ctrl.rxd_len = sizeof(struct WDMA_RXD) * 2;
+		rx_ctrl->rx_ring_ctrl.ring_len = sw_conf->rx_wdma_ring_depth;
+		tx_ctrl->tx_ring_ctrl.txd_len = sizeof(struct WDMA_TXD) * 2;
+		tx_ctrl->tx_ring_ctrl.ring_len = sw_conf->tx_wdma_ring_depth;
+	} else {
+		rx_ctrl->rx_ring_ctrl.rxd_len = sizeof(struct WDMA_RXD);
+		rx_ctrl->rx_ring_ctrl.ring_len = WDMA_TX_BM_RING_SIZE;
+		tx_ctrl->tx_ring_ctrl.txd_len = sizeof(struct WDMA_TXD);
+		tx_ctrl->tx_ring_ctrl.ring_len = WDMA_RX_BM_RING_SIZE;
+	}
+	rx_ctrl->rx_ring_ctrl.ring_num = WDMA_RX_RING_NUM;
+	tx_ctrl->tx_ring_ctrl.ring_num = WDMA_TX_RING_NUM;
+
+	warp_dbg(WARP_DBG_INF, "%s(): tx_ctrl %p, rx_ctrl %p\n",
+	__func__, tx_ctrl, rx_ctrl);
+
+#ifdef WED_HW_RX_SUPPORT
+	wdma_tx_ring_init(wdma, &tx_ctrl->tx_ring_ctrl);
+#endif
+
+#ifdef WED_HW_TX_SUPPORT
+	wdma_rx_ring_init(wdma, &rx_ctrl->rx_ring_ctrl);
+#endif
+	return 0;
+}
+
+void
+wdma_ring_exit(struct wdma_entry *wdma)
+{
+	struct wdma_res_ctrl *res = &wdma->res_ctrl;
+	struct wdma_tx_ctrl *tx_ctrl = &res->tx_ctrl;
+	struct wdma_rx_ctrl *rx_ctrl = &res->rx_ctrl;
+
+	warp_dbg(WARP_DBG_INF, "%s(): tx_ctrl %p, rx_ctrl %p\n",
+	__func__, tx_ctrl, rx_ctrl);
+
+#ifdef WED_HW_RX_SUPPORT
+	wdma_tx_ring_exit(wdma, &tx_ctrl->tx_ring_ctrl);
+#endif
+
+#ifdef WED_HW_TX_SUPPORT
+	wdma_rx_ring_exit(wdma, &rx_ctrl->rx_ring_ctrl);
+#endif
+}
+
 /*
 *
 */
@@ -366,12 +418,12 @@ wdma_init(struct platform_device *pdev, u8 idx, struct wdma_entry *wdma, u8 ver)
 {
 	struct device_node *node = NULL;
 	struct resource res;
-	int rc = 0;
+	int ret = 0;
 
 	node = of_find_compatible_node(NULL, NULL, WDMA_DEV_NODE);
-	rc = of_address_to_resource(node, idx, &res);
-	if (rc)
-		return -1;
+	ret = of_address_to_resource(node, idx, &res);
+	if (ret)
+		return -ENODEV;
 
 	warp_dbg(WARP_DBG_INF, "%s(): get node=%p\n", __func__, &node);
 
@@ -384,31 +436,15 @@ wdma_init(struct platform_device *pdev, u8 idx, struct wdma_entry *wdma, u8 ver)
 
 	wdma->ver = ver;
 
-	if (ver == 0x1) {
-		wdma->wdma_rx_port = WDMA_PORT3;
-	} else if (ver == 0x2) {
-		if (idx == WARP_WED1) {
-			wdma->wdma_tx_port = WDMA_PORT3;
-			wdma->wdma_rx_port = WDMA_PORT8;
-		} else if (idx == WARP_WED2) {
-			wdma->wdma_tx_port = WDMA_PORT4;
-			wdma->wdma_rx_port = WDMA_PORT9;
-		} else if (idx == WARP_WED3) {
-			wdma->wdma_tx_port = WDMA_PORT3;
-			wdma->wdma_rx_port = WDMA_PORT13;
-		}
-	} else if (ver == 0x3) {
-		if (idx == WARP_WED1) {
-			wdma->wdma_tx_port = WDMA_PORT3;
-			wdma->wdma_rx_port = WDMA_PORT8;
-		} else if (idx == WARP_WED2) {
-			wdma->wdma_tx_port = WDMA_PORT3;
-			wdma->wdma_rx_port = WDMA_PORT9;
-		} else if (idx == WARP_WED3) {
-			wdma->wdma_tx_port = WDMA_PORT3;
-			wdma->wdma_rx_port = WDMA_PORT13;
-		}
+
+	ret = warp_get_wdma_port(wdma, idx);
+	if (ret) {
+		warp_dbg(WARP_DBG_ERR,
+			"%s(): Unexpected error %d from getting wdma port with idx %u\n",
+			__func__, ret, idx);
+		return ret;
 	}
+
 	/* initial wdma ring resource */
 	wdma_ring_init(wdma);
 
@@ -430,65 +466,6 @@ wdma_exit(struct platform_device *pdev, struct wdma_entry *wdma)
 	}
 
 	return 0;
-}
-
-/*
-*
-*/
-int
-wdma_ring_init(struct wdma_entry *wdma)
-{
-	struct wdma_res_ctrl *res = &wdma->res_ctrl;
-	struct wdma_tx_ctrl *tx_ctrl = &res->tx_ctrl;
-	struct wdma_rx_ctrl *rx_ctrl = &res->rx_ctrl;
-	struct sw_conf_t *sw_conf = wdma->sw_conf;
-
-	/* initial default value */
-	if (wdma->ver >= 2) {
-		rx_ctrl->rx_ring_ctrl.rxd_len = sizeof(struct WDMA_RXD) * 2;
-		tx_ctrl->tx_ring_ctrl.txd_len = sizeof(struct WDMA_TXD) * 2;
-	} else {
-		rx_ctrl->rx_ring_ctrl.rxd_len = sizeof(struct WDMA_RXD);
-		tx_ctrl->tx_ring_ctrl.txd_len = sizeof(struct WDMA_TXD);
-	}
-	rx_ctrl->rx_ring_ctrl.ring_len = sw_conf->rx_wdma_ring_depth;
-	tx_ctrl->tx_ring_ctrl.ring_len = sw_conf->tx_wdma_ring_depth;
-	rx_ctrl->rx_ring_ctrl.ring_num = WDMA_RX_RING_NUM;
-	tx_ctrl->tx_ring_ctrl.ring_num = WDMA_TX_RING_NUM;
-
-	warp_dbg(WARP_DBG_INF, "%s(): tx_ctrl %p, rx_ctrl %p\n",
-	__func__, tx_ctrl, rx_ctrl);
-
-#ifdef WED_HW_RX_SUPPORT
-	wdma_tx_ring_init(wdma, &tx_ctrl->tx_ring_ctrl);
-#endif
-
-#ifdef WED_HW_TX_SUPPORT
-	wdma_rx_ring_init(wdma, &rx_ctrl->rx_ring_ctrl);
-#endif
-	return 0;
-}
-
-/*
-*
-*/
-void
-wdma_ring_exit(struct wdma_entry *wdma)
-{
-	struct wdma_res_ctrl *res = &wdma->res_ctrl;
-	struct wdma_tx_ctrl *tx_ctrl = &res->tx_ctrl;
-	struct wdma_rx_ctrl *rx_ctrl = &res->rx_ctrl;
-
-	warp_dbg(WARP_DBG_INF, "%s(): tx_ctrl %p, rx_ctrl %p\n",
-	__func__, tx_ctrl, rx_ctrl);
-
-#ifdef WED_HW_RX_SUPPORT
-	wdma_tx_ring_exit(wdma, &tx_ctrl->tx_ring_ctrl);
-#endif
-
-#ifdef WED_HW_TX_SUPPORT
-	wdma_rx_ring_exit(wdma, &rx_ctrl->rx_ring_ctrl);
-#endif
 }
 
 /*

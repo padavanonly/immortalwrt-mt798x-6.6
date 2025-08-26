@@ -1,0 +1,57 @@
+From cfa314c0dd35c944ea1a552bc3e37fcc59f8ab0d Mon Sep 17 00:00:00 2001
+From: Mason Chang <mason-cw.chang@mediatek.com>
+Date: Mon, 4 Aug 2025 15:45:26 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: add tx ring full event counter
+
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 6 +++++-
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h | 1 +
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 8607db3..004f8c7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2051,6 +2051,7 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		netif_tx_stop_all_queues(dev);
+ 		netif_err(eth, tx_queued, dev,
+ 			  "Tx Ring full when queue awake!\n");
++		atomic_inc(&ring->full_count);
+ 		spin_unlock(&eth->page_lock);
+ 		return NETDEV_TX_BUSY;
+ 	}
+@@ -2091,8 +2092,10 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		}
+ 	}
+ 
+-	if (unlikely(atomic_read(&ring->free_count) <= ring->thresh))
++	if (unlikely(atomic_read(&ring->free_count) <= ring->thresh)) {
+ 		netif_tx_stop_all_queues(dev);
++		atomic_inc(&ring->full_count);
++	}
+ 
+ 	spin_unlock(&eth->page_lock);
+ 
+@@ -2974,6 +2977,7 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+ 
+ 	ring->dma_size = ring_size;
+ 	atomic_set(&ring->free_count, ring_size - 2);
++	atomic_set(&ring->full_count, 0);
+ 	ring->next_free = ring->dma;
+ 	ring->last_free = (void *)txd;
+ 	ring->last_free_ptr = (u32)(ring->phys + ((ring_size - 1) * sz));
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 5f5a34c..d96cac5 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1165,6 +1165,7 @@ struct mtk_tx_ring {
+ 	u32 last_free_ptr;
+ 	u16 thresh;
+ 	atomic_t free_count;
++	atomic_t full_count;
+ 	int dma_size;
+ 	struct mtk_tx_dma *dma_pdma;	/* For MT7628/88 PDMA handling */
+ 	dma_addr_t phys_pdma;
+-- 
+2.45.2
+

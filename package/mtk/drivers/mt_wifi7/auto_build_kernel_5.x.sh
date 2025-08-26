@@ -16,6 +16,10 @@ if [ -d wifi_driver ]; then
     echo "Bellwether mt_wifi autobuild"
     CHIPSET=bellwether
     make -f mk/Makefile build_tools
+
+    SKU_5MHZ_SHIFT=$2
+    export SKU_5MHZ_SHIFT
+    # run sinelg sku table transfomr to header file
     make -f mk/Makefile build_power_limit_tables
     echo "Eagle mt_wifi autobuild"
     CHIPSET=mt7990
@@ -39,10 +43,11 @@ if [ -d wifi_driver ]; then
     export PROJECT
     make -f mk/Makefile build_tools
     unset PROJECT
-	echo "Griffin mt_wifi autobuild"
+    echo "Griffin mt_wifi autobuild"
     CHIPSET=mt7993
-	ADIE=$2
-	export ADIE
+    make -f mk/Makefile build_tools
+    echo "Blackhawk mt_wifi autobuild"
+    CHIPSET=blackhawk
     make -f mk/Makefile build_tools
 else
     exit 1

@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -20,28 +20,6 @@
 #include "wdma_hw.h"
 #include <linux/proc_fs.h>
 #include <linux/pci.h>
-
-
-#define WHNAT_RESET(_entry, _addr, _value) \
-do {\
-		u32 cnt = 0;\
-		warp_io_write32(_entry, _addr, _value);\
-		while (_value != 0 && cnt < WED_POLL_MAX) {\
-			warp_io_read32(_entry, _addr, &_value);\
-			cnt++;\
-		} \
-		if (cnt >= WED_POLL_MAX) {\
-			warp_dbg(WARP_DBG_ERR, "%s(): Reset addr=%x,value=%x,cnt=%d fail!\n",\
-					__func__, _addr, _value, cnt);\
-		} \
-} while (0)
-
-#define dump_addr_value(_entry, _name, _addr)\
-	do {\
-		u32 value;\
-		warp_io_read32(_entry, _addr, &value);\
-		warp_dbg(WARP_DBG_OFF, "%s\t:%x\n", _name, value);\
-	} while(0)
 
 /*Local function*/
 
@@ -186,41 +164,17 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 /*
 *
 */
-static void
-wdma_dma_ctrl(struct wdma_entry *wdma, u8 txrx)
-{
-	u32 wdma_cfg = 0;
-
-	warp_io_read32(wdma, WDMA_GLO_CFG, &wdma_cfg);
-	warp_dbg(WARP_DBG_OFF, "%s(): WDMA_GLO_CFG=%x\n",  __func__, wdma_cfg);
-
-	if (txrx) {
-		/*reset wdma*/
-		wdma_cfg |= (1 << WDMA_GLO_CFG_RX_INFO1_PRERESERVE);
-		wdma_cfg |= (1 << WDMA_GLO_CFG_RX_INFO2_PRERESERVE);
-		wdma_cfg |= (1 << WDMA_GLO_CFG_RX_INFO3_PRERESERVE);
-		warp_io_write32(wdma, WDMA_GLO_CFG, wdma_cfg);
-	} else {
-		wdma_cfg &= ~(1 << WDMA_GLO_CFG_RX_INFO1_PRERESERVE);
-		wdma_cfg &= ~(1 << WDMA_GLO_CFG_RX_INFO2_PRERESERVE);
-		warp_io_write32(wdma, WDMA_GLO_CFG, wdma_cfg);
-	}
-}
-
-/*
-*
-*/
 #ifdef WED_HW_TX_SUPPORT
 int
 warp_tx_bm_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 {
 	struct wed_buf_res *res = &wed->res_ctrl.tx_ctrl.res;
 	struct wed_tx_ring_ctrl *ring_ctrl = &wed->res_ctrl.tx_ctrl.ring_ctrl;
-	struct warp_ring *ring = &ring_ctrl->ring;
+	struct warp_ring *ring = ring_ctrl->ring;
 	u32 value, i, ring_size_sum = 0;
 
 	for (i = 0; i < ring_ctrl->ring_num; i++)
-		ring_size_sum += ring[i]->ring_lens;
+		ring_size_sum += ring[i].ring_lens;
 	/*PAUSE BUF MGMT*/
 	value = (1 << WED_TX_BM_CTRL_FLD_PAUSE);
 	/*should be set before WED_MOD_RST is invoked*/
@@ -386,14 +340,14 @@ warp_bfm_update_hw(struct wed_entry *wed, u8 reduce)
 {
 	struct wed_buf_res *res = &wed->res_ctrl.tx_ctrl.res;
 	struct wed_tx_ring_ctrl *ring_ctrl = &wed->res_ctrl.tx_ctrl.ring_ctrl;
-	struct warp_ring *ring = &ring_ctrl->ring;
+	struct warp_ring *ring = ring_ctrl->ring;
 	u32 value = 0;
 	u32 vld_num = 0;
 	u32 reduce_grp = 0;
 	u32 cnt, i, ring_size_sum = 0;
 
 	for (i = 0; i < ring_ctrl->ring_num; i++)
-		ring_size_sum += ring[i]->ring_lens;
+		ring_size_sum += ring[i].ring_lens;
 	/*PAUSE BUF MGMT*/
 	warp_io_read32(wed, WED_TX_BM_CTRL, &value);
 	value |= (1 << WED_TX_BM_CTRL_FLD_PAUSE);
@@ -1061,32 +1015,6 @@ warp_dma_ctrl_hw(struct wed_entry *wed, u8 txrx)
 *
 */
 void
-warp_wed_init_hw(struct wed_entry *wed, struct wdma_entry *wdma)
-{
-	u32 wed_wdma_cfg;
-	/*cfg wdma recycle*/
-	warp_io_read32(wed, WED_WDMA_GLO_CFG, &wed_wdma_cfg);
-	wed_wdma_cfg &= ~(WED_WDMA_GLO_CFG_FLD_WDMA_BT_SIZE_MASK <<
-			  WED_WDMA_GLO_CFG_FLD_WDMA_BT_SIZE);
-	wed_wdma_cfg &= ~((1 << WED_WDMA_GLO_CFG_FLD_IDLE_STATE_DMAD_SUPPLY_EN) |
-			  (1 << WED_WDMA_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_PREPARE) |
-			  (1 << WED_WDMA_GLO_CFG_FLD_DYNAMIC_DMAD_RECYCLE));
-	/*disable auto idle*/
-	wed_wdma_cfg &= ~(1 << WED_WDMA_GLO_CFG_FLD_RX_DRV_DISABLE_FSM_AUTO_IDLE);
-	/*Set to 16 DWORD for 64bytes*/
-	wed_wdma_cfg |= (0x2 << WED_WDMA_GLO_CFG_FLD_WDMA_BT_SIZE);
-	/*enable skip state for fix dma busy issue*/
-	wed_wdma_cfg |= ((1 << WED_WDMA_GLO_CFG_FLD_IDLE_STATE_DMAD_SUPPLY_EN) |
-			 (1 << WED_WDMA_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_PREPARE));
-#ifdef WED_HW_TX_SUPPORT
-	warp_io_write32(wed, WED_WDMA_GLO_CFG, wed_wdma_cfg);
-#endif /*WED_HW_TX_SUPPORT*/
-}
-
-/*
-*
-*/
-void
 warp_write_hw_extra(u32 addr, u32 *val)
 {
 #ifdef WED_DELAY_INT_SUPPORT
@@ -1099,23 +1027,6 @@ warp_write_hw_extra(u32 addr, u32 *val)
 	}
 #endif /*WED_DELAY_INT_SUPPORT*/
 
-}
-
-/*
-*
-*/
-void
-warp_wdma_init_hw(struct wed_entry *wed, struct wdma_entry *wdma, int idx)
-{
-	u32 value = 0;
-	/*Apply WDMA  related setting*/
-	wdma_dma_ctrl(wdma, WARP_DMA_TXRX);
-	/*offset 0*/
-	value = (idx) ? WDMA1_OFST0 : WDMA0_OFST0;
-	warp_io_write32(wed, WED_WDMA_OFST0, value);
-	/*offset 1*/
-	value = (idx) ? WDMA1_OFST1 : WDMA0_OFST1;
-	warp_io_write32(wed, WED_WDMA_OFST1, value);
 }
 
 /*
@@ -1213,7 +1124,6 @@ warp_rx_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 	return 0;
 }
 #endif /*WED_RX_SUPPORT*/
-}
 
 /*
 *
@@ -1264,7 +1174,7 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
 
 		break;
 
-	case WARP_RESET_ALL:
+	case WARP_RESET_INTERFACE:
 		reset_all(wed, wdma);
 		break;
 	}
@@ -1272,11 +1182,18 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
 	return ret;
 }
 
+int
+warp_stop_hw(struct wed_entry *wed, struct wdma_entry *wdma, u8 stop_type)
+{
+	return 0;
+}
+
+
 /*
 *
 */
 void
-warp_restore_hw(struct wed_entry *wed, struct wdma_entry *wdma)
+warp_restore_hw(struct wed_entry *wed, struct wdma_entry *wdma,  u8 restore_type)
 {
 	restore_rx_traffic(wed);
 	restore_tx_traffic(wed, wdma);
@@ -1292,26 +1209,10 @@ warp_wifi_set_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 	warp_io_write32(wed, WED_WPDMA_CFG_BASE, value);
 }
 
-/*
-*
-*/
-void
-warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus, int idx, bool msi_enable, u32 hif_type)
+int
+warp_bus_msi_set(struct warp_entry *warp, struct warp_bus *bus, u8 enable)
 {
-	u32 value = bus->pcie_base[idx];
-
-	warp_io_write32(wed, WED_PCIE_CFG_BASE, value);
-	/*pcie interrupt agent control*/
-#ifdef WED_WORK_AROUND_INT_POLL
-	value = (PCIE_POLL_MODE_ALWAYS << WED_PCIE_INT_CTRL_FLD_POLL_EN);
-	warp_io_write32(wed, WED_PCIE_INT_CTRL, value);
-#endif /*WED_WORK_AROUND_INT_POLL*/
-}
-
-void
-warp_bus_msi_set(u8 idx, u8 *enable)
-{
-
+	return 0;
 }
 
 /*
@@ -1709,6 +1610,48 @@ warp_wdma_rx_ring_get_hw(struct warp_ring *ring, u8 idx)
 	ring->hw_didx_addr = WDMA_RX_DRX_IDX_0 + offset;
 }
 
+void
+warp_wed_tx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WED_RING_OFFSET;
+
+	warp_io_read32(wed, WED_TX0_CTRL0 + offset, base);
+	warp_io_read32(wed, WED_TX0_CTRL1 + offset, tcnt);
+	warp_io_read32(wed, WED_TX0_CTRL2 + offset, cidx);
+	warp_io_read32(wed, WED_TX0_CTRL3 + offset, didx);
+}
+
+void
+warp_wed_rx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WED_RING_OFFSET;
+
+	warp_io_read32(wed, WED_RX0_CTRL0 + offset, base);
+	warp_io_read32(wed, WED_RX0_CTRL1 + offset, tcnt);
+	warp_io_read32(wed, WED_RX0_CTRL2 + offset, cidx);
+	warp_io_read32(wed, WED_RX0_CTRL3 + offset, didx);
+}
+
+void
+warp_wdma_tx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	;
+}
+void
+warp_wdma_rx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WDMA_RING_OFFSET;
+
+	warp_io_read32(wdma, WDMA_RX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wdma, WDMA_RX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wdma, WDMA_RX_CRX_IDX_0 + offset, cidx);
+	warp_io_read32(wdma, WDMA_RX_DRX_IDX_0 + offset, didx);
+}
+
 /*
 *
 */
@@ -1834,48 +1777,6 @@ int
 warp_fwdl_notify_get(struct wed_entry *wed, u32 *value)
 {
 	return 0;
-}
-
-/*
-*
-*/
-void
-bus_setup(struct warp_bus *bus)
-{
-#define PCIE_BASE_ADDR0 0x1A143000
-#define PCIE_BASE_ADDR1 0x1A145000
-	bus->pcie_base[0] = PCIE_BASE_ADDR0;
-	bus->pcie_base[1] = PCIE_BASE_ADDR1;
-
-	bus->pcie_intm[0] = bus->pcie_base[0] | 0x420;
-	bus->pcie_intm[1] = bus->pcie_base[1] | 0x420;
-	bus->pcie_ints[0] = bus->pcie_base[0] | 0x424;
-	bus->pcie_ints[1] = bus->pcie_base[1] | 0x424;
-
-	/*MT7622 MSI PCIE setting need to check*/
-	bus->pcie_msim[0] = 0;
-	bus->pcie_msim[1] = 0;
-	bus->pcie_msis[0] = 0;
-	bus->pcie_msis[1] = 0;
-
-	/*default valule will run time overlap it*/
-	bus->wpdma_base[0] = WPDMA_BASE_ADDR0;
-	bus->wpdma_base[1] = WPDMA_BASE_ADDR1;
-
-	bus->pcie_ints_offset = (1 << 16);
-	bus->pcie_msis_offset = (1 << 8);
-	bus->trig_flag = IRQF_TRIGGER_LOW;
-
-	return;
-}
-
-/*
-*
-*/
-u8
-warp_get_pcie_slot(struct pci_dev *pdev)
-{
-	return (pdev->bus->self->devfn >> 3) & 0x1f;
 }
 
 void

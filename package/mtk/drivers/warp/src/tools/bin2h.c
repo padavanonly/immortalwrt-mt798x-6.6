@@ -9,7 +9,7 @@
  *
  * All rights reserved. MediaTek source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek Technology, Inc. is obtained.
@@ -242,6 +242,16 @@ int main(int argc, char *argv[])
 
 			printf("3: infname1=%s, infname2=%s, infname3=%s\n", infname1, infname2, infname3);
 			printf("3: outfname1=%s, outfname2=%s, outfname3=%s\n", outfname1, outfname2, outfname3);
+
+			is_bin2h_fw = 1;
+		} else if (strncmp(chipset, "mt6988", 10) == 0) {
+			/* For bin input, select chipset folder inside /bin */
+			STRCAT(infname1, chipset);
+			STRCAT(infname1, "/");
+
+			STRCAT(infname1, "t930_WOCPU0_RAM_CODE_release.bin");
+			STRCAT(outfname1, "WO0_firmware.h");
+			STRCAT(fw_name1, "WO0_FirmwareImage");
 
 			is_bin2h_fw = 1;
 		} else

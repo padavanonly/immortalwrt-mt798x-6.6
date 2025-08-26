@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -85,19 +85,6 @@ dump_pkt_info(struct wed_buf_res *res)
 /*
 *
 */
-static void
-grp_buf_exit(
-	struct wed_entry *wed,
-	struct wed_buf_res *res,
-	u32 start,
-	u32 size)
-
-{
-}
-
-/*
-*
-*/
 static int
 grp_buf_init(
 	struct wed_entry *wed,
@@ -140,10 +127,14 @@ grp_info_free(
 
 			if (info) {
 				if (info->pkt_pa && info->pkt) {
+#ifdef WED_MEM_LEAK_DBG
+					pkt_free_mem(((void *)info->pkt);
+#endif	/* WED_MEM_LEAK_DBG */
 					dma_unmap_single(&pdev->dev, info->pkt_pa, info->len, DMA_TO_DEVICE);
 					page_frag_free(info->pkt);
 				} else
-					warp_dbg(WARP_DBG_ERR, "%s(): invalid pointer(pkt_pa:0x%lld, pkt:0x%p)\n", __func__, info->pkt_pa, info->pkt);
+					warp_dbg(WARP_DBG_ERR, "%s(): invalid pointer(pkt_pa:%pad, pkt:0x%p)\n",
+						__func__, &info->pkt_pa, info->pkt);
 				list_del(&info->list);
 				memset(info, 0, sizeof(*info));
 				warp_os_free_mem(info);
@@ -197,6 +188,9 @@ grp_info_alloc(
 			goto err;
 
 		}
+#ifdef WED_MEM_LEAK_DBG
+		pkt_alloc_mem(info->len, (void *)info->pkt, __builtin_return_address(0));
+#endif	/* WED_MEM_LEAK_DBG */
 
 		info->pkt_va = (unsigned char *)info->pkt;
 		info->pkt_pa = dma_map_single(&pdev->dev, info->pkt_va, info->len, DMA_TO_DEVICE);
@@ -834,7 +828,7 @@ wed_txbm_init(struct wed_entry *wed, struct wifi_hw *hw)
 	res->bm_grp_sz = 0x80;		/* 128 packets per group */
 	res->tkn_grp_sz = 0x80;		/* 128 token per group */
 
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 	if (wifi_dbdc_support(wed->warp) == false)	/* dbdc_mode is false, shrink TXBM to support single wdma ring */
 		init_grp = ceil(sw_conf->rx_wdma_ring_depth, res->bm_grp_sz);
 	else

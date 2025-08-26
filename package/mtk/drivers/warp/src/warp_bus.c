@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -90,6 +90,9 @@ bus_config_init(struct warp_bus *bus)
 	u32 size = 0;
 
 	/* allocate memory according to warp number */
+	size = sizeof(void *) * bus->warp_num;
+	warp_os_alloc_mem((unsigned char **)&bus->base_addr, size, GFP_ATOMIC);
+	memset(bus->base_addr, 0, size);
 	size = sizeof(u32) * bus->warp_num;
 	warp_os_alloc_mem((unsigned char **)&bus->pcie_base, size, GFP_ATOMIC);
 	memset(bus->pcie_base, 0, size);
@@ -132,6 +135,7 @@ bus_config_exit(struct warp_bus *bus)
 	warp_os_free_mem(bus->pcie_intm);
 	warp_os_free_mem(bus->pcie_ints);
 	warp_os_free_mem(bus->pcie_base);
+	warp_os_free_mem(bus->base_addr);
 
 	bus_remove(bus);
 

@@ -1,0 +1,30 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-24 12:27:43.819001528 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-24 13:09:43.421000136 +0800
+@@ -2588,23 +2588,23 @@
+ 
+ 		skb->dev = netdev;
+ 		bytes += skb->len;
+-
++		
+ 		if (mtk_is_netsys_v3_or_greater(eth)) {
+ 			reason = FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5);
+ 			hash = trxd.rxd5 & MTK_RXD5_FOE_ENTRY;
+-			if (hash != MTK_RXD5_FOE_ENTRY)
++			if (0)
+ 				skb_set_hash(skb, jhash_1word(hash, 0),
+ 					     PKT_HASH_TYPE_L4);
+ 			rxdcsum = &trxd.rxd3;
+ 		} else {
+ 			reason = FIELD_GET(MTK_RXD4_PPE_CPU_REASON, trxd.rxd4);
+ 			hash = trxd.rxd4 & MTK_RXD4_FOE_ENTRY;
+-			if (hash != MTK_RXD4_FOE_ENTRY)
++			if (0)
+ 				skb_set_hash(skb, jhash_1word(hash, 0),
+ 					     PKT_HASH_TYPE_L4);
+ 			rxdcsum = &trxd.rxd4;
+ 		}
+-
++		
+ 		if (*rxdcsum & eth->soc->rx.dma_l4_valid)
+ 			skb->ip_summed = CHECKSUM_UNNECESSARY;
+ 		else

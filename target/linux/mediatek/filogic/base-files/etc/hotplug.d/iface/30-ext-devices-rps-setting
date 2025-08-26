@@ -7,12 +7,11 @@ for IFACE in /sys/class/net/*; do
     INTERFACE=$(basename "$IFACE")
     IFNAME_PREFIX="${INTERFACE%%[0-9]*}"
 
-    if [ "$INTERFACE" != "eth0" ] && [ "$INTERFACE" != "eth1" ] \
-	    && [ "$INTERFACE" != "eth2" ] && \
-       { [ "$IFNAME_PREFIX" = "usb" ] || [ "$IFNAME_PREFIX" = "wwan" ] || [ "$IFNAME_PREFIX" = "rmnet_mhi" ] || [ "$IFNAME_PREFIX" = "rmnet" ] || [ "$IFNAME_PREFIX" = "eth" ]; }; then
+    if [ "$INTERFACE" != "eth0" ] && [ "$INTERFACE" != "eth1" ] && \
+       { [ "$IFNAME_PREFIX" = "usb" ] || [ "$IFNAME_PREFIX" = "wwan" ] || [ "$IFNAME_PREFIX" = "rmnet" ] || [ "$IFNAME_PREFIX" = "eth" ]; }; then
 
         if [ "$NPROCS" -gt 2 ]; then
-            echo 3 > "/sys/class/net/${INTERFACE}/queues/rx-0/rps_cpus"
+            echo 6 > "/sys/class/net/${INTERFACE}/queues/rx-0/rps_cpus"
         else
             echo 1 > "/sys/class/net/${INTERFACE}/queues/rx-0/rps_cpus"
         fi

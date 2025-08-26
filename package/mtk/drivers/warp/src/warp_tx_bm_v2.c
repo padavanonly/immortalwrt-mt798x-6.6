@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -52,6 +52,9 @@ wed_tx_bm_dma_cb_init(struct platform_device *pdev,
 				warp_dbg(WARP_DBG_ERR, "%s(): allocate pkt fail!\n", __func__);
 				return -1;
 			}
+#ifdef WED_MEM_LEAK_DBG
+			pkt_alloc_mem(dma_cb->pkt_size, (void *)pkt, __builtin_return_address(0));
+#endif	/* WED_MEM_LEAK_DBG */
 			skb_id = idr_alloc(&bm->id, pkt, 0, bm->pkt_num, GFP_ATOMIC);
 
 			dma_cb->pkt = (struct sk_buff *)(pkt);
@@ -64,9 +67,11 @@ wed_tx_bm_dma_cb_init(struct platform_device *pdev,
 
 			value = (skb_id << PARTIAL_TXDMAD_TOKEN_ID_SHIFT) &
 				PARTIAL_TXDMAD_TOKEN_ID_MASK;
+#ifdef CONFIG_WARP_64BIT_SUPPORT
 			/* Set SDP0_H to DW1 */
 			value |= (dma_cb->pkt_pa >> WARP_DMA_ADDR_H_SHIFT) &
 				 PARTIAL_TXDMAD_SDP0_H_MASK;
+#endif
 			WRITE_ONCE(txd->token, value);
 		}
 
@@ -126,6 +131,9 @@ wed_tx_bm_dma_cb_exit(struct wed_entry *wed, struct wed_tx_bm *bm, u32 idx,
 	if (idx < bm->pkt_num) {
 		void *pkt = idr_find(&bm->id, idx);
 		if (pkt) {
+#ifdef WED_MEM_LEAK_DBG
+			pkt_free_mem(pkt);
+#endif	/* WED_MEM_LEAK_DBG */
 			idr_remove(&bm->id, idx);
 			dma_unmap_single(&wdev->dev, dma_cb->pkt_pa,
 					dma_cb->pkt_size, DMA_TO_DEVICE);

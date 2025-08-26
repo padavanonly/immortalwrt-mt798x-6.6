@@ -1,0 +1,927 @@
+From 50f6438d2f918cd9391237050518ba30e43150d6 Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Wed, 5 Jun 2024 10:30:28 +0800
+Subject: [PATCH 1/2] extended wed debugfs
+
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c       |   9 +-
+ drivers/net/ethernet/mediatek/mtk_wed.h       |   1 +
+ .../net/ethernet/mediatek/mtk_wed_debugfs.c   | 415 ++++++++++++++++--
+ drivers/net/ethernet/mediatek/mtk_wed_regs.h  |  71 ++-
+ 4 files changed, 440 insertions(+), 56 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index 45e24df..1914c9c 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -58,6 +58,7 @@ struct mtk_wed_flow_block_priv {
+ 
+ static const struct mtk_wed_soc_data mt7622_data = {
+ 	.regmap = {
++		.wed_rev_id		= 0,
+ 		.tx_bm_tkid		= 0x088,
+ 		.wpdma_rx_ring0		= 0x770,
+ 		.wpdma_rx_ring1		= 0,
+@@ -70,6 +71,7 @@ static const struct mtk_wed_soc_data mt7622_data = {
+ 
+ static const struct mtk_wed_soc_data mt7986_data = {
+ 	.regmap = {
++		.wed_rev_id		= 0x4,
+ 		.tx_bm_tkid		= 0x0c8,
+ 		.wpdma_rx_ring0		= 0x770,
+ 		.wpdma_rx_ring1		= 0,
+@@ -82,6 +84,7 @@ static const struct mtk_wed_soc_data mt7986_data = {
+ 
+ static const struct mtk_wed_soc_data mt7988_data = {
+ 	.regmap = {
++		.wed_rev_id		= 0x4,
+ 		.tx_bm_tkid		= 0x0c8,
+ 		.wpdma_rx_ring0		= 0x7d0,
+ 		.wpdma_rx_ring1		= 0x7d8,
+@@ -1691,8 +1694,8 @@ mtk_wed_rx_reset(struct mtk_wed_device *dev)
+ 	/* reset tx wdma drv */
+ 	wed_clr(dev, MTK_WED_WDMA_GLO_CFG, MTK_WED_WDMA_GLO_CFG_TX_DRV_EN);
+ 	if (mtk_wed_is_v3_or_greater(dev->hw))
+-		mtk_wed_poll_busy(dev, MTK_WED_WPDMA_STATUS,
+-				  MTK_WED_WPDMA_STATUS_TX_DRV);
++		mtk_wed_poll_busy(dev, MTK_WED_WDMA_STATUS,
++				  MTK_WED_WDMA_STATUS_TX_DRV);
+ 	else
+ 		mtk_wed_poll_busy(dev, MTK_WED_CTRL,
+ 				  MTK_WED_CTRL_WDMA_INT_AGENT_BUSY);
+@@ -2494,7 +2497,7 @@ mtk_wed_attach(struct mtk_wed_device *dev)
+ 		regmap_update_bits(hw->hifsys, HIFSYS_DMA_AG_MAP,
+ 				   BIT(hw->index), 0);
+ 	else
+-		dev->rev_id = wed_r32(dev, MTK_WED_REV_ID);
++		dev->rev_id = wed_r32(dev, dev->hw->soc->regmap.wed_rev_id);
+ 
+ 	if (mtk_wed_get_rx_capa(dev))
+ 		ret = mtk_wed_wo_init(hw);
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.h b/drivers/net/ethernet/mediatek/mtk_wed.h
+index 33bca92..56a5c16 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.h
++++ b/drivers/net/ethernet/mediatek/mtk_wed.h
+@@ -16,6 +16,7 @@ struct mtk_wed_wo;
+ 
+ struct mtk_wed_soc_data {
+ 	struct {
++		u32 wed_rev_id;
+ 		u32 tx_bm_tkid;
+ 		u32 wpdma_rx_ring0;
+ 		u32 wpdma_rx_ring1;
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c b/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c
+index 781c691..57c56e0 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c
+@@ -17,11 +17,15 @@ struct reg_dump {
+ enum {
+ 	DUMP_TYPE_STRING,
+ 	DUMP_TYPE_WED,
++	DUMP_TYPE_WED_RING,
+ 	DUMP_TYPE_WDMA,
++	DUMP_TYPE_WDMA_RX,
+ 	DUMP_TYPE_WPDMA_TX,
+ 	DUMP_TYPE_WPDMA_TXFREE,
+ 	DUMP_TYPE_WPDMA_RX,
+ 	DUMP_TYPE_WED_RRO,
++	DUMP_TYPE_WED_RING_RX_TYPE1,
++	DUMP_TYPE_WED_RING_RX_TYPE2,
+ };
+ 
+ #define DUMP_STR(_str) { _str, 0, DUMP_TYPE_STRING }
+@@ -29,6 +33,13 @@ enum {
+ #define DUMP_REG_MASK(_reg, _mask)	\
+ 	{ #_mask, MTK_##_reg, DUMP_TYPE_WED, 0, MTK_##_mask }
+ #define DUMP_RING(_prefix, _base, ...)				\
++	{ _prefix " BASE", _base, __VA_ARGS__ },		\
++	{ _prefix " CNT",  _base + 0x4, __VA_ARGS__ },	\
++	{ _prefix " CIDX", _base + 0x8, __VA_ARGS__ },	\
++	{ _prefix " DIDX", _base + 0xc, __VA_ARGS__ },	\
++	{ _prefix " Qcnt", _base , __VA_ARGS__ }
++
++#define DUMP_RRO_DATA_RING(_prefix, _base, ...)			\
+ 	{ _prefix " BASE", _base, __VA_ARGS__ },		\
+ 	{ _prefix " CNT",  _base + 0x4, __VA_ARGS__ },	\
+ 	{ _prefix " CIDX", _base + 0x8, __VA_ARGS__ },	\
+@@ -36,16 +47,23 @@ enum {
+ 
+ #define DUMP_WED(_reg) DUMP_REG(_reg, DUMP_TYPE_WED)
+ #define DUMP_WED_MASK(_reg, _mask) DUMP_REG_MASK(_reg, _mask)
+-#define DUMP_WED_RING(_base) DUMP_RING(#_base, MTK_##_base, DUMP_TYPE_WED)
++#define DUMP_WED_RING(_base) DUMP_RING(#_base, MTK_##_base, DUMP_TYPE_WED_RING)
++#define DUMP_WED_RING_RX_TYPE1(_base) DUMP_RING(#_base, MTK_##_base, DUMP_TYPE_WED_RING_RX_TYPE1)
++#define DUMP_WED_RING_RX_TYPE2(_base) DUMP_RING(#_base, MTK_##_base, DUMP_TYPE_WED_RING_RX_TYPE2)
++#define DUMP_WED_RRO_DATA_RING(_base) DUMP_RRO_DATA_RING(#_base, MTK_##_base, DUMP_TYPE_WED_RRO)
+ 
+ #define DUMP_WDMA(_reg) DUMP_REG(_reg, DUMP_TYPE_WDMA)
+ #define DUMP_WDMA_RING(_base) DUMP_RING(#_base, MTK_##_base, DUMP_TYPE_WDMA)
++#define DUMP_WDMA_RING_RX(_base) DUMP_RING(#_base, MTK_##_base, DUMP_TYPE_WDMA_RX)
+ 
+ #define DUMP_WPDMA_TX_RING(_n) DUMP_RING("WPDMA_TX" #_n, 0, DUMP_TYPE_WPDMA_TX, _n)
+ #define DUMP_WPDMA_TXFREE_RING DUMP_RING("WPDMA_RX1", 0, DUMP_TYPE_WPDMA_TXFREE)
+ #define DUMP_WPDMA_RX_RING(_n)	DUMP_RING("WPDMA_RX" #_n, 0, DUMP_TYPE_WPDMA_RX, _n)
+ #define DUMP_WED_RRO_RING(_base)DUMP_RING("WED_RRO_MIOD", MTK_##_base, DUMP_TYPE_WED_RRO)
+ #define DUMP_WED_RRO_FDBK(_base)DUMP_RING("WED_RRO_FDBK", MTK_##_base, DUMP_TYPE_WED_RRO)
++#define CAL_TX_QCNT(_cidx, _didx, _cnt) ((_cidx >= _didx) ? (_cidx - _didx) : (_cidx - _didx + _cnt))
++#define CAL_RX_QCNT_TYPE1(_cidx, _didx, _cnt) (_didx > (_cidx & 0xfff) ? (_didx - 1 - (_cidx & 0xfff)) : (_didx - 1 - (_cidx & 0xfff) + _cnt))
++#define CAL_RX_QCNT_TYPE2(_cidx, _didx, _cnt) ((_didx > _cidx) ? (_didx - 1 - _cidx) : (_didx - 1 - _cidx + _cnt))
+ 
+ static void
+ print_reg_val(struct seq_file *s, const char *name, u32 val)
+@@ -58,7 +76,7 @@ dump_wed_regs(struct seq_file *s, struct mtk_wed_device *dev,
+ 	      const struct reg_dump *regs, int n_regs)
+ {
+ 	const struct reg_dump *cur;
+-	u32 val;
++	u32 val, cnt, cidx, didx;
+ 
+ 	for (cur = regs; cur < &regs[n_regs]; cur++) {
+ 		switch (cur->type) {
+@@ -72,16 +90,100 @@ dump_wed_regs(struct seq_file *s, struct mtk_wed_device *dev,
+ 			val = wed_r32(dev, cur->offset);
+ 			break;
+ 		case DUMP_TYPE_WDMA:
+-			val = wdma_r32(dev, cur->offset);
++			if (!strstr(cur->name, "Qcnt"))
++				val = wdma_r32(dev, cur->offset);
++			if (strstr(cur->name, "CNT")){
++				cnt = val;
++			}else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_TX_QCNT(cidx, didx, cnt);
++			break;
++		case DUMP_TYPE_WDMA_RX:
++			if (!strstr(cur->name, "Qcnt"))
++				val = wdma_r32(dev, cur->offset);
++			if (strstr(cur->name, "CNT")){
++				cnt = val;
++			}else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_RX_QCNT_TYPE2(cidx, didx, cnt);
+ 			break;
+ 		case DUMP_TYPE_WPDMA_TX:
+-			val = wpdma_tx_r32(dev, cur->base, cur->offset);
++			if (!strstr(cur->name, "Qcnt"))
++				val = wpdma_tx_r32(dev, cur->base, cur->offset);
++			if (strstr(cur->name, "CNT"))
++				cnt = val;
++			else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_TX_QCNT(cidx, didx, cnt);
+ 			break;
+ 		case DUMP_TYPE_WPDMA_TXFREE:
+-			val = wpdma_txfree_r32(dev, cur->offset);
++			if (!strstr(cur->name, "Qcnt"))
++				val = wpdma_txfree_r32(dev, cur->offset);
++			if (strstr(cur->name, "CNT"))
++				cnt = val;
++			else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_RX_QCNT_TYPE2(cidx, didx, cnt);
+ 			break;
+ 		case DUMP_TYPE_WPDMA_RX:
+-			val = wpdma_rx_r32(dev, cur->base, cur->offset);
++			if (!strstr(cur->name, "Qcnt"))
++				val = wpdma_rx_r32(dev, cur->base, cur->offset);
++			if (strstr(cur->name, "CNT"))
++				cnt = val;
++			else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_RX_QCNT_TYPE2(cidx, didx, cnt);
++			break;
++		case DUMP_TYPE_WED_RING:
++			if (!strstr(cur->name, "Qcnt"))
++				val = wed_r32(dev, cur->offset);
++			if (strstr(cur->name, "CNT"))
++				cnt = val;
++			else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_TX_QCNT(cidx, didx, cnt);
++			break;
++		case DUMP_TYPE_WED_RING_RX_TYPE1:
++			if (!strstr(cur->name, "Qcnt"))
++				val = wed_r32(dev, cur->offset);
++			if (strstr(cur->name, "CNT"))
++				cnt = val;
++			else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_RX_QCNT_TYPE1(cidx, didx, cnt);
++			break;
++		case DUMP_TYPE_WED_RING_RX_TYPE2:
++			if (!strstr(cur->name, "Qcnt"))
++				val = wed_r32(dev, cur->offset);
++			if (strstr(cur->name, "CNT"))
++				cnt = val;
++			else if (strstr(cur->name, "CIDX"))
++				cidx = val;
++			else if (strstr(cur->name, "DIDX"))
++				didx = val;
++			if (strstr(cur->name, "Qcnt"))
++				val = CAL_RX_QCNT_TYPE2(cidx, didx, cnt);
+ 			break;
+ 		}
+ 		print_reg_val(s, cur->name, val);
+@@ -112,41 +214,61 @@ wed_txinfo_show(struct seq_file *s, void *data)
+ 		DUMP_WPDMA_TX_RING(0),
+ 		DUMP_WPDMA_TX_RING(1),
+ 
++		DUMP_STR("WPDMA RX"),
++		DUMP_WPDMA_TXFREE_RING,
++
++		DUMP_STR("WED WPDMA RX (TX FREE)"),
++		DUMP_WED(WED_WPDMA_RX_MIB(0)),
++		DUMP_WED_RING_RX_TYPE1(WED_WPDMA_RING_RX(0)),
++		DUMP_WED(WED_WPDMA_RX_MIB(1)),
++		DUMP_WED_RING_RX_TYPE1(WED_WPDMA_RING_RX(1)),
++		DUMP_WED(WED_WPDMA_RX_COHERENT_MIB(0)),
++		DUMP_WED(WED_WPDMA_RX_EXTC_FRE),
++
++		DUMP_STR("WED RX (TX FREE)"),
++		DUMP_WED(WED_RX_MIB(0)),
++		DUMP_WED_RING_RX_TYPE2(WED_RING_RX(0)),
++
++		DUMP_WED(WED_RX_MIB(1)),
++		DUMP_WED_RING_RX_TYPE2(WED_RING_RX(1)),
++
+ 		DUMP_STR("WED WDMA RX"),
+ 		DUMP_WED(WED_WDMA_RX_MIB(0)),
+-		DUMP_WED_RING(WED_WDMA_RING_RX(0)),
++		DUMP_WED_RING_RX_TYPE1(WED_WDMA_RING_RX(0)),
+ 		DUMP_WED(WED_WDMA_RX_THRES(0)),
+ 		DUMP_WED(WED_WDMA_RX_RECYCLE_MIB(0)),
+ 		DUMP_WED(WED_WDMA_RX_PROCESSED_MIB(0)),
+ 
+ 		DUMP_WED(WED_WDMA_RX_MIB(1)),
+-		DUMP_WED_RING(WED_WDMA_RING_RX(1)),
++		DUMP_WED_RING_RX_TYPE1(WED_WDMA_RING_RX(1)),
+ 		DUMP_WED(WED_WDMA_RX_THRES(1)),
+ 		DUMP_WED(WED_WDMA_RX_RECYCLE_MIB(1)),
+ 		DUMP_WED(WED_WDMA_RX_PROCESSED_MIB(1)),
+ 
+ 		DUMP_STR("WDMA RX"),
+ 		DUMP_WDMA(WDMA_GLO_CFG),
+-		DUMP_WDMA_RING(WDMA_RING_RX(0)),
+-		DUMP_WDMA_RING(WDMA_RING_RX(1)),
+-
+-		DUMP_STR("WED TX FREE"),
+-		DUMP_WED(WED_RX_MIB(0)),
+-		DUMP_WED_RING(WED_RING_RX(0)),
+-		DUMP_WED(WED_WPDMA_RX_COHERENT_MIB(0)),
+-		DUMP_WED(WED_RX_MIB(1)),
+-		DUMP_WED_RING(WED_RING_RX(1)),
+-		DUMP_WED(WED_WPDMA_RX_COHERENT_MIB(1)),
++		DUMP_WDMA_RING_RX(WDMA_RING_RX(0)),
++		DUMP_WDMA_RING_RX(WDMA_RING_RX(1)),
++	};
+ 
+-		DUMP_STR("WED WPDMA TX FREE"),
+-		DUMP_WED_RING(WED_WPDMA_RING_RX(0)),
+-		DUMP_WED_RING(WED_WPDMA_RING_RX(1)),
++	static const struct reg_dump regs_v3[] = {
++		DUMP_STR("Total Free Tx TKID number"),
++		DUMP_WED(WED_TX_TKID_STATUS),
+ 	};
++
+ 	struct mtk_wed_hw *hw = s->private;
+ 	struct mtk_wed_device *dev = hw->wed_dev;
+ 
+-	if (dev)
++	if (dev) {
+ 		dump_wed_regs(s, dev, regs, ARRAY_SIZE(regs));
++		switch(dev->hw->version) {
++		case 3:
++			dump_wed_regs(s, dev, regs_v3, ARRAY_SIZE(regs_v3));
++			break;
++		default:
++			break;
++		}
++	}
+ 
+ 	return 0;
+ }
+@@ -156,22 +278,39 @@ static int
+ wed_rxinfo_show(struct seq_file *s, void *data)
+ {
+ 	static const struct reg_dump regs_common[] = {
++		DUMP_STR("WED RX INT info"),
++		DUMP_WED(WED_PCIE_INT_CTRL),
++		DUMP_WED(WED_PCIE_INT_REC),
++		DUMP_WED(WED_WPDMA_INT_STA_REC),
++		DUMP_WED(WED_WPDMA_INT_MON),
++		DUMP_WED(WED_WPDMA_INT_CTRL),
++		DUMP_WED(WED_WPDMA_INT_CTRL_TX),
++		DUMP_WED(WED_WPDMA_INT_CTRL_RX),
++		DUMP_WED(WED_WPDMA_INT_CTRL_TX_FREE),
++		DUMP_WED(WED_WPDMA_STATUS),
++		DUMP_WED(WED_WPDMA_D_ST),
++		DUMP_WED(WED_WPDMA_RX_D_GLO_CFG),
++
++		DUMP_STR("WED RX"),
++		DUMP_WED_RING_RX_TYPE2(WED_RING_RX_DATA(0)),
++		DUMP_WED_RING_RX_TYPE2(WED_RING_RX_DATA(1)),
++
+ 		DUMP_STR("WPDMA RX"),
+ 		DUMP_WPDMA_RX_RING(0),
+ 		DUMP_WPDMA_RX_RING(1),
+ 
+-		DUMP_STR("WPDMA RX"),
++		DUMP_STR("WED WPDMA RX"),
++		DUMP_WED_RING_RX_TYPE1(WED_WPDMA_RING_RX_DATA(0)),
++		DUMP_WED_RING_RX_TYPE1(WED_WPDMA_RING_RX_DATA(1)),
+ 		DUMP_WED(WED_WPDMA_RX_D_MIB(0)),
+-		DUMP_WED_RING(WED_WPDMA_RING_RX_DATA(0)),
+-		DUMP_WED(WED_WPDMA_RX_D_PROCESSED_MIB(0)),
+ 		DUMP_WED(WED_WPDMA_RX_D_MIB(1)),
+-		DUMP_WED_RING(WED_WPDMA_RING_RX_DATA(1)),
++		DUMP_WED(WED_WPDMA_RX_D_RECYCLE_MIB(0)),
++		DUMP_WED(WED_WPDMA_RX_D_RECYCLE_MIB(1)),
++		DUMP_WED(WED_WPDMA_RX_D_PROCESSED_MIB(0)),
+ 		DUMP_WED(WED_WPDMA_RX_D_PROCESSED_MIB(1)),
+ 		DUMP_WED(WED_WPDMA_RX_D_COHERENT_MIB),
++		DUMP_WED(WED_WPDMA_RX_D_ERR_STATUS),
+ 
+-		DUMP_STR("WED RX"),
+-		DUMP_WED_RING(WED_RING_RX_DATA(0)),
+-		DUMP_WED_RING(WED_RING_RX_DATA(1)),
+ 
+ 		DUMP_STR("WED WO RRO"),
+ 		DUMP_WED_RRO_RING(WED_RROQM_MIOD_CTRL0),
+@@ -179,14 +318,16 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+ 		DUMP_WED(WED_RROQM_MOD_MIB),
+ 		DUMP_WED(WED_RROQM_MOD_COHERENT_MIB),
+ 		DUMP_WED_RRO_FDBK(WED_RROQM_FDBK_CTRL0),
++		DUMP_WED(WED_RROQM_FDBK_MIB),
++		DUMP_WED(WED_RROQM_FDBK_COHERENT_MIB),
+ 		DUMP_WED(WED_RROQM_FDBK_IND_MIB),
+ 		DUMP_WED(WED_RROQM_FDBK_ENQ_MIB),
+ 		DUMP_WED(WED_RROQM_FDBK_ANC_MIB),
+ 		DUMP_WED(WED_RROQM_FDBK_ANC2H_MIB),
+ 
+ 		DUMP_STR("WED WDMA TX"),
+-		DUMP_WED(WED_WDMA_TX_MIB),
+ 		DUMP_WED_RING(WED_WDMA_RING_TX),
++		DUMP_WED(WED_WDMA_TX_MIB),
+ 
+ 		DUMP_STR("WDMA TX"),
+ 		DUMP_WDMA(WDMA_GLO_CFG),
+@@ -195,14 +336,9 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+ 
+ 		DUMP_STR("WED RX BM"),
+ 		DUMP_WED(WED_RX_BM_BASE),
+-		DUMP_WED(WED_RX_BM_RX_DMAD),
+ 		DUMP_WED(WED_RX_BM_PTR),
+-		DUMP_WED(WED_RX_BM_TKID_MIB),
+-		DUMP_WED(WED_RX_BM_BLEN),
+-		DUMP_WED(WED_RX_BM_STS),
+-		DUMP_WED(WED_RX_BM_INTF2),
+-		DUMP_WED(WED_RX_BM_INTF),
+-		DUMP_WED(WED_RX_BM_ERR_STS),
++		DUMP_WED_MASK(WED_RX_BM_PTR, WED_RX_BM_PTR_HEAD),
++		DUMP_WED_MASK(WED_RX_BM_PTR, WED_RX_BM_PTR_TAIL),
+ 	};
+ 	static const struct reg_dump regs_wed_v2[] = {
+ 		DUMP_STR("WED Route QM"),
+@@ -217,30 +353,71 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+ 		DUMP_WED(WED_RTQM_PFDBK_MIB),
+ 	};
+ 	static const struct reg_dump regs_wed_v3[] = {
++		DUMP_STR("WED PG BM"),
++		DUMP_WED(WED_RRO_PG_BM_BASE),
++		DUMP_WED(WED_RRO_PG_BM_ADD_BASE_H),
++		DUMP_WED(WED_RRO_PG_BM_PTR),
++		DUMP_WED_MASK(WED_RRO_PG_BM_PTR, WED_RX_BM_PTR_HEAD),
++		DUMP_WED_MASK(WED_RRO_PG_BM_PTR, WED_RX_BM_PTR_TAIL),
++		DUMP_WED(WED_RRO_PG_BM_STATUS),
++		DUMP_WED(WED_RRO_PG_BM_INTF),
++		DUMP_WED(WED_RRO_PG_BM_ERR_STATUS),
++		DUMP_WED(WED_RRO_PG_BM_OPT_CTRL),
++		DUMP_WED(WED_RRO_PG_BM_TOTAL_DMAD),
++
+ 		DUMP_STR("WED RX RRO DATA"),
+-		DUMP_WED_RING(WED_RRO_RX_D_RX(0)),
+-		DUMP_WED_RING(WED_RRO_RX_D_RX(1)),
++		DUMP_WED_MASK(WED_RRO_RX_D_RX_CNT(0), WED_RRO_RX_D_RX_MAX_CNT),
++		DUMP_WED_MASK(WED_RRO_RX_D_RX_CNT(0), WED_RRO_RX_D_RX_MAGIC_CNT),
++		DUMP_WED_RRO_DATA_RING(WED_RRO_RX_D_RX(0)),
++		DUMP_WED_MASK(WED_RRO_RX_D_RX_CNT(1), WED_RRO_RX_D_RX_MAX_CNT),
++		DUMP_WED_MASK(WED_RRO_RX_D_RX_CNT(1), WED_RRO_RX_D_RX_MAGIC_CNT),
++		DUMP_WED_RRO_DATA_RING(WED_RRO_RX_D_RX(1)),
++		DUMP_WED(WED_RRO_RX_D_CFG(0)),
++		DUMP_WED(WED_RRO_RX_D_CFG(1)),
++		DUMP_WED(WED_RRO_RX_D_CFG(2)),
+ 
+ 		DUMP_STR("WED RX MSDU PAGE"),
+-		DUMP_WED_RING(WED_RRO_MSDU_PG_CTRL0(0)),
+-		DUMP_WED_RING(WED_RRO_MSDU_PG_CTRL0(1)),
+-		DUMP_WED_RING(WED_RRO_MSDU_PG_CTRL0(2)),
++		DUMP_WED(WED_RRO_MSDU_PG_RING_CFG(0)),
++		DUMP_WED(WED_RRO_MSDU_PG_RING_CFG1(0)),
++		DUMP_WED(WED_RRO_MSDU_PG_RING_CFG(1)),
++		DUMP_WED(WED_RRO_MSDU_PG_RING_CFG1(1)),
++		DUMP_WED(WED_RRO_MSDU_PG_RING_CFG(2)),
++		DUMP_WED(WED_RRO_MSDU_PG_RING_CFG1(2)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL0(0)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL1(0)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL2(0)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL0(1)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL1(1)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL2(1)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL0(2)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL1(2)),
++		DUMP_WED(WED_RRO_MSDU_PG_CTRL2(2)),
+ 
+ 		DUMP_STR("WED RX IND CMD"),
+-		DUMP_WED(WED_IND_CMD_RX_CTRL1),
+-		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL2, WED_IND_CMD_MAX_CNT),
+-		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL0, WED_IND_CMD_PROC_IDX),
++		DUMP_WED_MASK(RRO_IND_CMD_SIGNATURE, RRO_IND_CMD_VLD),
++		DUMP_WED_MASK(RRO_IND_CMD_SIGNATURE, RRO_IND_CMD_MAGIC_CNT),
++		DUMP_WED_MASK(RRO_IND_CMD_SIGNATURE, RRO_IND_CMD_SW_PROC_IDX),
+ 		DUMP_WED_MASK(RRO_IND_CMD_SIGNATURE, RRO_IND_CMD_DMA_IDX),
++		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL0,
++			      WED_IND_CMD_MAGIC_CNT_PROC_IDX),
+ 		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL0, WED_IND_CMD_MAGIC_CNT),
+-		DUMP_WED_MASK(RRO_IND_CMD_SIGNATURE, RRO_IND_CMD_MAGIC_CNT),
+ 		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL0,
+ 			      WED_IND_CMD_PREFETCH_FREE_CNT),
++		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL0, WED_IND_CMD_PROC_IDX),
++		DUMP_WED(WED_IND_CMD_RX_CTRL1),
++		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL2, WED_IND_CMD_BASE_M),
++		DUMP_WED_MASK(WED_IND_CMD_RX_CTRL2, WED_IND_CMD_MAX_CNT),
++		DUMP_WED(WED_RRO_CFG0),
++		DUMP_WED_MASK(WED_RRO_CFG1, WED_RRO_CFG1_MAX_WIN_SZ),
++		DUMP_WED_MASK(WED_RRO_CFG1, WED_RRO_CFG1_ACK_SN_BASE_M),
+ 		DUMP_WED_MASK(WED_RRO_CFG1, WED_RRO_CFG1_PARTICL_SE_ID),
+ 
+ 		DUMP_STR("WED ADDR ELEM"),
+ 		DUMP_WED(WED_ADDR_ELEM_CFG0),
+ 		DUMP_WED_MASK(WED_ADDR_ELEM_CFG1,
+ 			      WED_ADDR_ELEM_PREFETCH_FREE_CNT),
++		DUMP_WED_MASK(WED_ADDR_ELEM_CFG1,
++			      WED_ADDR_ELEM_PARTICL_SE_ID_BASE_M),
+ 
+ 		DUMP_STR("WED Route QM"),
+ 		DUMP_WED(WED_RTQM_ENQ_I2Q_DMAD_CNT),
+@@ -262,12 +439,18 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+ 
+ 	if (dev) {
+ 		dump_wed_regs(s, dev, regs_common, ARRAY_SIZE(regs_common));
+-		if (mtk_wed_is_v2(hw))
++		switch(dev->hw->version) {
++		case 2:
+ 			dump_wed_regs(s, dev,
+ 				      regs_wed_v2, ARRAY_SIZE(regs_wed_v2));
+-		else
++			break;
++		case 3:
+ 			dump_wed_regs(s, dev,
+ 				      regs_wed_v3, ARRAY_SIZE(regs_wed_v3));
++			break;
++		default:
++			break;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -470,6 +653,21 @@ wed_amsdu_show(struct seq_file *s, void *data)
+ 		DUMP_WED_MASK(WED_MON_AMSDU_QMEM_PTR(9), WED_AMSDU_QMEM_TID6_QTAIL),
+ 		DUMP_WED_MASK(WED_MON_AMSDU_QMEM_PTR(9), WED_AMSDU_QMEM_TID7_QTAIL),
+ 
++		DUMP_STR("WED HIFTXD BUFF NUM"),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(1)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(2)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(3)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(4)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(5)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(6)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(7)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(8)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(9)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(10)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(11)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(12)),
++		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_BUFF(13)),
++
+ 		DUMP_STR("WED HIFTXD MSDU INFO"),
+ 		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_MSDU(1)),
+ 		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_MSDU(2)),
+@@ -582,6 +780,125 @@ wed_rro_show(struct seq_file *s, void *data)
+ }
+ DEFINE_SHOW_ATTRIBUTE(wed_rro);
+ 
++static int
++wed_hw_cfg_show(struct seq_file *s, void *data)
++{
++	static const struct reg_dump regs_common[] = {
++		DUMP_STR("WED basic info"),
++		DUMP_WED(WED_REV_ID),
++		DUMP_WED(WED_CTRL),
++		DUMP_WED(WED_CTRL2),
++		DUMP_WED(WED_EXT_INT_STATUS),
++		DUMP_WED(WED_EXT_INT_MASK),
++		DUMP_WED(WED_STATUS),
++		DUMP_WED(WED_GLO_CFG),
++		DUMP_WED(WED_INT_STATUS),
++		DUMP_WED(WED_INT_MASK),
++		DUMP_WED(WED_AXI_CTRL),
++
++		DUMP_STR("WED TX buf info"),
++		DUMP_WED(WED_BM_STATUS),
++		DUMP_WED(WED_TX_BM_BASE),
++		DUMP_WED(WED_TX_BM_CTRL),
++		DUMP_WED(WED_TX_BM_STATUS),
++		DUMP_WED(WED_TX_BM_DYN_THR),
++		DUMP_WED(WED_TX_BM_RECYC),
++		DUMP_WED(WED_TX_TKID_CTRL),
++		DUMP_WED(WED_TX_TKID_TKID),
++		DUMP_WED(WED_TX_TKID_DYN_THR),
++		DUMP_WED(WED_TX_TKID_INTF),
++		DUMP_WED(WED_TX_TKID_RECYC),
++		DUMP_WED(WED_TX_FREE_TO_TX_TKID_TKID_MIB),
++		DUMP_WED(WED_TX_BM_TO_WDMA_RX_DRV_SKBID_MIB),
++		DUMP_WED(WED_TX_TKID_TO_TX_BM_FREE_SKBID_MIB),
++
++		DUMP_STR("WED RX BM info"),
++		DUMP_WED(WED_RX_BM_RX_DMAD),
++		DUMP_WED(WED_RX_BM_BASE),
++		DUMP_WED(WED_RX_BM_INIT_PTR),
++		DUMP_WED(WED_RX_BM_PTR),
++		DUMP_WED(WED_RX_BM_BLEN),
++		DUMP_WED(WED_RX_BM_STS),
++		DUMP_WED(WED_RX_BM_INTF2),
++		DUMP_WED(WED_RX_BM_INTF),
++		DUMP_WED(WED_RX_BM_ERR_STS),
++
++		DUMP_STR("WED RRO QM"),
++		DUMP_WED(WED_RROQM_GLO_CFG),
++		DUMP_WED(WED_RROQM_MIOD_CTRL0),
++		DUMP_WED(WED_RROQM_MIOD_CTRL1),
++		DUMP_WED(WED_RROQM_MIOD_CTRL2),
++		DUMP_WED(WED_RROQM_MIOD_CTRL3),
++		DUMP_WED(WED_RROQM_FDBK_CTRL0),
++		DUMP_WED(WED_RROQM_FDBK_CTRL1),
++		DUMP_WED(WED_RROQM_FDBK_CTRL2),
++		DUMP_WED(WED_RROQM_FDBK_CTRL3),
++		DUMP_WED(WED_RROQ_BASE_L),
++		DUMP_WED(WED_RROQ_BASE_H),
++		DUMP_WED(WED_RROQM_MIOD_CFG),
++
++		DUMP_STR("WED PCI Host Control"),
++		DUMP_WED(WED_PCIE_CFG_BASE),
++		DUMP_WED(WED_PCIE_CFG_INTM),
++		DUMP_WED(WED_PCIE_INT_TRIGGER),
++		DUMP_WED(WED_PCIE_INT_REC),
++		DUMP_WED(WED_PCIE_INTM_REC),
++		DUMP_WED(WED_PCIE_INT_CTRL),
++
++		DUMP_STR("WED_WPDMA basic info"),
++		DUMP_WED(WED_WPDMA_STATUS),
++		DUMP_WED(WED_WPDMA_INT_STA_REC),
++		DUMP_WED(WED_WPDMA_GLO_CFG),
++		DUMP_WED(WED_WPDMA_CFG_BASE),
++		DUMP_WED(WED_WPDMA_CFG_INT_MASK),
++		DUMP_WED(WED_WPDMA_CFG_TX),
++		DUMP_WED(WED_WPDMA_CFG_TX_FREE),
++		DUMP_WED(WED_WPDMA_CTRL),
++		DUMP_WED(WED_WPDMA_RX_GLO_CFG),
++		DUMP_WED(WED_WPDMA_RX_RING0),
++		DUMP_WED(WED_WPDMA_RX_RING1),
++
++		DUMP_STR("WED_WDMA basic info"),
++		DUMP_WED(WED_WDMA_STATUS),
++		DUMP_WED(WED_WDMA_INFO),
++		DUMP_WED(WED_WDMA_GLO_CFG),
++		DUMP_WED(WED_WDMA_RESET_IDX),
++		DUMP_WED(WED_WDMA_LOAD_DRV_IDX),
++		DUMP_WED(WED_WDMA_LOAD_CRX_IDX),
++		DUMP_WED(WED_WDMA_SPR),
++		DUMP_WED(WED_WDMA_INT_STA_REC),
++		DUMP_WED(WED_WDMA_INT_TRIGGER),
++		DUMP_WED(WED_WDMA_INT_CTRL),
++		DUMP_WED(WED_WDMA_INT_CLR),
++		DUMP_WED(WED_WDMA_CFG_BASE),
++		DUMP_WED(WED_WDMA_OFFSET0),
++		DUMP_WED(WED_WDMA_OFFSET1),
++
++		DUMP_STR("WDMA basic info"),
++		DUMP_WDMA(WDMA_GLO_CFG),
++		DUMP_WDMA(WDMA_INT_MASK),
++		DUMP_WDMA(WDMA_INT_STATUS),
++		DUMP_WDMA(WDMA_INFO),
++		DUMP_WDMA(WDMA_FREEQ_THRES),
++		DUMP_WDMA(WDMA_INT_STS_GRP0),
++		DUMP_WDMA(WDMA_INT_STS_GRP1),
++		DUMP_WDMA(WDMA_INT_STS_GRP2),
++		DUMP_WDMA(WDMA_INT_GRP1),
++		DUMP_WDMA(WDMA_INT_GRP2),
++		DUMP_WDMA(WDMA_SCH_Q01_CFG),
++		DUMP_WDMA(WDMA_SCH_Q23_CFG),
++	};
++
++	struct mtk_wed_hw *hw = s->private;
++	struct mtk_wed_device *dev = hw->wed_dev;
++
++	if (dev)
++		dump_wed_regs(s, dev, regs_common, ARRAY_SIZE(regs_common));
++
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(wed_hw_cfg);
++
+ static int
+ mtk_wed_reg_set(void *data, u64 val)
+ {
+@@ -625,6 +942,8 @@ void mtk_wed_hw_add_debugfs(struct mtk_wed_hw *hw)
+ 	if (!mtk_wed_is_v1(hw)) {
+ 		debugfs_create_file_unsafe("rxinfo", 0400, dir, hw,
+ 					   &wed_rxinfo_fops);
++		debugfs_create_file_unsafe("cfg", 0600, dir, hw,
++					   &wed_hw_cfg_fops);
+ 		if (mtk_wed_is_v3_or_greater(hw)) {
+ 			debugfs_create_file_unsafe("amsdu", 0400, dir, hw,
+ 						   &wed_amsdu_fops);
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed_regs.h b/drivers/net/ethernet/mediatek/mtk_wed_regs.h
+index c711909..15676e7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed_regs.h
++++ b/drivers/net/ethernet/mediatek/mtk_wed_regs.h
+@@ -24,6 +24,8 @@ struct mtk_wdma_desc {
+ } __packed __aligned(4);
+ 
+ #define MTK_WED_REV_ID					0x004
++#define MTK_WED_REV_ID_MAJOR				GENMASK(31, 28)
++#define MTK_WED_REV_ID_MINOR				GENMASK(27, 16)
+ 
+ #define MTK_WED_RESET					0x008
+ #define MTK_WED_RESET_TX_BM				BIT(0)
+@@ -72,6 +74,9 @@ struct mtk_wdma_desc {
+ #define MTK_WED_CTRL_MIB_READ_CLEAR			BIT(28)
+ #define MTK_WED_CTRL_FLD_MIB_RD_CLR			BIT(28)
+ 
++#define MTK_WED_AXI_CTRL				0x010
++#define MTK_WED_CTRL2					0x01c
++
+ #define MTK_WED_EXT_INT_STATUS				0x020
+ #define MTK_WED_EXT_INT_STATUS_TF_LEN_ERR		BIT(0)
+ #define MTK_WED_EXT_INT_STATUS_TKID_WO_PYLD		BIT(1)
+@@ -108,8 +113,11 @@ struct mtk_wdma_desc {
+ #define MTK_WED_STATUS					0x060
+ #define MTK_WED_STATUS_TX				GENMASK(15, 8)
+ 
+-#define MTK_WED_WPDMA_STATUS				0x068
+-#define MTK_WED_WPDMA_STATUS_TX_DRV			GENMASK(15, 8)
++#define MTK_WED_WPDMA_STATUS				0x064
++#define MTK_WED_WDMA_STATUS				0x068
++#define MTK_WED_WDMA_STATUS_TX_DRV			GENMASK(15, 8)
++#define MTK_WED_BM_STATUS				0x06c
++#define MTK_WED_WPDMA_D_ST				0x074
+ 
+ #define MTK_WED_TX_BM_CTRL				0x080
+ #define MTK_WED_TX_BM_CTRL_VLD_GRP_NUM			GENMASK(6, 0)
+@@ -128,6 +136,7 @@ struct mtk_wdma_desc {
+ 
+ #define MTK_WED_TX_BM_BUF_LEN				0x08c
+ 
++#define MTK_WED_TX_BM_STATUS				0x090
+ #define MTK_WED_TX_BM_INTF				0x09c
+ #define MTK_WED_TX_BM_INTF_TKID				GENMASK(15, 0)
+ #define MTK_WED_TX_BM_INTF_TKFIFO_FDEP			GENMASK(23, 16)
+@@ -140,6 +149,8 @@ struct mtk_wdma_desc {
+ #define MTK_WED_TX_BM_DYN_THR_HI			GENMASK(22, 16)
+ #define MTK_WED_TX_BM_DYN_THR_HI_V2			GENMASK(24, 16)
+ 
++#define MTK_WED_TX_BM_RECYC				0x0a8
++
+ #define MTK_WED_TX_TKID_CTRL				0x0c0
+ #define MTK_WED_TX_TKID_CTRL_VLD_GRP_NUM		GENMASK(6, 0)
+ #define MTK_WED_TX_TKID_CTRL_RSV_GRP_NUM		GENMASK(22, 16)
+@@ -151,10 +162,18 @@ struct mtk_wdma_desc {
+ #define MTK_WED_TX_TKID_CTRL_VLD_GRP_NUM_V3		GENMASK(7, 0)
+ #define MTK_WED_TX_TKID_CTRL_RSV_GRP_NUM_V3		GENMASK(23, 16)
+ 
++#define MTK_WED_TX_TKID_TKID				0x0c8
+ #define MTK_WED_TX_TKID_DYN_THR				0x0e0
+ #define MTK_WED_TX_TKID_DYN_THR_LO			GENMASK(6, 0)
+ #define MTK_WED_TX_TKID_DYN_THR_HI			GENMASK(22, 16)
+ 
++#define MTK_WED_TX_TKID_STATUS				0x0e4
++#define MTK_WED_TX_TKID_RECYC				0x0e8
++
++#define MTK_WED_TX_FREE_TO_TX_TKID_TKID_MIB		0x1c0
++#define MTK_WED_TX_BM_TO_WDMA_RX_DRV_SKBID_MIB		0x1c4
++#define MTK_WED_TX_TKID_TO_TX_BM_FREE_SKBID_MIB		0x1c8
++
+ #define MTK_WED_TXP_DW0					0x120
+ #define MTK_WED_TXP_DW1					0x124
+ #define MTK_WED_WPDMA_WRITE_TXP				GENMASK(31, 16)
+@@ -199,6 +218,7 @@ struct mtk_wdma_desc {
+ 
+ #define MTK_WED_SCR0					0x3c0
+ #define MTK_WED_RX1_CTRL2				0x418
++#define MTK_WED_WPDMA_INT_STA_REC			0x500
+ #define MTK_WED_WPDMA_INT_TRIGGER			0x504
+ #define MTK_WED_WPDMA_INT_TRIGGER_RX_DONE		BIT(1)
+ #define MTK_WED_WPDMA_INT_TRIGGER_TX_DONE		GENMASK(5, 4)
+@@ -252,6 +272,7 @@ struct mtk_wdma_desc {
+ #define MTK_WED_WPDMA_INT_CTRL_SRC_SEL			GENMASK(17, 16)
+ 
+ #define MTK_WED_WPDMA_INT_MASK				0x524
++#define MTK_WED_WPDMA_INT_MON				0x52c
+ 
+ #define MTK_WED_WPDMA_INT_CTRL_TX			0x530
+ #define MTK_WED_WPDMA_INT_CTRL_TX0_DONE_EN		BIT(0)
+@@ -282,6 +303,9 @@ struct mtk_wdma_desc {
+ #define MTK_WED_PCIE_INT_TRIGGER			0x570
+ #define MTK_WED_PCIE_INT_TRIGGER_STATUS			BIT(16)
+ 
++#define MTK_WED_PCIE_INT_REC				0x574
++#define MTK_WED_PCIE_INTM_REC				0x578
++
+ #define MTK_WED_PCIE_INT_CTRL				0x57c
+ #define MTK_WED_PCIE_INT_CTRL_POLL_EN			GENMASK(13, 12)
+ #define MTK_WED_PCIE_INT_CTRL_SRC_SEL			GENMASK(17, 16)
+@@ -296,7 +320,10 @@ struct mtk_wdma_desc {
+ #define MTK_WED_WPDMA_TX_MIB(_n)			(0x5a0 + (_n) * 4)
+ #define MTK_WED_WPDMA_TX_COHERENT_MIB(_n)		(0x5d0 + (_n) * 4)
+ #define MTK_WED_WPDMA_RX_MIB(_n)			(0x5e0 + (_n) * 4)
++
+ #define MTK_WED_WPDMA_RX_COHERENT_MIB(_n)		(0x5f0 + (_n) * 4)
++#define MTK_WED_WPDMA_RX_EXTC_FRE			0x5f8
++
+ 
+ #define MTK_WED_WPDMA_RING_TX(_n)			(0x600 + (_n) * 0x10)
+ #define MTK_WED_WPDMA_RING_RX(_n)			(0x700 + (_n) * 0x10)
+@@ -316,10 +343,14 @@ struct mtk_wdma_desc {
+ #define MTK_WED_WPDMA_RX_D_RST_DRV_IDX			GENMASK(25, 24)
+ 
+ #define MTK_WED_WPDMA_RX_GLO_CFG			0x76c
++#define MTK_WED_WPDMA_RX_RING0				0x7d0
++#define MTK_WED_WPDMA_RX_RING1				0x7d8
+ 
+ #define MTK_WED_WPDMA_RX_D_MIB(_n)			(0x774 + (_n) * 4)
++#define MTK_WED_WPDMA_RX_D_RECYCLE_MIB(_n)		(0x77c + (_n) * 4)
+ #define MTK_WED_WPDMA_RX_D_PROCESSED_MIB(_n)		(0x784 + (_n) * 4)
+ #define MTK_WED_WPDMA_RX_D_COHERENT_MIB			0x78c
++#define MTK_WED_WPDMA_RX_D_ERR_STATUS			0x790
+ 
+ #define MTK_WED_WPDMA_RX_D_PREF_CFG			0x7b4
+ #define MTK_WED_WPDMA_RX_D_PREF_EN			BIT(0)
+@@ -357,6 +388,7 @@ struct mtk_wdma_desc {
+ #define MTK_WED_WDMA_RX_PREF_FIFO_RX0_CLR		BIT(0)
+ #define MTK_WED_WDMA_RX_PREF_FIFO_RX1_CLR		BIT(16)
+ 
++#define MTK_WED_WDMA_INFO				0xa00
+ #define MTK_WED_WDMA_GLO_CFG				0xa04
+ #define MTK_WED_WDMA_GLO_CFG_TX_DRV_EN			BIT(0)
+ #define MTK_WED_WDMA_GLO_CFG_TX_DDONE_CHK		BIT(1)
+@@ -383,6 +415,10 @@ struct mtk_wdma_desc {
+ #define MTK_WED_WDMA_RESET_IDX_RX_ALL			BIT(20)
+ #define MTK_WED_WDMA_RESET_IDX_DRV			GENMASK(25, 24)
+ 
++#define MTK_WED_WDMA_LOAD_DRV_IDX			0xa10
++#define MTK_WED_WDMA_LOAD_CRX_IDX			0xa14
++#define MTK_WED_WDMA_SPR				0xa1c
++#define MTK_WED_WDMA_INT_STA_REC			0xa20
+ #define MTK_WED_WDMA_INT_CLR				0xa24
+ #define MTK_WED_WDMA_INT_CLR_RX_DONE			GENMASK(17, 16)
+ 
+@@ -428,6 +464,7 @@ struct mtk_wdma_desc {
+ #define MTK_WDMA_RING_TX(_n)				(0x000 + (_n) * 0x10)
+ #define MTK_WDMA_RING_RX(_n)				(0x100 + (_n) * 0x10)
+ 
++#define MTK_WDMA_INFO					0x200
+ #define MTK_WDMA_GLO_CFG				0x204
+ #define MTK_WDMA_GLO_CFG_TX_DMA_EN			BIT(0)
+ #define MTK_WDMA_GLO_CFG_TX_DMA_BUSY			BIT(1)
+@@ -440,7 +477,7 @@ struct mtk_wdma_desc {
+ #define MTK_WDMA_RESET_IDX				0x208
+ #define MTK_WDMA_RESET_IDX_TX				GENMASK(3, 0)
+ #define MTK_WDMA_RESET_IDX_RX				GENMASK(17, 16)
+-
++#define MTK_WDMA_FREEQ_THRES				0x210
+ #define MTK_WDMA_INT_STATUS				0x220
+ 
+ #define MTK_WDMA_INT_MASK				0x228
+@@ -466,8 +503,13 @@ struct mtk_wdma_desc {
+ #define MTK_WDMA_XDMA_RX_FIFO_CFG_RX_WID_FIFO_CLEAR	BIT(18)
+ #define MTK_WDMA_XDMA_RX_FIFO_CFG_RX_BID_FIFO_CLEAR	BIT(21)
+ 
++#define MTK_WDMA_INT_STS_GRP0				0x240
++#define MTK_WDMA_INT_STS_GRP1				0x244
++#define MTK_WDMA_INT_STS_GRP2				0x248
+ #define MTK_WDMA_INT_GRP1				0x250
+ #define MTK_WDMA_INT_GRP2				0x254
++#define MTK_WDMA_SCH_Q01_CFG				0x280
++#define MTK_WDMA_SCH_Q23_CFG				0x284
+ 
+ #define MTK_WDMA_PREF_TX_CFG				0x2d0
+ #define MTK_WDMA_PREF_TX_CFG_PREF_EN			BIT(0)
+@@ -589,6 +631,7 @@ struct mtk_wdma_desc {
+ #define MTK_WED_RROQM_FDBK_CNT				GENMASK(11, 0)
+ 
+ #define MTK_WED_RROQM_FDBK_CTRL2			0xc58
++#define MTK_WED_RROQM_FDBK_CTRL3			0xc5c
+ 
+ #define MTK_WED_RROQ_BASE_L				0xc80
+ #define MTK_WED_RROQ_BASE_H				0xc84
+@@ -612,7 +655,7 @@ struct mtk_wdma_desc {
+ #define MTK_WED_RX_BM_BASE				0xd84
+ #define MTK_WED_RX_BM_INIT_PTR				0xd88
+ #define MTK_WED_RX_BM_PTR				0xd8c
+-#define MTK_WED_RX_BM_PTR_HEAD				GENMASK(32, 16)
++#define MTK_WED_RX_BM_PTR_HEAD				GENMASK(31, 16)
+ #define MTK_WED_RX_BM_PTR_TAIL				GENMASK(15, 0)
+ 
+ #define MTK_WED_RX_BM_BLEN				0xd90
+@@ -623,12 +666,15 @@ struct mtk_wdma_desc {
+ 
+ #define MTK_RRO_IND_CMD_SIGNATURE			0xe00
+ #define MTK_RRO_IND_CMD_DMA_IDX				GENMASK(11, 0)
++#define MTK_RRO_IND_CMD_SW_PROC_IDX			GENMASK(27, 16)
+ #define MTK_RRO_IND_CMD_MAGIC_CNT			GENMASK(30, 28)
++#define MTK_RRO_IND_CMD_VLD				BIT(31)
+ 
+ #define MTK_WED_IND_CMD_RX_CTRL0			0xe04
+ #define MTK_WED_IND_CMD_PROC_IDX			GENMASK(11, 0)
+ #define MTK_WED_IND_CMD_PREFETCH_FREE_CNT		GENMASK(19, 16)
+ #define MTK_WED_IND_CMD_MAGIC_CNT			GENMASK(30, 28)
++#define MTK_WED_IND_CMD_MAGIC_CNT_PROC_IDX		BIT(31)
+ 
+ #define MTK_WED_IND_CMD_RX_CTRL1			0xe08
+ #define MTK_WED_IND_CMD_RX_CTRL2			0xe0c
+@@ -643,6 +689,7 @@ struct mtk_wdma_desc {
+ 
+ #define MTK_WED_ADDR_ELEM_CFG0				0xe18
+ #define MTK_WED_ADDR_ELEM_CFG1				0xe1c
++#define MTK_WED_ADDR_ELEM_PARTICL_SE_ID_BASE_M		GENMASK(3, 0)
+ #define MTK_WED_ADDR_ELEM_PREFETCH_FREE_CNT		GENMASK(19, 16)
+ 
+ #define MTK_WED_ADDR_ELEM_TBL_CFG			0xe20
+@@ -666,6 +713,7 @@ struct mtk_wdma_desc {
+ #define MTK_WED_PN_CHECK_IS_FIRST			BIT(17)
+ 
+ #define MTK_WED_RRO_MSDU_PG_RING_CFG(_n)		(0xe44 + (_n) * 0x8)
++#define MTK_WED_RRO_MSDU_PG_RING_CFG1(_n)		(0xe48 + (_n) * 0x8)
+ 
+ #define MTK_WED_RRO_MSDU_PG_RING2_CFG			0xe58
+ #define MTK_WED_RRO_MSDU_PG_DRV_CLR			BIT(26)
+@@ -676,6 +724,9 @@ struct mtk_wdma_desc {
+ #define MTK_WED_RRO_MSDU_PG_CTRL2(_n)			(0xe64 + (_n) * 0xc)
+ 
+ #define MTK_WED_RRO_RX_D_RX(_n)				(0xe80 + (_n) * 0x10)
++#define MTK_WED_RRO_RX_D_RX_CNT(_n)			(0xe84 + (_n) * 0x10)
++#define MTK_WED_RRO_RX_D_RX_MAX_CNT			GENMASK(11, 0)
++#define MTK_WED_RRO_RX_D_RX_MAGIC_CNT			GENMASK(31, 28)
+ 
+ #define MTK_WED_RRO_RX_MAGIC_CNT			BIT(13)
+ 
+@@ -690,6 +741,15 @@ struct mtk_wdma_desc {
+ #define MTK_WED_RRO_PG_BM_INIT_PTR			0xeb8
+ #define MTK_WED_RRO_PG_BM_SW_TAIL_IDX			GENMASK(15, 0)
+ #define MTK_WED_RRO_PG_BM_INIT_SW_TAIL_IDX		BIT(16)
++#define MTK_WED_RRO_PG_BM_PTR				0xebc
++#define MTK_WED_RRO_PG_BM_PTR_TAIL			GENMASK(15, 0)
++#define MTK_WED_RRO_PG_BM_PTR_HEAD			GENMASK(31, 16)
++#define MTK_WED_RRO_PG_BM_ADD_BASE_H			0xec0
++#define MTK_WED_RRO_PG_BM_STATUS			0xec4
++#define MTK_WED_RRO_PG_BM_INTF				0xecc
++#define MTK_WED_RRO_PG_BM_ERR_STATUS			0xed0
++#define MTK_WED_RRO_PG_BM_OPT_CTRL			0xed4
++#define MTK_WED_RRO_PG_BM_TOTAL_DMAD			0xee8
+ 
+ #define MTK_WED_WPDMA_INT_CTRL_RRO_RX			0xeec
+ #define MTK_WED_WPDMA_INT_CTRL_RRO_RX0_EN		BIT(0)
+@@ -806,7 +866,8 @@ struct mtk_wdma_desc {
+ #define MTK_WED_AMSDU_QMEM_TID6_QTAIL			GENMASK(27, 16)
+ #define MTK_WED_AMSDU_QMEM_TID7_QTAIL			GENMASK(11, 0)
+ 
+-#define MTK_WED_MON_AMSDU_HIFTXD_FETCH_MSDU(_n)		(0x1ec4 + (_n) * 0x4)
++#define MTK_WED_MON_AMSDU_HIFTXD_FETCH_BUFF(_n)		(0x1e90 + (_n - 1) * 0x4)
++#define MTK_WED_MON_AMSDU_HIFTXD_FETCH_MSDU(_n)		(0x1ec4 + (_n - 1) * 0x4)
+ 
+ #define MTK_WED_PCIE_BASE			0x11280000
+ #define MTK_WED_PCIE_BASE0			0x11300000
+-- 
+2.45.2
+

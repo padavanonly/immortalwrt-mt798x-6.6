@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -45,7 +45,8 @@ wed_rx_page_bm_dma_cb_init(struct platform_device *pdev,
 	struct warp_bm_rxdmad *rxd;
 	struct pci_dev *wdev = NULL;
 	void *pkt = NULL;
-#ifdef WED_RX_HW_RRO_DBG
+	u32 value = 0;
+#ifdef WED_RX_HW_RRO_3_0_DBG
 	void *pkt_pg_test = NULL;
 #endif
 
@@ -60,6 +61,9 @@ wed_rx_page_bm_dma_cb_init(struct platform_device *pdev,
 
 		if (idx < bm->page_num) {
 			pkt = page_frag_alloc(&bm->rx_page, dma_cb->pkt_size, GFP_ATOMIC);
+#ifdef WED_MEM_LEAK_DBG
+			pkt_alloc_mem((dma_cb->pkt_size), (void *)pkt, __builtin_return_address(0));
+#endif	/* WED_MEM_LEAK_DBG */
 
 			dma_cb->pkt = (struct sk_buff *)(pkt);
 			dma_cb->pkt_va = (unsigned char *)pkt;
@@ -69,12 +73,14 @@ wed_rx_page_bm_dma_cb_init(struct platform_device *pdev,
 			/* Set SDP0_L to DW0 */
 			WRITE_ONCE(rxd->sdp0, (dma_cb->pkt_pa & PARTIAL_RXDMAD_SDP0_L_MASK));
 
+#ifdef CONFIG_WARP_64BIT_SUPPORT
 			/* Set SDP0_H to DW1 */
-			WRITE_ONCE(rxd->token,
-				((dma_cb->pkt_pa >> WARP_DMA_ADDR_H_SHIFT)
-				& PARTIAL_RXDMAD_SDP0_H_MASK));
+			value = (dma_cb->pkt_pa >> WARP_DMA_ADDR_H_SHIFT) &
+				PARTIAL_RXDMAD_SDP0_H_MASK;
+#endif
+			WRITE_ONCE(rxd->token, value);
 
-#ifdef WED_RX_HW_RRO_DBG
+#ifdef WED_RX_HW_RRO_3_0_DBG
 			pkt_pg_test = kzalloc(sizeof(*rxd), GFP_ATOMIC);
 			spin_lock(&bm->lock);
 			list_add_tail(&dma_cb->list,
@@ -119,7 +125,7 @@ wed_page_hash_search(struct wed_entry *wed, dma_addr_t pa)
 static int
 wed_init_msdu_page_hash(struct wed_rx_page_bm *bm)
 {
-#ifdef WED_RX_HW_RRO_DBG
+#ifdef WED_RX_HW_RRO_3_0_DBG
 	u16 i;
 
 	for (i = 0; i < WED_MSDU_PAGE_HASH_SIZE; i++)
@@ -134,7 +140,7 @@ wed_init_msdu_page_hash(struct wed_rx_page_bm *bm)
 static int
 wed_exit_msdu_page_hash(struct wed_rx_page_bm *bm)
 {
-#ifdef WED_RX_HW_RRO_DBG
+#ifdef WED_RX_HW_RRO_3_0_DBG
 
 	u16 i;
 	struct list_head *p, *q;
@@ -204,6 +210,9 @@ wed_rx_page_bm_dma_cb_exit(struct wed_entry *wed, struct wed_rx_page_bm *bm,
 	struct pci_dev *wdev = bm->hif_dev;
 
 	if (idx < bm->page_num) {
+#ifdef WED_MEM_LEAK_DBG
+		pkt_free_mem((void *)dma_cb->pkt);
+#endif	/* WED_MEM_LEAK_DBG */
 		dma_unmap_single(&wdev->dev, dma_cb->pkt_pa,
 				dma_cb->pkt_size, DMA_FROM_DEVICE);
 

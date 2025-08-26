@@ -1,0 +1,42 @@
+Subject: [PATCH] net-ethernet-mtk_eth_soc-add-unregister-notifier
+
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index bee6e2a..a2f0683 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -6375,6 +6375,20 @@ static int mtk_sgmii_init(struct mtk_eth *eth)
+ 	return 0;
+ }
+ 
++static void mtk_unregister_notifier(struct mtk_eth *eth)
++{
++	struct mtk_mac *mac;
++	int i;
++
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		if (!eth->netdev[i])
++			continue;
++		mac = netdev_priv(eth->netdev[i]);
++		if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
++			unregister_netdevice_notifier(&mac->device_notifier);
++	}
++}
++
+ static int mtk_probe(struct platform_device *pdev)
+ {
+ 	struct resource *res = NULL, *res_sram;
+@@ -6764,6 +6778,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 	mtk_release_all_muxes(eth);
+ 	mtk_mdio_cleanup(eth);
+ err_free_dev:
++	mtk_unregister_notifier(eth);
+ 	mtk_free_dev(eth);
+ err_deinit_hw:
+ 	mtk_hw_deinit(eth);
+-- 
+2.45.2
+

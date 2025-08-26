@@ -1,0 +1,77 @@
+From d9063588a5dedb8a97d165796db46b9ec9097c6d Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Thu, 19 Jun 2025 15:54:53 +0800
+Subject: [PATCH] flow offload add mtkhnat macvlan support
+
+Without this patch, the packets forwarded through macvlan device
+would not be HNAT offloaded.
+
+Signed-off-by: chak-kei.lam <chak-kei.lam@mediatek.com>
+---
+ drivers/net/macvlan.c          | 11 +++++++++++
+ include/linux/netdevice.h      |  1 +
+ net/netfilter/xt_FLOWOFFLOAD.c |  4 +++-
+ 3 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/macvlan.c b/drivers/net/macvlan.c
+index 2f578a1..4851915 100644
+--- a/drivers/net/macvlan.c
++++ b/drivers/net/macvlan.c
+@@ -1142,6 +1142,16 @@ static int macvlan_dev_get_iflink(const struct net_device *dev)
+ 	return vlan->lowerdev->ifindex;
+ }
+ 
++static int macvlan_dev_fill_forward_path(struct net_device_path_ctx *ctx,
++				      struct net_device_path *path)
++{
++	path->type = DEV_PATH_MACVLAN;
++	path->dev = ctx->dev;
++	ctx->dev = macvlan_dev_real_dev(ctx->dev);
++
++	return 0;
++}
++
+ #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+ static int macvlan_dev_flow_offload_check(struct flow_offload_hw_path *path)
+ {
+@@ -1190,6 +1200,7 @@ static const struct net_device_ops macvlan_netdev_ops = {
+ 	.ndo_features_check	= passthru_features_check,
+ 	.ndo_hwtstamp_get	= macvlan_hwtstamp_get,
+ 	.ndo_hwtstamp_set	= macvlan_hwtstamp_set,
++	.ndo_fill_forward_path	= macvlan_dev_fill_forward_path,
+ #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+ 	.ndo_flow_offload_check = macvlan_dev_flow_offload_check,
+ #endif
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+index 835845a..a3cba7c 100644
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -849,6 +849,7 @@ enum net_device_path_type {
+ 	DEV_PATH_BRIDGE,
+ 	DEV_PATH_PPPOE,
+ 	DEV_PATH_DSA,
++	DEV_PATH_MACVLAN,
+ 	DEV_PATH_MTK_WDMA,
+ 	DEV_PATH_DSLITE,
+ 	DEV_PATH_6RD,
+diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
+index a8aaf7f..bad3c51 100644
+--- a/net/netfilter/xt_FLOWOFFLOAD.c
++++ b/net/netfilter/xt_FLOWOFFLOAD.c
+@@ -325,10 +325,12 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+ 		case DEV_PATH_DSA:
+ 		case DEV_PATH_VLAN:
+ 		case DEV_PATH_PPPOE:
++		case DEV_PATH_MACVLAN:
+ 			if (is_zero_ether_addr(info->h_source))
+ 				memcpy(info->h_source, path->dev->dev_addr, ETH_ALEN);
+ 
+-			if (path->type == DEV_PATH_ETHERNET)
++			if (path->type == DEV_PATH_ETHERNET ||
++			    path->type == DEV_PATH_MACVLAN)
+ 				break;
+ 			if (path->type == DEV_PATH_DSA) {
+ 				i = stack->num_paths;
+-- 
+2.45.2
+

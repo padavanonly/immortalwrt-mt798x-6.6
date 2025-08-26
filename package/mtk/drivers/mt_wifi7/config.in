@@ -50,6 +50,8 @@ if MTK_WIFI7_MT_MAC
 		bool
 	config MTK_WIFI7_CHIP_MT7993
 		bool
+	config MTK_WIFI7_CHIP_BLACKHAWK
+		bool
 endif
 
 choice
@@ -82,6 +84,12 @@ choice
 	config MTK_WIFI7_FIRST_IF_MT7993
 	bool "MT7993 (Griffin)"
         select MTK_WIFI7_CHIP_MT7993
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	bool "Test chip, Blackhawk_A0"
+        select MTK_WIFI7_CHIP_BLACKHAWK
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 endchoice
@@ -118,6 +126,12 @@ choice
         select MTK_WIFI7_CHIP_MT7993
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	bool "Test chip, Blackhawk_A0"
+        select MTK_WIFI7_CHIP_BLACKHAWK
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
 endchoice
 
 choice
@@ -149,6 +163,12 @@ choice
 		bool "MT7993 (Griffin)"
         select MTK_WIFI7_CHIP_MT7993
 	select MTK_WIFI7_MULTI_INF_SUPPORT
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	bool "Test chip, Blackhawk_A0"
+        select MTK_WIFI7_CHIP_BLACKHAWK
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 endchoice
@@ -185,8 +205,20 @@ config MTK_WIFI7_PROXYARP_SUPPORT
 	bool "PROXYARP_SUPPORT"
 	default y
 
+config MTK_WIFI7_OFFCHANNEL_SUPPORT
+	bool "OFFCHANNEL_MONITER_SUPPORT"
+	default y
+
+config MTK_WIFI7_BS_MAP_BL_SUPPORT
+	bool "BS_MAP_BL_SUPPORT"
+	default y
+
 config MTK_WIFI7_PWHM_SUPPORT
 	bool "PWHM_SUPPORT"
+	default n
+
+config MTK_WIFI7_OSAL_SUPPORT
+	bool "OS Abstraction Layer"
 	default n
 
 if MTK_WIFI7_MT_WIFI
@@ -563,6 +595,11 @@ config MTK_WIFI7_MAP_VENDOR_SUPPORT
         depends on MTK_WIFI7_MAP_SUPPORT
         default n
 
+config MTK_WIFI7_REPORT_CH_TXPWR_SUPPORT
+        bool "Multi-AP channel tx power support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
 config MTK_WIFI7_MAP_R6_SUPPORT
         bool "Multi-AP R6 support"
         depends on MTK_WIFI7_MAP_SUPPORT
@@ -718,6 +755,31 @@ choice
         bool "A-die MT7976C_MT7977"
 endchoice
 
+choice
+        prompt "A-die Type Comb (MT7990 for pre-w8)"
+        depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND
+
+        config MTK_WIFI7_PRE8_ADIE_NONE
+        bool "NONE"
+        default y
+
+        config MTK_WIFI7_PRE8_ADIE_7977
+        bool "A-die MT7976_MT7977"
+
+        config MTK_WIFI7_PRE8_ADIE_7979
+        bool "A-die MT7975_MT7979"
+
+        config MTK_WIFI7_PRE8_ADIE_7777
+        bool "A-die MT7976_MT7777"
+endchoice
+
+config MTK_WIFI7_ADIE_TYPE
+        depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND && (MTK_WIFI7_PRE8_ADIE_7977 || MTK_WIFI7_PRE8_ADIE_7979 || MTK_WIFI7_PRE8_ADIE_7777)
+        string
+        default "MT7977"        if MTK_WIFI7_PRE8_ADIE_7977
+        default "MT7979"        if MTK_WIFI7_PRE8_ADIE_7979
+        default "MT7777"        if MTK_WIFI7_PRE8_ADIE_7777
+
 #
 # Section for interfaces
 #
@@ -764,6 +826,12 @@ config MTK_WIFI7_BA_REORDER_ARRAY_SUPPORT
 	bool "Array based BA reorder algorithm"
 	depends on MTK_WIFI7_DRIVER
 	default n
+
+config MTK_WIFI7_ICVERR_RESET_RRO
+	bool "Reset RRO when receive ICV error PKT"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
 
 endmenu
 
@@ -1186,6 +1254,16 @@ config MTK_WIFI7_NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT
 	bool "Non wifi frequency for 5Mhz shift"
 	default n
 
+config MTK_WIFI7_MLD_GROUP_RESTORE
+	bool "mld group restore support"
+	depends on MTK_WIFI7_DOT11_EHT_BE
+	default n
+
+config MTK_WIFI7_UNIFIED_COUNTRY_CONFIG_SUPPORT
+	bool "unified country config"
+	default y
+
+
 config MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT
         bool "split mac support for ccn34"
 	depends on MTK_WIFI7_MT_AP_SUPPORT
@@ -1207,6 +1285,11 @@ config MTK_WIFI7_DFS_SLAVE_SUPPORT
 	default n
 config MTK_WIFI7_ANDLINK_SUPPORT
 	bool "Andlink Support"
+	default n
+
+config MTK_WIFI7_GTB_APP_SUPPORT
+	bool "GTB Application Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
 	default n
 endmenu
 

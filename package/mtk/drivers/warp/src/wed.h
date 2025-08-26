@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -183,10 +183,10 @@ struct wed_tx_ring_ctrl {
 	struct warp_ring *ring;
 };
 
-struct wed_pao_ctrl {
+struct wed_hif_txd_ctrl {
 	u32 hif_txd_segment_nums;
 	u8 hif_txd_src;
-	char *hif_txd_addr[32];
+	void *hif_txd_addr[32];
 	dma_addr_t hif_txd_addr_pa[32];
 };
 
@@ -194,7 +194,7 @@ struct wed_tx_ctrl {
 	struct wed_buf_res res; // v1
 	struct wed_tx_bm tx_bm; // v2
 	struct wed_tx_ring_ctrl ring_ctrl;
-	struct wed_pao_ctrl pao_ctrl;
+	struct wed_hif_txd_ctrl hif_txd_ctrl;
 };
 
 #define TOKEN_ID_MASK		(0xffff << 16)
@@ -251,6 +251,16 @@ struct wed_rx_page_bm {
 	struct page_frag_cache rx_page;
 };
 
+struct wed_rx_tkid {
+	void *hif_dev;
+	u32 tkn_grp_sz;
+	u32 token_num;
+	u32 tkn_vld_grp;
+	u32 ring_len;
+	u16 rxd_len;
+	struct warp_dma_buf *desc;
+};
+
 struct wed_rro_ctrl {
 	u16 miod_cnt;
 	u16 mid_size;
@@ -276,8 +286,10 @@ struct wed_rx_ctrl {
 	struct wed_rx_ring_ctrl rro_data_ring_ctrl;
 	struct wed_rx_ring_ctrl rro_page_ring_ctrl;
 	struct wed_rx_ring_ctrl rro_ind_cmd_ring_ctrl;
+	struct wed_rx_ring_ctrl rro_3_1_ring_ctrl;
 	struct wed_rro_ctrl rro_ctrl;
 	struct wed_rx_page_bm page_bm;
+	struct wed_rx_tkid rx_tkid;
 	u32 budget_head_idx;
 	u32 budget_tail_idx;
 	struct wed_rx_bm_res extra;
@@ -331,6 +343,7 @@ struct wed_ser_moudle_busy_cnt {
 	u32 reset_pao;
 	/* RX */
 	u32 reset_wed_wpdma_rx_d_drv;
+	u32 reset_wed_rx_rro_data_3_1_drv;
 	u32 reset_wed_rx_rro;
 	u32 reset_wed_rx_rro_qm;
 	u32 reset_wed_rx_rro_drv;
@@ -433,6 +446,8 @@ enum {
 	WED_PROC_SER_ERR_CNT = 18,
 	WED_PROC_PAO_WCID_STAT = 19,
 	WED_PROC_PAO_SET_WCID_STAT = 20,
+	WED_PROC_MEM_INFO = 21,
+	WED_PROC_RRO_SE_GET_PN = 22,
 	WED_PROC_END
 };
 
@@ -452,5 +467,6 @@ void wed_procinfo_dump(struct wed_entry *wed, struct seq_file *seq, int idx);
 int wed_fdesc_init(struct wed_entry *wed, struct wed_pkt_info *info);
 int wed_acquire_rx_token(struct wed_entry *wed, struct warp_dma_cb *cb, u32 *token_id);
 int wed_release_rx_token(struct wed_entry *wed, u32 token_id);
-
+int hif_txd_init(struct wed_entry *wed);
+void hif_txd_exit(struct wed_entry *wed);
 #endif /*_WED_H*/

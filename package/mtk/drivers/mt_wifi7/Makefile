@@ -9,7 +9,6 @@ include $(INCLUDE_DIR)/kernel.mk
 PKG_NAME:=mt_wifi7
 P4REV:=
 PKG_VERSION:=TEST
-PKG_SOURCE:=mt7990_20240805-e24961.tar.xz
 PKG_SOURCE_URL:=
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(PKG_NAME)
 
@@ -68,6 +67,8 @@ PKG_KCONFIG:= \
 	DOT11W_PMF_SUPPORT \
 	PASSPOINT_R2 \
 	PROXYARP_SUPPORT \
+	OFFCHANNEL_SUPPORT \
+	BS_MAP_BL_SUPPORT \
 	TXBF_SUPPORT \
 	IGMP_SNOOP_SUPPORT \
 	RATE_ADAPTION \
@@ -170,6 +171,7 @@ PKG_KCONFIG:= \
 	MAP_VENDOR_SUPPORT \
 	MAP_R6_SUPPORT \
 	MAP_HOSTAPD_SUPPORT \
+	REPORT_CH_TXPWR_SUPPORT \
 	WPA3_SUPPORT \
 	OWE_SUPPORT \
 	WIFI_PKT_FWD_V1 \
@@ -178,22 +180,26 @@ PKG_KCONFIG:= \
 	FIRST_IF_BELLWETHER \
 	FIRST_IF_MT7992 \
 	FIRST_IF_MT7993 \
+	FIRST_IF_BLACKHAWK \
 	SECOND_IF_MT7915 \
 	SECOND_IF_MT7990 \
 	SECOND_IF_BELLWETHER \
 	SECOND_IF_MT7992 \
 	SECOND_IF_MT7993 \
+	SECOND_IF_BLACKHAWK \
 	THIRD_IF_NONE \
 	THIRD_IF_MT7915 \
 	THIRD_IF_MT7990 \
 	THIRD_IF_BELLWETHER \
 	THIRD_IF_MT7992 \
 	THIRD_IF_MT7993 \
+	THIRD_IF_BLACKHAWK \
 	CHIP_MT7915 \
 	CHIP_MT7990 \
 	CHIP_BELLWETHER \
 	CHIP_MT7992 \
 	CHIP_MT7993 \
+	CHIP_BLACKHAWK \
 	RT_THIRD_CARD \
 	RT_THIRD_IF_RF_OFFSET \
 	THIRD_IF_EEPROM_FLASH \
@@ -269,6 +275,7 @@ PKG_KCONFIG:= \
 	SW_CONNECT_SUPPORT \
 	DFS_SLAVE_SUPPORT \
 	ANDLINK_SUPPORT \
+	GTB_APP_SUPPORT \
 	EXT_BUILD_CHANNEL_LIST \
 	MEMORY_SLIM_SUPPORT \
 	HIGH_PRIO_QUEUE_SUPPORT \
@@ -279,7 +286,10 @@ PKG_KCONFIG:= \
 	CFG80211_FULL_OPS_SUPPORT \
 	PWHM_SUPPORT \
 	RSNO_SUPPORT \
-	NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT
+	ICVERR_RESET_RRO \
+	NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT \
+	MLD_GROUP_RESTORE \
+	MTK_WIFI7_UNIFIED_COUNTRY_CONFIG_SUPPORT
 
 PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)))
 
@@ -295,7 +305,7 @@ BACKPORT_VERSION:=$(lastword $(subst /, , $(shell find $(KERNEL_BUILD_DIR) -type
 define KernelPackage/mt_wifi7
   CATEGORY:=MTK Properties
   TITLE:=MTK wifi7 AP driver
-  DEPENDS:=blkid
+  DEPENDS:=blkid +MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211 +kmod-mt_wifi_cmn
 ifeq ($(CONFIG_MTK_CONNINFRA_APSOC),y)
   DEPENDS+=+kmod-conninfra
 endif
@@ -341,8 +351,10 @@ NOSTDINC_FLAGS += \
         -include backport/backport.h
 endif
 
+ifeq ($(CONFIG_PACKAGE_kmod-mt_wifi_cmn),y)
 NOSTDINC_FLAGS += \
 	-DMT_WIFI_COMMON_SUPPORT
+endif
 
 ifneq ($(CONFIG_MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT),y)
 ifneq ($(CONFIG_MTK_WIFI7_CCN67_SPLIT_MAC_SUPPORT),y)
@@ -353,18 +365,19 @@ endif
 endif
 endif
 
+KCFLAGS += $(if $(CONFIG_MTK_WIFI7_OSAL_SUPPORT), -DMT_WIFI_COMMON_SUPPORT -DMT_WIFI_OSAL_SUPPORT -I$(STAGING_DIR)/usr/include/mt_wifi -I$(STAGING_DIR)/usr/include/mt_wifi/os)
+
 define Build/Compile
-	$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" \
+	$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" V=1 \
 		$(KERNEL_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)/mt_wifi_ap" \
 		LINUX_DIR="$(KERNEL_BUILD_DIR)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)=$(CONFIG_MTK_WIFI7_$(c)))) \
 		NOSTDINC_FLAGS="$(NOSTDINC_FLAGS)" \
 	 	KCFLAGS="$(KCFLAGS)" \
-		CFG_CFG80211_VERSION:=$(word 2,$(subst -, ,$(BACKPORT_VERSION))) \
 		modules
 	touch $(PKG_BUILD_DIR)/.no_autorebuild
-		cp $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers $(PKG_BUILD_DIR)/Module.symvers
+	cp $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers $(PKG_BUILD_DIR)/Module.symvers
 endef
 
 define KernelPackage/mt_wifi7/install
@@ -409,6 +422,14 @@ else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_iPAiLNA_EEPROM.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_EEPROM_iFEM233.bin $(1)/lib/firmware/.
 endif
+ifeq ($(CONFIG_MTK_WIFI7_ADIE_TYPE),"MT7977")
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7977/MT7990_7977_EEPROM.bin $(1)/lib/firmware/MT7990_EEPROM.bin
+else ifeq ($(CONFIG_MTK_WIFI7_ADIE_TYPE),"MT7979")
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/pre8_7979/MT7990_7979_EEPROM.bin $(1)/lib/firmware/MT7990_EEPROM.bin
+else ifeq ($(CONFIG_MTK_WIFI7_ADIE_TYPE),"MT7777")
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7777/MT7990_7777_EEPROM.bin $(1)/lib/firmware/MT7990_EEPROM.bin
+endif
+
 endif
 ifeq ($(CONFIG_MTK_WIFI7_CHIP_MT7992),y)
 ifeq ($(CONFIG_MTK_WIFI7_SEL_DUAL_BAND_SUPPORT),y)
@@ -429,10 +450,15 @@ ifeq ($(CONFIG_MTK_WIFI7_CHIP_MT7993),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/MT7993_MT7976_EEPROM_BE3600_iPAiLNA.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/MT7993_MT7976_EEPROM_BE3600_ePAeLNA.bin $(1)/lib/firmware/.
 	if [ -d "$(PKG_BUILD_DIR)/wifi_driver" ]; then \
-		$(INSTALL_BIN) $(PKG_BUILD_DIR)/wifi_driver/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
+		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
 	else \
 		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
 	fi
+endif
+ifeq ($(CONFIG_MTK_WIFI7_CHIP_BLACKHAWK),y)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/BLACKHAWK_A0_EEPROM.bin $(1)/lib/firmware/.
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/BLACKHAWK_A0_MT7976_EEPROM_BN25000_iPAiLNA.bin $(1)/lib/firmware/.
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/BLACKHAWK_A0_MT7976_EEPROM_BN25000_ePAeLNA.bin $(1)/lib/firmware/.
 endif
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/wifi_e2p.init $(1)/etc/init.d/wifi_e2p
@@ -448,23 +474,8 @@ endif
 ifeq ($(CONFIG_MTK_WIFI7_SEL_DUAL_BAND_SUPPORT),y)
 	$(INSTALL_BIN) ./files/wifi-select_sku.sh $(1)/sbin/select_sku.sh
 endif
-ifeq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT_OLD),y)
+ifeq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT),y)
 	$(INSTALL_DIR) $(1)/etc/wireless/
-	python ./make-l1profile.py $(TOPDIR)/.config $(1)/etc/wireless/l1profile.dat > /dev/null
-	if [ "$$(CONFIG_first_card_name)" = "MT7990" -o "$$(CONFIG_second_card_name)" = "MT7990" ] ; then \
-		$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7990/* $(1)/etc/wireless/mediatek/; \
-		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE13000_255" ] ; then \
-			$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7990/mt7990.b1.5g.dat $(1)/etc/wireless/mediatek/mt7990.b1.dat; \
-			$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7990/mt7990.b2.5g.dat $(1)/etc/wireless/mediatek/mt7990.b2.dat; \
-		fi; \
-		if [ "$$(CONFIG_MTK_WIFI7_2ADIE_TRIBAND)" = "y" ] ; then \
-			sed -i 's/DfsZeroWait=0/DfsZeroWait=1/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
-			sed -i 's/DfsDedicatedZeroWait=1/DfsDedicatedZeroWait=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
-			sed -i 's/DfsZeroWaitDefault=1/DfsZeroWaitDefault=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
-			sed -i '/DfsZeroWaitDefault/a DfsNopExpireSetChPolicy=0' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
-		fi; \
-	fi
-
 	# Example combination mt7622 + Kite.
 	if [ "$$(CONFIG_first_card_name)" = "MT7992" -o "$$(CONFIG_second_card_name)" = "MT7992" ] ; then \
 		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7992/* $(1)/etc/wireless/mediatek/; \

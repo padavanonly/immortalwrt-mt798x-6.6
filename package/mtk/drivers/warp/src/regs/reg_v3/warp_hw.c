@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -21,48 +21,6 @@
 #include <linux/pci.h>
 #include "mcu/warp_woif.h"
 #include <warp_bm.h>
-
-#define WHNAT_RESET(_entry, _addr, _value) \
-do {\
-		u32 cnt = 0;\
-		warp_io_write32(_entry, _addr, _value);\
-		while (_value != 0 && cnt < WED_POLL_MAX) {\
-			warp_io_read32(_entry, _addr, &_value);\
-			cnt++;\
-		} \
-		if (cnt >= WED_POLL_MAX) {\
-			warp_dbg(WARP_DBG_ERR, "%s(): Reset addr=%x,value=%x,cnt=%d fail!\n",\
-					__func__, _addr, _value, cnt);\
-		} \
-} while (0)
-
-#define dump_addr_value(_entry, _name, _addr)\
-	do {\
-		u32 value;\
-		warp_io_read32(_entry, _addr, &value);\
-		warp_dbg(WARP_DBG_OFF, "%s\t:%x\n", _name, value);\
-	} while(0)
-
-#define dump_io(_output, _entry, _name, _addr)\
-	do {\
-		u32 value;\
-		warp_io_read32(_entry, _addr, &value);\
-		if (_output != NULL) seq_printf(_output, "%s\t:%x\n", _name, value); \
-	} while(0)
-
-#define dump_io_diff(_output, _entry, _name, _addr, _addr2)\
-	do {\
-		u32 value;\
-		u32 value2;\
-		warp_io_read32(_entry, _addr, &value);\
-		warp_io_read32(_entry, _addr2, &value2);\
-		if (_output != NULL) seq_printf(_output, "%s\t:%x\n", _name, value - value2); \
-	} while(0)
-
-#define dump_string(_output, fmt, args...)\
-	do {\
-		if (_output != NULL) seq_printf(_output, fmt, ## args); \
-	} while(0)
 
 #define WDMA_MIN_RING_LEN (0x6)
 /*Local function*/
@@ -190,7 +148,7 @@ wdma_rx_ring_rdy_ck(struct wdma_entry *wdma,
 
 			if (value == (ring_ctrl->ring_len - 1))
 				break;
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 			else if (wifi_dbdc_support(wdma->warp) == false &&
 				 i > 0 && value == (WDMA_MIN_RING_LEN - 1))
 				break;
@@ -271,7 +229,7 @@ wdma_tx_ring_poll_to_idle(struct wdma_entry *wdma,
 
 			if (cidx_value == didx_value)
 				break;
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 			else if (wifi_dbdc_support(wdma->warp) == false &&
 				 i > 0 && cidx_value == didx_value)
 				break;
@@ -311,7 +269,7 @@ wdma_rx_ring_poll_to_idle(struct wdma_entry *wdma,
 					break;
 				continue;
 			}
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 			else if (wifi_dbdc_support(wdma->warp) == false &&
 				 i > 0 && cidx_value == (WDMA_MIN_RING_LEN - 1))
 				break;
@@ -387,7 +345,6 @@ static int
 wifi_legacy_rx_ring_rdy_ck_en(struct wed_entry *wed,
 				struct wifi_entry *wifi)
 {
-	u32 value = 0;
 	struct wifi_hw *hw = &wifi->hw;
 	struct wed_rx_ring_ctrl *ring_ctrl =
 				&wed->res_ctrl.rx_ctrl.ring_ctrl;
@@ -398,10 +355,6 @@ wifi_legacy_rx_ring_rdy_ck_en(struct wed_entry *wed,
 		return -1;
 	}
 
-	warp_io_read32(wifi, hw->rx_dma_glo_cfg, &value);
-	value |= (0x1 << 2);
-	warp_io_write32(wifi, hw->rx_dma_glo_cfg, value);
-
 	return 0;
 }
 
@@ -410,13 +363,13 @@ wifi_rro_rx_ring_rdy_ck_en(struct wed_entry *wed,
 				struct wifi_entry *wifi)
 {
 	struct wifi_hw *hw = &wifi->hw;
-#ifdef WED_RX_HW_RRO
+#ifdef WED_RX_HW_RRO_3_0
 	struct wed_rx_ring_ctrl *rro_data_ring_ctrl =
 				&wed->res_ctrl.rx_ctrl.rro_data_ring_ctrl;
 	struct wed_rx_ring_ctrl *rro_page_ring_ctrl =
 				&wed->res_ctrl.rx_ctrl.rro_page_ring_ctrl;
 
-	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		if (wifi_rx_ring_rdy_ck(rro_data_ring_ctrl, wifi)) {
 			warp_dbg(WARP_DBG_ERR,
 				"%s():chip:0x%x,  wfdma rx rro data init fail\n", __func__, hw->chip_id);
@@ -449,7 +402,7 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 	struct wifi_entry *wifi = &warp->wifi;
 	struct wifi_hw *hw = &wifi->hw;
 	u32 d_cfg, d_pref;
-#ifdef WED_RX_HW_RRO
+#ifdef WED_RX_HW_RRO_3_0
 	u32 rro_data_drv_cfg = 0;
 	u32 rro_page_drv_cfg = 0;
 #endif
@@ -462,8 +415,8 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 #ifdef WED_RX_D_SUPPORT
 	warp_io_read32(wed, WED_WPDMA_RX_D_GLO_CFG, &d_cfg);
 	warp_io_read32(wed, WED_WPDMA_RX_D_PREF_CFG, &d_pref);
-#ifdef WED_RX_HW_RRO
-	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0
+	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		warp_io_read32(wed, RRO_RX_D_RING_CFG_ADDR_2, &rro_data_drv_cfg);
 		warp_io_read32(wed, RRO_MSDU_PG_RING2_CFG1, &rro_page_drv_cfg);
 	}
@@ -534,8 +487,8 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		d_cfg &= ~(WED_WPDMA_RX_D_GLO_CFG_FLD_RXD_READ_LEN_MASK);
 		d_cfg |= ((hw->max_rxd_size >> 2) << WED_WPDMA_RX_D_GLO_CFG_FLD_RXD_READ_LEN);
 		d_cfg |= (1 << WED_WPDMA_RX_D_GLO_CFG_FLD_RX_DRV_EN);
-#ifdef WED_RX_HW_RRO
-		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0
+		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 			rro_data_drv_cfg |= (1 << RRO_RX_D_RING_CFG_ADDR_2_FLD_DRV_EN);
 		}
 #endif
@@ -556,13 +509,13 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 #ifdef WED_RX_D_SUPPORT
 		warp_io_write32(wed, WED_WPDMA_RX_D_PREF_CFG, d_pref);
 		warp_io_write32(wed, WED_WPDMA_RX_D_GLO_CFG, d_cfg);
-#ifdef WED_RX_HW_RRO
-		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0
+		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 			warp_io_write32(wed, RRO_RX_D_RING_CFG_ADDR_2, rro_data_drv_cfg);
 			warp_io_write32(wed, RRO_MSDU_PG_RING2_CFG1, rro_page_drv_cfg);
 
 			/* fill sign_base_addr */
-#ifdef WED_RX_HW_RRO_DBG
+#ifdef WED_RX_HW_RRO_3_0_DBG
 			hw->sign_base_cr = wed->cr_base_addr + WED_SCR7;
 #else
 			hw->sign_base_cr = wed->cr_base_addr + RRO_IND_CMD_0_SIGNATURE;
@@ -624,10 +577,9 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		d_cfg &= ~(WED_WPDMA_RX_D_GLO_CFG_FLD_RXD_READ_LEN_MASK);
 		d_cfg |= ((hw->max_rxd_size >> 2) << WED_WPDMA_RX_D_GLO_CFG_FLD_RXD_READ_LEN);
 		d_cfg |= (1 << WED_WPDMA_RX_D_GLO_CFG_FLD_RX_DRV_EN);
-#ifdef WED_RX_HW_RRO
-		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0
+		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0))
 			rro_data_drv_cfg |= (1 << RRO_RX_D_RING_CFG_ADDR_2_FLD_DRV_EN);
-		}
 #endif
 #endif
 
@@ -646,13 +598,13 @@ wed_dma_ctrl(struct wed_entry *wed, u8 txrx)
 		warp_io_write32(wed, WED_WPDMA_RX_D_PREF_CFG, d_pref);
 		warp_io_write32(wed, WED_WPDMA_RX_D_GLO_CFG, d_cfg);
 
-#ifdef WED_RX_HW_RRO
-		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0
+		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 			warp_io_write32(wed, RRO_RX_D_RING_CFG_ADDR_2, rro_data_drv_cfg);
 			warp_io_write32(wed, RRO_MSDU_PG_RING2_CFG1, rro_page_drv_cfg);
 
 			/* fill sign_base_addr */
-#ifdef WED_RX_HW_RRO_DBG
+#ifdef WED_RX_HW_RRO_3_0_DBG
 			hw->sign_base_cr = wed->cr_base_addr + WED_SCR7;
 #else
 			hw->sign_base_cr = wed->cr_base_addr + RRO_IND_CMD_0_SIGNATURE;
@@ -679,7 +631,7 @@ wed_dma_ctrl_after_fwdl(struct wed_entry *wed, u8 txrx)
 	struct warp_entry *warp = (struct warp_entry *)wed->warp;
 	struct wifi_entry *wifi = &warp->wifi;
 	struct wifi_hw *hw = &wifi->hw;
-#ifdef WED_RX_HW_RRO
+#ifdef WED_RX_HW_RRO_3_0
 	u32 rro_page_drv_cfg = 0;
 #endif
 #endif
@@ -689,8 +641,8 @@ wed_dma_ctrl_after_fwdl(struct wed_entry *wed, u8 txrx)
 	case WARP_DMA_RX:
 	case WARP_DMA_TXRX:
 #ifdef WED_RX_D_SUPPORT
-#ifdef WED_RX_HW_RRO
-		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0
+		if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 			rro_page_drv_cfg |= (1 << RRO_MSDU_PG_RING2_CFG1_FLD_DRV_EN);
 			warp_io_read32(wed, RRO_MSDU_PG_RING2_CFG1, &value);
 
@@ -1729,6 +1681,9 @@ reset_tx_traffic(struct wed_entry *wed, u32 reset_type)
 	struct wed_ser_ctrl *ser_ctrl = &wed->ser_ctrl;
 	struct wed_ser_moudle_busy_cnt *busy_cnt = &ser_ctrl->ser_busy_cnt;
 
+	/* Disable wdma pse port */
+	wdma_pse_port_config_state(warp->idx, false);
+
 	/* host tx dma */
 	if (reset_wed_tx_dma(wed, reset_type)) {
 		warp_dbg(WARP_DBG_ERR, "%s(): wed_tx_dma reset fail\n", __func__);
@@ -2220,12 +2175,12 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 	struct wed_ser_moudle_busy_cnt *busy_cnt = &ser_ctrl->ser_busy_cnt;
 
 	/* WOCPU Enter SER */
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	warp_woctrl_enter_state((struct warp_entry *)wed->warp, WO_STATE_SER_RESET);
 	warp_dbg(WARP_DBG_INF, "%s(): WOCPU Enter SER\n", __func__);
 #endif
 
-	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		if (reset_wed_rx_rro(wed, reset_type)) {
 			warp_dbg(WARP_DBG_ERR, "%s():wed_rx_d_drv fail\n", __func__);
 			busy_cnt->reset_wed_rx_rro++;
@@ -2242,7 +2197,7 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 		busy_cnt->reset_wed_rx_rro_qm++;
 	}
 
-	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		if (reset_wed_rx_rro_drv(wed, reset_type)) {
 			warp_dbg(WARP_DBG_ERR,
 				"%s(): reset_wed_rx_rro_drv reset fail\n", __func__);
@@ -2276,7 +2231,7 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 		busy_cnt->reset_wed_rx_bm++;
 	}
 
-	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		if (reset_wed_rx_page_bm(wed, reset_type)) {
 			warp_dbg(WARP_DBG_ERR, "%s(): reset_wed_rx_page_bm fail\n", __func__);
 			busy_cnt->reset_wed_rx_page_bm++;
@@ -2284,7 +2239,7 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 	}
 
 	/* WOCPU Enter SER */
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	warp_woctrl_exit_state((struct warp_entry *)wed->warp, WO_STATE_SER_RESET);
 	warp_dbg(WARP_DBG_INF, "%s(): WOCPU Exit SER\n", __func__);
 #endif
@@ -2304,6 +2259,9 @@ reset_interface(struct wed_entry *wed, struct wdma_entry *wdma)
 	struct warp_entry *warp = wed->warp;
 
 #ifdef WED_HW_TX_SUPPORT
+	/* Disable wdma pse port */
+	wdma_pse_port_config_state(warp->idx, false);
+
 	/* Reset WDMA RX */
 	reset_wdma_rx(wdma);
 #endif
@@ -2311,7 +2269,7 @@ reset_interface(struct wed_entry *wed, struct wdma_entry *wdma)
 	value = 1 << WED_MOD_RST_FLD_WED;
 	WHNAT_RESET(wed, WED_MOD_RST, value);
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	if (warp->woif.wo_ctrl.cur_state == WO_STATE_WF_RESET) {
 		/* wo reset by cr instead of get node from dts since get reset node protection */
 		warp_woctrl_enter_state((struct warp_entry *)wed->warp, WO_STATE_DISABLE);
@@ -2690,6 +2648,7 @@ wed_wpdma_inter_tx_init(struct wed_entry *wed, struct wifi_hw *hw)
 		value |= (1 << WED_WPDMA_INT_CTRL_TX_FLD_TX_DONE_CLR1);
 		value |= ((hw->wfdma_tx_done_trig1_bit & 0x1f) <<
 			  WED_WPDMA_INT_CTRL_TX_FLD_TX_DONE_TRIG1);
+		fallthrough;
 	case 1:
 		/*TX0*/
 		value |= (1 << WED_WPDMA_INT_CTRL_TX_FLD_TX_DONE_EN0);
@@ -2730,6 +2689,7 @@ wed_wpdma_inter_rx_init(struct wed_entry *wed, struct wifi_hw *hw)
 		value |= (1 << WED_WPDMA_INT_CTRL_RX_FLD_RX_DONE_CLR1);
 		value |= ((hw->wfdma_rx_done_trig1_bit & 0x1f) <<
 			  WED_WPDMA_INT_CTRL_RX_FLD_RX_DONE_TRIG1);
+		fallthrough;
 	case 1:
 		/*RX0*/
 		value |= (1 << WED_WPDMA_INT_CTRL_RX_FLD_RX_DONE_EN0);
@@ -2760,6 +2720,7 @@ wed_wpdma_inter_rx_rro_init(struct wed_entry *wed, struct wifi_hw *hw)
 		value |= (1 << WED_WPDMA_INT_CTRL_RRO_RX_FLD_RRO_RX_DONE_CLR1);
 		value |= ((hw->wfdma_rro_rx_done_trig1_bit & 0x1f) <<
 				WED_WPDMA_INT_CTRL_RRO_RX_FLD_RRO_RX_DONE_TRIG1);
+		fallthrough;
 	case 1:
 		/* RRO RX0 */
 		value |= (1 << WED_WPDMA_INT_CTRL_RRO_RX_FLD_RRO_RX_DONE_EN0);
@@ -2782,12 +2743,14 @@ wed_wpdma_inter_rx_rro_init(struct wed_entry *wed, struct wifi_hw *hw)
 		value |= (1 << WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_CLR2);
 		value |= ((hw->wfdma_rro_rx_pg_trig2_bit & 0x1f) <<
 				WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_TRIG2);
+		fallthrough;
 	case 2:
 		/* RRO PAGE RX1 */
 		value |= (1 << WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_EN1);
 		value |= (1 << WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_CLR1);
 		value |= ((hw->wfdma_rro_rx_pg_trig1_bit & 0x1f) <<
 				WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_TRIG1);
+		fallthrough;
 	case 1:
 		/* RRO PAGE RX0 */
 		value |= (1 << WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_EN0);
@@ -2826,7 +2789,7 @@ warp_int_ctrl_hw(struct wed_entry *wed, struct wifi_entry *wifi,
 	/* initail rx interrupt trigger */
 	wed_wpdma_inter_rx_init(wed, hw);
 	/* initail rx rro interrupt trigger */
-	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO))
+	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0))
 		wed_wpdma_inter_rx_rro_init(wed, hw);
 
 #ifdef WED_HW_TX_SUPPORT
@@ -3031,7 +2994,6 @@ warp_eint_clr_dybm_stat_hw(struct wed_entry *wed)
 void
 warp_dma_ctrl_hw(struct wed_entry *wed, u8 txrx)
 {
-	int ret = 0;
 #ifdef WED_HW_RX_SUPPORT
 	struct warp_entry *warp = (struct warp_entry *)wed->warp;
 	struct wdma_entry *wdma = &warp->wdma;
@@ -3039,11 +3001,16 @@ warp_dma_ctrl_hw(struct wed_entry *wed, u8 txrx)
 
 	wed_dma_ctrl(wed, txrx);
 #ifdef WED_HW_RX_SUPPORT
-	if ((txrx == WARP_DMA_TX) || (txrx == WARP_DMA_TXRX))
-		ret = wdma_all_rx_ring_rdy_ck_en(wed, wdma);
-	if (ret) {
-		warp_dbg(WARP_DBG_OFF, "%s(): WDMA rx ring rdy fail, pls check txbm\n");
-		return;
+	if ((txrx == WARP_DMA_TX) || (txrx == WARP_DMA_TXRX)) {
+		if (wdma_all_rx_ring_rdy_ck_en(wed, wdma)) {
+			warp_dbg(WARP_DBG_OFF,
+				"%s(): WDMA rx ring rdy fail, pls check txbm\n",
+				__func__);
+			return;
+		}
+
+		/* Enable wdma pse port */
+		wdma_pse_port_config_state(warp->idx, true);
 	}
 	wdma_pref_ctrl(wdma, txrx);
 	wdma_dma_ctrl(wdma, txrx);
@@ -3076,7 +3043,7 @@ warp_wed_ver(struct wed_entry *wed)
 void
 warp_conf_hwcap(struct wed_entry *wed)
 {
-#if defined(WED_RX_HW_RRO_DBG) || defined(WED_RX_HW_RRO_DBG_MEMCPY)
+#ifdef WED_RX_HW_RRO_3_0_DBG
 	struct warp_entry *warp = (struct warp_entry *)wed->warp;
 	struct wifi_entry *wifi = &warp->wifi;
 	struct wifi_hw *hw = &wifi->hw;
@@ -3094,12 +3061,12 @@ warp_conf_hwcap(struct wed_entry *wed)
 			wed->hw_cap |= WED_HW_CAP_TXD_PADDING;
 
 		if (wed->ver >= 3) {
-#ifdef WED_RX_HW_RRO_DBG
-			if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO))
+#ifdef WED_RX_HW_RRO_3_0_DBG
+			if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0))
 				wed->hw_cap |= WED_HW_CAP_RRO_DBG_MODE;
 #endif
-#ifdef WED_RX_HW_RRO_DBG_MEMCPY
-			if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO))
+#ifdef WED_RX_HW_RRO_3_0_DBG_MEMCPY
+			if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0))
 				wed->hw_cap |= WED_HW_CAP_RRO_DBG_MEMCPY_MODE;
 #endif
 
@@ -3205,6 +3172,11 @@ warp_wdma_init_hw(struct wed_entry *wed, struct wdma_entry *wdma, int idx)
 	/* OFST1_TX0_CTRL offset */
 	value |= ((WDMA_TX_BASE_PTR_0 - WDMA_TX_BASE_PTR_0) <<  WED_WDMA_OFST1_FLD_TX0_CTRL);
 	warp_io_write32(wed, WED_WDMA_OFST1, value);
+
+	/* Disable delay writing CIDX */
+	warp_io_read32(wed, WED_WDMA_RX_CIDX_WR_CFG, &value);
+	value &= ~(0xFF << WED_WDMA_RX_CIDX_WR_CFG_FLD_CIDX_DLY_CNT_MAX);
+	warp_io_write32(wed, WED_WDMA_RX_CIDX_WR_CFG, value);
 }
 
 /*
@@ -3236,27 +3208,27 @@ warp_wdma_ring_init_hw(struct wed_entry *wed, struct wdma_entry *wdma)
 		warp_dbg(WARP_DBG_INF, "%s(): configure ring %d setting\n", __func__, i);
 		warp_dbg(WARP_DBG_INF, "%s(): wed:%p,wdma:%p: %x=%lx,%x=%d,%x=%d\n", __func__,
 			 wed, wdma,
-			 rx_ring->hw_desc_base, (unsigned long)rx_ring->cell[0].pkt_pa,
+			 rx_ring->hw_desc_base, (unsigned long)rx_ring->cell[0].alloc_pa,
 			 rx_ring->hw_cnt_addr, rx_ring_ctrl->ring_len,
 			 rx_ring->hw_cidx_addr, 0);
 		/*WDMA*/
 		warp_io_write32(wdma, rx_ring->hw_desc_base, rx_ring->cell[0].alloc_pa);
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 		if ((wifi_dbdc_support(wed->warp) == false) && (i == 1))	/* dbdc_mode is false, disable wdma ring1 by set to minimum length */
 		/* according to coda, ring len - 2 should more than recycle threshold(minimum, 3) */
 			warp_io_write32(wdma, rx_ring->hw_cnt_addr, WDMA_MIN_RING_LEN);
 		else
-#endif	/* WED_WDMA_SINGLE_RING */
+#endif	/* WED_WDMA_DUAL_RX_RING */
 			warp_io_write32(wdma, rx_ring->hw_cnt_addr, rx_ring_ctrl->ring_len);
 		warp_io_write32(wdma, rx_ring->hw_cidx_addr, 0);
 		/*WED_WDMA*/
 		warp_io_write32(wed, WED_WDMA_RX0_BASE + offset, rx_ring->cell[0].alloc_pa);
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 		if ((wifi_dbdc_support(wed->warp) == false) && (i == 1))	/* dbdc_mode is false, disable wdma ring1 by set to minimum length */
 		/* according to coda, ring len - 2 should more than recycle threshold(minimum, 3) */
 			warp_io_write32(wed, WED_WDMA_RX0_CNT + offset, WDMA_MIN_RING_LEN);
 		else
-#endif	/* WED_WDMA_SINGLE_RING */
+#endif	/* WED_WDMA_DUAL_RX_RING */
 			warp_io_write32(wed, WED_WDMA_RX0_CNT + offset, rx_ring_ctrl->ring_len);
 	}
 
@@ -3287,7 +3259,7 @@ warp_wdma_ring_init_hw(struct wed_entry *wed, struct wdma_entry *wdma)
 		warp_dbg(WARP_DBG_INF, "%s(): configure ring %d setting\n", __func__, i);
 		warp_dbg(WARP_DBG_INF, "%s(): wed:%p,wdma:%p: %x=%lx,%x=%d,%x=%d\n", __func__,
 			 wed, wdma,
-			 tx_ring->hw_desc_base, (unsigned long)tx_ring->cell[0].pkt_pa,
+			 tx_ring->hw_desc_base, (unsigned long)tx_ring->cell[0].alloc_pa,
 			 tx_ring->hw_cnt_addr, tx_ring_ctrl->ring_len,
 			 tx_ring->hw_cidx_addr, 0);
 		/*WDMA*/
@@ -3717,17 +3689,15 @@ warp_rx_pn_chk_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 }
 
 int
-warp_rx_pn_chk_set_hw(struct wed_entry *wed, u32 se_id, bool enble_wed_pn_chk)
+warp_rx_pn_chk_set_hw(struct wed_entry *wed, u32 se_id, bool enable_wed_pn_chk)
 {
 	u32 value, cnt = 0;
 
-	value = 0;
 	value = (1 << PN_CONF_WDATA_M_FLD_IS_FIRST);
-	value |= (enble_wed_pn_chk << PN_CONF_WDATA_M_FLD_NEED_CHECK_PN);
+	value |= (enable_wed_pn_chk << PN_CONF_WDATA_M_FLD_NEED_CHECK_PN);
 	warp_io_write32(wed, PN_CONF_WDATA_M, value);
 
-	warp_io_read32(wed, PN_CONF_0, &value);
-	value |= ((se_id & 0xfff) << PN_CONF_0_FLD_SE_ID);
+	value = ((se_id & 0xfff) << PN_CONF_0_FLD_SE_ID);
 	value |= (1 << PN_CONF_0_FLD_PN_WR);
 	warp_io_write32(wed, PN_CONF_0, value);
 
@@ -3744,6 +3714,20 @@ warp_rx_pn_chk_set_hw(struct wed_entry *wed, u32 se_id, bool enble_wed_pn_chk)
 		warp_dbg(WARP_DBG_ERR, "%s(): seid=%d fail to init!\n", __func__, se_id);
 
 	return 0;
+}
+
+int warp_rx_pn_chk_get_hw(struct wed_entry *wed, u16 se_id)
+{
+	warp_dbg(WARP_DBG_OFF, "%s(): Unsupported feature in this platform\n",
+		__func__);
+
+	return -EOPNOTSUPP;
+}
+
+int
+warp_rx_particular_to_host_set_hw(struct wed_entry *wed, bool to_host)
+{
+	return -EOPNOTSUPP;
 }
 
 int
@@ -3805,427 +3789,182 @@ warp_rro_write_dma_idx_hw(struct wed_entry *wed,
 	return 0;
 }
 
-ssize_t warp_rtqm_igrs0_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+_warp_rtqm_igrs_cnt(struct wed_entry *wed,
+		struct seq_file *seq, int i)
 {
 	u32 value;
+	u32 offset = WED_RTQM_IGRS1_I2HW_DMAD_CNT -
+		     WED_RTQM_IGRS0_I2HW_DMAD_CNT;
 
-	warp_io_read32(wed, WED_RTQM_IGRS0_I2HW_DMAD_CNT, &value);
+	warp_io_read32(wed, WED_RTQM_IGRS0_I2HW_DMAD_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d to HW DMAD Counter:%d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 to HW DMAD Counter:%d\n",
-				value);
+	warp_io_read32(wed, WED_RTQM_IGRS0_I2H0_DMAD_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d to Host Ring0 DMAD Counter:%d\n", i, value);
 
-	warp_io_read32(wed, WED_RTQM_IGRS0_I2H0_DMAD_CNT, &value);
+	warp_io_read32(wed, WED_RTQM_IGRS0_I2H1_DMAD_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d to Host Ring1 DMAD Counter:%d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 to Host Ring0 DMAD Counter:%d\n",
-				value);
+	warp_io_read32(wed, WED_RTQM_IGRS0_I2HW_PKT_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d to HW Packet Counter:%d\n", i, value);
 
-	warp_io_read32(wed, WED_RTQM_IGRS0_I2H1_DMAD_CNT, &value);
+	warp_io_read32(wed, WED_RTQM_IGRS0_I2H0_PKT_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d to Host Ring0 Packet Counter:%d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 to Host Ring1 DMAD Counter:%d\n",
-				value);
+	warp_io_read32(wed, WED_RTQM_IGRS0_I2H1_PKT_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d to Host Ring1 Packet Counter:%d\n", i, value);
 
-	warp_io_read32(wed, WED_RTQM_IGRS0_I2HW_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 to HW Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS0_I2H0_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 to Host Ring0 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS0_I2H1_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 to Host Ring1 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS0_FDROP_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS0 Force Drop DMAD Counter:%d\n",
-				value);
-
-	return len;
+	warp_io_read32(wed, WED_RTQM_IGRS0_FDROP_CNT + i * offset,
+			&value);
+	seq_printf(seq, "IGRS%d Force Drop DMAD Counter:%d\n", i, value);
 }
 
-ssize_t warp_rtqm_igrs1_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+warp_rtqm_igrs_cnt(struct wed_entry *wed, struct seq_file *seq)
 {
-	u32 value;
+	int igrs_num = 4;
+	int i;
 
-	warp_io_read32(wed, WED_RTQM_IGRS1_I2HW_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 to HW DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS1_I2H0_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 to Host Ring0 DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS1_I2H1_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 to Host Ring1 DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS1_I2HW_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 to HW Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS1_I2H0_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 to Host Ring0 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS1_I2H1_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 to Host Ring1 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS1_FDROP_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS1 Force Drop DMAD Counter:%d\n",
-				value);
-
-	return len;
+	for (i = 0; i < igrs_num; i++)
+		_warp_rtqm_igrs_cnt(wed, seq, i);
 }
 
-ssize_t warp_rtqm_igrs2_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_I2HW_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 to HW DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_I2H0_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 to Host Ring0 DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_I2H1_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 to Host Ring1 DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_I2HW_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 to HW Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_I2H0_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 to Host Ring0 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_I2H1_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 to Host Ring1 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS2_FDROP_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS2 Force Drop DMAD Counter:%d\n",
-				value);
-
-	return len;
-}
-
-ssize_t warp_rtqm_igrs3_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_I2HW_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 to HW DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_I2H0_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 to Host Ring0 DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_I2H1_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 to Host Ring1 DMAD Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_I2HW_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 to HW Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_I2H0_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 to Host Ring0 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_I2H1_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 to Host Ring1 Packet Counter:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_RTQM_IGRS3_FDROP_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS3 Force Drop DMAD Counter:%d\n",
-				value);
-
-	return len;
-}
-
-ssize_t warp_rtqm_enq_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+warp_rtqm_enq_cnt(struct wed_entry *wed, struct seq_file *seq)
 {
 	u32 value;
 
 	warp_io_read32(wed, WED_RTQM_ENQ_I2Q_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS enqueue to SRAM DMAD counter:%d\n",
-				value);
+	seq_printf(seq, "IGRS enqueue to SRAM DMAD counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_ENQ_I2N_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS enqueue to NETSYS DMAD counter:%d\n",
-				value);
+	seq_printf(seq, "IGRS enqueue to NETSYS DMAD counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_ENQ_I2Q_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS enqueue to SRAM packet counter:%d\n",
-				value);
+	seq_printf(seq, "IGRS enqueue to SRAM packet counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_ENQ_I2N_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"IGRS enqueue to NETSYS packet counter:%d\n",
-				value);
+	seq_printf(seq, "IGRS enqueue to NETSYS packet counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_ENQ_USED_ENTRY_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Enqueue HW used entry counter:%d\n",
-				value);
+	seq_printf(seq, "Enqueue HW used entry counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_ENQ_ERR_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Enqueue error DMAD counter:%d\n",
-				value);
-
-	return len;
+	seq_printf(seq, "Enqueue error DMAD counter:%d\n", value);
 }
 
-ssize_t warp_rtqm_deq_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+warp_rtqm_deq_cnt(struct wed_entry *wed, struct seq_file *seq)
 {
 	u32 value;
 
 	warp_io_read32(wed, WED_RTQM_DEQ_DQ_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Dequeue from SRAM DMAD counter:%d\n",
-				value);
+	seq_printf(seq, "Dequeue from SRAM DMAD counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_DEQ_Q2I_DMAD_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Queue dequeue to IGRS DMAD counter:%d\n",
-				value);
+	seq_printf(seq, "Queue dequeue to IGRS DMAD counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_DEQ_DQ_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Dequeue from SRAM packet counter:%d\n",
-				value);
+	seq_printf(seq, "Dequeue from SRAM packet counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_DEQ_Q2I_PKT_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Queue dequeue to IGRS packet counter:%d\n",
-				value);
+	seq_printf(seq, "Queue dequeue to IGRS packet counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_DEQ_USED_PFDBK_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Dequeue HW used PPE feedback counter:%d\n",
-				value);
+	seq_printf(seq, "Dequeue HW used PPE feedback counter:%d\n", value);
 
 	warp_io_read32(wed, WED_RTQM_DEQ_ERR_CNT, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"Dequeue error DMAD counter:%d\n",
-				value);
-
-	return len;
+	seq_printf(seq, "Dequeue error DMAD counter:%d\n", value);
 }
 
-ssize_t warp_rro_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+int warp_procinfo_dump_rtqm_hw(struct warp_entry *warp, struct seq_file *seq)
 {
+	struct wed_entry *wed = &warp->wed;
+
+	warp_rtqm_igrs_cnt(wed, seq);
+	warp_rtqm_enq_cnt(wed, seq);
+	warp_rtqm_deq_cnt(wed, seq);
+
+	return 0;
+}
+
+int warp_procinfo_dump_rro_hw(struct warp_entry *warp, struct seq_file *seq)
+{
+	struct wed_entry *wed = &warp->wed;
 	u32 value;
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT0, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"total_ind_cmd_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "total_ind_cmd_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT1, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch1_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch1_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT2, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch2_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch2_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT3, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch3_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch3_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT4, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch4_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch4_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT5, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch5_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch5_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT6, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch6_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch6_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT7, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch7_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch7_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT8, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"ind_cmd_fetch8_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "ind_cmd_fetch8_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_IND_CMD_CNT9, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"magic_cnt_fail_cnt:%d\n",
-				value & 0x0000ffff);
+	seq_printf(seq, "magic_cnt_fail_cnt:%d\n", value & 0x0000ffff);
 
 	warp_io_read32(wed, WED_RX_ADDR_ELEM_CNT0, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"total_addr_elem_cnt:%d\n",
-				value);
+	seq_printf(seq, "total_addr_elem_cnt:%d\n", value);
 
 	warp_io_read32(wed, WED_RX_ADDR_ELEM_CNT1, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"total_1st_sig_fail_cnt:%d\n",
-				(value & 0xffff0000) >>
-				WED_RX_ADDR_ELEM_CNT1_FLD_total_1st_sig_fail_cnt);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"total_sig_fail_cnt:%d\n",
-				value & 0xffff);
+	seq_printf(seq, "total_1st_sig_fail_cnt:%d\n",
+			(value & 0xffff0000) >>
+			WED_RX_ADDR_ELEM_CNT1_FLD_total_1st_sig_fail_cnt);
+	seq_printf(seq, "total_sig_fail_cnt:%d\n", value & 0xffff);
 
 	warp_io_read32(wed, WED_RX_ADDR_ELEM_CNT2, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"clr_addr_cnt:%d\n",
-				value & 0x000fffff);
+	seq_printf(seq, "clr_addr_cnt:%d\n", value & 0x000fffff);
 
 	warp_io_read32(wed, WED_RX_ADDR_ELEM_CNT3, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"acksn_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "acksn_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_MSDU_PG_CNT1, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"pg_cnt1_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "pg_cnt1_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_MSDU_PG_CNT2, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"pg_cnt2_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "pg_cnt2_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_MSDU_PG_CNT3, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"pg_cnt3_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "pg_cnt3_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_MSDU_PG_CNT4, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"pg_cnt4_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "pg_cnt4_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_MSDU_PG_CNT5, &value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"pg_cnt5_cnt:%d\n",
-				value & 0x0fffffff);
+	seq_printf(seq, "pg_cnt5_cnt:%d\n", value & 0x0fffffff);
 
 	warp_io_read32(wed, WED_RX_PN_CHK_CNT0, &value);
+	seq_printf(seq, "pn_chk_fail_cnt:%d\n", value & 0x00ffffff);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"pn_chk_fail_cnt:%d\n",
-				value & 0x00ffffff);
-
-	return len;
+	return 0;
 }
-
 
 int
 warp_rx_dybm_mod_thrd (
@@ -4861,7 +4600,7 @@ warp_wifi_set_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 	warp_io_write32(wed, WED_WPDMA_RX_D_RING1_CFG_ADDR, ring[1].spare ?
 		ring[1].hw_desc_base : (u32)wifi->hw.base_phy_addr + hw->rx[1].base);
 
-	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		ring_ctrl = &rx_ctrl->rro_data_ring_ctrl;
 		ring = ring_ctrl->ring;
 
@@ -4948,8 +4687,8 @@ warp_mtable_build_hw(struct warp_entry *warp)
 		}
 	}
 #endif
-#ifdef WED_RX_HW_RRO_DBG_MEMCPY
-	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO)) {
+#ifdef WED_RX_HW_RRO_3_0_DBG_MEMCPY
+	if (hw->hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
 		/* ACK_SN_CNT */
 		MTBL_ADD(0xD4300, WED_RRO_RX_DBG1);
 		/* Total ind_cmd counter */
@@ -5843,6 +5582,115 @@ warp_rx_data_ring_get_hw(struct warp_entry *warp, struct warp_rx_ring *ring,
 	ring->hw_didx_addr = wifi_cr_get(warp, WED_RX_DRX_IDX_0 + offset);
 }
 
+void
+warp_wed_tx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WED_RING_OFFSET;
+
+	warp_io_read32(wed, WED_TX0_CTRL0 + offset, base);
+	warp_io_read32(wed, WED_TX0_CTRL1 + offset, tcnt);
+	warp_io_read32(wed, WED_TX0_CTRL2 + offset, cidx);
+	warp_io_read32(wed, WED_TX0_CTRL3 + offset, didx);
+}
+
+void
+warp_wed_rx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WED_RING_OFFSET;
+
+	warp_io_read32(wed, WED_RX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wed, WED_RX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wed, WED_RX_CRX_IDX_0 + offset, cidx);
+	warp_io_read32(wed, WED_RX_DRX_IDX_0 + offset, didx);
+}
+
+void
+warp_wdma_tx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WDMA_RING_OFFSET;
+
+	warp_io_read32(wdma, WDMA_TX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wdma, WDMA_TX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wdma, WDMA_TX_CTX_IDX_0 + offset, cidx);
+	warp_io_read32(wdma, WDMA_TX_DTX_IDX_0 + offset, didx);
+}
+
+void
+warp_wdma_rx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WDMA_RING_OFFSET;
+
+	warp_io_read32(wdma, WDMA_RX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wdma, WDMA_RX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wdma, WDMA_RX_CRX_IDX_0 + offset, cidx);
+	warp_io_read32(wdma, WDMA_RX_DRX_IDX_0 + offset, didx);
+}
+
+void
+warp_wifi_tx_ring_get_idx(struct wifi_entry *wifi, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	struct wifi_hw *hw = &wifi->hw;
+
+	warp_io_read32(wifi, hw->tx[idx].base, base);
+	warp_io_read32(wifi, hw->tx[idx].cnt, tcnt);
+	warp_io_read32(wifi, hw->tx[idx].cidx, cidx);
+	warp_io_read32(wifi, hw->tx[idx].didx, didx);
+}
+
+static int
+warp_wifi_tx_ring_get_info(struct wed_entry *wed, struct warp_info *info)
+{
+	struct warp_entry *warp = wed->warp;
+	struct wifi_entry *wifi = &warp->wifi;
+	struct wed_tx_ring_ctrl *ring_ctrl = &wed->res_ctrl.tx_ctrl.ring_ctrl;
+	struct warp_ring_ *ring;
+	u32 ctrl0, ctrl1, ctrl2, ctrl3;
+	u32 i;
+
+	for (i = 0; i < ring_ctrl->ring_num; i++) {
+		if (i >= info->ring_info.ring_num)
+			return -ENOMEM;
+
+		warp_wifi_tx_ring_get_idx(wifi, i,
+			&ctrl0, &ctrl1, &ctrl2, &ctrl3);
+
+		ring = info->ring_info.ring;
+
+		ring[i].base = ctrl0;
+#ifdef CONFIG_WARP_64BIT_SUPPORT
+		ring[i].base |= (dma_addr_t)(GENMASK(23, 16) & ctrl1) << 32;
+#endif
+		ring[i].max_cnt = GENMASK(11, 0) & ctrl1;
+		ring[i].cidx = GENMASK(11, 0) & ctrl2;
+		ring[i].didx = GENMASK(11, 0) & ctrl3;
+
+		if (ring[i].base)
+			ring[i].q_cnt = (ring[i].cidx >= ring[i].didx) ?
+					(ring[i].cidx - ring[i].didx) :
+					(ring[i].cidx - ring[i].didx + ring[i].max_cnt);
+		else
+			ring[i].q_cnt = 0;
+	}
+
+	info->ring_info.ring_num = i;
+	return 0;
+}
+
+int
+warp_wed_get_info(struct wed_entry *wed, struct warp_info *info)
+{
+	switch (info->type) {
+	case WARP_INFO_WED_TX_DATA:
+		return warp_wifi_tx_ring_get_info(wed, info);
+	default:
+		return -EINVAL;
+	}
+}
 
 void warp_woif_bus_init_hw(struct woif_bus *bus)
 {

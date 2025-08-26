@@ -13,11 +13,11 @@ Without this patch, the PPEs are unable to learn the DSCP from SKB.
 
 Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
 ---
- net/netfilter/nft_flow_offload.c | 49 +++++++++++++++++++++++++++++++-
- 1 file changed, 48 insertions(+), 1 deletion(-)
+ net/netfilter/nft_flow_offload.c | 46 +++++++++++++++++++++++++++++++-
+ 1 file changed, 45 insertions(+), 1 deletion(-)
 
 diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
-index 253ef56..25fda90 100644
+index 6f84cf1..05a6f66 100644
 --- a/net/netfilter/nft_flow_offload.c
 +++ b/net/netfilter/nft_flow_offload.c
 @@ -11,6 +11,7 @@
@@ -48,7 +48,7 @@ index 253ef56..25fda90 100644
  static enum flow_offload_xmit_type nft_xmit_type(struct dst_entry *dst)
  {
  	if (dst_xfrm(dst))
-@@ -439,6 +453,11 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+@@ -476,6 +490,11 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
  	struct flow_offload *flow;
  	enum ip_conntrack_dir dir;
  	struct nf_conn *ct;
@@ -60,7 +60,7 @@ index 253ef56..25fda90 100644
  	int ret;
  
  	if (nft_flow_offload_skip(pkt->skb, nft_pf(pkt)))
-@@ -482,10 +501,36 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+@@ -521,10 +540,33 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
  	if (!nf_ct_is_confirmed(ct))
  		goto out;
  
@@ -68,6 +68,8 @@ index 253ef56..25fda90 100644
 +
 +	qos = nf_conn_qos_find(ct);
 +	if (qos) {
++		struct net *net = nf_ct_net(ct);
++
 +		switch (nft_pf(pkt)) {
 +		case NFPROTO_IPV4:
 +			iph = (struct iphdr *)(skb_network_header(pkt->skb) + offset);
@@ -82,13 +84,8 @@ index 253ef56..25fda90 100644
 +		qos->tos[dir].value = tos;
 +		atomic64_add(1, &qos->tos[dir].counter);
 +
-+		if (atomic64_read(&qos->tos[dir].counter) < 30)
++		if (atomic64_read(&qos->tos[dir].counter) < net->ct.sysctl_qos)
 +			goto out;
-+
-+		if (ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum == IPPROTO_TCP) {
-+			if (atomic64_read(&qos->tos[!dir].counter) < 30)
-+				goto out;
-+		}
 +	}
 +
  	if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status))
@@ -98,7 +95,7 @@ index 253ef56..25fda90 100644
  	if (nft_flow_offload_is_bridging(pkt->skb)) {
  		if (nft_flow_route_bridging(pkt, ct, &route, dir, priv->flowtable) < 0)
  			goto err_flow_route;
-@@ -502,6 +547,8 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+@@ -541,6 +581,8 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
  	if (tcph)
  		flow_offload_ct_tcp(ct);
  

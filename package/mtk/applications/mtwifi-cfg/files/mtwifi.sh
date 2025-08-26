@@ -37,7 +37,7 @@ detect_mtwifi() {
 					htmode="HE160"
 					htbsscoex="0"
 					ssid="ImmortalWrt-6G"
-					channel="auto"
+					channel="37"
 				fi
 
 				uci -q batch <<-EOF

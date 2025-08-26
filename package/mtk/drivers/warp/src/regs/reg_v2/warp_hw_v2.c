@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -21,48 +21,6 @@
 #include <linux/pci.h>
 #include "mcu/warp_woif.h"
 #include "warp_bm.h"
-
-#define WHNAT_RESET(_entry, _addr, _value) \
-do {\
-		u32 cnt = 0;\
-		warp_io_write32(_entry, _addr, _value);\
-		while (_value != 0 && cnt < WED_POLL_MAX) {\
-			warp_io_read32(_entry, _addr, &_value);\
-			cnt++;\
-		} \
-		if (cnt >= WED_POLL_MAX) {\
-			warp_dbg(WARP_DBG_ERR, "%s(): Reset addr=%x,value=%x,cnt=%d fail!\n",\
-					__func__, _addr, _value, cnt);\
-		} \
-} while (0)
-
-#define dump_addr_value(_entry, _name, _addr)\
-	do {\
-		u32 value;\
-		warp_io_read32(_entry, _addr, &value);\
-		warp_dbg(WARP_DBG_OFF, "%s\t:%x\n", _name, value);\
-	} while(0)
-
-#define dump_io(_output, _entry, _name, _addr)\
-	do {\
-		u32 value;\
-		warp_io_read32(_entry, _addr, &value);\
-		if (_output != NULL) seq_printf(_output, "%s\t:%x\n", _name, value); \
-	} while(0)
-
-#define dump_io_diff(_output, _entry, _name, _addr, _addr2)\
-	do {\
-		u32 value;\
-		u32 value2;\
-		warp_io_read32(_entry, _addr, &value);\
-		warp_io_read32(_entry, _addr2, &value2);\
-		if (_output != NULL) seq_printf(_output, "%s\t:%x\n", _name, value - value2); \
-	} while(0)
-
-#define dump_string(_output, fmt, args...)\
-	do {\
-		if (_output != NULL) seq_printf(_output, fmt, ## args); \
-	} while(0)
 
 #define WDMA_MIN_RING_LEN (0x6)
 /*Local function*/
@@ -1537,7 +1495,7 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 	int ret = 0;
 
 	/* WOCPU Enter SER */
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	warp_woctrl_enter_state((struct warp_entry *)wed->warp, WO_STATE_SER_RESET);
 	warp_dbg(WARP_DBG_ERR, "%s(): WOCPU Enter SER\n", __func__);
 #endif
@@ -1592,7 +1550,7 @@ reset_rx_d_traffic(struct wed_entry *wed, u32 reset_type)
 	}
 
 	/* WOCPU Enter SER */
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	warp_woctrl_exit_state((struct warp_entry *)wed->warp, WO_STATE_SER_RESET);
 	warp_dbg(WARP_DBG_ERR, "%s(): WOCPU Exit SER\n", __func__);
 #endif
@@ -1621,7 +1579,7 @@ reset_interface(struct wed_entry *wed, struct wdma_entry *wdma)
 	value = 1 << WED_MOD_RST_FLD_WED;
 	WHNAT_RESET(wed, WED_MOD_RST, value);
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	if (warp->woif.wo_ctrl.cur_state == WO_STATE_WF_RESET) {
 		/* wo reset by cr instead of get node from dts since get reset node protection */
 		warp_woctrl_enter_state((struct warp_entry *)wed->warp, WO_STATE_DISABLE);
@@ -2268,22 +2226,22 @@ warp_wdma_ring_init_hw(struct wed_entry *wed, struct wdma_entry *wdma)
 			 rx_ring->hw_cidx_addr, 0);
 		/*WDMA*/
 		warp_io_write32(wdma, rx_ring->hw_desc_base, rx_ring->cell[0].alloc_pa);
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 		if ((wifi_dbdc_support(wed->warp) == false) && (i == 1))	/* dbdc_mode is false, disable wdma ring1 by set to minimum length */
 		/* according to coda, ring len - 2 should more than recycle threshold(minimum, 3) */
 			warp_io_write32(wdma, rx_ring->hw_cnt_addr, WDMA_MIN_RING_LEN);
 		else
-#endif	/* WED_WDMA_SINGLE_RING */
+#endif	/* WED_WDMA_DUAL_RX_RING */
 			warp_io_write32(wdma, rx_ring->hw_cnt_addr, rx_ring_ctrl->ring_len);
 		warp_io_write32(wdma, rx_ring->hw_cidx_addr, 0);
 		/*WED_WDMA*/
 		warp_io_write32(wed, WED_WDMA_RX0_BASE + offset, rx_ring->cell[0].alloc_pa);
-#ifdef WED_WDMA_SINGLE_RING
+#ifdef WED_WDMA_DUAL_RX_RING
 		if ((wifi_dbdc_support(wed->warp) == false) && (i == 1))	/* dbdc_mode is false, disable wdma ring1 by set to minimum length */
 		/* according to coda, ring len - 2 should more than recycle threshold(minimum, 3) */
 			warp_io_write32(wed, WED_WDMA_RX0_CNT + offset, WDMA_MIN_RING_LEN);
 		else
-#endif	/* WED_WDMA_SINGLE_RING */
+#endif	/* WED_WDMA_DUAL_RX_RING */
 			warp_io_write32(wed, WED_WDMA_RX0_CNT + offset, rx_ring_ctrl->ring_len);
 	}
 #endif /*WED_HW_TX_SUPPORT*/
@@ -2963,7 +2921,7 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
 *
 */
 void
-warp_restore_hw(struct wed_entry *wed, struct wdma_entry *wdma)
+warp_restore_hw(struct wed_entry *wed, struct wdma_entry *wdma, u8 restore_type)
 {
 	restore_rx_traffic(wed);
 	restore_tx_traffic(wed, wdma);
@@ -3764,6 +3722,59 @@ warp_rx_data_ring_get_hw(struct warp_entry *warp, struct warp_rx_ring *ring,
 	ring->hw_didx_addr = wifi_cr_get(warp, WED_RX_DRX_IDX_0 + offset);
 }
 
+void
+warp_wed_tx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WED_RING_OFFSET;
+
+	warp_io_read32(wed, WED_TX0_CTRL0 + offset, base);
+	warp_io_read32(wed, WED_TX0_CTRL1 + offset, tcnt);
+	warp_io_read32(wed, WED_TX0_CTRL2 + offset, cidx);
+	warp_io_read32(wed, WED_TX0_CTRL3 + offset, didx);
+}
+
+void
+warp_wed_rx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WED_RING_OFFSET;
+
+	warp_io_read32(wed, WED_RX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wed, WED_RX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wed, WED_RX_CRX_IDX_0 + offset, cidx);
+	warp_io_read32(wed, WED_RX_DRX_IDX_0 + offset, didx);
+}
+
+void
+warp_wdma_tx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WDMA_RING_OFFSET;
+
+	warp_io_read32(wdma, WDMA_TX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wdma, WDMA_TX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wdma, WDMA_TX_CTX_IDX_0 + offset, cidx);
+	warp_io_read32(wdma, WDMA_TX_DTX_IDX_0 + offset, didx);
+}
+
+void
+warp_wdma_rx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx)
+{
+	u32 offset = idx * WDMA_RING_OFFSET;
+
+	warp_io_read32(wdma, WDMA_RX_BASE_PTR_0 + offset, base);
+	warp_io_read32(wdma, WDMA_RX_MAX_CNT_0 + offset, tcnt);
+	warp_io_read32(wdma, WDMA_RX_CRX_IDX_0 + offset, cidx);
+	warp_io_read32(wdma, WDMA_RX_DRX_IDX_0 + offset, didx);
+}
+
+int
+warp_wed_get_info(struct wed_entry *wed, struct warp_info *info)
+{
+	return -EOPNOTSUPP;
+}
 
 void warp_woif_bus_init_hw(struct woif_bus *bus)
 {

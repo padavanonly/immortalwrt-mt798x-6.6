@@ -1,0 +1,22 @@
+Subject: [PATCH] net-dsa-fix-vlan-del-to-override-fid
+
+---
+ drivers/net/dsa/mt7530.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/dsa/mt7530.c b/drivers/net/dsa/mt7530.c
+index 06f7a92..414b621 100644
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -1725,7 +1725,7 @@ mt7530_hw_vlan_del(struct mt7530_priv *priv,
+ 
+ 	if (new_members) {
+ 		val = IVL_MAC | VTAG_EN | PORT_MEM(new_members) |
+-		      VLAN_VALID;
++		      FID(FID_BRIDGED) | VLAN_VALID;
+ 		mt7530_write(priv, MT7530_VAWD1, val);
+ 	} else {
+ 		mt7530_write(priv, MT7530_VAWD1, 0);
+-- 
+2.45.2
+

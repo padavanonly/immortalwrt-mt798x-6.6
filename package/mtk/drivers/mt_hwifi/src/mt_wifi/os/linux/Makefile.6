@@ -1,0 +1,71 @@
+include $(TOP_DIR)/mk/config/config.mk
+PARENT_DIR := ../..
+SERV_DIR := ../../ate/wlan_service
+
+obj_ap :=
+obj_ate :=
+obj_chip :=
+obj_common :=
+obj_feature :=
+obj_hif :=
+obj_hw_ctrl :=
+obj_os :=
+obj_sta :=
+obj_protocol :=
+obj_dvt :=
+obj_profiles :=
+
+###############################################################################
+#
+# config for AP mode
+#
+###############################################################################
+ifeq ($(WIFI_MODE),AP)
+MOD_NAME = $(MODULE)_ap
+include $(TOP_DIR)/mk/obj/ap.mk
+include $(TOP_DIR)/mk/obj/sta.mk
+endif
+
+###############################################################################
+#
+# config for STA mode
+#
+###############################################################################
+ifeq ($(WIFI_MODE),STA)
+MOD_NAME = $(MODULE)_sta
+include $(TOP_DIR)/mk/obj/sta.mk
+endif
+
+include $(TOP_DIR)/mk/obj/ate.mk
+include $(TOP_DIR)/mk/obj/chip.mk
+include $(TOP_DIR)/mk/obj/common.mk
+include $(TOP_DIR)/mk/obj/feature.mk
+include $(TOP_DIR)/mk/obj/hif.mk
+include $(TOP_DIR)/mk/obj/hw_ctrl.mk
+include $(TOP_DIR)/mk/obj/os.mk
+include $(TOP_DIR)/mk/obj/protocol.mk
+include $(TOP_DIR)/mk/obj/dvt.mk
+include $(TOP_DIR)/mk/obj/profiles.mk
+
+
+###############################################################################
+#
+# Module Base
+#
+###############################################################################
+
+obj-m := $(MOD_NAME).o
+$(MOD_NAME)-objs := \
+	$(obj_ap)\
+	$(obj_ate)\
+	$(obj_chips)\
+	$(obj_common)\
+	$(obj_feature)\
+	$(obj_hif)\
+	$(obj_hw_ctrl)\
+	$(obj_os)\
+	$(obj_sta)\
+	$(obj_protocol)\
+	$(obj_dvt)\
+	$(obj_profiles)
+

@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -63,8 +63,13 @@ wed_rx_bm_ring_exit(
 		return;
 	}
 
-	for (i = 0; i < ring_len; i++)
+	for (i = 0; i < ring_len; i++) {
+#ifdef WED_MEM_LEAK_DBG
+		if (i < res->pkt_num)
+			pkt_free_mem(ring->cell[i].pkt);
+#endif /* WED_MEM_LEAK_DBG */
 		wed_rx_bm_dma_cb_exit(wed, &ring->cell[i]);
+	}
 
 	for (i = 0; i < 2; i++) {
 		if (res->rx_page[i].va) {
@@ -90,6 +95,7 @@ wed_rx_bm_dma_cb_init(struct platform_device *pdev,
 	struct warp_bm_rxdmad *rxd;
 	struct pci_dev *wdev = NULL;
 	void *pkt = NULL;
+	u32 value = 0;
 	u8 i;
 
 	if (res->hif_dev) {
@@ -120,6 +126,11 @@ wed_rx_bm_dma_cb_init(struct platform_device *pdev,
 						+ SKB_DATA_ALIGN(SKB_BUF_TAILROOM_RSV), GFP_ATOMIC);
 #endif
 			dma_cb->pkt = (struct sk_buff *)(pkt);
+#ifdef WED_MEM_LEAK_DBG
+			pkt_alloc_mem((SKB_DATA_ALIGN(SKB_BUF_HEADROOM_RSV + dma_cb->pkt_size)
+						+ SKB_DATA_ALIGN(SKB_BUF_TAILROOM_RSV)),
+						(void *)pkt, __builtin_return_address(0));
+#endif	/* WED_MEM_LEAK_DBG */
 
 			dma_cb->pkt_va = ((unsigned char *)pkt + SKB_BUF_HEADROOM_RSV);
 
@@ -131,10 +142,12 @@ wed_rx_bm_dma_cb_init(struct platform_device *pdev,
 			/* Set SDP0_L to DW0 */
 			WRITE_ONCE(rxd->sdp0, (dma_cb->pkt_pa & PARTIAL_RXDMAD_SDP0_L_MASK));
 
+#ifdef CONFIG_WARP_64BIT_SUPPORT
 			/* Set SDP0_H to DW1 */
-			WRITE_ONCE(rxd->token,
-				((dma_cb->pkt_pa >> WARP_DMA_ADDR_H_SHIFT)
-				& PARTIAL_RXDMAD_SDP0_H_MASK));
+			value = (dma_cb->pkt_pa >> WARP_DMA_ADDR_H_SHIFT) &
+				PARTIAL_RXDMAD_SDP0_H_MASK;
+#endif
+			WRITE_ONCE(rxd->token, value);
 
 			warp_dbg(WARP_DBG_INF, "%s(): rxd->sdp0: 0x%x!\n", __func__, rxd->sdp0);
 			warp_dbg(WARP_DBG_INF, "%s(): rxd->token: 0x%x!\n", __func__, rxd->token);
@@ -836,6 +849,9 @@ wed_rx_bm_exit(struct wed_entry *wed)
 			for (i = 0; i < 2; i++) {
 				if (res->rx_page[i].va) {
 					struct page *page;
+#ifdef WED_MEM_LEAK_DBG
+					pkt_free_mem(res->rx_page[i].va);
+#endif	/* WED_MEM_LEAK_DBG */
 					page = virt_to_page(res->rx_page[i].va);
 					rx_bm_page_frag_cache_drain(page, res->rx_page[i].pagecnt_bias);
 					memset(&res->rx_page[i], 0, sizeof(res->rx_page[i]));

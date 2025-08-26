@@ -136,8 +136,7 @@
 	pcie0_pins: pcie0-pins {
 		mux {
 			function = "pcie";
-			groups = "pcie0_pereset", "pcie0_clkreq",
-				 "pcie0_wake";
+			groups = "pcie0_pereset", "pcie0_clkreq";
 		};
 	};
 
@@ -228,6 +227,13 @@
 			*/
 			function = "pwm";
 			groups = "pwm0", "pwm1_0", "pwm2_0";
+		};
+	};
+
+	uart0_pins: uart0-pins {
+		mux {
+			function = "uart";
+			groups = "uart0";
 		};
 	};
 

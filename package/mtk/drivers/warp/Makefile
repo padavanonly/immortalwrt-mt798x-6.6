@@ -9,7 +9,6 @@ include $(INCLUDE_DIR)/kernel.mk
 PKG_NAME:=warp
 P4REV:=
 PKG_VERSION:=
-PKG_SOURCE_URL:=
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(PKG_NAME)
 
 PKG_KCONFIG:= \
@@ -32,7 +31,7 @@ define KernelPackage/warp
   CATEGORY:=MTK Properties
   TITLE:=MTK warp driver
 
-  DEPENDS:=kmod-mediatek_hnat
+  DEPENDS:=+(TARGET_mediatek):kmod-mediatek_hnat
 
   FILES:=$(PKG_BUILD_DIR)/mtk_warp.ko
   AUTOLOAD:=$(call AutoLoad,60,mtk_warp,1)

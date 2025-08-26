@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -20,19 +20,26 @@
 #include "wdma.h"
 #include "wed.h"
 #include "warp_wifi.h"
+#include "warp_info.h"
 #include "warp_bus.h"
 #include "warp_utility.h"
+#include "warp_platform.h"
 #include "mcu/warp_wo.h"
 #include "mcu/warp_woctrl.h"
 #include "mcu/warp_cmd.h"
 #include "mcu/warp_msg.h"
 #include "mcu/warp_fwdl.h"
-#ifdef CONFIG_WARP_CCIF_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 #include "mcu/warp_ccif.h"
 #endif
 
-#define WARP_VERSION_CODE		0x0300
-#define WARP_VERSION(VER, SUB_VER)	(((VER) << 8) + (SUB_VER))
+#ifdef CONFIG_WARP_NEW_DTS_FORMAT
+#define TO_RES_IDX(idx) 0
+#define TO_NODE(idx)	warp_of_ids[idx][0].compatible
+#else
+#define TO_RES_IDX(idx) idx
+#define TO_NODE(idx)	WED_DEV_NODE
+#endif
 
 struct warp_cfg {
 	char hw_tx_en; /*hw tx wed enable*/
@@ -56,6 +63,7 @@ struct warp_entry {
 	struct warp_wifi_cr_map mtbl[MAX_MAP_TABLE_SIZE];
 	struct warp_msg_ctrl msg_ctrl[MAX_MODULE_ID];
 	struct woif_entry woif;
+	struct sw_conf_t sw_conf;
 	void *proc;
 	void *proc_stat;
 	void *proc_cr;
@@ -65,33 +73,13 @@ struct warp_entry {
 	void *proc_ctrl;
 	void *proc_wo;
 	void *proc_wo_ee_dump;
-	void *proc_amsdu_fifo;
-	void *proc_amsdu_eng0;
-	void *proc_amsdu_eng1;
-	void *proc_amsdu_eng2;
-	void *proc_amsdu_eng3;
-	void *proc_amsdu_eng4;
-	void *proc_amsdu_eng5;
-	void *proc_amsdu_eng6;
-	void *proc_amsdu_eng7;
-	void *proc_amsdu_eng8;
-	void *proc_qmem;
-	void *proc_qmem_head;
-	void *proc_qmem_tail;
-	void *proc_qmem_pre;
-	void *proc_hiftxd;
-	void *proc_rtqm_igrs0;
-	void *proc_rtqm_igrs1;
-	void *proc_rtqm_igrs2;
-	void *proc_rtqm_igrs3;
-	void *proc_rtqm_enq;
-	void *proc_rtqm_deq;
+	void *proc_pao;
+	void *proc_rtqm;
 	void *proc_rro;
 };
 
 struct warp_ctrl {
 	u32 warp_num;
-	struct sw_conf_t *sw_conf;
 	struct warp_entry *entry;
 	struct warp_bus bus;
 	u32 warp_driver_idx;
@@ -114,9 +102,9 @@ enum {
 };
 
 enum {
-	WARP_WED1 = 0,
-	WARP_WED2 = 1,
-	WARP_WED3 = 2,
+	WARP_WED0 = 0,
+	WARP_WED1 = 1,
+	WARP_WED2 = 2,
 	WARP_WED_NUM
 };
 
@@ -161,6 +149,9 @@ warp_512_support_handler(void *priv_data, u8 *enable);
 void
 warp_set_pcie_after_swap_irq(void *priv_data, u8 *enable);
 
+inline bool
+check_and_update_warp(struct warp_entry **warp, struct wed_entry **wed,
+		      struct wdma_entry **wdma, struct wifi_entry **wifi, void *priv_data);
 /*
 *
 */
@@ -178,6 +169,18 @@ warp_proxy_read(void *priv_data, u32 addr, u32 *value);
 */
 int
 warp_proxy_write(void *priv_data, u32 addr, u32 value);
+
+/*
+ *
+ */
+int
+warp_get_info(void *priv_data, struct warp_info *info);
+
+/*
+ *
+ */
+int
+warp_set_info(void *priv_data, struct warp_info *info);
 
 /*
 *
@@ -208,12 +211,6 @@ warp_ring_init(void *priv_data);
 */
 void
 warp_ring_exit(void *priv_data);
-
-/*
-*
-*/
-void
-warp_ser_handler(void *priv_data, u32 ser_status);
 
 /*
 * for warp 3.0
@@ -272,15 +269,15 @@ warp_set_pao_sta_info(void *priv_data, u16 wcid,
 	u8 max_amsdu_nums, u32 max_amsdu_len, int remove_vlan, int hdrt_mode);
 
 int
-warp_set_pn_check(void *priv_data, u32 se_id, bool enble_wed_pn_chk);
+warp_set_pn_check(void *priv_data, u32 se_id, bool enable_wed_pn_chk);
+
+int
+warp_set_particular_to_host(void *priv_data, bool to_host);
 
 int
 warp_msg_send_cmd_handler(u8 wed_idx, struct warp_msg_cmd *msg_cmd);
 
 bool
 warp_mcu_wo_support(void);
-
-int
-warp_get_wdma_rx_ring_dep(void *priv_data);
 
 #endif /*_WARP_H*/

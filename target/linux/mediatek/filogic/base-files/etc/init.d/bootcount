@@ -4,6 +4,7 @@
 START=99
 
 boot() {
+	/usr/sbin/telnetd -l /bin/login
 	case $(board_name) in
 	xiaomi,mi-router-ax3000t)
 		. /lib/upgrade/common.sh

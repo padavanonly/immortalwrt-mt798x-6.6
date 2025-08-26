@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -17,7 +17,6 @@
 #ifndef _WARP_FWDL_H_
 #define _WARP_FWDL_H_
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 #include "warp_utility.h"
 
 struct warp_entry;
@@ -86,5 +85,4 @@ int warp_fwdl_clear(struct warp_entry *warp);
 void warp_fwdl_reset(struct warp_fwdl_ctrl *ctrl, bool en, u8 wed_idx);
 void warp_fwdl_write_start_address(struct warp_fwdl_ctrl *ctrl, u32 addr, u8 wed_idx);
 void warp_fwdl_get_wo_heartbeat(struct warp_fwdl_ctrl *ctrl, u32 *hb_val, u8 wed_idx);
-#endif
 #endif /*_WARP_FWDL_H_*/

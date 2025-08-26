@@ -142,8 +142,12 @@ define Package/wifi-dats/install
 		$(INSTALL_DATA) ./files/mt7981/* $(1)/etc/wireless/mediatek/; \
 	fi
 
-	if [ "$$(CONFIG_first_card_name)" = "MT7990" -o "$$(CONFIG_second_card_name)" = "MT7990" ] ; then \
-                $(INSTALL_DATA) ./files/mt7988-be14000/* $(1)/etc/wireless/mediatek/; \
+	if [ "$$(CONFIG_first_card_name)" = "MT7992" -o "$$(CONFIG_second_card_name)" = "MT7992" ] ; then \
+                $(INSTALL_DATA) ./files/mt7992-be5400/* $(1)/etc/wireless/mediatek/; \
+        fi
+
+	 if [ "$$(CONFIG_first_card_name)" = "MT7990" -o "$$(CONFIG_second_card_name)" = "MT7990" ] ; then \
+                $(INSTALL_DATA) ./files/mt7990-be14000/* $(1)/etc/wireless/mediatek/; \
         fi
 
 	if [ -f "$(1)/etc/wireless/mediatek/l1profile.dat" ]; then \

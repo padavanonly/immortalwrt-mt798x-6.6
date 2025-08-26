@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -283,16 +283,11 @@ static int warp_msg_send_by_ccif(u8 wed_idx, unsigned char *msg, u32 msg_len)
 	warp_dbg(WARP_DBG_INF, "%s(): seng msg to %s, msg_len = %d\n", __func__,
 		 thread_name[MODULE_ID_WO], msg_len);
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 	if (woif_bus_tx(wed_idx, msg, msg_len) < 0) {
 		warp_dbg(WARP_DBG_LOU, "%s() fail!\n", __func__);
 		return -1;
 	}
 	return 0;
-#else
-	warp_dbg(WARP_DBG_LOU, "%s(): CONFIG_WED_HW_RRO_SUPPORT is disabled !\n", __func__);
-	return -1;
-#endif
 }
 static bool check_if_warp_msg_need_rsp(struct warp_msg_cmd *msg_cmd) {
 

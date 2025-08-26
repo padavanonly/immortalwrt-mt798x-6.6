@@ -8,10 +8,10 @@ WiFi roams.
 ---
  drivers/net/ethernet/mediatek/mtk_eth_soc.c   |   7 +
  drivers/net/ethernet/mediatek/mtk_eth_soc.h   |   5 +
- drivers/net/ethernet/mediatek/mtk_ppe.c       | 201 ++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe.c       | 211 ++++++++++++++++++
  drivers/net/ethernet/mediatek/mtk_ppe.h       |   2 +
  .../net/ethernet/mediatek/mtk_ppe_debugfs.c   |  56 +++++
- 5 files changed, 271 insertions(+)
+ 5 files changed, 281 insertions(+)
 
 diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 index 35ef427..92b0c6c 100644
@@ -99,7 +99,7 @@ index 193093b..1b198cb 100644
  static void
  __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
  		      bool set_state)
-@@ -1132,3 +1155,181 @@ int mtk_ppe_stop(struct mtk_ppe *ppe)
+@@ -1132,3 +1155,191 @@ int mtk_ppe_stop(struct mtk_ppe *ppe)
  
  	return 0;
  }
@@ -164,7 +164,7 @@ index 193093b..1b198cb 100644
 +			tuple.dst_v4.s_addr = htonl(entry->ipv4.orig.dest_ip);
 +		}
 +
-+		//flow_offload_teardown_by_tuple(&tuple);
++		flow_offload_teardown_by_tuple(&tuple);
 +		count++;
 +
 +		pr_info("mtk_ppe: the roamiing entry (%x) has been deleted\n", i);
@@ -180,6 +180,7 @@ index 193093b..1b198cb 100644
 +static void mtk_ppe_roam_handler(struct work_struct *work)
 +{
 +	struct mtk_eth *eth = container_of(work, struct mtk_eth, ppe_roam_work);
++	struct net_device *dev = NULL;
 +	struct kvec iov;
 +	struct msghdr msg;
 +	struct nlmsghdr *nlh;
@@ -210,6 +211,13 @@ index 193093b..1b198cb 100644
 +		goto out;
 +
 +	ifindex = ndm->ndm_ifindex;
++	dev = dev_get_by_index(&init_net, ifindex);
++	if (!dev)
++		goto out;
++
++	if (!dev->ieee80211_ptr)
++		goto out;
++
 +	nla = (struct nlattr *)((unsigned char *)ndm + sizeof(struct ndmsg));
 +	len -= NLMSG_LENGTH(sizeof(struct ndmsg));
 +	while (nla_ok(nla, len)) {
@@ -224,6 +232,8 @@ index 193093b..1b198cb 100644
 +	}
 +
 +out:
++	if (dev)
++		dev_put(dev);
 +	if (!work_pending(&eth->ppe_roam_work))
 +		schedule_work(&eth->ppe_roam_work);
 +}

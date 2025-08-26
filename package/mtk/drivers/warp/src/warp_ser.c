@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -29,7 +29,7 @@
 #define WED_RECYCLE_DIFF(_period_time) (_period_time * 10)
 #define WED_SER_RECOVERY_DEFAULT false
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 /*
  *
  */
@@ -56,7 +56,7 @@ static u8 wed_wo_heartbeat_check(struct wed_entry *wed)
 
 	return stop;
 }
-#endif	/* CONFIG_WED_HW_RRO_SUPPORT */
+#endif	/* WED_RX_HW_RRO_2_0 */
 
 /*
 *
@@ -65,9 +65,9 @@ static int
 wed_ser_check(struct wed_entry *wed)
 {
 	struct wed_ser_ctrl *ser_ctrl = &wed->ser_ctrl;
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	struct warp_entry *warp = (struct warp_entry *)wed->warp;
-#endif	/* CONFIG_WED_HW_RRO_SUPPORT */
+#endif	/* WED_RX_HW_RRO_2_0 */
 
 	if (ser_ctrl->wpdma_idle_cnt > WED_MAX_ERR_CNT &&
 	    ser_ctrl->tx_dma_err_cnt > WED_MAX_ERR_CNT &&
@@ -85,7 +85,7 @@ wed_ser_check(struct wed_entry *wed)
 		return true;
 	}
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 	if (warp && (warp->woif.wo_ctrl.cur_state == WO_STATE_ENABLE)) {
 		if (ser_ctrl->wo_check_countdown == 0) {
 			/* WO hearbeat counter */
@@ -102,7 +102,7 @@ wed_ser_check(struct wed_entry *wed)
 		} else
 			ser_ctrl->wo_check_countdown--;
 	}
-#endif	/* CONFIG_WED_HW_RRO_SUPPORT */
+#endif	/* WED_RX_HW_RRO_2_0 */
 
 	return false;
 }

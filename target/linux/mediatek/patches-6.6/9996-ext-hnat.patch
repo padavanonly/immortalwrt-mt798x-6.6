@@ -1,0 +1,115 @@
+diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-14 01:19:46.630002351 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-14 01:33:45.947002751 +0800
+@@ -1782,6 +1782,10 @@
+ 	}
+ 
+ 	data |= TX_DMA_SWC_V2 | QID_BITS_V2(info->qid);
++	if(info->ext_ppe) {
++		data &= ~(0xf << TX_DMA_FPORT_SHIFT_V2);
++		data |= 0x3 << TX_DMA_FPORT_SHIFT_V2;
++	}
+ 	WRITE_ONCE(desc->txd4, data);
+ 
+ 	data = 0;
+@@ -1792,7 +1796,10 @@
+ 		if (info->csum)
+ 			data |= TX_DMA_CHKSUM_V2;
+ 		if (mtk_is_netsys_v3_or_greater(eth) && netdev_uses_dsa(dev))
+-			data |= TX_DMA_SPTAG_V3;
++			{
++			if (info->ext_ppe!= 1)
++				data |= TX_DMA_SPTAG_V3;
++			}
+ 	}
+ 	WRITE_ONCE(desc->txd5, data);
+ 
+@@ -1829,6 +1836,7 @@
+ 		.vlan_tci = skb_vlan_tag_get(skb),
+ 		.first = true,
+ 		.last = !skb_is_nonlinear(skb),
++		.ext_ppe = HNAT_SKB_CB2(skb)->magic == 0x78681415,
+ 	};
+ 	struct netdev_queue *txq;
+ 	struct mtk_mac *mac = netdev_priv(dev);
+@@ -2441,6 +2449,7 @@
+ 	int done = 0, bytes = 0;
+ 	dma_addr_t dma_addr = DMA_MAPPING_ERROR;
+ 	int ppe_idx = 0;
++	int sent_ppd = 0;
+ 
+ 	if (unlikely(!ring))
+ 		goto rx_done;
+@@ -2471,6 +2480,7 @@
+ 				mac = MTK_GMAC3_ID;
+ 				break;
+ 			default:
++				mac = val - 1;
+ 				break;
+ 			}
+ 		} else if (!MTK_HAS_CAPS(eth->soc->caps, MTK_SOC_MT7628) &&
+@@ -2478,6 +2488,13 @@
+ 			mac = RX_DMA_GET_SPORT(trxd.rxd4) - 1;
+ 		}
+ 
++		if ( (mac == 4) || ((FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5)) == HIT_BIND_FORCE_TO_CPU)) 
++			
++		{
++			mac = 1;
++			sent_ppd = 1;
++		}
++
+ 		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
+ 			     !eth->netdev[mac]))
+ 			goto release_desc;
+@@ -2639,6 +2656,10 @@
+ 			hw_lro_flush_stats_update(ring->ring_no, &trxd);
+ 		}
+ 
++		if (sent_ppd){
++			skb->protocol = eth_hdr(skb)->h_proto;
++			skb->dev = eth->netdev[1];
++		}
+ 		skb_record_rx_queue(skb, 0);
+ 		napi_gro_receive(napi, skb);
+ 
+@@ -4268,9 +4289,6 @@
+ 			}
+ 			mtk_gdm_config(eth, target_mac->id, gdm_config);
+ 		}
+-		/* Reset and enable PSE */
+-		mtk_w32(eth, RST_GL_PSE, MTK_RST_GL);
+-		mtk_w32(eth, 0, MTK_RST_GL);
+ 
+ 		napi_enable(&eth->tx_napi);
+ 		napi_enable(&eth->rx_napi[0].napi);
+@@ -5917,7 +5935,8 @@
+ 		queue = skb_get_queue_mapping(skb) + 3;
+ 	else
+ 		queue = mac->id;
+-
++	
++	queue = mac->id ? 32 : 0;
+ 	if (queue >= dev->num_tx_queues)
+ 		queue = 0;
+ 
+diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-08-14 01:19:46.647002351 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-08-14 01:34:09.087002762 +0800
+@@ -439,7 +439,7 @@
+ 
+ /* QDMA TX NUM */
+ #define QID_BITS_V2(x)		(((x) & 0x3f) << 16)
+-#define MTK_QDMA_GMAC2_QID	8
++#define MTK_QDMA_GMAC2_QID	32
+ 
+ #define MTK_TX_DMA_BUF_SHIFT	8
+ 
+@@ -1484,6 +1484,7 @@
+ 	u8		vlan:1;
+ 	u8		first:1;
+ 	u8		last:1;
++	u8		ext_ppe:1;
+ };
+ 
+ struct mtk_reg_map {

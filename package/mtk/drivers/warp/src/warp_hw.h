@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -41,6 +41,7 @@ struct warp_cputracer;
 struct warp_ring;
 struct wed_ser_state;
 struct woif_bus;
+struct warp_info;
 
 #define DMADONE_DONE 1
 #define WED_POLL_MAX 100
@@ -55,6 +56,9 @@ struct woif_bus;
 #define WPDMA_D_PREFETCH_BURST_SIZE 16
 #define WDMA_RX_PREFETCH_LOW_THRES 8
 #define WDMA_RX_PREFETCH_BURST_SIZE 16
+
+#define CHK_DELAY_US 500
+#define CHK_DELAY_MS 10
 
 enum {
 	WED_DRAM_PROF_OFF = 0,
@@ -101,10 +105,21 @@ struct warp_io {
 	unsigned long base_addr;
 };
 
+#define SET_FIELD(_field, _val)	\
+	({	\
+		(((_val) << (_field##_SHFT)) & (_field##_MASK));	\
+	})
+
+#define GET_FIELD(_field, _reg)	\
+	({	\
+		(((_reg) & (_field##_MASK)) >> (_field##_SHFT));	\
+	})
+
 void warp_int_ctrl_hw(struct wed_entry *wed, struct wifi_entry *wifi,
 	struct wdma_entry *wdma, u32 int_agent,
 	u8 enable, u32 pcie_ints_offset, int idx);
 void warp_eint_ctrl_hw(struct wed_entry *wed, u8 enable);
+int warp_get_wdma_port(struct wdma_entry *wdma, u8 idx);
 #if defined(WED_DYNAMIC_TXBM_SUPPORT) || defined(WED_DYNAMIC_RXBM_SUPPORT)
 void dybm_eint_ctrl(struct wed_entry *wed, bool enable, u8 type);
 #endif	/* WED_DYNAMIC_TXBM_SUPPORT || WED_DYNAMIC_RXBM_SUPPORT */
@@ -135,7 +150,8 @@ void warp_mtable_build_hw(struct warp_entry *warp);
 void warp_wifi_set_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 void warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 			int idx, bool msi_enable, u32 hif_type);
-void warp_bus_msi_set(u8 idx, u8 *enable);
+void warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus, int idx);
+int warp_bus_msi_set(struct warp_entry *warp, struct warp_bus *bus, u8 enable);
 void warp_pdma_mask_set_hw(struct wed_entry *wed, u32 int_mask);
 int warp_stop_hw(struct wed_entry *wed, struct wdma_entry *wdma, u8 stop_type);
 void warp_restore_hw(struct wed_entry *wed, struct wdma_entry *wdma, u8 stop_type);
@@ -156,11 +172,25 @@ void warp_dbginfo_dump_cfg_hw(struct warp_entry *warp);
 void warp_dbginfo_dump_txinfo_hw(struct warp_entry *warp);
 
 int warp_tx_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+int warp_wed_get_info(struct wed_entry *wed, struct warp_info *info);
 void warp_wdma_rx_ring_get_hw(struct warp_ring *ring, u8 idx);
 #ifdef WED_HW_RX_SUPPORT
 void warp_wdma_tx_ring_get_hw(struct warp_ring *ring, u8 idx);
 #endif
 int warp_rx_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+void
+warp_wed_tx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx);
+void
+warp_wed_rx_ring_get_idx(struct wed_entry *wed, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx);
+void
+warp_wdma_tx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx);
+void
+warp_wdma_rx_ring_get_idx(struct wdma_entry *wdma, u32 idx,
+	u32 *base, u32 *tcnt, u32 *cidx, u32 *didx);
+
 void warp_bus_cputracer_work_hw(struct warp_cputracer *tracer);
 void warp_wed_ver(struct wed_entry *wed);
 void warp_conf_hwcap(struct wed_entry *wed);
@@ -168,10 +198,6 @@ void warp_conf_hwcap(struct wed_entry *wed);
 int warp_rx_data_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 int warp_rx_dybm_mod_thrd(struct wed_entry *wed, u32 operation, u32 quota);
 int warp_rx_bm_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
-int warp_rx_page_bm_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
-int warp_rx_rro_data_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
-int warp_rx_rro_page_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
-int warp_rx_ind_cmd_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 void warp_rx_data_ring_get_hw(struct warp_entry *warp,
 			      struct warp_rx_ring *ring, u8 idx);
 
@@ -209,8 +235,7 @@ void warp_whole_chip_wo_reset(void);
 void warp_wo_reset(u8 wed_idx);
 void warp_wo_pc_lr_cr_dump(u8 wed_idx);
 void warp_wo_set_apsrc_idle(u8 wed_idx);
-int warp_rx_pn_chk_set_hw(struct wed_entry *wed, u32 se_id, bool enble_wed_pn_chk);
-#endif
+#endif /* WED_RX_D_SUPPORT */
 void bus_setup(struct warp_bus *bus);
 u8 warp_get_pcie_slot(struct pci_dev *pdev);
 
@@ -218,71 +243,38 @@ u8 warp_get_pcie_slot(struct pci_dev *pdev);
 void warp_wdma_int_sel(struct wed_entry *wed, int idx);
 #endif
 
+#ifdef WED_HIF_TXD_SUPPORT
+int hif_txd_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+#endif
 #ifdef WED_PAO_SUPPORT
 void warp_pao_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 void warp_pao_exit_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 void warp_pao_get_sta_info(struct wed_entry *wed, u16 wcid, u32 *pao_cr_value);
 int warp_pao_set_sta_info(struct wed_entry *wed, u16 wcid,
 		u8 max_amsdu_nums, u32 max_amsdu_len, int remove_vlan, int hdrt_mode);
-ssize_t warp_pao_amsdu_fifo_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_hiftxd_buf_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_hiftxd_in_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_hiftxd_ou0_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_hiftxd_ou1_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng0_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng1_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng2_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng3_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng4_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng5_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng6_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng7_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_amsdu_eng8_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_qmem_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_qmem_head_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_qmem_tail_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_qmem_pre_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_pao_hiftxd_msdu_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
+int warp_procinfo_dump_pao_hw(struct warp_entry *warp, struct seq_file *seq);
 #endif
 
-#ifdef WED_RX_HW_RRO
-ssize_t warp_rro_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
+#if defined(WED_RX_HW_RRO_3_0) || defined(WED_RX_HW_RRO_3_1)
+int warp_rx_rro_data_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+int warp_procinfo_dump_rtqm_hw(struct warp_entry *warp, struct seq_file *seq);
+#endif
+#ifdef WED_RX_HW_RRO_3_0
+int warp_procinfo_dump_rro_hw(struct warp_entry *warp, struct seq_file *seq);
 int warp_rro_write_dma_idx_hw(struct wed_entry *wed,
 			      struct wifi_entry *wifi,
 			      u32 val);
-ssize_t warp_rtqm_igrs0_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_rtqm_igrs1_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_rtqm_igrs2_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_rtqm_igrs3_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_rtqm_enq_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
-ssize_t warp_rtqm_deq_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len);
+int warp_rx_pn_chk_set_hw(struct wed_entry *wed, u32 se_id, bool enable_wed_pn_chk);
+int warp_rx_pn_chk_get_hw(struct wed_entry *wed, u16 se_id);
+int warp_rx_particular_to_host_set_hw(struct wed_entry *wed, bool to_host);
+int warp_rx_page_bm_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+int warp_rx_rro_page_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+int warp_rx_ind_cmd_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 int warp_rx_ind_cmd_exit_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 #endif
-
+#ifdef WED_RX_HW_RRO_3_1
+int warp_rx_rro_3_1_ring_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+int warp_rx_rro_3_1_init_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+void warp_rx_rro_3_1_exit_hw(struct wed_entry *wed, struct wifi_entry *wifi);
+#endif
 #endif

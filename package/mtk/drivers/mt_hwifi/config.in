@@ -7,7 +7,7 @@ config MTK_HWIFI_PCI_SUPPORT
 	depends on PACKAGE_kmod-mt_hwifi
 
 config MTK_HWIFI_CONNAC_IF_SUPPORT
-	bool "HWIFI abstraction layer for mt_wifi7 (CONNAC3)"
+	bool "HWIFI abstraction layer for CONNAC3/5 interface"
 	default y
 	select PACKAGE_kmod-connac_if
 	depends on PACKAGE_kmod-mt_hwifi
@@ -83,6 +83,14 @@ menu "HWIFI Chips Support"
 		bool "mt799b"
 		select PACKAGE_kmod-mt799b
 		depends on PACKAGE_kmod-mt7993
+	config MTK_HWIFI_BLACKHAWK_A0
+		bool "blackhawk_a0"
+		select PACKAGE_kmod-blackhawk_a0
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_BLACKHAWK_A0_PCIE1
+		bool "blackhawk_a0_pcie1"
+		select PACKAGE_kmod-blackhawk_a0_pcie1
+		depends on PACKAGE_kmod-blackhawk_a0
 endmenu
 
 endif #PACKAGE_kmod-mt_hwifi#

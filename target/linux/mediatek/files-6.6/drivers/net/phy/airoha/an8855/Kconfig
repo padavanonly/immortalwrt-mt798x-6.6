@@ -1,0 +1,8 @@
+
+config AN8855_GSW
+	tristate "Driver for the Airoha AN8855 switch"
+	help
+	  Airoha AN8855 devices and swconfig driver code,
+	  Provide swconfig command for basic switch operation.
+	  AN8855 support 2.5G speed and managed by SMI interface.
+	  To compile this driver as a module, choose M here.

@@ -25,7 +25,6 @@
 #include <linux/skbuff.h>
 #include <net/dsa.h>
 
-
 #include "tag.h"
 
 #define MXL862_NAME	"mxl862xx"

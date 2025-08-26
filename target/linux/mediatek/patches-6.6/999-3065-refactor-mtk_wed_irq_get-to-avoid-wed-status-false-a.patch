@@ -1,0 +1,26 @@
+From 6d56d63e5d0e9ce5966f3e4567e2e7eab4ab1ceb Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Tue, 8 Apr 2025 14:25:50 +0800
+Subject: [PATCH 5/5] refactor mtk_wed_irq_get to avoid wed status false alarm
+
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index 8afb523..00d98d7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -2972,8 +2972,7 @@ mtk_wed_irq_get(struct mtk_wed_device *dev, u32 mask)
+ 	u32 val, ext_mask;
+ 
+ 	if (mtk_wed_is_v3_or_greater(dev->hw))
+-		ext_mask = MTK_WED_EXT_INT_STATUS_RX_DRV_COHERENT |
+-			   MTK_WED_EXT_INT_STATUS_TKID_WO_PYLD;
++		ext_mask = MTK_WED_EXT_INT_STATUS_RX_DRV_COHERENT;
+ 	else
+ 		ext_mask = MTK_WED_EXT_INT_STATUS_ERROR_MASK;
+ 
+-- 
+2.45.2
+

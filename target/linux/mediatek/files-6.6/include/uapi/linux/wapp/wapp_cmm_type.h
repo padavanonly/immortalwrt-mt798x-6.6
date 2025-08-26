@@ -67,7 +67,11 @@
 #define MAX_HE_MCS_LEN 12
 #define MAX_OP_CLASS 16
 #define MAX_LEN_OF_SSID 32
-#define MAX_NUM_OF_CHANNELS		59 // 14 channels @2.4G +  12@UNII(lower/middle) + 16@HiperLAN2 + 11@UNII(upper) + 0@Japan + 1 as NULL termination
+#ifdef NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT
+#define MAX_NUM_OF_CHANNELS		300
+#else
+#define MAX_NUM_OF_CHANNELS		59
+#endif
 #define ASSOC_REQ_LEN 154
 #ifdef MTK_MLO_MAP_SUPPORT
 #define ASSOC_REQ_LEN_MAX 1024
@@ -824,6 +828,29 @@ typedef struct GNU_PACKED _wdev_tx_power {
 	u16 tx_pwr;
 } wdev_tx_power;
 
+#ifdef CH_TXPWR_SUPPORT
+struct GNU_PACKED ch_tx_pwr_limit {
+	u8 channel;
+	u8 pwrlimit;
+};
+#endif
+struct GNU_PACKED pwr_limit_ext {
+	u8      op_class;
+	u8      max_pwr;
+#ifdef CH_TXPWR_SUPPORT
+	u8      ch_num;
+	struct ch_tx_pwr_limit ch_pwr[MAX_NUM_OF_CHANNELS];
+#endif
+};
+struct GNU_PACKED _wdev_tx_power_ext {
+	u8              num_of_op_class;
+	struct pwr_limit_ext tx_pwr_limit[MAX_OP_CLASS];
+	u16 tx_pwr;
+#ifdef CH_TXPWR_SUPPORT
+	u8 band;
+	u8 tx_power_set;
+#endif
+};
 /*Driver detects sta needed to steer*/
 typedef struct GNU_PACKED _wdev_steer_sta {
 	u8 mac_addr[MAC_ADDR_LEN];

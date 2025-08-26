@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -19,20 +19,6 @@
 #include <regs/reg_v3/pao_hw.h>
 #include <warp_utility.h>
 
-#define WHNAT_RESET(_entry, _addr, _value) \
-do {\
-		u32 cnt = 0;\
-		warp_io_write32(_entry, _addr, _value);\
-		while (_value != 0 && cnt < WED_POLL_MAX) {\
-			warp_io_read32(_entry, _addr, &_value);\
-			cnt++;\
-		} \
-		if (cnt >= WED_POLL_MAX) {\
-			warp_dbg(WARP_DBG_ERR, "%s(): Reset addr=%x,value=%x,cnt=%d fail!\n",\
-					__func__, _addr, _value, cnt);\
-		} \
-} while (0)
-
 /* amsdu length per 256-bytes */
 #define WED_PAO_LEN_SHIFT_256_bytes 8
 #define WED_PAO_NUM_MAX_CAP 13
@@ -46,16 +32,48 @@ do {\
 #define WED_PAO_HDRT_SKIP 2
 
 static int
-warp_pao_init_hiftxd_base(struct wed_entry *wed, u8 segment_idx, dma_addr_t addr)
+warp_pao_hif_txd_init_base(struct wed_entry *wed)
 {
-	if (segment_idx < 32) {
-		warp_io_write32(wed, WED_PAO_HIFTXD_BASE00_L_OFFSET + segment_idx * 4, addr & 0xffffffff);
-		return 0;
-	} else {
-		warp_dbg(WARP_DBG_OFF, "%s(): fail(segment_idx = %d,\
-						addr = 0x%pad\n", __func__, segment_idx, &addr);
-		return -1;
+	struct wed_hif_txd_ctrl *hif_txd_ctrl = &wed->res_ctrl.tx_ctrl.hif_txd_ctrl;
+	u32 offset = WED_PAO_HIFTXD_BASE01_L_OFFSET - WED_PAO_HIFTXD_BASE00_L_OFFSET;
+	u32 shft_offset = WED_PAO_HIFTXD_BASE_00_07_H_BASE00_SHFT -
+			WED_PAO_HIFTXD_BASE_00_07_H_BASE01_SHFT;
+	u32 segment_nums = hif_txd_ctrl->hif_txd_segment_nums;
+	dma_addr_t hif_txd_pa;
+	u32 value, i;
+
+	if (segment_nums > 32) {
+		warp_dbg(WARP_DBG_OFF, "%s(): Segment nums %u more than 32\n",
+			__func__, segment_nums);
+		return -EINVAL;
 	}
+
+	for (i = 0; i < segment_nums; i++) {
+		hif_txd_pa = hif_txd_ctrl->hif_txd_addr_pa[i];
+
+		value = SET_FIELD(WED_PAO_HIFTXD_BASE00_L_PTR, hif_txd_pa);
+		warp_io_write32(wed, WED_PAO_HIFTXD_BASE00_L_OFFSET + i * offset, value);
+
+#ifdef CONFIG_WARP_64BIT_SUPPORT
+		warp_io_read32(wed, WED_PAO_HIFTXD_BASE_00_07_H_OFFSET + ((i >> 3) * offset),
+			&value);
+
+		/* Each BASE_H CR need to clear for first setup */
+		value = ((i & 0x7) == 0) ? 0 : value;
+		value |= ((hif_txd_pa >> 32) & WED_PAO_HIFTXD_BASE_00_07_H_BASE07_MASK) <<
+			(WED_PAO_HIFTXD_BASE_00_07_H_BASE00_SHFT - ((i & 0x7) * shft_offset));
+		warp_io_write32(wed, WED_PAO_HIFTXD_BASE_00_07_H_OFFSET + ((i >> 3) * offset),
+			value);
+#endif
+	}
+
+	return 0;
+}
+
+int
+hif_txd_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
+{
+	return warp_pao_hif_txd_init_base(wed);
 }
 
 int
@@ -112,7 +130,7 @@ warp_pao_get_sta_info(struct wed_entry *wed, u16 wcid, u32 *pao_cr_value)
 	set_cr_value = 0;
 	set_cr_value = (1 << WED_PAO_STA_INFO_DO_GET_SHFT);
 	warp_io_write32(wed, WED_PAO_STA_INFO_OFFSET, set_cr_value);
-	warp_io_read32(wed, WED_PAO_STA_INFO_STS_OFFSET, &pao_cr_value);
+	warp_io_read32(wed, WED_PAO_STA_INFO_STS_OFFSET, pao_cr_value);
 
 }
 
@@ -207,12 +225,12 @@ warp_pao_set_sta_info(struct wed_entry *wed, u16 wcid,
 static void
 warp_pao_set_hiftxd_src(struct wed_entry *wed)
 {
-	struct wed_pao_ctrl *pao_ctrl = &wed->res_ctrl.tx_ctrl.pao_ctrl;
+	struct wed_hif_txd_ctrl *hif_txd_ctrl = &wed->res_ctrl.tx_ctrl.hif_txd_ctrl;
 	u32 value = 0;
 
 	warp_io_read32(wed, WED_PAO_HIFTXD_OFFSET, &value);
 	value &= ~WED_PAO_HIFTXD_SRC_MASK;
-	value |= (pao_ctrl->hif_txd_src << WED_PAO_HIFTXD_SRC_SHFT);
+	value |= (hif_txd_ctrl->hif_txd_src << WED_PAO_HIFTXD_SRC_SHFT);
 	warp_io_write32(wed, WED_PAO_HIFTXD_OFFSET, value);
 }
 
@@ -245,21 +263,11 @@ void
 warp_pao_init_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 {
 	u32 value;
-	int i;
 	struct wifi_hw *hw = &wifi->hw;
-	struct wed_pao_ctrl *pao_ctrl = &wed->res_ctrl.tx_ctrl.pao_ctrl;
-
-	/* init hif_txd base */
-	for (i = 0; i < pao_ctrl->hif_txd_segment_nums; i++)
-		warp_pao_init_hiftxd_base(wed, i, pao_ctrl->hif_txd_addr_pa[i]);
-
 
 	/* init all sta parameter */
 	warp_pao_all_sta_info_init(wed, hw->max_amsdu_nums,
 			hw->max_amsdu_len, hw->rm_vlan, hw->hdtr_mode);
-
-	/* assgin src */
-	pao_ctrl->hif_txd_src = hw->src;
 
 	/* init pao txd src */
 	warp_pao_set_hiftxd_src(wed);
@@ -292,1233 +300,338 @@ warp_pao_exit_hw(struct wed_entry *wed, struct wifi_entry *wifi)
 	WHNAT_RESET(wed, WED_MOD_RST, value);
 }
 
-ssize_t
+static void
 warp_pao_amsdu_fifo_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+			struct seq_file *seq)
 {
 	u32 value;
 
-	/* AMSDU FIFO DMAD */
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_FIFO_CNT0_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MIN_BUF_SIZE - len,
-				"amsdu_fifo_dmad_cnt:%d\n",
-				value);
-
-	return len;
+	dump_string(seq, "=======WED PAO AMSDU FIFO=======\n");
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_FIFO_CNT0_OFFSET, &value);
+	seq_printf(seq, "amsdu_fifo_dmad_cnt:%d\n", value);
 }
 
-ssize_t
-warp_pao_amsdu_eng0_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+_warp_pao_amsdu_eng_cnt(struct wed_entry *wed,
+			struct seq_file *seq, int i)
 {
 	u32 value;
+	u32 offset = WED_PAO_MON_AMSDU_ENG1_CNT3_OFFSET -
+		     WED_PAO_MON_AMSDU_ENG0_CNT3_OFFSET;
 
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT3_OFFSET,
-				&value);
+	dump_string(seq, "=======WED PAO AMSDU ENG%d=======\n", i);
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT3_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_dmad_cnt:%d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_dmad_cnt:%d\n",
-				value);
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT4_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_qfpl_cnt:%d\n", i, value);
 
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT4_OFFSET,
-				&value);
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT5_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_qeni_cnt:%d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_qfpl_cnt:%d\n",
-				value);
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT6_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_qeno_cnt:%d\n", i, value);
 
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT5_OFFSET,
-				&value);
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT7_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_merge_cnt:%d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_max_search:%d\n",
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT8_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_max_search:%d\n", i,
 			(value & WED_PAO_MON_AMSDU_ENG0_CNT8_MAX_QGPP_CNT_MASK)
 			>> WED_PAO_MON_AMSDU_ENG0_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_max_entry:%d\n",
+	seq_printf(seq, "eng%d_max_entry:%d\n", i,
 			(value & WED_PAO_MON_AMSDU_ENG0_CNT8_MAX_PL_CNT_MASK)
 			 >> WED_PAO_MON_AMSDU_ENG0_CNT8_MAX_PL_CNT_SHFT);
 
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_cur_entry:%d\n",
+	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG0_CNT9_OFFSET + i * offset,
+			&value);
+	seq_printf(seq, "eng%d_cur_entry:%d\n", i,
 			(value & WED_PAO_MON_AMSDU_ENG0_CNT9_PORTQ_CNT_MASK)
 			>> WED_PAO_MON_AMSDU_ENG0_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_max_buf:%d\n",
+	seq_printf(seq, "eng%d_max_buf:%d\n", i,
 			(value & WED_PAO_MON_AMSDU_ENG0_CNT9_MAX_BUF_NUM_MASK)
 			>> WED_PAO_MON_AMSDU_ENG0_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng0_max_msdu:%d\n",
+	seq_printf(seq, "eng%d_max_msdu:%d\n", i,
 			(value & WED_PAO_MON_AMSDU_ENG0_CNT9_MAX_MSDU_CNT_MASK)
 			>> WED_PAO_MON_AMSDU_ENG0_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
 }
 
-ssize_t
-warp_pao_amsdu_eng1_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+warp_pao_amsdu_eng_cnt(struct wed_entry *wed,
+			struct seq_file *seq)
 {
-	u32 value;
+	int amsdu_eng_num = 9;
+	int i;
 
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG1_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG1_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG1_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG1_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG1_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG1_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG1_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG1_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG1_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng1_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG1_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG1_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
+	for (i = 0; i < amsdu_eng_num; i++)
+		_warp_pao_amsdu_eng_cnt(wed, seq, i);
 }
 
-ssize_t
-warp_pao_amsdu_eng2_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG2_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG2_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG2_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG2_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG2_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG2_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG2_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG2_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG2_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng2_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG2_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG2_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
-warp_pao_amsdu_eng3_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG3_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG3_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG3_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG3_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG3_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG3_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG3_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG3_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG3_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng3_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG3_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG3_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
-warp_pao_amsdu_eng4_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG4_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG4_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG4_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG4_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG4_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG4_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG4_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG4_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG4_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng4_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG4_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG4_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
-warp_pao_amsdu_eng5_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG5_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG5_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG5_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG5_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG5_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG5_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG5_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG5_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG5_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng5_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG5_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG5_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
-warp_pao_amsdu_eng6_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG6_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG6_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG6_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG6_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG6_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG6_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG6_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG6_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG6_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng6_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG6_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG6_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
-warp_pao_amsdu_eng7_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG7_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG7_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG7_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG7_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG7_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG7_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG7_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG7_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG7_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng7_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG7_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG7_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
-warp_pao_amsdu_eng8_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_dmad_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_qfpl_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_qeni_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_qeno_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_merge_cnt:%d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_max_search:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG8_CNT8_MAX_QGPP_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG8_CNT8_MAX_QGPP_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_max_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG8_CNT8_MAX_PL_CNT_MASK)
-			 >> WED_PAO_MON_AMSDU_ENG8_CNT8_MAX_PL_CNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_AMSDU_ENG8_CNT9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_cur_entry:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG8_CNT9_PORTQ_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG8_CNT9_PORTQ_CNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_max_buf:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG8_CNT9_MAX_BUF_NUM_MASK)
-			>> WED_PAO_MON_AMSDU_ENG8_CNT9_MAX_BUF_NUM_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"eng8_max_msdu:%d\n",
-			(value & WED_PAO_MON_AMSDU_ENG8_CNT9_MAX_MSDU_CNT_MASK)
-			>> WED_PAO_MON_AMSDU_ENG8_CNT9_MAX_MSDU_CNT_SHFT);
-
-	return len;
-}
-
-ssize_t
+static void
 warp_pao_qmem_cnt(struct wed_entry *wed,
-		char *buf, ssize_t len)
+			struct seq_file *seq)
 {
 	u32 value;
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT0_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"free_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT0_FQ_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT0_FQ_PCNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"is_sp_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT0_Q0_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT0_Q0_PCNT_SHFT);
+	dump_string(seq, "=======WED PAO QMEM=======\n");
+	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT0_OFFSET, &value);
+	seq_printf(seq, "free_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT0_FQ_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT0_FQ_PCNT_SHFT);
+	seq_printf(seq, "is_sp_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT0_Q0_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT0_Q0_PCNT_SHFT);
 	
-	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT1_OFFSET,
-				&value);
-	
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid0_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT1_Q1_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT1_Q1_PCNT_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT1_OFFSET, &value);
+	seq_printf(seq, "tid0_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT1_Q1_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT1_Q1_PCNT_SHFT);
+	seq_printf(seq, "tid1_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT1_Q2_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT1_Q2_PCNT_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid1_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT1_Q2_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT1_Q2_PCNT_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT2_OFFSET, &value);
+	seq_printf(seq, "tid2_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT2_Q3_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT2_Q3_PCNT_SHFT);
+	seq_printf(seq, "tid3_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT2_Q4_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT2_Q4_PCNT_SHFT);
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT2_OFFSET,
-				&value);
-	
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid2_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT2_Q3_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT2_Q3_PCNT_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT3_OFFSET, &value);
+	seq_printf(seq, "tid4_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT3_Q5_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT3_Q5_PCNT_SHFT);
+	seq_printf(seq, "tid5_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT3_Q6_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT3_Q6_PCNT_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid3_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT2_Q4_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT2_Q4_PCNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT3_OFFSET,
-				&value);
-	
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid4_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT3_Q5_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT3_Q5_PCNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid5_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT3_Q6_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT3_Q6_PCNT_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT4_OFFSET,
-				&value);
-	
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid6_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT4_Q7_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT4_Q7_PCNT_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid7_q entry cnt: %d\n",
-				(value & WED_PAO_MON_QMEM_CNT4_Q8_PCNT_MASK)
-				>> WED_PAO_MON_QMEM_CNT4_Q8_PCNT_SHFT);
-
-	return len;
+	warp_io_read32(wed, WED_PAO_MON_QMEM_CNT4_OFFSET, &value);
+	seq_printf(seq, "tid6_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT4_Q7_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT4_Q7_PCNT_SHFT);
+	seq_printf(seq, "tid7_q entry cnt: %d\n",
+			(value & WED_PAO_MON_QMEM_CNT4_Q8_PCNT_MASK)
+			>> WED_PAO_MON_QMEM_CNT4_Q8_PCNT_SHFT);
 }
 
-ssize_t
+static void
 warp_pao_qmem_head_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+			struct seq_file *seq)
 {
 	u32 value;
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR0_OFFSET,
-				&value);
+	dump_string(seq, "=======WED PAO QMEM HEAD=======\n");
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR0_OFFSET, &value);
+	seq_printf(seq, "free_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR0_FQ_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR0_FQ_START_SHFT);
+	seq_printf(seq, "is_sp_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR0_Q0_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR0_Q0_START_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"free_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR0_FQ_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR0_FQ_START_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR1_OFFSET, &value);
+	seq_printf(seq, "tid0_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR1_Q1_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR1_Q1_START_SHFT);
+	seq_printf(seq, "tid1_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR1_Q2_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR1_Q2_START_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"is_sp_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR0_Q0_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR0_Q0_START_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR2_OFFSET, &value);
+	seq_printf(seq, "tid2_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR2_Q3_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR2_Q3_START_SHFT);
+	seq_printf(seq, "tid3_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR2_Q4_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR2_Q4_START_SHFT);
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR1_OFFSET,
-				&value);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR3_OFFSET, &value);
+	seq_printf(seq, "tid4_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR3_Q5_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR3_Q5_START_SHFT);
+	seq_printf(seq, "tid5_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR3_Q6_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR3_Q6_START_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid0_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR1_Q1_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR1_Q1_START_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid1_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR1_Q2_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR1_Q2_START_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR2_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid2_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR2_Q3_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR2_Q3_START_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid3_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR2_Q4_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR2_Q4_START_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid4_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR3_Q5_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR3_Q5_START_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid5_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR3_Q6_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR3_Q6_START_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid6_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR4_Q7_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR4_Q7_START_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid7_q head: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR4_Q8_START_MASK)
-				>> WED_PAO_MON_QMEM_PTR4_Q8_START_SHFT);
-	
-	return len;
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR4_OFFSET, &value);
+	seq_printf(seq, "tid6_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR4_Q7_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR4_Q7_START_SHFT);
+	seq_printf(seq, "tid7_q head: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR4_Q8_START_MASK)
+			>> WED_PAO_MON_QMEM_PTR4_Q8_START_SHFT);
 }
 
-ssize_t
+static void
 warp_pao_qmem_tail_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+			struct seq_file *seq)
 {
 	u32 value;
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR5_OFFSET,
-				&value);
+	dump_string(seq, "=======WED PAO QMEM TAIL=======\n");
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR5_OFFSET, &value);
+	seq_printf(seq, "free_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR5_FQ_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR5_FQ_END_SHFT);
+	seq_printf(seq, "is_sp_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR5_Q0_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR5_Q0_END_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"free_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR5_FQ_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR5_FQ_END_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR6_OFFSET, &value);
+	seq_printf(seq, "tid0_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR6_Q1_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR6_Q1_END_SHFT);
+	seq_printf(seq, "tid1_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR6_Q2_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR6_Q2_END_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"is_sp_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR5_Q0_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR5_Q0_END_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR7_OFFSET, &value);
+	seq_printf(seq, "tid2_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR7_Q3_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR7_Q3_END_SHFT);
+	seq_printf(seq, "tid3_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR7_Q4_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR7_Q4_END_SHFT);
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR6_OFFSET,
-				&value);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR8_OFFSET, &value);
+	seq_printf(seq, "tid4_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR8_Q5_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR8_Q5_END_SHFT);
+	seq_printf(seq, "tid5_q tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR8_Q6_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR8_Q6_END_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid0_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR6_Q1_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR6_Q1_END_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid1_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR6_Q2_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR6_Q2_END_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid2_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR7_Q3_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR7_Q3_END_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid3_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR7_Q4_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR7_Q4_END_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid4_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR8_Q5_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR8_Q5_END_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid5_q tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR8_Q6_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR8_Q6_END_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid6 tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR9_Q7_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR9_Q7_END_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid7 tail: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR9_Q8_END_MASK)
-				>> WED_PAO_MON_QMEM_PTR9_Q8_END_SHFT);
-
-	return len;
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR9_OFFSET, &value);
+	seq_printf(seq, "tid6 tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR9_Q7_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR9_Q7_END_SHFT);
+	seq_printf(seq, "tid7 tail: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR9_Q8_END_MASK)
+			>> WED_PAO_MON_QMEM_PTR9_Q8_END_SHFT);
 }
 
-ssize_t
+static void
 warp_pao_qmem_pre_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+			struct seq_file *seq)
 {
 	u32 value;
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR10_OFFSET,
-				&value);
+	dump_string(seq, "=======WED PAO QMEM PRE=======\n");
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR10_OFFSET, &value);
+	seq_printf(seq, "is_sp_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR10_Q0_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR10_Q0_CPP_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"is_sp_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR10_Q0_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR10_Q0_CPP_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR11_OFFSET, &value);
+	seq_printf(seq, "tid0_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR11_Q1_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR11_Q1_CPP_SHFT);
+	seq_printf(seq, "tid1_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR11_Q2_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR11_Q2_CPP_SHFT);
 
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR11_OFFSET,
-				&value);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR12_OFFSET, &value);
+	seq_printf(seq, "tid2_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR12_Q3_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR12_Q3_CPP_SHFT);
+	seq_printf(seq, "tid3_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR12_Q4_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR12_Q4_CPP_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid0_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR11_Q1_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR11_Q1_CPP_SHFT);
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR13_OFFSET, &value);
+	seq_printf(seq, "tid4_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR13_Q5_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR13_Q5_CPP_SHFT);
+	seq_printf(seq, "tid5_q pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR13_Q6_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR13_Q6_CPP_SHFT);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid1_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR11_Q2_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR11_Q2_CPP_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR12_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid2_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR12_Q3_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR12_Q3_CPP_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid3_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR12_Q4_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR12_Q4_CPP_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR13_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid4_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR13_Q5_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR13_Q5_CPP_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid5_q pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR13_Q6_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR13_Q6_CPP_SHFT);
-
-	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR14_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid6 pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR14_Q7_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR14_Q7_CPP_SHFT);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"tid7 pre: 0x%x\n",
-				(value & WED_PAO_MON_QMEM_PTR14_Q8_CPP_MASK)
-				>> WED_PAO_MON_QMEM_PTR14_Q8_CPP_SHFT);
-
-	return len;
+	warp_io_read32(wed, WED_PAO_MON_QMEM_PTR14_OFFSET, &value);
+	seq_printf(seq, "tid6 pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR14_Q7_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR14_Q7_CPP_SHFT);
+	seq_printf(seq, "tid7 pre: 0x%x\n",
+			(value & WED_PAO_MON_QMEM_PTR14_Q8_CPP_MASK)
+			>> WED_PAO_MON_QMEM_PTR14_Q8_CPP_SHFT);
 }
 
-ssize_t
-warp_pao_hiftxd_in_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+static void
+warp_pao_hiftxd_cnt(struct wed_entry *wed,
+			struct seq_file *seq)
 {
 	u32 value;
 
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_CNT0_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_hiftxd_in_cnt: %d\n",
-				value);
-
-	return len;
+	dump_string(seq, "=======WED PAO HIF_TXD=======\n");
+	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_CNT0_OFFSET, &value);
+	seq_printf(seq, "amsdu_hiftxd_in_cnt: %d\n", value);
+	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_CNT1_OFFSET, &value);
+	seq_printf(seq, "amsdu_hiftxd_out0_cnt: %d\n", value);
+	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_CNT2_OFFSET, &value);
+	seq_printf(seq, "amsdu_hiftxd_out1_cnt: %d\n", value);
 }
 
-ssize_t
-warp_pao_hiftxd_ou0_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_CNT1_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_hiftxd_out0_cnt: %d\n",
-				value);
-
-	return len;
-}
-
-ssize_t
-warp_pao_hiftxd_ou1_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
-{
-	u32 value;
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_CNT2_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_hiftxd_out1_cnt: %d\n",
-				value);
-
-	return len;
-}
-
-ssize_t
+static void
 warp_pao_hiftxd_buf_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+			struct seq_file *seq)
 {
+	int i = 1;
 	u32 value;
+	u32 addr = WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_1_OFFSET;
+	u32 offset = WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_2_OFFSET -
+		     WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_1_OFFSET;
 
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_1_OFFSET,
-				&value);
+	dump_string(seq, "=======WED PAO HIF_TXD BUF=======\n");
+	while (addr <= WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_13_OFFSET) {
+		warp_io_read32(wed, addr, &value);
+		seq_printf(seq, "amsdu_buf_num_%d: %d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_1: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_2_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_2: %d\n",
-				value);
-	
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_3: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_4: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_5: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_6: %d\n",
-				value);
-	
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_7: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_8: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_9: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_10_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_10: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_11_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_11: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_12_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_12: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_BUF_NUM_13_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_buf_num_13: %d\n",
-				value);
-
-	return len;
+		addr += offset;
+		i++;
+	}
 }
 
-ssize_t
+static void
 warp_pao_hiftxd_msdu_cnt(struct wed_entry *wed,
-			char *buf, ssize_t len)
+			struct seq_file *seq)
 {
+	int i = 1;
 	u32 value;
+	u32 addr = WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_1_OFFSET;
+	u32 offset = WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_2_OFFSET -
+		     WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_1_OFFSET;
 
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_1_OFFSET,
-				&value);
+	dump_string(seq, "=======WED PAO HIF_TXD MSDU=======\n");
+	while (addr <= WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_13_OFFSET) {
+		warp_io_read32(wed, addr, &value);
+		seq_printf(seq, "amsdu_msdu_cnt_%d: %d\n", i, value);
 
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_1: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_2_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_2: %d\n",
-				value);
-	
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_3_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_3: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_4_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_4: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_5_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_5: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_6_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_6: %d\n",
-				value);
-	
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_7_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_7: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_8_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_8: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_9_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_9: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_10_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_10: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_11_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_11: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_12_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_12: %d\n",
-				value);
-
-	warp_io_read32(wed, WED_PAO_MON_HIFTXD_FETCH_MSDU_CNT_13_OFFSET,
-				&value);
-
-	len += scnprintf(buf + len, DEBUGFS_MAX_BUF_SIZE - len,
-				"amsdu_msdu_cnt_13: %d\n",
-				value);
-
-	return len;
+		addr += offset;
+		i++;
+	}
 }
+
+int
+warp_procinfo_dump_pao_hw(struct warp_entry *warp, struct seq_file *seq)
+{
+	struct wed_entry *wed = &warp->wed;
+
+	warp_pao_amsdu_fifo_cnt(wed, seq);
+	warp_pao_amsdu_eng_cnt(wed, seq);
+	warp_pao_qmem_cnt(wed, seq);
+	warp_pao_qmem_head_cnt(wed, seq);
+	warp_pao_qmem_tail_cnt(wed, seq);
+	warp_pao_qmem_pre_cnt(wed, seq);
+	warp_pao_hiftxd_cnt(wed, seq);
+	warp_pao_hiftxd_buf_cnt(wed, seq);
+	warp_pao_hiftxd_msdu_cnt(wed, seq);
+
+	return 0;
+}
+
