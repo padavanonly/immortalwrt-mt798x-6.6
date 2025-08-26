@@ -595,7 +595,7 @@
 				nvmem-cell-names = "intr", "rx_imp", "tx_imp",
 						   "auto_load_valid";
 				mediatek,syscon-type = <&topmisc 0x218 0>;
-				status = "disabled";
+				status = "okay";
 			};
 		};
 
@@ -621,7 +621,7 @@
 			phys = <&tphyu2port0 PHY_TYPE_USB2>;
 			usb2-lpm-disable;
 			mediatek,u3p-dis-msk=<1>;
-			status = "disabled";
+			status = "okay";
 		};
 
 		afe: audio-controller@11210000 {
