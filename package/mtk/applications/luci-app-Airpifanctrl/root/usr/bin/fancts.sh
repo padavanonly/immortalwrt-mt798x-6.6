@@ -17,23 +17,23 @@ echo $$ > "$lockfile"
 
 trap "rm -f '$lockfile'; exit" INT TERM EXIT
 
-
+echo disabled > /sys/class/thermal/thermal_zone0/mode
 fanvall=$(cat /etc/fanvall)
     
 if [ "$fanvall" = 3 ]; then
-    echo 255 > /sys/kernel/duty_cycle
+    echo 255 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
     echo 255 > /usr/bin/fanspeed.conf
     exit 1
 elif [ "$fanvall" = 2 ]; then
-    echo 192 > /sys/kernel/duty_cycle
+    echo 192 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
     echo 192 > /usr/bin/fanspeed.conf
     exit 1
 elif [ "$fanvall" = 1 ]; then
-    echo 128 > /sys/kernel/duty_cycle
+    echo 128 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
     echo 128 > /usr/bin/fanspeed.conf
     exit 1
 elif [ "$fanvall" = 0 ]; then
-    echo 64 > /sys/kernel/duty_cycle
+    echo 64 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
     echo 64 > /usr/bin/fanspeed.conf
     exit 1
 fi
@@ -52,16 +52,16 @@ while true; do
     fi
 
     if [ "$temp" -gt 85000 ]; then
-        echo 255 > /sys/kernel/duty_cycle
+        echo 255 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
 	echo 255 > /usr/bin/fanspeed.conf
     elif [ "$temp" -gt 60000 ] && [ "$temp" -le 85000 ]; then
-        echo 192 > /sys/kernel/duty_cycle
+        echo 192 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
 	echo 192 > /usr/bin/fanspeed.conf
     elif [ "$temp" -gt 50000 ] && [ "$temp" -le 60000 ]; then
-        echo 128 > /sys/kernel/duty_cycle
+        echo 128 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
 	echo 128 > /usr/bin/fanspeed.conf
     elif [ "$temp" -gt 0 ] && [ "$temp" -le 50000 ]; then
-        echo 64 > /sys/kernel/duty_cycle
+        echo 64 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1
 	echo 64 > /usr/bin/fanspeed.conf
     fi
     sleep 8

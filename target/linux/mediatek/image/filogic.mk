@@ -451,7 +451,7 @@ endef
 TARGET_DEVICES += mediatek_mt7987a-rfb
 
 
-define Device/mediatek_hiveton-h5000m
+define Device/hiveton-h5000m
   DEVICE_VENDOR := Hiveton
   DEVICE_MODEL := H5000M
   DEVICE_DTS := mt7987a-hiveton-h5000m
@@ -460,7 +460,7 @@ define Device/mediatek_hiveton-h5000m
   DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-sfp blkid
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
-TARGET_DEVICES += mediatek_hiveton-h5000m
+TARGET_DEVICES += hiveton-h5000m
 
 
 define Device/bananapi_bpi-r4-lite

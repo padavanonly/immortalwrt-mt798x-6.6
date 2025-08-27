@@ -230,6 +230,20 @@
 		};
 	};
 
+	pwm_fan_pins: pwm-fan-pins {
+                mux {
+                        /*
+                        * - pwm0 1  : PWM0@PIN13
+                        * - pwm1_0 :; PWM@PIN7  (share with JTAG)
+                        *   pwm1_1 : PWM1@PIN43 (share with i2c0)
+                        * - pwm2_0 : PWM2@PIN12 (share with PCM)
+                        *   pwm2_1 : PWM2@PIN44 (share with i2c0)
+                        */
+                        function = "pwm";
+                        groups = "pwm1_0";
+                };
+        };
+
 	uart0_pins: uart0-pins {
 		mux {
 			function = "uart";

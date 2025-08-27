@@ -611,7 +611,7 @@ end
                 set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or "")
             end
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
-            set_idx_dat(dats, apidx-1, "WPAPSK", v.config.key or "")
+            set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
