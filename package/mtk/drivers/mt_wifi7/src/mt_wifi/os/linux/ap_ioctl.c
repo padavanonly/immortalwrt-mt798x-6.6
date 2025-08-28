@@ -1023,12 +1023,13 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
 
 	case RTPRIV_IOCTL_GSITESURVEY:
 		wdev = pIoctlConfig->wdev;
-
+		wrq->u.data.flags = wrqin->u.data.flags;
 		if ((wdev != NULL) && (wdev->if_up_down_state == FALSE)) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_ERROR,
 				"interface is down, cmd [%x] return!!!\n", cmd);
 			return -ENETDOWN;
 		}
+		printk("iwinfo signal is coming");
 		RTMP_AP_IoctlHandle(pAd, wrq, CMD_RTPRIV_IOCTL_GSITESURVEY, 0, NULL, 0);
 		break;
 #endif /* AP_SCAN_SUPPORT */

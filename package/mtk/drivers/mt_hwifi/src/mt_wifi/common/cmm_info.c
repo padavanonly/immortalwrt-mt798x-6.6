@@ -6163,8 +6163,8 @@ RTMP_STRING *GetAuthMode(CHAR auth)
  *       WiressMode (11) + ExtCh (7) + MaxBW (5) + NetworkType (3) + SSID_LEN (8) + BcnRept (10) +
  *		 MWDSCap (8)
  */
-#define	LINE_LEN	145
-
+#define	LINE_LEN	(4+4+33+20+23+8+9+11+7+3+8+10+8)	/* No+Channel+SSID+Bssid+Security+RSSI+Signal+WiressMode+ExtCh+NetworkType+LEN+BcnRept+MWDSCap*
+*/
 #ifdef CONFIG_STA_SUPPORT
 #ifdef WSC_STA_SUPPORT
 #define	WPS_LINE_LEN	(4+5)	/* WPS+DPID*/
@@ -6307,7 +6307,8 @@ UCHAR GetNeighborAPMaxBwCap(
 VOID RTMPCommSiteSurveyData(
 	IN  RTMP_STRING *msg,
 	IN  BSS_ENTRY * pBss,
-	IN  UINT32 MsgLen)
+	IN  UINT32 MsgLen,
+	IN  BOOLEAN RawSSID)
 {
 	INT         Rssi = 0;
 	UINT        Rssi_Quality = 0;
@@ -6316,7 +6317,7 @@ VOID RTMPCommSiteSurveyData(
 	RTMP_STRING SecurityStr[32] = {0};
 	INT ret;
 	UINT LeftBufSize;
-	UCHAR max_bw;
+	//UCHAR max_bw;
 
 	/*Channel*/
 	LeftBufSize = MsgLen - strlen(msg);
@@ -6328,7 +6329,10 @@ VOID RTMPCommSiteSurveyData(
 	}
 	/*SSID*/
 	NdisZeroMemory(Ssid, sizeof(Ssid));
-
+	if (RawSSID)
+		NdisMoveMemory(Ssid, pBss->Ssid, pBss->SsidLen);
+	else
+	{
 	if (RTMPCheckStrPrintAble((PCHAR)pBss->Ssid, pBss->SsidLen))
 		NdisMoveMemory(Ssid, pBss->Ssid, pBss->SsidLen);
 	else {
@@ -6352,7 +6356,7 @@ VOID RTMPCommSiteSurveyData(
 			}
 		}
 	}
-
+	}
 	LeftBufSize = MsgLen - strlen(msg);
 	ret = snprintf(msg + strlen(msg), LeftBufSize, "%-33s ", Ssid);
 	if (os_snprintf_error(LeftBufSize, ret)) {
@@ -6392,7 +6396,11 @@ VOID RTMPCommSiteSurveyData(
 	}
 	/* Rssi*/
 	Rssi = (INT)pBss->Rssi;
-
+	ret = snprintf(msg + strlen(msg), MsgLen - strlen(msg), "%-8d", Rssi + 0x100);
+	if (os_snprintf_error(LeftBufSize, ret)) {
+ 		//MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "Snprintf failed!\n");
+ 		return;
+ 	}
 	if (Rssi >= -50)
 		Rssi_Quality = 100;
 	else if (Rssi >= -80)    /* between -50 ~ -80dbm*/
@@ -6541,7 +6549,7 @@ VOID RTMPCommSiteSurveyData(
 		}
 	}
 
-	/*MaxBW*/
+	/*MaxBW
 	max_bw = GetNeighborAPOperatingBw(pBss);
 	LeftBufSize = MsgLen - strlen(msg);
 	ret = snprintf(msg + strlen(msg), LeftBufSize, "%-5s", get_bw_str(max_bw, BW_FROM_OID));
@@ -6550,6 +6558,7 @@ VOID RTMPCommSiteSurveyData(
 					"Snprintf failed!\n");
 		return;
 	}
+	*/
 
 	/*Network Type		*/
 	if (pBss->BssType == BSS_ADHOC) {
@@ -6751,7 +6760,7 @@ INT mtk_cfg80211_get_scan_result(struct wiphy *wiphy, RTMP_ADAPTER *pAd, SCAN_CT
 		goto ERROR;
 	}
 #endif /* WSC_INCLUDED */
-#ifdef TR181_SUPPORT
+#if 0
 	LeftBufSize = TotalLen - strlen(msg);
 	Status = snprintf(msg + strlen(msg) - 1, LeftBufSize, "%-5s%-5s%-12s%-12s%-4s%-s",
 		" Mode", " Rssi", " SupRate", " ExtRate", " BCN", " DTIM");
@@ -6788,7 +6797,7 @@ INT mtk_cfg80211_get_scan_result(struct wiphy *wiphy, RTMP_ADAPTER *pAd, SCAN_CT
 	}
 #endif /* DOT11R_FT_SUPPORT */
 #endif /* CONFIG_STA_SUPPORT */
-
+	BssTableSortByRssi(ScanTab,FALSE);
 	for (i = bss_start_idx; i < ScanTab->BssNr; i++) {
 		pBss = &ScanTab->BssEntry[i];
 
@@ -7205,9 +7214,8 @@ VOID RTMPIoctlGetSiteSurvey(
 	}
 	LeftBufSize = TotalLen - strlen(msg);
 	Status = snprintf(msg + strlen(msg), LeftBufSize,
-			"%-4s%-4s%-34s%-20s%-23s%-9s%-11s%-7s%-3s%-8s\n",
-			"No", "Ch", "SSID", "BSSID", "Security", "Siganl(%)",
-			"W-Mode", " ExtCH", " NT", " SSID_Len");
+			"%-4s%-4s%-34s%-20s%-23s%-8s%-9s%-11s%-7s%-3s%-8s\n",
+			"No", "Ch", "SSID", "BSSID", "Security", "Rssi","Siganl(%)","W-Mode", " ExtCH", " NT", " SSID_Len");
 	if (os_snprintf_error(LeftBufSize, Status)) {
 		MTWF_DBG(pAdapter, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
 					"Snprintf failed!\n");
@@ -7230,7 +7238,7 @@ VOID RTMPIoctlGetSiteSurvey(
 					"Snprintf failed!\n");
 		goto ERROR;
 	}
-#ifdef MWDS
+#if 0
 	LeftBufSize = TotalLen - strlen(msg);
 	Status = snprintf(msg + strlen(msg) - 1, LeftBufSize, "%-8s\n", " MWDSCap");
 	if (os_snprintf_error(LeftBufSize, Status)) {
@@ -7269,7 +7277,7 @@ VOID RTMPIoctlGetSiteSurvey(
 			"Current scan/partialscan is ongoing, need wait scan done!\n");
 		OS_WAIT(3000);
 	}
-
+	BssTableSortByRssi(ScanTab,FALSE);
 	for (i = bss_start_idx; i < ScanTab->BssNr; i++) {
 		pBss = &ScanTab->BssEntry[i];
 
@@ -7287,7 +7295,10 @@ VOID RTMPIoctlGetSiteSurvey(
 						"Snprintf failed!\n");
 			goto ERROR;
 		}
-		RTMPCommSiteSurveyData(msg, pBss, TotalLen);
+		if (wrq->u.data.flags & 0x1)
+                        RTMPCommSiteSurveyData(msg, pBss, TotalLen, true);
+                else
+                        RTMPCommSiteSurveyData(msg, pBss, TotalLen, false);
 #ifdef WSC_INCLUDED
 
 		/*WPS*/
@@ -7438,7 +7449,7 @@ VOID RTMPIoctlGetSiteSurvey(
 #endif /* CONFIG_STA_SUPPORT */
 	wrq->u.data.length = strlen(msg);
 	Status = copy_to_user(wrq->u.data.pointer, msg, wrq->u.data.length);
-	MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_INFO,
+	MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
 		"wrq->u.data.length = %d\n",
 		wrq->u.data.length);
 	os_free_mem((PUCHAR)msg);
@@ -23172,8 +23183,9 @@ VOID RTMPIoctlGetMacTableStaInfo(
             else
                 need_send = FALSE;
         }
-
-        if (IS_ENTRY_CLIENT(pEntry) && (pEntry->Sst == SST_ASSOC) && (need_send == TRUE)) {
+	if ((IS_ENTRY_CLIENT(pEntry) || IS_ENTRY_PEER_AP(pEntry))
+			&& (pEntry->Sst == SST_ASSOC)
+			&& (need_send == TRUE)) {
             pDst = &pMacTab->Entry[pMacTab->Num];
             pDst->ApIdx = pEntry->func_tb_idx;
             COPY_MAC_ADDR(pDst->Addr, &pEntry->Addr);
@@ -23190,7 +23202,8 @@ VOID RTMPIoctlGetMacTableStaInfo(
             /* the connected time per entry*/
             pDst->ConnectedTime = pEntry->StaConnectTime;
             pDst->TxRate.word = RTMPGetLastTxRateTW(pAd, pEntry);
-            pMacTab->Num += 1;
+            pDst->EncryMode = pEntry->SecConfig.PairwiseCipher;				    pDst->AuthMode = pEntry->SecConfig.AKMMap;
+	    pMacTab->Num += 1;
             /* Add to avoid Array cross board */
            	if (pMacTab->Num >= 544)
                 break;
@@ -23198,7 +23211,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
             //hongchen+ 20201205,add rx_rate
             if(pEntry->wdev != NULL)
             {
-#if defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7981) || defined(MT7992)
+#if defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7990) || defined(MT7992)
                 UINT32 rx_rate = 0;
                 UCHAR ucBand = HcGetBandByWdev(pEntry->wdev);
                 ShowLastRxPhyRate(pAd, ucBand, pEntry->wcid, &rx_rate);

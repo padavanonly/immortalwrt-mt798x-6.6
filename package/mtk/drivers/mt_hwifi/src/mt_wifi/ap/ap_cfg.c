@@ -10046,7 +10046,7 @@ INT RTMPAPQueryInformation(
 			Status = copy_to_user(wrq->u.data.pointer, &pAd->ApCfg.MBSSID[ifIndex].AccessControlList, sizeof(RT_802_11_ACL));
 
 		break;
-#ifdef CONFIG_HOTSPOT
+#if 1
 #ifdef CONFIG_DOT11V_WNM
 
 	case OID_802_11_WNM_IPV4_PROXY_ARP_LIST: {
@@ -10108,8 +10108,9 @@ INT RTMPAPQueryInformation(
 
 	case OID_802_11_SECURITY_TYPE: {
 		BSS_STRUCT *pMbss;
+		PSTA_ADMIN_CONFIG pApCliEntry;
 		PUCHAR pType;
-		struct security_type *SecurityType;
+		struct security_type_new *SecurityType;
 
 		if (!VALID_MBSS(pAd, ifIndex)) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "error index\n");
@@ -10118,19 +10119,33 @@ INT RTMPAPQueryInformation(
 		}
 		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
 				 "Query:OID_802_11_SECURITY_TYPE\n");
+		if (pObj->ioctl_if_type == INT_APCLI && ifIndex >= MAX_APCLI_NUM) 
+		{	
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "error station index\n");
+			return FALSE;
+		}
 		os_alloc_mem(NULL, &pType, sizeof(*SecurityType));
 		if (pType == NULL) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR,
 					"Fail to allocate memory!\n");
 			Status = -ENOMEM;
 		} else {
-			SecurityType = (struct security_type *)pType;
+			SecurityType = (struct security_type_new *)pType;
+			if (pObj->ioctl_if_type == INT_APCLI) {
+				pApCliEntry = &pAd->StaCfg[ifIndex];
+				SecurityType->ifindex = ifIndex;
+				SecurityType->auth_mode = pApCliEntry->wdev.SecConfig.AKMMap;
+				SecurityType->encryp_type = pApCliEntry->wdev.SecConfig.PairwiseCipher;
+				wrq->u.data.length = sizeof(*SecurityType);
+				Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
+		} else if(pObj->ioctl_if_type == INT_MAIN || pObj->ioctl_if_type == INT_MBSSID) {
 			pMbss = &pAd->ApCfg.MBSSID[ifIndex];
 			SecurityType->ifindex = ifIndex;
-			SecurityType->auth_mode = SecAuthModeNewToOld(pMbss->wdev.SecConfig.AKMMap);
-			SecurityType->encryp_type = SecEncryModeNewToOld(pMbss->wdev.SecConfig.PairwiseCipher);
+			SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
+			SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
 			wrq->u.data.length = sizeof(*SecurityType);
 			Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
+			}
 			os_free_mem(pType);
 		}
 	}
