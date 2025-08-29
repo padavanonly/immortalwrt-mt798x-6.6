@@ -147,12 +147,17 @@ enum WIFI_MODE {
 	WMODE_AX_24G = 1 << 6,
 	WMODE_AX_5G = 1 << 7,
 	WMODE_AX_6G = 1 << 8,
-	WMODE_COMP = 9,
+        WMODE_BE_24G = 1 << 9,
+        WMODE_BE_5G = 1 << 10,
+        WMODE_BE_6G = 1 << 11,
+	WMODE_COMP = 12,
 };
 
 #define WMODE_CAP_N(_x)			(((_x) & (WMODE_GN | WMODE_AN)) != 0)
 #define WMODE_CAP_AC(_x)		(((_x) & (WMODE_AC)) != 0)
 #define WMODE_CAP_AX(_x)		((_x) & (WMODE_AX_24G | WMODE_AX_5G | WMODE_AX_6G))
+#define WMODE_CAP_BE(_x) \
+((_x) & (WMODE_BE_24G | WMODE_BE_5G | WMODE_BE_6G))
 
 enum MTK_CH_BAND {
 	MTK_CH_BAND_24G = 0,
