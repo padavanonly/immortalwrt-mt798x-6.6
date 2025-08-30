@@ -537,6 +537,8 @@ static int hnat_hw_init(u32 ppe_id)
 	if (hnat_priv->data->version == MTK_HNAT_V3) {
 		cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_SB_FIFO_DBG,
 			     SB_MED_FULL_DRP_EN, 1);
+		cr_set_bits(hnat_priv->ppe_base[ppe_id] + PPE_GLO_CFG,
+			    NEW_IPV4_ID_INC_EN | TSID_EN);
 	}
 
 	/*enable ppe mib counter*/

@@ -54,15 +54,21 @@ To build your own firmware you need a GNU/Linux, BSD or macOS system (case sensi
   - For more details, please see [Build system setup](https://openwrt.org/docs/guide-developer/build-system/install-buildsystem) documentation.
 
   ### Quickstart
-  1. Run `git clone -b mt7988-6.6-mtwifi --single-branch --filter=blob:none https://github.com/padavanonly/immortalwrt-mt798x-24.10 immortalwrt-mt798x-24.10` to clone the source code.
+  1. Run `git clone -b mt798x-mt799x-6.6-mtwifi --single-branch --filter=blob:none https://github.com/padavanonly/immortalwrt-mt798x-24.10 immortalwrt-mt798x-24.10` to clone the source code.
   2. Run `cd immortalwrt-mt798x-24.10` to enter source directory.
   3. Run `./scripts/feeds update -a` to obtain all the latest package definitions defined in feeds.conf / feeds.conf.default
   4. Run `./scripts/feeds install -a` to install symlinks for all obtained packages into package/feeds/
   5. Copy the configuration file for your device from the `defconfig` directory to the project root directory and rename it `.config`
      
      ```
-     # MT7988
-     cp -f defconfig/mt7988.config .config
+     # MT7988_mt7990
+     cp -f defconfig/mt7988_mt7990.config .config
+
+     # MT7987_mt7992
+     cp -f defconfig/mt7987_mt7992.config .config
+
+     # MT7988_mt7992
+     cp -f defconfig/mt7988_mt7992.config .config
 
      
   6. Run `make` to build your firmware. This will download all sources, build the cross-compile toolchain and then cross-compile the GNU/Linux kernel & all chosen applications for your target system.

@@ -1274,6 +1274,8 @@ typedef struct _RT_802_11_MAC_ENTRY {
 	SHORT SoundingRespSnr[3];			/* SNR from Sounding Response. Units=0.25 dB. 22 dB offset removed */
 	/*	SHORT TxPER;	*/					/* TX PER over the last second. Percent */
 	/*	SHORT reserved;*/
+	UINT32					EncryMode;
+	UINT32					AuthMode;
 } RT_802_11_MAC_ENTRY, *PRT_802_11_MAC_ENTRY;
 
 typedef struct _RT_802_11_MAC_TABLE {
@@ -1722,6 +1724,11 @@ struct security_type {
 	UINT8 encryp_type;
 };
 
+struct security_type_new {
+	UINT32 ifindex;
+	UINT32 auth_mode;
+	UINT32 encryp_type;
+};
 struct wnm_req_data {
 	UINT32 ifindex;
 	UCHAR peer_mac_addr[6];

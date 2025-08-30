@@ -397,11 +397,8 @@ function mtwifi_cfg_setup(argv)
         nixio.syslog("err", "mtwifi-cfg: only support one apcli vif!")
     end
 
-    if bssid_num > 0 then
-        dats.BssidNum = bssid_num
-    else
-        dats.BssidNum = 1
-    end
+        dats.BssidNum = 4
+    
 
     -- setup wireless mode
     if type(cfg.config.htmode) ~= type("") then
@@ -414,21 +411,21 @@ function mtwifi_cfg_setup(argv)
     if cfg.config.band == "2g" then
     WirelessMode = 9  -- PHY_11BGN_MIXED
     if is_ax_mode(cfg) then
-        WirelessMode = 22 -- PHY_11AX_24G
-    elseif is_be_mode(cfg) then
+        WirelessMode = 16  -- PHY_11AX_24G
+    else
         WirelessMode = 22 -- PHY_11BE_24G
     end
 elseif cfg.config.band == "5g" then
     WirelessMode = 15 -- PHY_11VHT_N_MIXED
     if is_ax_mode(cfg) then
-        WirelessMode = 23 -- PHY_11AX_5G
-    elseif is_be_mode(cfg) then
+        WirelessMode = 17 -- PHY_11AX_5G
+    else
         WirelessMode = 23 -- PHY_11BE_5G
     end
 elseif cfg.config.band == "6g" then
     if is_ax_mode(cfg) then
-        WirelessMode = 24 -- PHY_11AX_6G
-    elseif is_be_mode(cfg) then
+        WirelessMode = 18 -- PHY_11AX_6G
+    else
         WirelessMode = 24 -- PHY_11BE_6G
     end
 end
@@ -578,7 +575,7 @@ end
         v = cfg.interfaces[string.format("%d", idx)]
         if v.config.mode == "ap" then
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
-            set_idx_dat(dats, apidx-1, "WPAPSK", v.config.key or "")
+            set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)

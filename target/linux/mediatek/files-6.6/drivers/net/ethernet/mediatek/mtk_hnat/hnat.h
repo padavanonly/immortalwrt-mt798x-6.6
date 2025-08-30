@@ -205,6 +205,7 @@
 #define MCAST_TB_EN (0x1 << 7) /* RW */
 #define MCAST_HASH (0x3 << 12) /* RW */
 #define SP_CMP_EN (0x1 << 25) /* RW */
+#define NEW_IPV4_ID_INC_EN (0x1 << 20) /* RW */
 
 #define MC_P3_PPSE (0xf << 12) /* RW */
 #define MC_P2_PPSE (0xf << 8) /* RW */
@@ -825,7 +826,6 @@ struct hnat_ipv6_hnapt {
 	u32 smac_hi;
 	u16 pppoe_id;
 	u16 smac_lo;
-#if defined(CONFIG_MEDIATEK_NETSYS_V3)
 	u16 minfo;
 	u16 resv6;
 	u32 new_ipv6_ip0;
@@ -844,10 +844,6 @@ struct hnat_ipv6_hnapt {
 	u32 resv9;
 	u32 resv10;
 	u32 resv11;
-#elif defined(CONFIG_MEDIATEK_NETSYS_V2)
-	u16 minfo;
-	struct hnat_winfo winfo;
-#endif
 } __packed;
 
 struct foe_entry {

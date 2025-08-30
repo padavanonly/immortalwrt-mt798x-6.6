@@ -708,9 +708,9 @@ uciout:
 
 	if (band) {
 		if (!strcmp(band,"2g"))
-			*buf = (IWINFO_80211_N | IWINFO_80211_AX);
+			*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
 		else if (!strcmp(band,"5g"))
-			*buf = (IWINFO_80211_AC | IWINFO_80211_AX);
+			*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
 		return 0;
 	}
 
@@ -725,11 +725,11 @@ uciout:
 		{
 			if (e->channel <= 14 ) //2.4Ghz
 			{
-				*buf = (IWINFO_80211_N | IWINFO_80211_AX);
+				*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
 			}
 			else //5Ghz
 			{
-				*buf = (IWINFO_80211_AC | IWINFO_80211_AX);
+				*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
 			}
 		}
 
@@ -762,10 +762,11 @@ uciout:
 
 	if (band) {
 		if (!strcmp(band,"2g"))
-			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40);
+			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
 		else if (!strcmp(band,"5g"))
 			*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
-			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160);
+			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
 		return 0;
 	}
 
@@ -780,12 +781,13 @@ uciout:
 		{
 			if (e->channel <= 14 ) //2.4Ghz
 			{
-				*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40);
+				*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
 			}
 			else //5Ghz
 			{
 				*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
-				| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160);
+				| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+				| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
 			}
 		}
 
@@ -821,7 +823,16 @@ static int mtk_get_htmode(const char *dev, int *buf)
 
 		if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0)
 		{
-			if (WMODE_CAP_AX(wmode)) {
+			 if (WMODE_CAP_BE(wmode)) {
+                                switch (bw) {
+                                        case BW_20: *buf = IWINFO_HTMODE_EHT20; break;
+                                        case BW_40: *buf = IWINFO_HTMODE_EHT40; break;
+                                        case BW_80: *buf = IWINFO_HTMODE_EHT80; break;
+                                        case BW_8080: *buf = IWINFO_HTMODE_EHT80_80; break;
+                                        case BW_160: *buf = IWINFO_HTMODE_EHT160; break;
+                                }
+                        }
+                        else if (WMODE_CAP_AX(wmode)) {
 				switch (bw) {
 					case BW_20: *buf = IWINFO_HTMODE_HE20; break;
 					case BW_40: *buf = IWINFO_HTMODE_HE40; break;

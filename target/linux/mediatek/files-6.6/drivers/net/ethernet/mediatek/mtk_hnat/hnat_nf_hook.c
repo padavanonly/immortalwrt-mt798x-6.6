@@ -2121,8 +2121,18 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
 			entry.ipv6_5t_route.act_dp |= UDF_HNAT_PRE_FILLED;
 	}
 
+	/* We must ensure all info has been updated before set to hw */
 	wmb();
-	memcpy(foe, &entry, sizeof(entry));
+	/* Before entry enter BIND state, write other fields first,
+	 * prevent racing with hardware accesses.
+	 */
+	memcpy(&(foe->ipv6_hnapt.ipv6_sip0), &(entry.ipv6_hnapt.ipv6_sip0),
+		       sizeof(struct foe_entry) - sizeof(entry.bfib1));
+	/* We must ensure all info has been updated before set to hw */
+	wmb();
+	/* After other fields have been written, write info1 to BIND the entry */
+	memcpy(&foe->bfib1, &entry.bfib1, sizeof(entry.bfib1));
+	dma_wmb();
 	/*reset statistic for this entry*/
 	if (hnat_priv->data->per_flow_accounting &&
 	    skb_hnat_entry(skb) < hnat_priv->foe_etry_num &&
@@ -2388,9 +2398,18 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
 		entry.ipv4_hnapt.act_dp &= ~UDF_HNAT_PRE_FILLED;
 	else
 		entry.ipv6_5t_route.act_dp &= ~UDF_HNAT_PRE_FILLED;
-	/* We must ensure all info has been updated before set to hw */
+	/* We must ensure all info has been updfated before set to hw */
 	wmb();
-	memcpy(hw_entry, &entry, sizeof(entry));
+	/* Before entry enter BIND state, write other fields first,
+         * prevent racing with hardware accesses.
+         */
+	memcpy(&(hw_entry->ipv6_hnapt.ipv6_sip0), &(entry.ipv6_hnapt.ipv6_sip0),
+		       sizeof(struct foe_entry) - sizeof(entry.bfib1));
+        /* We must ensure all info has been updated before set to hw */
+        wmb();
+        /* After other fields have been writtefn, write info1 to BIND the entry */
+        memcpy(&hw_entry->bfib1, &entry.bfib1, sizeof(entry.bfib1));
+        dma_wmb();
 
 #if defined(CONFIG_MEDIATEK_NETSYS_V3)
 	if (debug_level >= 7) {

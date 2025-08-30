@@ -85,6 +85,8 @@ struct hnat_desc {
 #define HAS_HQOS_MAGIC_TAG(skb) (qos_toggle && skb->protocol == HQOS_MAGIC_TAG)
 
 #define HNAT_MAGIC_TAG 0x6789
+#define HNAT_INFO_FILLED 0x7
+#define is_hnat_info_filled(skb) (skb_hnat_filled(skb) == HNAT_INFO_FILLED)
 #define WIFI_INFO_LEN 6
 #define FOE_INFO_LEN (10 + WIFI_INFO_LEN)
 #define IS_SPACE_AVAILABLE_HEAD(skb)                                           \

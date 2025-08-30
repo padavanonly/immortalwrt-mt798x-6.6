@@ -34,7 +34,7 @@ function action_fanswj()
         end
     end
 	os.execute("echo 0 > /etc/fanvall")
-	os.execute("echo "..port.." > /sys/kernel/duty_cycle")
+	os.execute("echo "..port.." > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1")
 	os.execute("echo "..port.." > /usr/bin/fanspeed.conf")
 	rv["result"] = "fanswj"
 	luci.http.prepare_content("application/json")
@@ -156,7 +156,7 @@ function action_fanst2()
         end
     end
 	os.execute("echo 2 > /etc/fanvall")
-	os.execute("echo 192 > /sys/kernel/duty_cycle")
+	os.execute("echo 192 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1")
 	os.execute("echo 192 > /usr/bin/fanspeed.conf")
 	rv["result"] = "fanst2"
 	luci.http.prepare_content("application/json")
@@ -183,7 +183,7 @@ function action_fanst1()
         end
     end
 	os.execute("echo 1 > /etc/fanvall")
-	os.execute("echo 128 > /sys/kernel/duty_cycle")
+	os.execute("echo 128 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1")
 	os.execute("echo 128 > /usr/bin/fanspeed.conf")
 	rv["result"] = "fanst2"
 	luci.http.prepare_content("application/json")
@@ -210,7 +210,7 @@ function action_fanst3()
         end
     end
 	os.execute("echo 3 > /etc/fanvall")
-	os.execute("echo 255 > /sys/kernel/duty_cycle")
+	os.execute("echo 255 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1")
 	os.execute("echo 255 > /usr/bin/fanspeed.conf")
 	rv["result"] = "fanst3"
 	luci.http.prepare_content("application/json")
@@ -265,7 +265,7 @@ function action_fanstop()
         end
     end
 	os.execute("echo 0 > /etc/fanvall")
-	os.execute("echo 64 > /sys/kernel/duty_cycle")
+	os.execute("echo 64 > /sys/devices/platform/pwm-fan/hwmon/hwmon2/pwm1")
 	os.execute("echo 64 > /usr/bin/fanspeed.conf")
 	rv["result"] = "fanstop"
 	luci.http.prepare_content("application/json")

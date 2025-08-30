@@ -39,7 +39,7 @@ MT7990_whnat()
 	eth_rx1=222
 	eth_rx2=223
 	eth_rx3=224
-
+	usb_irq=204
 	if [ -d "/proc/warp_ctrl/warp0" ]; then
 		wifi1_irq=237
 		wifi2_irq=238
@@ -58,7 +58,7 @@ MT7990_whnat()
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
 		CPU2_AFFINITY="$eth_tx $eth_rx2"
-		CPU3_AFFINITY="$eth_rx3"
+		CPU3_AFFINITY="$eth_rx3 $usb_irq"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2"
@@ -68,7 +68,7 @@ MT7990_whnat()
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
 		CPU2_AFFINITY="$eth_tx $eth_rx2"
-		CPU3_AFFINITY="$eth_rx3"
+		CPU3_AFFINITY="$eth_rx3 $usb_irq"
 
 		CPU0_RPS="                $wifi1 $wifi1_apcli0"
 		CPU1_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
@@ -78,7 +78,7 @@ MT7990_whnat()
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
 		CPU2_AFFINITY="$eth_tx $eth_rx2"
-		CPU3_AFFINITY="$eth_rx3"
+		CPU3_AFFINITY="$eth_rx3 $usb_irq"
 
 		CPU0_RPS="                $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 		CPU1_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
@@ -88,7 +88,7 @@ MT7990_whnat()
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
 		CPU2_AFFINITY="$PCIe0 $wifi3_irq $eth_rx2"
-		CPU3_AFFINITY="$eth_tx $eth_rx3"
+		CPU3_AFFINITY="$eth_tx $eth_rx3 $usb_irq"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2                                           $wifi3 $wifi3_apcli0"
