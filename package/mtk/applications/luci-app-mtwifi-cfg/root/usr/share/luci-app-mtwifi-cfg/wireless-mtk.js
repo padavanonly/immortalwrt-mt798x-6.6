@@ -1343,6 +1343,10 @@ return view.extend({
 					o.default = o.enabled;
 					o.depends('mode', 'ap');
 
+					o = ss.taboption('advanced', form.Flag, 'ieee80211r', _('802.11r'), _('Enables fast roaming among access points that belong to the same Mobility Domain'));
+					o.default = o.disabled;
+					o.depends('mode', 'ap');
+
 					o = ss.taboption('advanced', form.Value, 'wpa_group_rekey', _('Time interval for rekeying GTK'), _('sec'));
 					o.optional    = true;
 					o.placeholder = 3600;
