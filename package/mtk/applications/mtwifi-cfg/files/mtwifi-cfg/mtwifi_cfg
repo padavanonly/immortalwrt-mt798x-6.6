@@ -415,20 +415,20 @@ function mtwifi_cfg_setup(argv)
     else
         WirelessMode = 22 -- PHY_11BE_24G
     end
-elseif cfg.config.band == "5g" then
-    WirelessMode = 15 -- PHY_11VHT_N_MIXED
-    if is_ax_mode(cfg) then
-        WirelessMode = 17 -- PHY_11AX_5G
-    else
-        WirelessMode = 23 -- PHY_11BE_5G
+    elseif cfg.config.band == "5g" then
+        WirelessMode = 15 -- PHY_11VHT_N_MIXED
+        if is_ax_mode(cfg) then
+            WirelessMode = 17 -- PHY_11AX_5G
+        else
+            WirelessMode = 23 -- PHY_11BE_5G
+        end
+    elseif cfg.config.band == "6g" then
+        if is_ax_mode(cfg) then
+            WirelessMode = 18 -- PHY_11AX_6G
+        else
+            WirelessMode = 24 -- PHY_11BE_6G
+        end
     end
-elseif cfg.config.band == "6g" then
-    if is_ax_mode(cfg) then
-        WirelessMode = 18 -- PHY_11AX_6G
-    else
-        WirelessMode = 24 -- PHY_11BE_6G
-    end
-end
 
 
     if not WirelessMode then

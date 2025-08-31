@@ -120,8 +120,8 @@ function render_network_badge(radioNet) {
 
 function render_radio_status(radioDev, wifiNets) {
 	var name = radioDev.getI18n().replace(/ Wireless Controller .+$/, ''),
-	    node = E('div', [ E('big', {}, E('strong', {}, name)), E('div') ]),
-	    channel, frequency, bitrate;
+		node = E('div', [ E('big', {}, E('strong', {}, name)), E('div') ]),
+		channel, frequency, bitrate;
 
 	for (var i = 0; i < wifiNets.length; i++) {
 		channel   = channel   || wifiNets[i].getChannel();
@@ -142,13 +142,13 @@ function render_radio_status(radioDev, wifiNets) {
 
 function render_network_status(radioNet) {
 	var mode = radioNet.getActiveMode(),
-	    bssid = radioNet.getActiveBSSID(),
-	    channel = radioNet.getChannel(),
-	    disabled = (radioNet.get('disabled') == '1' || uci.get('wireless', radioNet.getWifiDeviceName(), 'disabled') == '1'),
-	    is_assoc = (bssid && bssid != '00:00:00:00:00:00' && channel && mode != 'Unknown' && !disabled),
-	    is_mesh = (radioNet.getMode() == 'mesh'),
-	    changecount = count_changes(radioNet.getName()),
-	    status_text = null;
+		bssid = radioNet.getActiveBSSID(),
+		channel = radioNet.getChannel(),
+		disabled = (radioNet.get('disabled') == '1' || uci.get('wireless', radioNet.getWifiDeviceName(), 'disabled') == '1'),
+		is_assoc = (bssid && bssid != '00:00:00:00:00:00' && channel && mode != 'Unknown' && !disabled),
+		is_mesh = (radioNet.getMode() == 'mesh'),
+		changecount = count_changes(radioNet.getName()),
+		status_text = null;
 
 	if (changecount)
 		status_text = E('a', {
@@ -169,12 +169,12 @@ function render_network_status(radioNet) {
 
 function render_modal_status(node, radioNet) {
 	var mode = radioNet.getActiveMode(),
-	    noise = radioNet.getNoise(),
-	    bssid = radioNet.getActiveBSSID(),
-	    channel = radioNet.getChannel(),
-	    disabled = (radioNet.get('disabled') == '1'),
-	    is_assoc = (bssid && bssid != '00:00:00:00:00:00' && channel && mode != 'Unknown' && !disabled),
-	    hwtype = uci.get('wireless', radioNet.getWifiDeviceName(), 'type');
+		noise = radioNet.getNoise(),
+		bssid = radioNet.getActiveBSSID(),
+		channel = radioNet.getChannel(),
+		disabled = (radioNet.get('disabled') == '1'),
+		is_assoc = (bssid && bssid != '00:00:00:00:00:00' && channel && mode != 'Unknown' && !disabled),
+		hwtype = uci.get('wireless', radioNet.getWifiDeviceName(), 'type');
 
 	if (node == null)
 		node = E('span', { 'class': 'ifacebadge large', 'data-network': radioNet.getName() }, [ E('small'), E('span') ]);
@@ -211,11 +211,11 @@ function render_modal_status(node, radioNet) {
 
 function format_wifirate(rate) {
 	var s = '%.1f\xa0%s, %d\xa0%s'.format(rate.rate / 1000, _('Mbit/s'), rate.mhz, _('MHz')),
-	    ht = rate.ht, vht = rate.vht,
-	    mhz = rate.mhz, nss = rate.nss,
-	    mcs = rate.mcs, sgi = rate.short_gi,
-	    he = rate.he, he_gi = rate.he_gi,
-	    he_dcm = rate.he_dcm;
+		ht = rate.ht, vht = rate.vht,
+		mhz = rate.mhz, nss = rate.nss,
+		mcs = rate.mcs, sgi = rate.short_gi,
+		he = rate.he, he_gi = rate.he_gi,
+		he_dcm = rate.he_dcm;
 
 	if (ht || vht) {
 		if (vht) s += ', VHT-MCS\xa0%d'.format(mcs);
@@ -236,8 +236,8 @@ function format_wifirate(rate) {
 
 function radio_restart(id, ev) {
 	var row = document.querySelector('.cbi-section-table-row[data-sid="%s"]'.format(id)),
-	    dsc = row.querySelector('[data-name="_stat"] > div'),
-	    btn = row.querySelector('.cbi-section-actions button');
+		dsc = row.querySelector('[data-name="_stat"] > div'),
+		btn = row.querySelector('.cbi-section-actions button');
 
 	btn.blur();
 	btn.classList.add('spinning');
@@ -249,8 +249,8 @@ function radio_restart(id, ev) {
 
 function network_updown(id, map, ev) {
 	var radio = uci.get('wireless', id, 'device'),
-	    disabled = (uci.get('wireless', id, 'disabled') == '1') ||
-	               (uci.get('wireless', radio, 'disabled') == '1');
+		disabled = (uci.get('wireless', id, 'disabled') == '1') ||
+					(uci.get('wireless', radio, 'disabled') == '1');
 
 	if (disabled) {
 		uci.unset('wireless', id, 'disabled');
@@ -295,7 +295,7 @@ function add_dependency_permutations(o, deps) {
 			continue;
 
 		var list = deps[key],
-		    tmp = [];
+			tmp = [];
 
 		for (var j = 0; j < list.length; j++) {
 			for (var k = 0; k < (res ? res.length : 1); k++) {
@@ -327,10 +327,10 @@ function add_dep_he_feature(o) {
 }
 
 function add_dep_be_feature(o) {
-        o.depends({'_freq': 'EHT20', '!contains': true});
-        o.depends({'_freq': 'EHT40', '!contains': true});
-        o.depends({'_freq': 'EHT80', '!contains': true});
-        o.depends({'_freq': 'EHT160', '!contains': true});
+	o.depends({'_freq': 'EHT20', '!contains': true});
+	o.depends({'_freq': 'EHT40', '!contains': true});
+	o.depends({'_freq': 'EHT80', '!contains': true});
+	o.depends({'_freq': 'EHT160', '!contains': true});
 }
 
 var CBIWifiFrequencyValue = form.Value.extend({
@@ -407,10 +407,11 @@ var CBIWifiFrequencyValue = form.Value.extend({
 					'HE20', '20 MHz', htmodelist.HE20
 				],
 				'be': [
-                                'EHT160', '160 MHz', htmodelist.EHT160,                              		'EHT80', '80 MHz',  htmodelist.EHT80, 
-                                'EHT40', '40 MHz',  htmodelist.EHT40, 
-                                'EHT20', '20 MHz',  htmodelist.EHT20 
-                                ]
+					'EHT160', '160 MHz', htmodelist.EHT160,                              		
+					'EHT80', '80 MHz',  htmodelist.EHT80, 
+					'EHT40', '40 MHz',  htmodelist.EHT40, 
+					'EHT20', '20 MHz',  htmodelist.EHT20 
+				]
 			};
 
 			this.bands = {
@@ -432,10 +433,10 @@ var CBIWifiFrequencyValue = form.Value.extend({
 					'6g', '6 GHz', this.channels['6g'].length > 3,
 				],
 				'be': [
-                                        '2g', '2.4 GHz', this.channels['2g'].length > 3,
-                                        '5g', '5 GHz', this.channels['5g'].length > 3,
-                                        '6g', '6 GHz', this.channels['6g'].length > 3,
-                                ]
+					'2g', '2.4 GHz', this.channels['2g'].length > 3,
+					'5g', '5 GHz', this.channels['5g'].length > 3,
+					'6g', '6 GHz', this.channels['6g'].length > 3,
+				]
 
 			};
 		}, this));
@@ -490,13 +491,13 @@ var CBIWifiFrequencyValue = form.Value.extend({
 
 	setInitialValues: function(section_id, elem) {
 		var mode = elem.querySelector('.mode'),
-		    band = elem.querySelector('.band'),
-		    chan = elem.querySelector('.channel'),
-		    bwdt = elem.querySelector('.htmode'),
-		    htval = uci.get('wireless', section_id, 'htmode'),
-		    hwval = uci.get('wireless', section_id, 'hwmode'),
-		    chval = uci.get('wireless', section_id, 'channel'),
-		    bandval = uci.get('wireless', section_id, 'band');
+			band = elem.querySelector('.band'),
+			chan = elem.querySelector('.channel'),
+			bwdt = elem.querySelector('.htmode'),
+			htval = uci.get('wireless', section_id, 'htmode'),
+			hwval = uci.get('wireless', section_id, 'hwmode'),
+			chval = uci.get('wireless', section_id, 'channel'),
+			bandval = uci.get('wireless', section_id, 'band');
 
 		this.setValues(mode, this.modes);
 
@@ -583,9 +584,9 @@ var CBIWifiFrequencyValue = form.Value.extend({
 
 	cfgvalue: function(section_id) {
 		return [
-		    uci.get('wireless', section_id, 'htmode'),
-		    uci.get('wireless', section_id, 'hwmode') || uci.get('wireless', section_id, 'band'),
-		    uci.get('wireless', section_id, 'channel')
+			uci.get('wireless', section_id, 'htmode'),
+			uci.get('wireless', section_id, 'hwmode') || uci.get('wireless', section_id, 'band'),
+			uci.get('wireless', section_id, 'channel')
 		];
 	},
 
@@ -593,9 +594,9 @@ var CBIWifiFrequencyValue = form.Value.extend({
 		var node = this.map.findElement('data-field', this.cbid(section_id));
 
 		return [
-		    node.querySelector('.htmode').value,
-		    node.querySelector('.band').value,
- 			node.querySelector('.channel').value
+			node.querySelector('.htmode').value,
+			node.querySelector('.band').value,
+			node.querySelector('.channel').value
 		];
 	},
 
@@ -632,7 +633,7 @@ var CBIWifiTxPowerValue = form.ListValue.extend({
 
 	renderWidget: function(section_id, option_index, cfgvalue) {
 		var widget = form.ListValue.prototype.renderWidget.apply(this, [section_id, option_index, cfgvalue]);
-		    widget.firstElementChild.style.width = 'auto';
+			widget.firstElementChild.style.width = 'auto';
 
 		dom.append(widget, E('span', [
 			' - ', _('Current power'), ': ',
@@ -684,12 +685,12 @@ return view.extend({
 
 		for (var i = 0; i < rows.length; i++) {
 			var section_id = rows[i].getAttribute('data-sid'),
-			    radioDev = data[1].filter(function(d) { return d.getName() == section_id })[0],
-			    radioNet = data[2].filter(function(n) { return n.getName() == section_id })[0],
-			    badge = rows[i].querySelector('[data-name="_badge"] > div'),
-			    stat = rows[i].querySelector('[data-name="_stat"]'),
-			    btns = rows[i].querySelectorAll('.cbi-section-actions button'),
-			    busy = btns[0].classList.contains('spinning') || btns[1].classList.contains('spinning') || btns[2].classList.contains('spinning');
+				radioDev = data[1].filter(function(d) { return d.getName() == section_id })[0],
+				radioNet = data[2].filter(function(n) { return n.getName() == section_id })[0],
+				badge = rows[i].querySelector('[data-name="_badge"] > div'),
+				stat = rows[i].querySelector('[data-name="_stat"]'),
+				btns = rows[i].querySelectorAll('.cbi-section-actions button'),
+				busy = btns[0].classList.contains('spinning') || btns[1].classList.contains('spinning') || btns[2].classList.contains('spinning');
 
 			if (radioDev) {
 				dom.content(badge, render_radio_badge(radioDev));
@@ -709,14 +710,14 @@ return view.extend({
 		}
 
 		var table = document.querySelector('#wifi_assoclist_table'),
-		    hosts = data[0],
-		    trows = [];
+			hosts = data[0],
+			trows = [];
 
 		for (var i = 0; i < data[3].length; i++) {
 			var bss = data[3][i],
-			    name = hosts.getHostnameByMACAddr(bss.mac),
-			    ipv4 = hosts.getIPAddrByMACAddr(bss.mac),
-			    ipv6 = hosts.getIP6AddrByMACAddr(bss.mac);
+				name = hosts.getHostnameByMACAddr(bss.mac),
+				ipv4 = hosts.getIPAddrByMACAddr(bss.mac),
+				ipv6 = hosts.getIP6AddrByMACAddr(bss.mac);
 
 			var hint = '-';
 			if (bss.network.getMode() == 'ap')
@@ -825,8 +826,8 @@ return view.extend({
 
 	handleMigration: function(ev) {
 		var wifiIfaces = uci.sections('wireless', 'wifi-iface'),
-		    id_offset = 0,
-		    tasks = [];
+			id_offset = 0,
+			tasks = [];
 
 		for (var i = 0; i < wifiIfaces.length; i++) {
 			if (!wifiIfaces[i]['.anonymous'])
@@ -1139,9 +1140,9 @@ return view.extend({
 				o.write = function(section_id, value) {
 					return network.getDevice(section_id).then(L.bind(function(dev) {
 						var old_networks = dev.getNetworks().reduce(function(o, v) { o[v.getName()] = v; return o }, {}),
-						    new_networks = {},
-						    values = L.toArray(value),
-						    tasks = [];
+							new_networks = {},
+							values = L.toArray(value),
+							tasks = [];
 
 						for (var i = 0; i < values.length; i++) {
 							new_networks[values[i]] = true;
@@ -1182,8 +1183,8 @@ return view.extend({
 
 				if (hwtype == 'mac80211') {
 					var mode = ss.children[0],
-					    bssid = ss.children[5],
-					    encr;
+						bssid = ss.children[5],
+						encr;
 
 					mode.value('mesh', '802.11s');
 					mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
@@ -1239,7 +1240,7 @@ return view.extend({
 
 					mode.cfgvalue = function(section_id) {
 						var mode = uci.get('wireless', section_id, 'mode'),
-						    wds = uci.get('wireless', section_id, 'wds');
+							wds = uci.get('wireless', section_id, 'wds');
 
 						if (mode == 'ap' && wds)
 							return 'ap-wds';
@@ -1425,7 +1426,7 @@ return view.extend({
 
 				o.write = function(section_id, value) {
 					var e = this.section.children.filter(function(o) { return o.option == 'encryption' })[0].formvalue(section_id),
-					    co = this.section.children.filter(function(o) { return o.option == 'cipher' })[0], c = co.formvalue(section_id);
+						co = this.section.children.filter(function(o) { return o.option == 'cipher' })[0], c = co.formvalue(section_id);
 
 					if (value == 'wpa' || value == 'wpa2' || value == 'wpa3' || value == 'wpa3-mixed')
 						uci.unset('wireless', section_id, 'key');
@@ -1470,27 +1471,27 @@ return view.extend({
 
 				if (hwtype == 'mac80211') {
 					var has_supplicant = L.hasSystemFeature('wpasupplicant'),
-					    has_hostapd = L.hasSystemFeature('hostapd');
+						has_hostapd = L.hasSystemFeature('hostapd');
 
 					// Probe EAP support
 					var has_ap_eap = L.hasSystemFeature('hostapd', 'eap'),
-					    has_sta_eap = L.hasSystemFeature('wpasupplicant', 'eap');
+						has_sta_eap = L.hasSystemFeature('wpasupplicant', 'eap');
 
 					// Probe SAE support
 					var has_ap_sae = L.hasSystemFeature('hostapd', 'sae'),
-					    has_sta_sae = L.hasSystemFeature('wpasupplicant', 'sae');
+						has_sta_sae = L.hasSystemFeature('wpasupplicant', 'sae');
 
 					// Probe OWE support
 					var has_ap_owe = L.hasSystemFeature('hostapd', 'owe'),
-					    has_sta_owe = L.hasSystemFeature('wpasupplicant', 'owe');
+						has_sta_owe = L.hasSystemFeature('wpasupplicant', 'owe');
 
 					// Probe Suite-B support
 					var has_ap_eap192 = L.hasSystemFeature('hostapd', 'suiteb192'),
-					    has_sta_eap192 = L.hasSystemFeature('wpasupplicant', 'suiteb192');
+						has_sta_eap192 = L.hasSystemFeature('wpasupplicant', 'suiteb192');
 
 					// Probe WEP support
 					var has_ap_wep = L.hasSystemFeature('hostapd', 'wep'),
-					    has_sta_wep = L.hasSystemFeature('wpasupplicant', 'wep');
+						has_sta_wep = L.hasSystemFeature('wpasupplicant', 'wep');
 
 					if (has_hostapd || has_supplicant) {
 						crypto_modes.push(['psk2',      'WPA2-PSK',                    35]);
@@ -1579,9 +1580,9 @@ return view.extend({
 
 					encr.validate = function(section_id, value) {
 						var modeopt = this.section.children.filter(function(o) { return o.option == 'mode' })[0],
-						    modeval = modeopt.formvalue(section_id),
-						    modetitle = modeopt.vallist[modeopt.keylist.indexOf(modeval)],
-						    enctitle = this.vallist[this.keylist.indexOf(value)];
+							modeval = modeopt.formvalue(section_id),
+							modetitle = modeopt.vallist[modeopt.keylist.indexOf(modeval)],
+							enctitle = this.vallist[this.keylist.indexOf(value)];
 
 						if (value == 'none')
 							return true;
@@ -1920,7 +1921,7 @@ return view.extend({
 
 					o.validate = function(section_id, value) {
 						var eo = this.section.children.filter(function(o) { return o.option == 'eap_type' })[0],
-						    ev = eo.formvalue(section_id);
+							ev = eo.formvalue(section_id);
 
 						if (ev != 'ttls' && (value == 'PAP' || value == 'CHAP' || value == 'MSCHAP' || value == 'MSCHAPV2'))
 							return _('This authentication type is not applicable to the selected EAP method.');
@@ -2133,10 +2134,10 @@ return view.extend({
 
 				for (var i = 0; i < results.length; i++) {
 					var res = results[i],
-					    qv = res.quality || 0,
-					    qm = res.quality_max || 0,
-					    q = (qv > 0 && qm > 0) ? Math.floor((100 / qm) * qv) : 0,
-					    s = res.stale ? 'opacity:0.5' : '';
+						qv = res.quality || 0,
+						qm = res.quality_max || 0,
+						q = (qv > 0 && qm > 0) ? Math.floor((100 / qm) * qv) : 0,
+						s = res.stale ? 'opacity:0.5' : '';
 
 					rows.push([
 						E('span', { 'style': s }, render_signal_badge(q, res.signal, res.noise)),
@@ -2194,20 +2195,20 @@ return view.extend({
 
 		s.handleJoinConfirm = function(radioDev, bss, form, ev) {
 			var nameopt = L.toArray(form.lookupOption('name', '_new_'))[0],
-			    passopt = L.toArray(form.lookupOption('password', '_new_'))[0],
-			    ssidopt = L.toArray(form.lookupOption('ssid', '_new_'))[0],
-			    bssidopt = L.toArray(form.lookupOption('bssid', '_new_'))[0],
-			    zoneopt = L.toArray(form.lookupOption('zone', '_new_'))[0],
-			    replopt = L.toArray(form.lookupOption('replace', '_new_'))[0],
-			    nameval = (nameopt && nameopt.isValid('_new_')) ? nameopt.formvalue('_new_') : null,
-			    passval = (passopt && passopt.isValid('_new_')) ? passopt.formvalue('_new_') : null,
-			    ssidval = (ssidopt && ssidopt.isValid('_new_')) ? ssidopt.formvalue('_new_') : null,
-			    bssidval = (bssidopt && bssidopt.isValid('_new_')) ? bssidopt.formvalue('_new_') : null,
-			    zoneval = zoneopt ? zoneopt.formvalue('_new_') : null,
-			    enc = L.isObject(bss.encryption) ? bss.encryption : null,
-			    is_wep = (enc && Array.isArray(enc.wep)),
-			    is_psk = (enc && Array.isArray(enc.wpa) && L.toArray(enc.authentication).filter(function(a) { return a == 'psk' }).length > 0),
-			    is_sae = (enc && Array.isArray(enc.wpa) && L.toArray(enc.authentication).filter(function(a) { return a == 'sae' }).length > 0);
+				passopt = L.toArray(form.lookupOption('password', '_new_'))[0],
+				ssidopt = L.toArray(form.lookupOption('ssid', '_new_'))[0],
+				bssidopt = L.toArray(form.lookupOption('bssid', '_new_'))[0],
+				zoneopt = L.toArray(form.lookupOption('zone', '_new_'))[0],
+				replopt = L.toArray(form.lookupOption('replace', '_new_'))[0],
+				nameval = (nameopt && nameopt.isValid('_new_')) ? nameopt.formvalue('_new_') : null,
+				passval = (passopt && passopt.isValid('_new_')) ? passopt.formvalue('_new_') : null,
+				ssidval = (ssidopt && ssidopt.isValid('_new_')) ? ssidopt.formvalue('_new_') : null,
+				bssidval = (bssidopt && bssidopt.isValid('_new_')) ? bssidopt.formvalue('_new_') : null,
+				zoneval = zoneopt ? zoneopt.formvalue('_new_') : null,
+				enc = L.isObject(bss.encryption) ? bss.encryption : null,
+				is_wep = (enc && Array.isArray(enc.wep)),
+				is_psk = (enc && Array.isArray(enc.wpa) && L.toArray(enc.authentication).filter(function(a) { return a == 'psk' }).length > 0),
+				is_sae = (enc && Array.isArray(enc.wpa) && L.toArray(enc.authentication).filter(function(a) { return a == 'sae' }).length > 0);
 
 			if (nameval == null || (passopt && passval == null))
 				return;
@@ -2313,11 +2314,11 @@ return view.extend({
 			poll.remove(this.pollFn);
 
 			var m2 = new form.Map('wireless'),
-			    s2 = m2.section(form.NamedSection, '_new_'),
-			    enc = L.isObject(bss.encryption) ? bss.encryption : null,
-			    is_wep = (enc && Array.isArray(enc.wep)),
-			    is_psk = (enc && Array.isArray(enc.wpa) && L.toArray(enc.authentication).filter(function(a) { return a == 'psk' || a == 'sae' })),
-			    replace, passphrase, name, bssid, zone;
+				s2 = m2.section(form.NamedSection, '_new_'),
+				enc = L.isObject(bss.encryption) ? bss.encryption : null,
+				is_wep = (enc && Array.isArray(enc.wep)),
+				is_psk = (enc && Array.isArray(enc.wpa) && L.toArray(enc.authentication).filter(function(a) { return a == 'psk' || a == 'sae' })),
+				replace, passphrase, name, bssid, zone;
 
 			var nameUsed = function(name) {
 				var s = uci.get('network', name);
@@ -2432,7 +2433,7 @@ return view.extend({
 		o.modalonly = false;
 		o.textvalue = function(section_id) {
 			var inst = this.section.lookupRadioOrNetwork(section_id),
-			    node = E('div', { 'class': 'center' });
+				node = E('div', { 'class': 'center' });
 
 			if (inst.getWifiNetworks)
 				node.appendChild(render_radio_badge(inst));
@@ -2458,12 +2459,12 @@ return view.extend({
 		return m.render().then(L.bind(function(m, nodes) {
 			poll.add(L.bind(function() {
 				var section_ids = m.children[0].cfgsections(),
-				    tasks = [ network.getHostHints(), network.getWifiDevices() ];
+					tasks = [ network.getHostHints(), network.getWifiDevices() ];
 
 				for (var i = 0; i < section_ids.length; i++) {
 					var row = nodes.querySelector('.cbi-section-table-row[data-sid="%s"]'.format(section_ids[i])),
-					    dsc = row.querySelector('[data-name="_stat"] > div'),
-					    btns = row.querySelectorAll('.cbi-section-actions button');
+						dsc = row.querySelector('[data-name="_stat"] > div'),
+						btns = row.querySelectorAll('.cbi-section-actions button');
 
 					if (dsc.getAttribute('restart') == '') {
 						dsc.setAttribute('restart', '1');
@@ -2505,7 +2506,7 @@ return view.extend({
 
 							for (var i = 0; i < data.length; i++) {
 								var wifiNetwork = hosts_radios_wifis[2][i],
-								    radioDev = hosts_radios_wifis[1].filter(function(d) { return d.getName() == wifiNetwork.getWifiDeviceName() })[0];
+									radioDev = hosts_radios_wifis[1].filter(function(d) { return d.getName() == wifiNetwork.getWifiDeviceName() })[0];
 
 								for (var j = 0; j < data[i].length; j++)
 									hosts_radios_wifis[3].push(Object.assign({ radio: radioDev, network: wifiNetwork }, data[i][j]));
