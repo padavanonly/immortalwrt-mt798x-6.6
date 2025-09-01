@@ -39,3 +39,6 @@ msgstr "无线网络设置错误"
 
 msgid "At least one MBSSID needs to be reserved"
 msgstr "至少需要保留1个MBSSID"
+
+msgid "Enable MLO"
+msgstr "启用MLO"
