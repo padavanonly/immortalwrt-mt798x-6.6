@@ -1,0 +1,25 @@
+From: padavanonly <83120842+padavanonly@users.noreply.github.com>
+Date: Tue, 2 Sep 2025 10:39:00 +0800
+Subject: [PATCH] mtk_wifi7: change default mld group number
+
+Restore vendor driver change from 519d76f46beb.
+
+[sKyissKy: extract mt_wifi7 patch from commit 519d76f46beb]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/profiles/ap_profile.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/mt_wifi/profiles/ap_profile.c b/mt_wifi/profiles/ap_profile.c
+index 19ce351..a654fab 100644
+--- a/mt_wifi/profiles/ap_profile.c
++++ b/mt_wifi/profiles/ap_profile.c
+@@ -1010,7 +1010,7 @@ static void rtmp_read_mld_group_idx_from_file(
+ 				pMbss->mld_grp_idx = mld_grp;
+ 				pMbss->mld_grp_by_cfg = TRUE;
+ 				pMbss->unique_mld_addr_enable = TRUE;
+-                                if (mld_grp != 3) 
++                                if (mld_grp != 1) 
+                                         wdev->ap_mlo_disable = TRUE;
+                                 else
+                                         wdev->ap_mlo_disable = FALSE;
