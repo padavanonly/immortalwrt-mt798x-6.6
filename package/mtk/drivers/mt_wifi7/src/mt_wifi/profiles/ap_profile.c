@@ -1010,7 +1010,7 @@ static void rtmp_read_mld_group_idx_from_file(
 				pMbss->mld_grp_idx = mld_grp;
 				pMbss->mld_grp_by_cfg = TRUE;
 				pMbss->unique_mld_addr_enable = TRUE;
-                                if (mld_grp != 3) 
+                                if (mld_grp != 1) 
                                         wdev->ap_mlo_disable = TRUE;
                                 else
                                         wdev->ap_mlo_disable = FALSE;
