@@ -61,6 +61,8 @@
 #include <linux/fs.h>
 #include <linux/moduleparam.h>
 #include <linux/clk.h>              // clk_*
+#include <linux/of.h>
+#include <linux/platform_device.h>
 
 
 /*----------------------------------------------------------------------------
@@ -260,8 +262,9 @@ LKM_Probe(
 /*----------------------------------------------------------------------------
  * LKM_Remove
  */
-static int
-LKM_Remove(
+
+static void
+LKM_Remove_new(
         struct platform_device * Platform_Device_p)
 {
     LKM_Admin_t * p = &LKM_Admin;
@@ -273,7 +276,6 @@ LKM_Remove(
         LOG_CRIT(LKM_LOG_PREFIX
                  "%s: failed, missing or wrong platform device\n",
                  __func__);
-        return -ENODEV;
     }
 
     LOG_INFO(LKM_LOG_PREFIX
@@ -294,10 +296,18 @@ LKM_Remove(
     }
 
     LOG_INFO(LKM_LOG_PREFIX "%s: left\n", __func__);
-
-    return 0;
 }
 
+#if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+static int
+LKM_Remove(
+	struct platform_device * Platform_Device_p)
+{
+	LKM_Remove_new(Platform_Device_p);
+
+	return 0;
+}
+#endif
 
 /*-----------------------------------------------------------------------------
  * LKM_Init
@@ -329,8 +339,16 @@ LKM_Init(
     p->ResId                         = InitData_p->ResId; // not used
 
     p->Platform_Driver.probe         = LKM_Probe;
-    p->Platform_Driver.remove        = LKM_Remove;
-
+#if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+	// Only .remove(int) is supported
+	p->Platform_Driver.remove = LKM_Remove;
+#elif KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE
+	// Both remove(int) and remove_new(void) are supported, use the new one
+	p->Platform_Driver.remove_new = LKM_Remove_new;
+#else
+	// Only .remove(void) is supported
+	p->Platform_Driver.remove = LKM_Remove_new;
+#endif
     p->Platform_Driver.driver.name            = InitData_p->DriverName_p;
     p->Platform_Driver.driver.owner           = THIS_MODULE;
     p->Platform_Driver.driver.pm              = InitData_p->PM_p;
