@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=r8168
 PKG_VERSION:=8.055.00
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.bz2
 PKG_SOURCE_URL:=https://github.com/openwrt/rtl8168/releases/download/$(PKG_VERSION)
@@ -26,6 +26,7 @@ endef
 
 define Build/Compile
 	+$(KERNEL_MAKE) $(PKG_JOBS) \
+		$(PKG_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)/src" \
 		ENABLE_MULTIPLE_TX_QUEUE=y \
 		ENABLE_RSS_SUPPORT=y \
