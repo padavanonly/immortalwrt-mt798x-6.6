@@ -77,7 +77,7 @@
  
  static struct platform_driver mtk_pcie_driver = {
  	.probe = mtk_pcie_probe,
-+	.shutdown = mtk_pcie_shutdown,
++	
  	.remove_new = mtk_pcie_remove,
  	.driver = {
  		.name = "mtk-pcie-gen3",
