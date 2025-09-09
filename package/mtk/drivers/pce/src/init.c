@@ -11,6 +11,7 @@
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
 
 #include "pce/cdrt.h"
 #include "pce/cls.h"
@@ -72,7 +73,7 @@ netsys_deinit:
 	return ret;
 }
 
-static int mtk_pce_remove(struct platform_device *pdev)
+static void mtk_pce_remove_new(struct platform_device *pdev)
 {
 	mtk_pce_disable();
 
@@ -85,9 +86,16 @@ static int mtk_pce_remove(struct platform_device *pdev)
 	mtk_pce_cls_deinit(pdev);
 
 	mtk_pce_netsys_deinit(pdev);
+}
+
+#if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+static int mtk_pce_remove(struct platform_device *pdev)
+{
+	mtk_pce_remove_new(pdev);
 
 	return 0;
 }
+#endif
 
 static const struct of_device_id mtk_pce_match[] = {
 	{ .compatible = "mediatek,pce", },
@@ -97,7 +105,16 @@ MODULE_DEVICE_TABLE(of, mtk_pce_match);
 
 static struct platform_driver mtk_pce_driver = {
 	.probe = mtk_pce_probe,
+#if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+	// Only .remove(int) is supported
 	.remove = mtk_pce_remove,
+#elif KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE
+	// Both remove(int) and remove_new(void) are supported, use the new one
+	.remove_new = mtk_pce_remove_new,
+#else
+	// Only .remove(void) is supported
+	.remove = mtk_pce_remove_new,
+#endif
 	.driver = {
 		.name = "mediatek,pce",
 		.owner = THIS_MODULE,
