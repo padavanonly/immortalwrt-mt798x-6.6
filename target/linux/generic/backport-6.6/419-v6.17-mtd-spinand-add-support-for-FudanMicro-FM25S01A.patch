@@ -8,7 +8,6 @@ Datasheet: http://eng.fmsh.com/nvm/FM25S01A_ds_eng.pdf
 
 Signed-off-by: Tianling Shen <cnsztl@gmail.com>
 Signed-off-by: Miquel Raynal <miquel.raynal@bootlin.com>
-Link: https://lore.kernel.org/linux-mtd/20250824170013.3328777-1-cnsztl@gmail.com
 ---
  drivers/mtd/nand/spi/Makefile |  2 +-
  drivers/mtd/nand/spi/core.c   |  1 +
