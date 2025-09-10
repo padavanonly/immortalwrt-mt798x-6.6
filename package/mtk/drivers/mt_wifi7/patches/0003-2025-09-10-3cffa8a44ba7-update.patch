@@ -1,0 +1,26 @@
+From: padavanonly <83120842+padavanonly@users.noreply.github.com>
+Date: Wed, 10 Sep 2025 17:58:00 +0800
+Subject: [PATCH] Update
+
+Restore vendor driver change from 3cffa8a44ba7.
+
+[sKyissKy: extract mt_wifi7 patch from commit 3cffa8a44ba7]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/profiles/cmm_profile.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/mt_wifi/profiles/cmm_profile.c b/mt_wifi/profiles/cmm_profile.c
+index 9c03c36..2d301c6 100644
+--- a/mt_wifi/profiles/cmm_profile.c
++++ b/mt_wifi/profiles/cmm_profile.c
+@@ -6173,9 +6173,6 @@ NDIS_STATUS	RTMPSetProfileParameters(
+ 					if (i >= pAd->ApCfg.BssidNum)
+ 						break;
+ 
+-					if (os_str_tol(macptr, 0, 10) != 0) /*Enable*/
+-						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = TRUE;
+-					else /*Disable*/
+ 						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = FALSE;
+ 
+ 					MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
