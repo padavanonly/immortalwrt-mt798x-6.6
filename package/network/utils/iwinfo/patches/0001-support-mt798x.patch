@@ -227,7 +227,7 @@
 +		}
 +	}
 +	lseek(fd, 0, SEEK_SET);
-+
++ return 0;
  	bc = mmap(NULL, len, PROT_READ, MAP_PRIVATE|MAP_LOCKED, fd, 0);
  
  	if ((void *)bc != MAP_FAILED)
