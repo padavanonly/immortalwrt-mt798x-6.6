@@ -367,7 +367,7 @@ static void mtk_parse_rateinfo(RT_802_11_MAC_ENTRY *pe,
 	unsigned int nss_r = 0;
 
 	TxRate.word = pe->TxRate.word;
-	RxRate.word = pe->LastRxRate.word;
+	RxRate.word = pe->LastRxRate;
 
 	mcs = TxRate.field.MCS;
 	mcs_r = RxRate.field.MCS;

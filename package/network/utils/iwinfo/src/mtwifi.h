@@ -38,7 +38,7 @@ typedef struct _RT_802_11_MAC_ENTRY_FIX {
 	signed char             AvgRssi3;
 	unsigned int            ConnectedTime;
 	HTTRANSMIT_SETTING      TxRate;
-	HTTRANSMIT_SETTING      LastRxRate;
+	unsigned int            LastRxRate;
 	short                   StreamSnr[3];
 	short                   SoundingRespSnr[3];
 	unsigned int			EncryMode;
