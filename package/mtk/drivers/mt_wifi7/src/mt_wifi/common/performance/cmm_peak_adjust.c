@@ -617,21 +617,21 @@ void peak_adjust_rx_drop_handle(
 check:
 	if (has_mlo_sta) {
 		if (rx_ctrl->rx_drop == TRUE) {
-			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_ERROR,
+			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_INFO,
 				"[MLO] disable rx drop\n");
 			mtk_set_pse_drop(0x0); /* not drop */
 			rx_ctrl->rx_drop = FALSE;
 		} else
-			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_ERROR,
+			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_INFO,
 				"[MLO] rx drop is already disabled\n");
 	} else {
 		if (rx_ctrl->rx_drop == FALSE) {
-			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_ERROR,
+			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_INFO,
 				"[MLO] enable rx drop\n");
 			mtk_set_pse_drop(0x300); /* drop */
 			rx_ctrl->rx_drop = TRUE;
 		} else
-			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_ERROR,
+			MTWF_DBG(NULL, DBG_CAT_MLME, CATMLME_RX_DROP, DBG_LVL_INFO,
 				"[MLO] rx drop is already enabled\n");
 	}
 }
