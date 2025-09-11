@@ -6173,9 +6173,6 @@ NDIS_STATUS	RTMPSetProfileParameters(
 					if (i >= pAd->ApCfg.BssidNum)
 						break;
 
-					if (os_str_tol(macptr, 0, 10) != 0) /*Enable*/
-						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = TRUE;
-					else /*Disable*/
 						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = FALSE;
 
 					MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
