@@ -11091,13 +11091,20 @@ INT RTMPAPQueryInformation(
 #endif
 	case OID_GET_WIRELESS_BAND:
 	{
+		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
 		UCHAR wireless_band;
 
 		if (wdev) {
 			wireless_band = wlan_operate_get_ch_band(wdev);
 			wrq->u.data.length = sizeof(wireless_band);
 			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
-			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_NOTICE,
+			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
+				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
+		} else {
+			wireless_band = wlan_config_get_ch_band(wdev);
+			wrq->u.data.length = sizeof(wireless_band);
+			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
+			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
 				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
 		}
 		break;
