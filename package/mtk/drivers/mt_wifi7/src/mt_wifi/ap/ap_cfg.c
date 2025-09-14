@@ -28501,9 +28501,9 @@ static BOOLEAN ch_switch_monitor_sanity_check(IN PRTMP_ADAPTER pAd, UCHAR channe
 		&& !WMODE_CAP_6G(wdev->PhyMode)
 #endif /* MAP_R3_6E_SUPPORT */
 		) ||
-		(channel > 14 && WMODE_CAP_2G(wdev->PhyMode)) ||
+		(channel > 14 && WMODE_CAP_2G(wdev->PhyMode))
 #ifdef MAP_R3_6E_SUPPORT
-		(channel > 233 && WMODE_CAP_6G(wdev->PhyMode))
+		|| (channel > 233 && WMODE_CAP_6G(wdev->PhyMode))
 #endif /* MAP_R3_6E_SUPPORT */
 	) {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,

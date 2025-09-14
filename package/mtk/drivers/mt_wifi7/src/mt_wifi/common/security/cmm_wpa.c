@@ -3711,6 +3711,9 @@ static void build_eapol_key_data_element(
 	u8 is_all_link = (msg_type == EAPOL_PAIR_MSG_3) ? TRUE : FALSE;
 	struct mld_entry_t *mld_entry = NULL;
 #endif
+#ifdef MAP_R3
+	struct _RTMP_ADAPTER *ad = (struct _RTMP_ADAPTER *)pEntry->pAd;
+#endif
 	u8 is_wpa2 = TRUE;
 
 	/* Choose WPA2 or not*/
@@ -3852,9 +3855,9 @@ static void build_eapol_key_data_element(
 
 #ifdef MAP_R3
 	if (pEntry &&
-		(IS_MAP_ENABLE(pEntry->pAd) &&
-		!IS_MAP_CERT_ENABLE(pEntry->pAd))
-		|| !IS_MAP_ENABLE(pEntry->pAd))
+		((IS_MAP_ENABLE(ad) &&
+		!IS_MAP_CERT_ENABLE(ad))
+		|| !IS_MAP_ENABLE(ad)))
 #endif
 	{
 		if (is_ie_presnet & RSNXE_PRESNET) {
