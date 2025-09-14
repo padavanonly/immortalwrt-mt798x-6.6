@@ -26,7 +26,6 @@ endef
 
 define Build/Compile
 	+$(KERNEL_MAKE) $(PKG_JOBS) \
-		$(PKG_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)/src" \
 		ENABLE_MULTIPLE_TX_QUEUE=y \
 		ENABLE_RSS_SUPPORT=y \
