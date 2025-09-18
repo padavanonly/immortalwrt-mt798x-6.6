@@ -1,0 +1,27 @@
+From: padavanonly <padavanonly@github.com>
+Date: Fri, 19 Sep 2025 00:33:40 +0800
+Subject: [PATCH] mt_wifi:fix ap isolate
+
+Restore vendor driver change from da953c7850d4.
+
+[sKyissKy: extract mt_hwifi patch from commit da953c7850d4]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/ap/ap_data.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/mt_wifi/ap/ap_data.c b/mt_wifi/ap/ap_data.c
+index e329a2d..eeea3b8 100644
+--- a/mt_wifi/ap/ap_data.c
++++ b/mt_wifi/ap/ap_data.c
+@@ -4135,8 +4135,8 @@ INT ap_rx_pkt_foward(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pPac
+ 					but not to air if match following case:
+ 						a). pMbss->IsolateInterStaTraffic == TRUE
+ 				*/
+-				to_air = TRUE;
+-				to_os = FALSE;
++				to_air = FALSE;
++				to_os = TRUE;
+ 
+ 				if (pMbss && (pMbss->IsolateInterStaTraffic == 1)
+ #ifdef HOSTAPD_HS_R2_SUPPORT
