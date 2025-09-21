@@ -327,10 +327,10 @@ function add_dep_he_feature(o) {
 }
 
 function add_dep_be_feature(o) {
-        o.depends({'_freq': 'EHT20', '!contains': true});
-        o.depends({'_freq': 'EHT40', '!contains': true});
-        o.depends({'_freq': 'EHT80', '!contains': true});
-        o.depends({'_freq': 'EHT160', '!contains': true});
+	o.depends({'_freq': 'EHT20', '!contains': true});
+	o.depends({'_freq': 'EHT40', '!contains': true});
+	o.depends({'_freq': 'EHT80', '!contains': true});
+	o.depends({'_freq': 'EHT160', '!contains': true});
 }
 
 var CBIWifiFrequencyValue = form.Value.extend({
@@ -407,10 +407,11 @@ var CBIWifiFrequencyValue = form.Value.extend({
 					'HE20', '20 MHz', htmodelist.HE20
 				],
 				'be': [
-                                'EHT160', '160 MHz', htmodelist.EHT160,                              		'EHT80', '80 MHz',  htmodelist.EHT80, 
-                                'EHT40', '40 MHz',  htmodelist.EHT40, 
-                                'EHT20', '20 MHz',  htmodelist.EHT20 
-                                ]
+					'EHT160', '160 MHz', htmodelist.EHT160,
+					'EHT80', '80 MHz',  htmodelist.EHT80, 
+					'EHT40', '40 MHz',  htmodelist.EHT40, 
+					'EHT20', '20 MHz',  htmodelist.EHT20 
+				]
 			};
 
 			this.bands = {
@@ -429,14 +430,13 @@ var CBIWifiFrequencyValue = form.Value.extend({
 				'ax': [
 					'2g', '2.4 GHz', this.channels['2g'].length > 3,
 					'5g', '5 GHz', this.channels['5g'].length > 3,
-					'6g', '6 GHz', this.channels['6g'].length > 3,
+					'6g', '6 GHz', this.channels['6g'].length > 3
 				],
 				'be': [
-                                        '2g', '2.4 GHz', this.channels['2g'].length > 3,
-                                        '5g', '5 GHz', this.channels['5g'].length > 3,
-                                        '6g', '6 GHz', this.channels['6g'].length > 3,
-                                ]
-
+					'2g', '2.4 GHz', this.channels['2g'].length > 3,
+					'5g', '5 GHz', this.channels['5g'].length > 3,
+					'6g', '6 GHz', this.channels['6g'].length > 3
+				]
 			};
 		}, this));
 	},
@@ -501,7 +501,7 @@ var CBIWifiFrequencyValue = form.Value.extend({
 		this.setValues(mode, this.modes);
 
 		if (/EHT20|EHT40|EHT80|EHT160/.test(htval))
-                        mode.value = 'be';
+			mode.value = 'be';
 		else if (/HE20|HE40|HE80|HE160/.test(htval))
 			mode.value = 'ax';
 		else if (/VHT20|VHT40|VHT80|VHT160/.test(htval))
@@ -624,7 +624,8 @@ var CBIWifiTxPowerValue = form.ListValue.extend({
 			this.value('', _('driver default'));
 
 			for (var i = 0; i < pwrlist.length; i++)
-				this.value(pwrlist[i].dbm, '%d dBm (%d mW)'.format(pwrlist[i].dbm, pwrlist[i].mw));
+				//this.value(pwrlist[i].dbm, '%d dBm (%d mW)'.format(pwrlist[i].dbm, pwrlist[i].mw));
+				this.value(pwrlist[i].mw, '%d %'.format(pwrlist[i].mw));
 
 			return form.ListValue.prototype.load.apply(this, [section_id]);
 		}, this));
@@ -1041,6 +1042,9 @@ return view.extend({
 					o.rmempty = true;
 				}
 				else if (hwtype == 'mtwifi') {
+					o = ss.taboption('general', CBIWifiTxPowerValue, 'txpower', _('Maximum transmit power'), _('Specifies the maximum transmit power the wireless radio may use. Depending on regulatory requirements and wireless usage, the actual transmit power may be reduced by the driver.'));
+					o.wifiNetwork = radioNet;
+
 					o = ss.taboption('advanced', CBIWifiCountryValue, 'country', _('Country Code'));
 					o.wifiNetwork = radioNet;
 
@@ -1077,10 +1081,6 @@ return view.extend({
 						o.datatype = 'range(20,999)';
 						o.placeholder = 100;
 					}
-
-					o = ss.taboption('advanced', form.Value, 'txpower', _('Maximum transmit power'));
-					o.datatype = 'range(1,100)';
-					o.placeholder = 100;
 				}
 
 				o = s.option(form.SectionValue, '_device', form.NamedSection, radioNet.getName(), 'wifi-iface', _('Interface Configuration'));
@@ -1332,8 +1332,8 @@ return view.extend({
 					o.depends('mode', 'ap');
 
 					o = ss.taboption('general', form.Flag, 'mlo', _('Enable MLO'));
-                                        o.depends('mode', 'ap');
-                                        o.default = o.disabled;
+					o.depends('mode', 'ap');
+					o.default = o.disabled;
 
 					o = ss.taboption('general', form.Flag, 'wmm', _('WMM Mode'));
 					o.depends('mode', 'ap');
