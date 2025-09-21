@@ -41,4 +41,7 @@ msgid "At least one MBSSID needs to be reserved"
 msgstr "至少需要保留1个MBSSID"
 
 msgid "Enable MLO"
-msgstr "启用MLO"
+msgstr "启用 MLO"
+
+msgid "Enables The 802.11k standard provides information to discover the best available access point"
+msgstr "启用 802.11k 自动寻找发现最佳可用接入点的信息"
