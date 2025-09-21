@@ -416,7 +416,20 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
 
 static int mtk_get_txpwrlist(const char *dev, char *buf, int *len)
 {
-	return -1;
+	struct iwinfo_txpwrlist_entry entry;
+	uint8_t dbm[7] = {0, 8, 11, 14, 17, 19, 20};
+	uint16_t mw[7] = {1, 6, 12, 25, 50, 79, 100};
+	int i;
+
+	for (i = 0; i < 7; i++)
+	{
+		entry.dbm = dbm[i];
+		entry.mw = mw[i];
+		memcpy(&buf[i * sizeof(entry)], &entry, sizeof(entry));
+	}
+
+	*len = 7 * sizeof(entry);
+	return 0;
 }
 
 static int mtk_get_scanlist_dump(const char *ifname, int index, char *data, size_t len)
