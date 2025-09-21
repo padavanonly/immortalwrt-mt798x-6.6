@@ -104,7 +104,11 @@ mtwifi_defs.enc2dat = {
     -- enc = AuthMode, EncrypType
     ["none"] = {"OPEN", "NONE"},
     ["sae"] = {"WPA3PSK", "AES"},
-    ["sae-mixed"] = {"WPA2PSKWPA3PSK", "AES"},
+    -- /* add support AKM24 WPA3-SAE-EXT */
+    ["sae-ext"] = {"WPA3PSK-EXT", "GCMP256"},
+    ["sae_sae-ext"] = {"WPA3PSKWPA3PSK-EXT", "CCMP GCMP256"},
+    ["sae-ext-mixed"] = {"WPA2PSKWPA3PSKWPA3PSK-EXT", "CCMP GCMP256"},
+    -- /* add support AKM24 WPA3-SAE-EXT */
     ["psk2+tkip+ccmp"] = {"WPA2PSK", "TKIPAES"},
     ["psk2+tkip+aes"] = {"WPA2PSK", "TKIPAES"},
     ["psk2+tkip"] = {"WPA2PSK", "TKIP"},
