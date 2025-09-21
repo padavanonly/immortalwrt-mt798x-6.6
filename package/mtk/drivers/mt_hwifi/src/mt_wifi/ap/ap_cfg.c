@@ -14965,7 +14965,7 @@ static INT show_apcfg_info(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 			  apcfg_para_setting.ht_tx_streams,
 			  apcfg_for_peak.ht_tx_streams);
 	/*EHT_RxStream */
-	apcfg_para_setting.ht_rx_streams = wlan_config_get_eht_tx_nss(wdev);
+	apcfg_para_setting.ht_rx_streams = wlan_config_get_eht_rx_nss(wdev);
 	MTWF_PRINT("%-24s%-16d%d\n", "EHT_RxStream",
 			  apcfg_para_setting.ht_rx_streams,
 			  apcfg_for_peak.ht_rx_streams);
