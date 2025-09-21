@@ -29094,20 +29094,42 @@ out:
 
 INT32 rtmp_get_macPower(IN VOID *pAdSrc)
 {
-	INT32 retPwr = 21;
+	INT32 retPwr = 0;
 	UCHAR band = 0;
 	PRTMP_ADAPTER ad = (PRTMP_ADAPTER)pAdSrc;
+	POS_COOKIE pObj = NULL;
+	UCHAR apidx = 0;
+	struct wifi_dev *wdev = NULL;
 
 	if (ad == NULL) {
 		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "ad null!\n");
 		return -EFAULT;
 	}
-	band = hc_get_hw_band_idx(ad);
-	if (band == BAND0)
-		retPwr = ad->max_power_2g/2;
-	else
-		retPwr = ad->max_power_5g/2;
-	//MTWF_PRINT("Got %s Power %d\n", (band == BAND0)?"2G":"5G", retPwr);
+
+	pObj = (POS_COOKIE)ad->OS_Cookie;
+	if (pObj == NULL) {
+		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "pObj null!\n");
+		return -EFAULT;
+	}
+
+	apidx = pObj->ioctl_if;
+	if ((pObj->ioctl_if_type == INT_MBSSID) || (pObj->ioctl_if_type == INT_MAIN) || (pObj->ioctl_if_type == INT_WDS))
+	{
+		if (apidx >= ad->ApCfg.BssidNum)
+			return -EFAULT;
+
+		wdev = &ad->ApCfg.MBSSID[apidx].wdev;
+		band = HcGetBandByWdev(wdev);
+
+		if (band == BAND0)
+			retPwr = (ad->max_power_2g + ad->ApCfg.MaxBaseTxPwr) / 2;
+		else
+			retPwr = (ad->max_power_5g + ad->ApCfg.MaxBaseTxPwr) / 2;
+	}
+
+	MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO, "%s Power %d\n",
+		(band == BAND0)?"2G":"5G", retPwr);
+
 	return retPwr;
 }
 

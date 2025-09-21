@@ -9022,7 +9022,12 @@ INT show_data_frame_power(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 			return TRUE;
 		}
 		pAd->ApCfg.data_pwr_cmd_flag = FALSE;
-		MaxBasePwr = pAd->ApCfg.MaxBaseTxPwr / 2;
+		//MaxBasePwr = pAd->ApCfg.MaxBaseTxPwr / 2;
+
+		if (BandIdx == BAND0)
+			MaxBasePwr = (pAd->max_power_2g + pAd->ApCfg.MaxBaseTxPwr) / 2;
+		else
+			MaxBasePwr = (pAd->max_power_5g + pAd->ApCfg.MaxBaseTxPwr) / 2;
 
 		if (pAd->ApCfg.MaxBaseTxPwr % 2 == 0)
 			MTWF_PRINT("=== BandIdx: %d, Max Base Pwr: %d dbm ===\n", BandIdx, MaxBasePwr);

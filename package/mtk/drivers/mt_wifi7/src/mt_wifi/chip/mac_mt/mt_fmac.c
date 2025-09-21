@@ -3602,11 +3602,9 @@ VOID mtf_txpower_all_rate_info(struct _RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Le
 	pAd->ApCfg.EpaFeGain = 0;
 #endif
 	if (pAllPow->u1BandIdx == BAND0) {
-		if (pAd->max_power_2g < pFPow->ai1FramePowerConfig[TXPOWER_RATE_CCK_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm)
-			pAd->max_power_2g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_CCK_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
+		pAd->max_power_2g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_CCK_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
 	} else {
-		if (pAd->max_power_5g < pFPow->ai1FramePowerConfig[TXPOWER_RATE_OFDM_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm)
-			pAd->max_power_5g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_OFDM_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
+		pAd->max_power_5g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_OFDM_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
 	}
 	if (g_fgCommand == FALSE)
 		return;
