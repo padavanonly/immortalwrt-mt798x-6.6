@@ -902,6 +902,11 @@ static int mtk_get_encryption(const char *dev, char *buf)
 		if (IS_AKM_FT_SAE_SHA256(authMode) || IS_AKM_SAE_SHA256(authMode))
 			c->auth_suites |= IWINFO_KMGMT_SAE;
 
+		/* add support AKM24 WPA3-SAE-EXT */
+		if (IS_AKM_SAE_EXT(authMode) || IS_AKM_FT_SAE_EXT(authMode))
+			c->auth_suites |= IWINFO_KMGMT_SAE_EXT;
+		/* add support AKM24 WPA3-SAE-EXT */
+
 		if (IS_AKM_OWE(authMode))
 			c->auth_suites |= IWINFO_KMGMT_OWE;
 

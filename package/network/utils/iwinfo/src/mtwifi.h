@@ -252,6 +252,10 @@ typedef enum _SEC_AKM_MODE {
 	SEC_AKM_FILS_SHA256,
 	SEC_AKM_FILS_SHA384,
 	SEC_AKM_WPA3, /* WPA3(ent) = WPA2(ent) + PMF MFPR=1 => WPA3 code flow is same as WPA2, the usage of SEC_AKM_WPA3 is to force pmf on */
+	/* add support AKM24 WPA3-SAE-EXT */
+	SEC_AKM_SAE_EXT,
+	SEC_AKM_FT_SAE_EXT,
+	/* add support AKM24 WPA3-SAE-EXT */
 	SEC_AKM_MAX /* Not a real mode, defined as upper bound */
 } SEC_AKM_MODE;
 
@@ -274,9 +278,14 @@ typedef enum _SEC_AKM_MODE {
 #define IS_AKM_SUITEB_SHA384(_AKMMap)          ((_AKMMap & (1 << SEC_AKM_SUITEB_SHA384)) > 0)
 #define IS_AKM_FT_WPA2_SHA384(_AKMMap)      ((_AKMMap & (1 << SEC_AKM_FT_WPA2_SHA384)) > 0)
 #define IS_AKM_WPA3(_AKMMap)	 ((_AKMMap & (1 << SEC_AKM_WPA3)) > 0)
-#define IS_AKM_WPA3PSK(_AKMMap) (IS_AKM_SAE_SHA256(_AKMMap))
 #define IS_AKM_WPA3_192BIT(_AKMMap)	(IS_AKM_SUITEB_SHA384(_AKMMap))
 #define IS_AKM_OWE(_AKMMap) ((_AKMMap & (1 << SEC_AKM_OWE)) > 0)
+/* add support AKM24 WPA3-SAE-EXT */
+#define IS_AKM_SAE_EXT(_AKMMap)                ((_AKMMap & (1 << SEC_AKM_SAE_EXT)) > 0)
+#define IS_AKM_FT_SAE_EXT(_AKMMap)          ((_AKMMap & (1 << SEC_AKM_FT_SAE_EXT)) > 0)
+#define IS_AKM_WPA3PSK(_AKMMap) (IS_AKM_SAE_SHA256(_AKMMap) \
+									|| IS_AKM_SAE_EXT(_AKMMap))
+/* add support AKM24 WPA3-SAE-EXT */
 
 #define MTK_L1_PROFILE_PATH		"/etc/wireless/l1profile.dat"
 #define MTK_L1UTIL_PATH			"/usr/lib/lua/l1dat_parser.lua"

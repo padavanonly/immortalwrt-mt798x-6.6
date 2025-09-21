@@ -1,0 +1,79 @@
+--- a/include/iwinfo.h
++++ b/include/iwinfo.h
+@@ -104,18 +104,21 @@ enum iwinfo_kmgmt {
+ 	IWINFO_KMGMT_8021x,
+ 	IWINFO_KMGMT_PSK,
+ 	IWINFO_KMGMT_SAE,
++	IWINFO_KMGMT_SAE_EXT,
+ 	IWINFO_KMGMT_OWE,
+ 
+ 	/* keep last */
+ 	IWINFO_KMGMT_COUNT
+ };
+ 
+ #define IWINFO_KMGMT_NONE    (1 << IWINFO_KMGMT_NONE)
+ #define IWINFO_KMGMT_8021x   (1 << IWINFO_KMGMT_8021x)
+ #define IWINFO_KMGMT_PSK     (1 << IWINFO_KMGMT_PSK)
+-#define IWINFO_KMGMT_SAE     (1 << IWINFO_KMGMT_SAE)
++#define IWINFO_KMGMT_SAE     (1 << IWINFO_KMGMT_SAE) | (1 << IWINFO_KMGMT_SAE_EXT)
+ #define IWINFO_KMGMT_OWE     (1 << IWINFO_KMGMT_OWE)
+ 
++#define IWINFO_KMGMT_SAE_EXT (1 << IWINFO_KMGMT_SAE_EXT)
++
+ extern const char * const IWINFO_KMGMT_NAMES[IWINFO_KMGMT_COUNT];
+ 
+ 
+--- a/iwinfo_lib.c
++++ b/iwinfo_lib.c
+@@ -59,6 +59,7 @@ const char * const IWINFO_KMGMT_NAMES[I
+ 	"802.1X",
+ 	"PSK",
+ 	"SAE",
++	"SAE_EXT",
+ 	"OWE",
+ };
+ 
+--- a/iwinfo_lua.c
++++ b/iwinfo_lua.c
+@@ -92,14 +92,20 @@ static char * iwinfo_crypto_print_suites(int
+ 	static char str[64] = { 0 };
+ 	char *pos = str;
+ 
++	if (suites & IWINFO_KMGMT_SAE) {
++		pos += sprintf(pos, "SAE");
++		if (suites & IWINFO_KMGMT_SAE_EXT) {
++			pos += sprintf(pos, "/SAE_EXT");
++		}
++		pos += sprintf(pos, "/");
++	}
++
+ 	if (suites & IWINFO_KMGMT_PSK)
+ 		pos += sprintf(pos, "PSK/");
+ 
+ 	if (suites & IWINFO_KMGMT_8021x)
+ 		pos += sprintf(pos, "802.1X/");
+ 
+-	if (suites & IWINFO_KMGMT_SAE)
+-		pos += sprintf(pos, "SAE/");
+ 
+ 	if (suites & IWINFO_KMGMT_OWE)
+ 		pos += sprintf(pos, "OWE/");
+--- a/iwinfo_utils.c
++++ b/iwinfo_utils.c
+@@ -601,12 +601,16 @@ void iwinfo_parse_rsn(struct
+ 					break;
+ 
+ 				case 8:  /* SAE */
++				case 24: /* SAE_EXT */
+ 					c->wpa_version |= 4;
+ 					c->auth_suites |= IWINFO_KMGMT_SAE;
++					if (data[2 + (i * 4) + 3] == 24)
++						c->auth_suites |= IWINFO_KMGMT_SAE_EXT;
+ 					break;
+ 
+ 				case 9:  /* FT/SAE */
+ 				case 10: /* undefined */
++				case 25: /* FT/SAE_EXT */
+ 					break;
+ 
+ 				case 11: /* 802.1x Suite-B */

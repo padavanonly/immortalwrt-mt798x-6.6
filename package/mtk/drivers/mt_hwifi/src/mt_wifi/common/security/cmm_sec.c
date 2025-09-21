@@ -297,7 +297,7 @@ VOID SetWdevAuthMode(
 #if defined(DOT11_SAE_SUPPORT) || defined(SUPP_SAE_SUPPORT)
 	else if (rtstrcasecmp(arg, "WPA3PSK") == TRUE)
 		SET_AKM_SAE_SHA256(AKMMap);
-	else if (rtstrcasecmp(arg, "WPA3PSK_EXT") == TRUE) {
+	else if (rtstrcasecmp(arg, "WPA3PSK-EXT") == TRUE) {
 		SET_AKM_SAE_EXT(AKMMap);
 	} else if (rtstrcasecmp(arg, "WPA2PSKWPA3PSK") == TRUE) {
 		SET_AKM_SAE_SHA256(AKMMap);
@@ -306,6 +306,13 @@ VOID SetWdevAuthMode(
 		SET_AKM_SAE_SHA256(AKMMap);
 		SET_AKM_WPA2PSK(AKMMap);
 		SET_AKM_WPA2PSK_SHA256(AKMMap);
+	} else if (rtstrcasecmp(arg, "WPA3PSKWPA3PSK-EXT") == TRUE) {
+		SET_AKM_SAE_SHA256(AKMMap);
+		SET_AKM_SAE_EXT(AKMMap);
+	} else if (rtstrcasecmp(arg, "WPA2PSKWPA3PSKWPA3PSK-EXT") == TRUE) {
+		SET_AKM_SAE_SHA256(AKMMap);
+		SET_AKM_WPA2PSK(AKMMap);
+		SET_AKM_SAE_EXT(AKMMap);
 	}
 #endif /* DOT11_SAE_SUPPORT */
 	else if (rtstrcasecmp(arg, "WPA1WPA2") == TRUE) {
@@ -362,7 +369,7 @@ VOID SetWdevAuthMode(
 		SET_AKM_SAE_SHA256(AKMMap);
 		SET_AKM_SAE_EXT(AKMMap);
 	} else if (rtstrcasecmp(arg, "SAE-EXTWPA2PSK") == TRUE) {
-		SET_AKM_DPP(AKMMap);
+		SET_AKM_SAE_EXT(AKMMap);
 		SET_AKM_WPA2PSK(AKMMap);
 	} else if (rtstrcasecmp(arg, "SAE-EXTWPA3PSK") == TRUE) {
 		SET_AKM_SAE_SHA256(AKMMap);
@@ -714,6 +721,8 @@ RTMP_STRING *GetAuthModeStr(
 		return "DPPWPA3PSK";
 	else if (IS_AKM_WPA2PSK(authMode) && IS_AKM_DPP(authMode))
 		return "DPPWPA2PSK";
+	else if (IS_AKM_SAE_SHA256(authMode) && IS_AKM_SAE_EXT(authMode))
+		return "WPA3PSKWPA3PSK-EXT";
 	else if (IS_AKM_WPA2PSK(authMode) && IS_AKM_SAE_SHA256(authMode) && IS_AKM_SAE_EXT(authMode))
 		return "WPA2PSKWPA3PSKWPA3PSK-EXT";
 	else if (IS_AKM_WPA2PSK(authMode) && IS_AKM_SAE_SHA256(authMode))
