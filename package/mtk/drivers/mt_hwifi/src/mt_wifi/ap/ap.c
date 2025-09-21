@@ -9708,7 +9708,9 @@ void slave_bcn_ctrl(PRTMP_ADAPTER pAd, UCHAR en)
 void slave_bh_event(PRTMP_ADAPTER pAd, struct wifi_dev *wdev, UCHAR bh_status)
 {
 	struct BH_STATUS_MSG *pbhstatus = NULL;
+#ifdef RT_CFG80211_SUPPORT
 	int ret;
+#endif
 
 	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_DFS, DBG_LVL_NOTICE,
 		"[DFS-SLAVE]send event for band_idx:%d bh_status:%d\n", HcGetBandByWdev(wdev), bh_status);
