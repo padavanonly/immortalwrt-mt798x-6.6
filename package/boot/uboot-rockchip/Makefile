@@ -16,7 +16,6 @@ UBOOT_USE_INTREE_DTC:=1
 
 include $(INCLUDE_DIR)/u-boot.mk
 include $(INCLUDE_DIR)/package.mk
-include ../arm-trusted-firmware-rockchip/atf-version.mk
 
 define U-Boot/Default
   BUILD_TARGET:=rockchip
@@ -30,26 +29,25 @@ endef
 define U-Boot/rk3308/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3308
-  ATF:=$(RK3308_ATF)
-  TPL:=$(RK3308_TPL)
+  ATF:=rk3308_bl31_v2.26.elf
+  TPL:=rk3308_ddr_589MHz_uart2_m1_v2.07.bin
 endef
 
 define U-Boot/rock-pi-s-rk3308
   $(U-Boot/rk3308/Default)
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3308-rock-pi-s
-  TPL:=$(RK3308_TPL_ROCK_PI_S)
+  TPL:=rk3308_ddr_589MHz_uart0_m0_v2.07.bin
   NAME:=ROCK Pi S
   BUILD_DEVICES:= \
     radxa_rock-pi-s
 endef
-
 
 # RK3328 boards
 
 define U-Boot/rk3328/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3328
-  ATF:=$(RK3328_ATF)
+  ATF:=rk3328_bl31.elf
 endef
 
 define U-Boot/nanopi-r2c-rk3328
@@ -94,13 +92,6 @@ define U-Boot/roc-cc-rk3328
     firefly_roc-rk3328-cc
 endef
 
-define U-Boot/rock-pi-e-rk3328
-  $(U-Boot/rk3328/Default)
-  NAME:=ROCK Pi E
-  BUILD_DEVICES:= \
-    radxa_rock-pi-e
-endef
-
 define U-Boot/rock64-rk3328
   $(U-Boot/rk3328/Default)
   NAME:=Rock64
@@ -108,20 +99,26 @@ define U-Boot/rock64-rk3328
     pine64_rock64
 endef
 
+define U-Boot/rock-pi-e-rk3328
+  $(U-Boot/rk3328/Default)
+  NAME:=ROCK Pi E
+  BUILD_DEVICES:= \
+    radxa_rock-pi-e
+endef
+
+define U-Boot/rock-pi-e-v3-rk3328
+  $(U-Boot/rk3328/Default)
+  NAME:=ROCK Pi E v3.0
+  BUILD_DEVICES:= \
+    radxa_rock-pi-e-v3
+endef
 
 # RK3399 boards
 
 define U-Boot/rk3399/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3399
-  ATF:=$(RK3399_ATF)
-endef
-
-define U-Boot/guangmiao-g4c-rk3399
-  $(U-Boot/rk3399/Default)
-  NAME:=GuangMiao G4C
-  BUILD_DEVICES:= \
-    huake_guangmiao-g4c
+  ATF:=rk3399_bl31.elf
 endef
 
 define U-Boot/nanopc-t4-rk3399
@@ -137,13 +134,6 @@ define U-Boot/nanopi-r4s-rk3399
   BUILD_DEVICES:= \
     friendlyarm_nanopi-r4s \
     friendlyarm_nanopi-r4s-enterprise
-endef
-
-define U-Boot/nanopi-r4se-rk3399
-  $(U-Boot/rk3399/Default)
-  NAME:=NanoPi R4SE
-  BUILD_DEVICES:= \
-    friendlyarm_nanopi-r4se
 endef
 
 define U-Boot/rock-4c-plus-rk3399
@@ -162,7 +152,7 @@ endef
 
 define U-Boot/rock-pi-4-rk3399
   $(U-Boot/rk3399/Default)
-  NAME:=ROCK Pi 4
+  NAME:=Rock Pi 4
   BUILD_DEVICES:= \
     radxa_rock-pi-4a
 endef
@@ -180,8 +170,8 @@ endef
 define U-Boot/rk3566/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3566
-  ATF:=$(RK3566_ATF)
-  TPL:=$(RK3566_TPL)
+  ATF:=rk3568_bl31_v1.44.elf
+  TPL:=rk3566_ddr_1056MHz_v1.21.bin
 endef
 
 define U-Boot/nanopi-r3s-rk3566
@@ -218,15 +208,8 @@ endef
 define U-Boot/rk3568/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3568
-  ATF:=$(RK3568_ATF)
-  TPL:=$(RK3568_TPL)
-endef
-
-define U-Boot/9tripod-x3568-v4-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=9Tripod X3568 v4
-  BUILD_DEVICES:= \
-    9tripod_x3568-v4
+  ATF:=rk3568_bl31_v1.44.elf
+  TPL:=rk3568_ddr_1560MHz_v1.21.bin
 endef
 
 define U-Boot/bpi-r2-pro-rk3568
@@ -243,32 +226,11 @@ define U-Boot/fastrhino-r66s-rk3568
     lunzn_fastrhino-r66s
 endef
 
-define U-Boot/fastrhino-r68s-rk3568
+define U-Boot/generic-rk3568
   $(U-Boot/rk3568/Default)
-  NAME:=FastRhino R68S
+  NAME:=Generic RK3566/RK3568 board
   BUILD_DEVICES:= \
-    lunzn_fastrhino-r68s
-endef
-
-define U-Boot/lyt-t68m-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=LYT T68M
-  BUILD_DEVICES:= \
-    lyt_t68m
-endef
-
-define U-Boot/mmbox-anas3035-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=MMBOX ANAS3035
-  BUILD_DEVICES:= \
-    mmbox_anas3035
-endef
-
-define U-Boot/mrkaio-m68s-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=Mrkaio M68S
-  BUILD_DEVICES:= \
-    ezpro_mrkaio-m68s
+    linkease_easepi-r1
 endef
 
 define U-Boot/nanopi-r5c-rk3568
@@ -285,27 +247,13 @@ define U-Boot/nanopi-r5s-rk3568
     friendlyarm_nanopi-r5s
 endef
 
-define U-Boot/photonicat-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=Photonicat
-  BUILD_DEVICES:= \
-    ariaboard_photonicat
-endef
-
 define U-Boot/radxa-e25-rk3568
   $(U-Boot/rk3568/Default)
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3568-e25
-  TPL:=$(RK3568_TPL_E25)
+  TPL:=rk3568_ddr_1560MHz_uart2_m0_115200_v1.21.bin
   NAME:=E25
   BUILD_DEVICES:= \
     radxa_e25
-endef
-
-define U-Boot/roc-pc-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=Station P2
-  BUILD_DEVICES:= \
-    firefly_roc-rk3568-pc
 endef
 
 define U-Boot/rock-3a-rk3568
@@ -322,34 +270,14 @@ define U-Boot/rock-3b-rk3568
     radxa_rock-3b
 endef
 
-define U-Boot/sige3-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=Sige3
-  BUILD_DEVICES:= \
-    armsom_sige3
-endef
-
-define U-Boot/xiguapi-v3-rk3568
-  $(U-Boot/rk3568/Default)
-  NAME:=XiGuaPi V3
-  BUILD_DEVICES:= \
-    nlnet_xiguapi-v3
-endef
 
 # RK3588 boards
 
 define U-Boot/rk3588/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3588
-  ATF:=$(RK3588_ATF)
-  TPL:=$(RK3588_TPL)
-endef
-
-define U-Boot/cyber3588-aib-rk3588
-  $(U-Boot/rk3588/Default)
-  NAME:=Cyber3588 AIB
-  BUILD_DEVICES:= \
-    cyber_cyber3588-aib
+  ATF:=rk3588_bl31_v1.45.elf
+  TPL:=rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.16.bin
 endef
 
 define U-Boot/nanopc-t6-rk3588
@@ -357,13 +285,6 @@ define U-Boot/nanopc-t6-rk3588
   NAME:=NanoPC T6
   BUILD_DEVICES:= \
     friendlyarm_nanopc-t6
-endef
-
-define U-Boot/orangepi-5-plus-rk3588
-  $(U-Boot/rk3588/Default)
-  NAME:=OrangePi 5 Plus
-  BUILD_DEVICES:= \
-    xunlong_orangepi-5-plus
 endef
 
 define U-Boot/rock5b-rk3588
@@ -397,13 +318,6 @@ define U-Boot/nanopi-r6s-rk3588s
     friendlyarm_nanopi-r6s
 endef
 
-define U-Boot/orangepi-5-rk3588s
-  $(U-Boot/rk3588/Default)
-  NAME:=OrangePi 5
-  BUILD_DEVICES:= \
-    xunlong_orangepi-5
-endef
-
 define U-Boot/rock5a-rk3588s
   $(U-Boot/rk3588/Default)
   NAME:=ROCK 5A
@@ -412,10 +326,8 @@ define U-Boot/rock5a-rk3588s
 endef
 
 UBOOT_TARGETS := \
-  guangmiao-g4c-rk3399 \
   nanopc-t4-rk3399 \
   nanopi-r4s-rk3399 \
-  nanopi-r4se-rk3399 \
   rock-4c-plus-rk3399 \
   rock-4se-rk3399 \
   rock-pi-4-rk3399 \
@@ -427,53 +339,33 @@ UBOOT_TARGETS := \
   orangepi-r1-plus-rk3328 \
   orangepi-r1-plus-lts-rk3328 \
   roc-cc-rk3328 \
-  rock-pi-e-rk3328 \
   rock64-rk3328 \
+  rock-pi-e-rk3328 \
+  rock-pi-e-v3-rk3328 \
   nanopi-r3s-rk3566 \
   radxa-cm3-io-rk3566 \
   radxa-zero-3-rk3566 \
   rock-3c-rk3566 \
-  9tripod-x3568-v4-rk3568 \
   bpi-r2-pro-rk3568 \
   fastrhino-r66s-rk3568 \
-  fastrhino-r68s-rk3568 \
-  lyt-t68m-rk3568 \
-  mmbox-anas3035-rk3568 \
-  mrkaio-m68s-rk3568 \
+  generic-rk3568 \
   nanopi-r5c-rk3568 \
   nanopi-r5s-rk3568 \
-  photonicat-rk3568 \
-  xiguapi-v3-rk3568 \
   radxa-e25-rk3568 \
-  roc-pc-rk3568 \
   rock-3a-rk3568 \
   rock-3b-rk3568 \
-  sige3-rk3568 \
-  cyber3588-aib-rk3588 \
   nanopc-t6-rk3588 \
-  orangepi-5-plus-rk3588 \
   rock5b-rk3588 \
   sige7-rk3588 \
   nanopi-r6c-rk3588s \
   nanopi-r6s-rk3588s \
-  orangepi-5-rk3588s \
   rock5a-rk3588s
 
 UBOOT_CONFIGURE_VARS += USE_PRIVATE_LIBGCC=yes
 
 UBOOT_CUSTOMIZE_CONFIG := \
 	--disable TOOLS_MKEFICAPSULE \
-	--set-str MKIMAGE_DTC_PATH $(PKG_BUILD_DIR)/scripts/dtc/dtc \
-	$(if $(TPL),, \
-		--disable CMD_DFU \
-		--disable CMD_EFIDEBUG \
-		--disable CMD_NVEDIT_EFI \
-		--disable DFU_MMC \
-		--disable EFI_CAPSULE_ON_DISK \
-		--disable EFI_CAPSULE_FIRMWARE_RAW \
-		--disable SPL_FIT_SIGNATURE \
-		--disable USB_FUNCTION_FASTBOOT \
-	)
+	--set-str MKIMAGE_DTC_PATH $(PKG_BUILD_DIR)/scripts/dtc/dtc
 
 UBOOT_MAKE_FLAGS += \
   BL31=$(STAGING_DIR_IMAGE)/$(ATF) \
@@ -481,12 +373,7 @@ UBOOT_MAKE_FLAGS += \
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
-ifneq ($(TPL),)
 	$(CP) $(PKG_BUILD_DIR)/u-boot-rockchip.bin $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-u-boot-rockchip.bin
-else
-	$(STAGING_DIR_IMAGE)/loaderimage --pack --uboot $(PKG_BUILD_DIR)/u-boot-dtb.bin $(PKG_BUILD_DIR)/uboot.img 0x200000
-	$(CP) $(PKG_BUILD_DIR)/uboot.img $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-uboot.img
-endif
 endef
 
 define Package/u-boot/install/default
