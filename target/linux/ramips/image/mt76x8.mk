@@ -252,7 +252,6 @@ define Device/elecom_wrc-1167fs
 	xor-image -p 29944A25 -x | elecom-header 00228000 | \
 	elecom-product-header WRC-1167FS
   DEVICE_PACKAGES := kmod-mt76x2
-  DEFAULT := n
 endef
 TARGET_DEVICES += elecom_wrc-1167fs
 
@@ -348,14 +347,14 @@ define Device/hongdian_h7920-v40
 endef
 TARGET_DEVICES += hongdian_h7920-v40
 
-define Device/huasifei_shf283
-   IMAGE_SIZE := 16064k
-   DEVICE_VENDOR := Huasifei
-   DEVICE_MODEL := SHF283
-   DEVICE_PACKAGES := kmod-usb2 kmod-usb-ohci kmod-usb-net-cdc-mbim \
-	kmod-usb-net-qmi-wwan kmod-usb-net-rndis kmod-usb-serial-option uqmi
+define Device/hongdian_h8850-v20
+  IMAGE_SIZE := 16064k
+  DEVICE_VENDOR := Hongdian
+  DEVICE_MODEL := H8850
+  DEVICE_VARIANT := v20
+  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ohci kmod-usb-net-qmi-wwan kmod-usb-serial-option uqmi
 endef
-TARGET_DEVICES += huasifei_shf283
+TARGET_DEVICES += hongdian_h8850-v20
 
 define Device/iptime_a3
   IMAGE_SIZE := 7936k
@@ -648,7 +647,6 @@ define Device/tplink_archer-c20-v5
   TPLINK_HWREVADD := 0x5
   DEVICE_PACKAGES := kmod-mt76x0e
   IMAGES := sysupgrade.bin
-  DEFAULT := n
 endef
 TARGET_DEVICES += tplink_archer-c20-v5
 
@@ -680,7 +678,6 @@ define Device/tplink_archer-c50-v4
   DEVICE_PACKAGES := kmod-mt76x2
   IMAGES := sysupgrade.bin
   SUPPORTED_DEVICES += tplink,c50-v4
-  DEFAULT := n
 endef
 TARGET_DEVICES += tplink_archer-c50-v4
 
@@ -694,7 +691,6 @@ define Device/tplink_archer-c50-v6
   TPLINK_HWREVADD := 0x6
   DEVICE_PACKAGES := kmod-mt7615e kmod-mt7663-firmware-ap
   IMAGES := sysupgrade.bin
-  DEFAULT := n
 endef
 TARGET_DEVICES += tplink_archer-c50-v6
 
@@ -997,7 +993,6 @@ define Device/tplink_tl-wr902ac-v4
 	kmod-usb-ledtrig-usbport
   IMAGES := sysupgrade.bin tftp-recovery.bin
   IMAGE/tftp-recovery.bin := pad-extra 128k | $$(IMAGE/factory.bin)
-  DEFAULT := n
 endef
 TARGET_DEVICES += tplink_tl-wr902ac-v4
 

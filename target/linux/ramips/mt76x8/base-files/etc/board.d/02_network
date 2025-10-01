@@ -117,9 +117,11 @@ ramips_setup_interfaces()
 		ucidef_add_switch "switch0" \
 			"0:lan" "1:lan" "4:wan" "6@eth0"
 		;;
-	huasifei,shf283)
+	hongdian,h8850-v20|\
+	keenetic,kn-1613|\
+	motorola,mwr03)
 		ucidef_add_switch "switch0" \
-			"2:lan" "3:lan" "4:lan" "1:wan" "6@eth0"
+			"1:lan" "2:lan" "3:lan" "0:wan" "6@eth0"
 		;;
 	iptime,a3|\
 	totolink,a3)
@@ -135,11 +137,6 @@ ramips_setup_interfaces()
 	jotale,js76x8-32m)
 		ucidef_add_switch "switch0" \
 			"0:lan" "1:lan" "2:lan" "6@eth0"
-		;;
-	keenetic,kn-1613|\
-	motorola,mwr03)
-		ucidef_add_switch "switch0" \
-			"1:lan" "2:lan" "3:lan" "0:wan" "6@eth0"
 		;;
 	kroks,kndrt31r19)
 		ucidef_add_switch "switch0" \
@@ -264,6 +261,7 @@ ramips_setup_macs()
 		;;
 	duzun,dm06|\
 	hongdian,h7920-v40|\
+	hongdian,h8850-v20|\
 	netgear,r6020|\
 	netgear,r6080|\
 	netgear,r6120|\
@@ -280,12 +278,6 @@ ramips_setup_macs()
 		[ -n "$lan_mac" ] || lan_mac=$(cat /sys/class/net/eth0/address)
 		wan_mac=$(macaddr_add "$lan_mac" 1)
 		;;
-        huasifei,shf283|\
-        rakwireless,rak633|\
-        unielec,u7628-01-16m|\
-        wavlink,wl-wn575a3)
-                wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x28)" 1)
-                ;;
 	iptime,a3|\
 	iptime,a604m|\
 	totolink,a3)
@@ -318,6 +310,11 @@ ramips_setup_macs()
 	vocore,vocore2-lite|\
 	wavlink,wl-wn576a2)
 		label_mac=$(mtd_get_mac_binary factory 0x4)
+		;;
+	rakwireless,rak633|\
+	unielec,u7628-01-16m|\
+	wavlink,wl-wn575a3)
+		wan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x28)" 1)
 		;;
 	tplink,archer-c20-v4|\
 	tplink,archer-c50-v3|\
