@@ -252,6 +252,7 @@ platform_check_image() {
 	cmcc,a10 |\
 	cmcc,rax3000m* |\
 	h3c,nx30pro |\
+	h3c,nx30pro-112M |\
 	*konka,komi-a31* |\
 	nradio,wt9103 |\
 	*nokia,ea0326gmp* |\
