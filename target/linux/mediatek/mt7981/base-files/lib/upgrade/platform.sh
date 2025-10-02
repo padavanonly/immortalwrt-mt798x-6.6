@@ -205,6 +205,7 @@ platform_do_upgrade() {
 	cmcc,a10 |\
 	cmcc,rax3000m |\
 	h3c,nx30pro |\
+	h3c,nx30pro-112M |\
 	*konka,komi-a31* |\
 	*nokia,ea0326gmp* |\
 	*snand*)
