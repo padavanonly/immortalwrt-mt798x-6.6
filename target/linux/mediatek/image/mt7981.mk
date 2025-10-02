@@ -502,12 +502,12 @@ define Device/h3c_nx30pro
 endef
 TARGET_DEVICES += h3c_nx30pro
 
-define Device/h3c_nx30pro-112M
+define Device/h3c_nx30pro-112m
   DEVICE_VENDOR := H3C
-  DEVICE_MODEL := NX30PRO-112M
-  DEVICE_DTS := mt7981-h3c-nx30pro-112M
+  DEVICE_MODEL := NX30PRO (112M UBI layout)
+  DEVICE_DTS := mt7981-h3c-nx30pro-112m
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
-  SUPPORTED_DEVICES := h3c,nx30pro-112M
+  SUPPORTED_DEVICES := h3c,nx30pro-112m
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
@@ -517,7 +517,7 @@ define Device/h3c_nx30pro-112M
   IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
-TARGET_DEVICES += h3c_nx30pro-112M
+TARGET_DEVICES += h3c_nx30pro-112m
 
 define Device/konka_komi-a31
   DEVICE_VENDOR := KONKA

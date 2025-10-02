@@ -34,7 +34,7 @@ mediatek_setup_interfaces()
 		;;
 	*clt,r30b1* |\
 	h3c,nx30pro |\
-	h3c,nx30pro-112M |\
+	h3c,nx30pro-112m |\
 	*imou,lc-hx3001* |\
 	*konka,komi-a31*)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
@@ -305,7 +305,7 @@ mediatek_setup_macs()
 		sed -i '/MacAddress=$wifi_mac/d' /etc/wireless/mediatek/mt7981.dbdc.b1.dat
 		echo "MacAddress=$wifi_mac" >> /etc/wireless/mediatek/mt7981.dbdc.b1.dat
 		;;
-	h3c,nx30pro-112M* |\
+	h3c,nx30pro-112m* |\
 	h3c,nx30pro)
 		wan_mac=$(mtd_get_mac_ascii pdt_data_1 ethaddr)
 		lan_mac=$(macaddr_add $wan_mac 1)
