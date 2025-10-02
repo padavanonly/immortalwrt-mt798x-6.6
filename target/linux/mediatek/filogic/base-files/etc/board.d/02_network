@@ -243,10 +243,6 @@ mediatek_setup_macs()
 		wan_mac=$(mtd_get_mac_ascii Bdata ethaddr_wan)
 		label_mac=$wan_mac
 		;;
-	umi,uax3000e)
-		lan_mac=$(mmc_get_mac_binary factory 0x2A)
-		wan_mac=$(mmc_get_mac_binary factory 0x04)
-		;;
 	yuncore,ax835)
 		label_mac=$(mtd_get_mac_binary "Factory" 0x4)
 		;;
