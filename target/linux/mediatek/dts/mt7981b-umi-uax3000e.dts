@@ -177,22 +177,22 @@
 						};
 
 						macaddr_factory_0a: macaddr@0a {
-                                                        compatible = "mac-base";
-                                                        reg = <0x0a 0x6>;
-                                                        #nvmem-cell-cells = <1>;
-                                                };
+							compatible = "mac-base";
+							reg = <0x0a 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
                                                 
-                                                macaddr_factory_04: macaddr@04 {
-                                                        compatible = "mac-base";
-                                                        reg = <0x04 0x6>;
-                                                        #nvmem-cell-cells = <1>;
-                                                };
+						macaddr_factory_04: macaddr@04 {
+							compatible = "mac-base";
+							reg = <0x04 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
                                                 
-                                                macaddr_factory_2a: macaddr@2a {
-                                                        compatible = "mac-base";
-                                                        reg = <0x2a 0x6>;
-                                                        #nvmem-cell-cells = <1>;
-                                                };
+						macaddr_factory_2a: macaddr@2a {
+							compatible = "mac-base";
+							reg = <0x2a 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
 					};
 				};
 			};
