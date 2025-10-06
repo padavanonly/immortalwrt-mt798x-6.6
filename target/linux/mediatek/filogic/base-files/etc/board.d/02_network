@@ -102,6 +102,7 @@ mediatek_setup_interfaces()
 	zyxel,nwa50ax-pro)
 		ucidef_set_interface_lan "eth0"
 		;;
+	comfast,cf-wr632ax|\
 	cudy,m3000-v1|\
 	cudy,tr3000-v1|\
 	cudy,tr3000-v1-ubootmod|\
@@ -242,10 +243,6 @@ mediatek_setup_macs()
 	xiaomi,redmi-router-ax6000-ubootmod)
 		wan_mac=$(mtd_get_mac_ascii Bdata ethaddr_wan)
 		label_mac=$wan_mac
-		;;
-	umi,uax3000e)
-		lan_mac=$(mmc_get_mac_binary factory 0x2A)
-		wan_mac=$(mmc_get_mac_binary factory 0x04)
 		;;
 	yuncore,ax835)
 		label_mac=$(mtd_get_mac_binary "Factory" 0x4)

@@ -61,6 +61,7 @@ case "$board" in
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "2" ] && macaddr_add $addr 4 > /sys${DEVPATH}/macaddress
 		;;
+	comfast,cf-wr632ax|\
 	comfast,cf-e393ax)
 		addr=$(mtd_get_mac_binary "Factory" 0x8000)
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
@@ -159,9 +160,9 @@ case "$board" in
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 4 > /sys${DEVPATH}/macaddress
 		;;
         sl,3000-emmc)
-		label_mac=$(mmc_get_mac_binary factory 0x04)
-		[ "$PHYNBR" = "0" ] && macaddr_add $label_mac 1 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $label_mac 2 > /sys${DEVPATH}/macaddress
+		addr==$(mmc_get_mac_binary factory 0x0a)
+		[ "$PHYNBR" = "0" ] && macaddr_add $addr_mac 0 > /sys${DEVPATH}/macaddress
+		[ "$PHYNBR" = "1" ] && macaddr_add $addr_mac 1 > /sys${DEVPATH}/macaddress
 		;;
 	tplink,tl-xdr4288|\
 	tplink,tl-xdr6086|\
@@ -174,11 +175,6 @@ case "$board" in
 	ubnt,unifi-6-plus)
 		addr=$(mtd_get_mac_binary EEPROM 0x6)
 		[ "$PHYNBR" = "0" ] && echo "$addr" > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
-		;;
-        umi,uax3000e)
-		addr=$(mmc_get_mac_binary factory 0x24)
-		[ "$PHYNBR" = "0" ] && macaddr_add $addr > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
 		;;
 	routerich,ax3000|\
