@@ -10,10 +10,7 @@ mediatek_setup_interfaces()
 	case $board in
 	abt,asr3000|\
 	cmcc,rax3000m|\
-	cmcc,rax3000me|\
 	h3c,magic-nx30-pro|\
-	h3c,magic-nx30-pro-nmbm|\
-	imou,lc-hx3001|\
 	konka,komi-a31|\
 	netis,nx31|\
 	nokia,ea0326gmp|\
@@ -38,19 +35,15 @@ mediatek_setup_interfaces()
 	asus,rt-ax52|\
 	asus,rt-ax59u|\
 	cetron,ct3003|\
-	cetron,ct3003-ubootmod|\
 	cmcc,a10-stock|\
 	cmcc,a10-ubootmod|\
 	confiabits,mt7981|\
 	cudy,wr3000-v1|\
 	jcg,q30-pro|\
-	keenetic,kn3811|\
-	livinet,zr-3020|\
-	livinet,zr-3020-ubootmod|\
+	keenetic,kn-3811|\
 	qihoo,360t7|\
 	routerich,ax3000|\
-	routerich,ax3000-ubootmod|\
-	tplink,tl-7dr7250-v1)
+	routerich,ax3000-ubootmod)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
 		;;
 	asus,tuf-ax4200|\
@@ -58,7 +51,6 @@ mediatek_setup_interfaces()
 	jdcloud,re-cp-03|\
 	mediatek,mt7981-rfb|\
 	netcore,n60|\
-	netcore,n60-pro|\
 	ruijie,rg-x60-pro|\
 	unielec,u7981-01*|\
 	zbtlink,zbt-z8102ax|\
@@ -79,7 +71,7 @@ mediatek_setup_interfaces()
 		;;
 	bananapi,bpi-r3-mini|\
 	edgecore,eap111|\
-	huasifei,wh3000-emmc|\
+	huasifei,wh3000|\
 	huasifei,wh3000-pro)
 		ucidef_set_interfaces_lan_wan eth0 eth1
 		;;
@@ -146,10 +138,6 @@ mediatek_setup_interfaces()
 	tplink,re6000xd)
 		ucidef_set_interface_lan "lan1 lan2 eth1"
 		;;
-	tplink,tl-7dr7230-v1|\
-	tplink,tl-7dr7230-v2)
-		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" wan
-		;;
 	xiaomi,mi-router-ax3000t|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,mi-router-wr30u-stock|\
@@ -183,8 +171,7 @@ mediatek_setup_macs()
 	bananapi,bpi-r4)
 		wan_mac=$(macaddr_add $(cat /sys/class/net/eth0/address) 1)
 		;;
-	h3c,magic-nx30-pro|\
-	h3c,magic-nx30-pro-nmbm)
+	h3c,magic-nx30-pro)
 		wan_mac=$(mtd_get_mac_ascii pdt_data_1 ethaddr)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		label_mac=$wan_mac
