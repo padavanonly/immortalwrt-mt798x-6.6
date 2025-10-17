@@ -34,7 +34,8 @@ bananapi,bpi-r4-poe)
 	ucidef_set_led_netdev "lan3" "lan3" "mt7530-0:03:green:lan" "lan3" "link tx rx"
 	;;
 comfast,cf-wr632ax)
-	ucidef_set_led_netdev "wan" "WAN" "comfast:blue" ""eth0""
+	ucidef_set_led_default "wan" "WAN" "comfast:blue" "1"
+	ucidef_add_led_link "wan" "eth0"
 	;;
 confiabits,mt7981)
 	ucidef_set_led_netdev "lan1" "lan1" "blue:lan-1" "lan1" "link tx rx"
