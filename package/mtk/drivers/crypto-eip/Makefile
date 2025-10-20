@@ -25,9 +25,7 @@ EXTRA_CFLAGS+= \
 	$(patsubst CONFIG_%, -DCONFIG_%=1, $(patsubst %=m,%,$(filter %=m,$(EXTRA_KCONFIG)))) \
 	$(patsubst CONFIG_%, -DCONFIG_%=1, $(patsubst %=y,%,$(filter %=y,$(EXTRA_KCONFIG))))
 
-EXTRA_CFLAGS+=	-Wall -Werror \
-		-Wno-error=implicit-function-declaration \
-		-Wno-error=missing-prototypes
+EXTRA_CFLAGS+=	-Wall -Werror
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/firmware
