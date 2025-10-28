@@ -7,6 +7,8 @@
 /dts-v1/;
 #include "mt7987a.dtsi"
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+#include "mt7987a-bananapi-bpi-r4-lite-mikrobus.dtsi"
 
 / {
 	model = "Bananapi BPI-R4-LITE";
@@ -20,11 +22,11 @@
 		i2c1 = &imux0_rtc;
 		i2c2 = &imux1_sfp;
 		i2c3 = &imux2_MikroBus;
-		i2c4 = &imux3_eeprom;
+		i2c4 = &imux3;
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,115200n1 loglevel=8  \
+		bootargs = "console=ttyS0,115200n1 loglevel=6  \
 			    earlycon=uart8250,mmio32,0x11000000 \
 			    pci=pcie_bus_perf ubi.block=0,firmware \
 			    root=/dev/fit0 rootwait";
@@ -48,37 +50,73 @@
 		};
 	};
 
+	pwm-leds {
+		compatible = "pwm-leds";
+		status = "okay";
+
+		/* ACT LED on bpi-r4-lite */
+		sys-led {
+			color = <LED_COLOR_ID_BLUE>;
+			label = "act:blue";
+			pwms = <&pwm 0 50000>;
+			max-brightness = <255>;
+			active-high;
+			linux,default-trigger = "default-on";
+		};
+	};
+
 	sfp: sfp@0 {
 		compatible = "sff,sfp";
 		i2c-bus = <&imux1_sfp>;
+		los-gpios = <&pio 10 GPIO_ACTIVE_HIGH>;
+		mod-def0-gpios = <&pio 9 GPIO_ACTIVE_LOW>;
+		tx-disable-gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
 		maximum-power-milliwatt = <3000>;
 	};
 };
 
-&eth {
-	gmac0: mac@0 {
-		compatible = "mediatek,eth-mac";
-		reg = <0>;
-		pcs-handle = <&sgmiipcs0>;
-		phy-mode = "2500base-x";
-		fixed-link {
-			speed = <2500>;
-			full-duplex;
-			pause;
-		};
-	};
+&fan {
+	pwms = <&pwm 2 50000>;
+	status = "okay";
+};
 
-	gmac1: mac@1 {
-		compatible = "mediatek,eth-mac";
-		reg = <1>;
-		phy-mode = "internal";
-		phy-handle = <&phy15>;
+&gmac0 {
+	phy-mode = "2500base-x";
+	status = "okay";
+	fixed-link {
+		speed = <2500>;
+		full-duplex;
+		pause;
 	};
+};
+
+&gmac1 {
+	phy-mode = "internal";
+	phy-handle = <&phy15>;
+	status = "okay";
 };
 
 &hnat {
 	mtketh-lan2 = "eth2";
 	mtketh-max-gmac = <3>;
+};
+
+&pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm_pins>;
+	status = "okay";
+};
+
+&pwm_pins {
+	mux {
+		/*
+		 * - pwm0   : PWM0@PIN13
+		 * - pwm1_0 : PWM@PIN7  (share with JTAG)
+		 * - pwm2_0 : PWM2@PIN12 (share with PCM)
+		 */
+		function = "pwm";
+		groups = "pwm0", "pwm1_0", "pwm2_0";
+	};
 };
 
 &i2c0 {
@@ -123,14 +161,21 @@
 			reg = <0x2>;
 		};
 
-		imux3_eeprom: i2c@3 {
+		imux3: i2c@3 {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x3>;
 
-			wifi_eeprom@51 {
+			pca9555: i2c-gpio-expander@20 {
+				compatible = "nxp,pca9555";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x20>;
+			};
+
+			wifi_eeprom@50 {
 				compatible = "atmel,24c02";
-				reg = <0x51>;
+				reg = <0x50>;
 
 				address-bits = <8>;
 				page-size = <8>;
@@ -154,6 +199,7 @@
 		compatible = "mediatek,mt7531";
 		reg = <31>;
 		reset-gpios = <&pio 42 0>;
+		status = "okay";
 	};
 };
 

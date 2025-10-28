@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/phy/phy.h>
+/ {
+	fragment@0 {
+		target = <&gmac0>;
+		__overlay__ {
+			phy-mode = "2500base-x";
+			phy-handle = <&phy12>;
+			status = "okay";
+		};
+	};
+
+	fragment@1 {
+                target-path = "/soc_netsys/ethernet@15100000/mdio-bus";
+                __overlay__ {
+                        phy12: phy@12 {
+                                compatible = "ethernet-phy-ieee802.3-c45";
+                                reg = <12>;
+                                reset-assert-us = <100000>;
+                                reset-deassert-us = <100000>;
+                                reset-gpios = <&pio 42 GPIO_ACTIVE_LOW>;
+                                interrupts = <41 IRQ_TYPE_LEVEL_LOW>;
+                                interrupt-parent = <&pio>;
+                                realtek,aldps-enable;
+                        };
+                };
+        };
+
+	fragment@2 {
+		target-path = "/soc_netsys/hnat@15000000";
+		__overlay__ {
+			mtketh-lan = "eth0";
+		};
+	};
+};
+

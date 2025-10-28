@@ -798,7 +798,6 @@ service_triggers()
 }
 
 start_service() {
-
 	#加载模组配置
 	config_load modem
 

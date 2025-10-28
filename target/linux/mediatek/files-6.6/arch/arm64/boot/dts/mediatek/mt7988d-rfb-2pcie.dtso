@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	/*
+	 * Making MT7988A PCIE working like MT7988D, which only support 2 pcies:
+	 * -pcie0: pcie@11300000 - Gen3 2 lanes
+	 * -pcie3: pcie@11290000 - Gen3 1 lane
+	 */
+
+	fragment@0 {
+		target-path = "/soc/pcie@11280000";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/pcie@11310000";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};
+

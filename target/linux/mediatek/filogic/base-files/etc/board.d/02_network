@@ -3,24 +3,136 @@
 . /lib/functions/uci-defaults.sh
 . /lib/functions/system.sh
 
+check_mt7531_p5() {
+    local compatible_path="$1"
+    local port5_path="$2"
+    local expected_compatible="$3"
+    local expected_port5="$4"
+
+	if [ ! -f "$compatible_path" ] || [ ! -f "$port5_path" ]; then
+		return
+	fi
+
+    local compatible=$(cat "$compatible_path")
+    local port5=$(cat "$port5_path")
+
+    # Check if the compatible string and port5 are as expected
+    if [ "$compatible" = "$expected_compatible" ] && [ "$port5" = "$expected_port5" ]; then
+        echo "mt7531_p5_exist"
+    else
+        echo "mt7531_p5_not_exist"
+    fi
+}
+
+mediatek_check_mt7531_P5() {
+    local gsw_result=$(check_mt7531_p5 "/proc/device-tree/gsw@0/compatible" \
+                                      "/proc/device-tree/gsw@0/port@5/compatible" \
+                                      "mediatek,mt753x" \
+                                      "mediatek,mt753x-port")
+
+    local dsa_result=$(check_mt7531_p5 "/proc/device-tree/soc_netsys/ethernet@15100000/mdio-bus/switch@31/compatible" \
+                                      "/proc/device-tree/soc_netsys/ethernet@15100000/mdio-bus/switch@31/ports/port@5/label" \
+                                      "mediatek,mt7531" \
+                                      "lan5")
+
+    if [ "$gsw_result" = "mt7531_p5_exist" ] || [ "$dsa_result" = "mt7531_p5_exist" ]; then
+        echo "p5_exist"
+    else
+        echo "p5_not_exist"
+    fi
+}
+
+mediatek_get_switch_type()
+{
+    # Base paths to the compatible and status properties
+    local dsa_base_path="/proc/device-tree/soc_netsys/ethernet@15100000/mdio-bus/*/"
+    local mt7531_dsa_base_path="/proc/device-tree/soc/switch*/"
+    local gsw_base_path="/proc/device-tree/gsw*/"
+
+    local dts_is_dsa=0
+    local dts_is_gsw=0
+
+    # Function to check compatible and status files
+    check_compatible_status() {
+        local dir=$1
+        local compatible_file="${dir}compatible"
+        local status_file="${dir}status"
+        local compatible=""
+        local status="disabled"
+
+        if [ -f "$compatible_file" ]; then
+            compatible=$(strings "$compatible_file" | head -1)
+        fi
+
+        if [ -f "$status_file" ]; then
+            status=$(tr -d '\0' < "$status_file")
+        fi
+
+        echo "$compatible" "$status"
+    }
+
+    # Iterate over each compatible property for external dsa switch
+    for dir in $dsa_base_path; do
+        if [ -d "$dir" ]; then
+            read compatible status < <(check_compatible_status "$dir")
+
+            if [ "$compatible" = "airoha,an8855-mfd" ] && [ "$status" = "okay" ]; then
+                dts_is_dsa=1
+            fi
+
+            if [ "$compatible" = "mediatek,mt7531" ] && [ "$status" = "okay" ]; then
+                dts_is_dsa=1
+            fi
+        fi
+    done
+
+    # Iterate over each compatible property for built-in mt7531-dsa
+    for dir in $mt7531_dsa_base_path; do
+        if [ -d "$dir" ]; then
+            read compatible status < <(check_compatible_status "$dir")
+
+            if [ "$compatible" = "mediatek,mt7988-switch" ] && [ "$status" = "okay" ]; then
+                dts_is_dsa=1
+            fi
+        fi
+    done
+
+    # Iterate over each compatible property for an8855-gsw and mt7531-gsw
+    for dir in $gsw_base_path; do
+        if [ -d "$dir" ]; then
+            read compatible status < <(check_compatible_status "$dir")
+
+            case $compatible in
+                airoha,an8855|\
+				mediatek,mt753x)
+                    if [ "$status" = "okay" ]; then
+                        dts_is_gsw=1
+                    fi
+                    ;;
+            esac
+        fi
+    done
+
+	# Sanity check for both dsa and gsw is true, always configure it to dsa
+    if [ "$dts_is_gsw" -gt 0 ] && [ "$dts_is_dsa" -eq 0 ]; then
+        echo "sw_is_gsw"
+    else
+        echo "sw_is_dsa"
+    fi
+}
+
 mediatek_setup_interfaces()
 {
 	local board="$1"
 
 	case $board in
 	abt,asr3000|\
-	cmcc,rax3000m*|\
-	cmcc,rax3000me|\
-	cmcc,xr30*|\
+	cmcc,rax3000m|\
 	h3c,magic-nx30-pro|\
-	h3c,magic-nx30-pro-nmbm|\
-	imou,lc-hx3001|\
-	konka,komi-a31|\
 	netis,nx31|\
 	nokia,ea0326gmp|\
 	mercusys,mr80x-v3|\
 	routerich,ax3000-v1|\
-	umi,uax3000e|\
 	zbtlink,zbt-z8103ax)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" eth1
 		;;
@@ -37,24 +149,16 @@ mediatek_setup_interfaces()
 	arcadyan,mozart)
 		ucidef_set_interfaces_lan_wan "lan0 eth1" eth2
 		;;
-	huasifei,wh3000-pro|\
-	*Airpi*)
-                ucidef_set_interfaces_lan "eth0 eth1"
-		;;
 	asus,rt-ax52|\
 	asus,rt-ax59u|\
 	cetron,ct3003|\
-	cetron,ct3003-ubootmod|\
 	cmcc,a10-stock|\
 	cmcc,a10-ubootmod|\
 	confiabits,mt7981|\
 	cudy,wr3000-v1|\
 	jcg,q30-pro|\
-	keenetic,kn3811|\
-	livinet,zr-3020|\
-	livinet,zr-3020-ubootmod|\
+	keenetic,kn-3811|\
 	qihoo,360t7|\
-	sl,3000-emmc|\
 	routerich,ax3000|\
 	routerich,ax3000-ubootmod)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
@@ -63,7 +167,6 @@ mediatek_setup_interfaces()
 	jdcloud,re-cp-03|\
 	mediatek,mt7981-rfb|\
 	netcore,n60|\
-	netcore,n60-pro|\
 	ruijie,rg-x60-pro|\
 	unielec,u7981-01*|\
 	zbtlink,zbt-z8102ax|\
@@ -83,12 +186,12 @@ mediatek_setup_interfaces()
 		;;
 	bananapi,bpi-r3-mini|\
 	edgecore,eap111|\
-	huasifei,wh3000-emmc)
+	huasifei,wh3000)
 		ucidef_set_interfaces_lan_wan eth0 eth1
 		;;
 	bananapi,bpi-r4|\
 	bananapi,bpi-r4-poe)
-		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 eth1" "wan eth2"
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 eth1 eth2" "wan"
 		;;
 	comfast,cf-e393ax)
 		ucidef_set_interfaces_lan_wan "lan1" eth1
@@ -104,16 +207,13 @@ mediatek_setup_interfaces()
 		;;
 	cudy,m3000-v1|\
 	cudy,tr3000-v1|\
-	cudy,tr3000-v1-ubootmod|\
-	cudy,tr3000-v1-256mb|\
 	glinet,gl-mt2500|\
 	glinet,gl-mt3000|\
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
 	openembed,som7981|\
-	openwrt,one|\
-	openfi,6c*)
-		ucidef_set_interfaces_lan_wan "eth1" eth0
+	openwrt,one)
+		ucidef_set_interfaces_lan_wan eth1 eth0
 		;;
 	dlink,aquila-pro-ai-m30-a1|\
 	dlink,aquila-pro-ai-m60-a1)
@@ -132,8 +232,35 @@ mediatek_setup_interfaces()
 	mediatek,mt7986b-rfb)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 lan4" eth1
 		;;
-	mediatek,mt7988a-rfb)
-		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 eth2" eth1
+	mediatek,mt7987a-spim-nand-cob*)
+		ucidef_set_interfaces_lan_wan "eth0 eth2" eth1
+		;;
+	mediatek,mt7988a-mxl86252-rfb*)
+		ucidef_set_interfaces_lan_wan "mxl_lan0 mxl_lan1 mxl_lan2 mxl_lan3 lan2 lan3" eth1
+		;;
+	hiveton,h5000m|\
+	mediatek,mt7987*)
+		ucidef_set_interfaces_lan_wan "eth1" eth0
+		;;
+	mediatek,mt7988*)
+		local sys_switch=$(mediatek_get_switch_type)
+		local sys_mt7531_p5=$(mediatek_check_mt7531_P5)
+		if [ "$sys_switch" = "sw_is_dsa" ]; then
+			if [ "$sys_mt7531_p5" = "p5_exist" ]; then
+				ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 lan5 eth2" eth1
+			else
+				ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 eth2" eth1
+			fi
+		else
+			ucidef_set_interfaces_lan_wan "eth0 eth2" eth1
+			if [ "$sys_mt7531_p5" = "p5_exist" ]; then
+				ucidef_add_switch "switch0" \
+					"0:lan" "1:lan" "2:lan" "3:lan" "5:lan" "6u@eth0"
+			else
+				ucidef_add_switch "switch0" \
+					"0:lan" "1:lan" "2:lan" "3:lan" "6u@eth0"
+			fi
+		fi
 		;;
 	mercusys,mr90x-v1|\
 	mercusys,mr90x-v1-ubi)
@@ -146,13 +273,6 @@ mediatek_setup_interfaces()
 	tplink,re6000xd)
 		ucidef_set_interface_lan "lan1 lan2 eth1"
 		;;
-	wirelesstag,zx7981pd|\
-	wirelesstag,zx7981pd-ubootmod)
-		ucidef_set_interfaces_lan_wan "lan1 lan2" wan
-		;;
-	wirelesstag,zx7981pg)
-		ucidef_set_interfaces_lan_wan "lan1 lan2" wan
-		;;
 	xiaomi,mi-router-ax3000t|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,mi-router-wr30u-stock|\
@@ -160,9 +280,6 @@ mediatek_setup_interfaces()
 	xiaomi,redmi-router-ax6000-stock|\
 	xiaomi,redmi-router-ax6000-ubootmod)
 		ucidef_set_interfaces_lan_wan "lan2 lan3 lan4" wan
-		;;
-	yvr,x6)
-		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
 		;;
 	*)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" wan
@@ -176,7 +293,7 @@ mediatek_setup_macs()
 	local lan_mac=""
 	local wan_mac=""
 	local label_mac=""
-	local wifi_mac=""
+
 	case $board in
 	acer,predator-w6|\
 	acer,predator-w6d|\
@@ -184,17 +301,12 @@ mediatek_setup_macs()
 		wan_mac=$(mmc_get_mac_ascii u-boot-env WANMAC)
 		lan_mac=$(mmc_get_mac_ascii u-boot-env LANMAC)
 		;;
-	cudy,tr3000-v1)
-		wan_mac=$(mtd_get_mac_binary bdinfo 0xde00)
-                lan_mac=$(macaddr_add "$wan_mac" 1)
-		;;
 	bananapi,bpi-r3|\
 	bananapi,bpi-r3-mini|\
 	bananapi,bpi-r4)
 		wan_mac=$(macaddr_add $(cat /sys/class/net/eth0/address) 1)
 		;;
-	h3c,magic-nx30-pro|\
-	h3c,magic-nx30-pro-nmbm)
+	h3c,magic-nx30-pro)
 		wan_mac=$(mtd_get_mac_ascii pdt_data_1 ethaddr)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		label_mac=$wan_mac
@@ -204,6 +316,11 @@ mediatek_setup_macs()
 		label_mac=$(macaddr_canonicalize "$mac_dirty")
 		lan_mac=$label_mac
 		wan_mac=$(macaddr_add "$lan_mac" 1)
+		;;
+	mediatek,mt7987*|\
+	mediatek,mt7988*)
+		lan_mac=$(mtd_get_mac_binary "Factory" "0xFFFF4")
+		wan_mac=$(mtd_get_mac_binary "Factory" "0xFFFFA")
 		;;
 	mercusys,mr90x-v1|\
 	tplink,re6000xd)
@@ -224,16 +341,6 @@ mediatek_setup_macs()
 		wan_mac=$label_mac
 		lan_mac=$(macaddr_add "$label_mac" 1)
 		;;
-	yvr,x6)
-		wan_mac=$(mtd_get_mac_ascii Factory_info MAC)
-		lan_mac=$(macaddr_add $wan_mac 1)
-		label_mac=$lan_mac
-		;;
-        sl,3000-emmc)
- 		lan_mac=$(mmc_get_mac_binary factory 0x04)		
- 		wan_mac=$(macaddr_add "$lan_mac" -2)
- 		label_mac=$lan_mac
- 		;;
 	xiaomi,mi-router-ax3000t|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,mi-router-wr30u-stock|\
@@ -243,35 +350,11 @@ mediatek_setup_macs()
 		wan_mac=$(mtd_get_mac_ascii Bdata ethaddr_wan)
 		label_mac=$wan_mac
 		;;
-	umi,uax3000e)
-		lan_mac=$(mmc_get_mac_binary factory 0x2A)
-		wan_mac=$(mmc_get_mac_binary factory 0x04)
-		;;
 	yuncore,ax835)
 		label_mac=$(mtd_get_mac_binary "Factory" 0x4)
 		;;
-	openfi,6c*)
-		lan_mac=$(macaddr_add $(cat /sys/class/net/eth1/address) 1)
-		;;
-	wirelesstag,zx7981pd|\
-	wirelesstag,zx7981pd-ubootmod)
-		label_mac=$(mtd_get_mac_binary wtinfo 10)
-		lan_mac=$label_mac
-		wan_mac=$(macaddr_add "$label_mac" 1)
-		;;
 	esac
-		
-	wifi_mac=$(macaddr_add $(cat /sys/class/net/eth0/address) 3)
-        sed -i '/MacAddress=$wifi_mac/d' /etc/wireless/mediatek/mt7981.dbdc.b0.dat
-        echo "MacAddress=$wifi_mac" >> /etc/wireless/mediatek/mt7981.dbdc.b0.dat
-        wifi_mac=$(macaddr_add $(cat /sys/class/net/eth0/address) 4)
-        sed -i '/MacAddress=$wifi_mac/d' /etc/wireless/mediatek/mt7981.dbdc.b1.dat
-        echo "MacAddress=$wifi_mac" >> /etc/wireless/mediatek/mt7981.dbdc.b1.dat
-	sed -i '/MacAddress=$wifi_mac/d' /etc/wireless/mediatek/mt7986-ax60000.dbdc.b0.dat
-        echo "MacAddress=$wifi_mac" >> /etc/wireless/mediatek/mt7986-ax6000.dbdc.b0.dat
-	wifi_mac="$(macaddr_add $wifi_mac 1)"
-        sed -i '/MacAddress=$wifi_mac/d' /etc/wireless/mediatek/mt7986-ax6000.dbdc.b1.dat
-        echo "MacAddress=$wifi_mac" >> /etc/wireless/mediatek/mt7986-ax6000.dbdc.b1.dat
+
 	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" $lan_mac
 	[ -n "$wan_mac" ] && ucidef_set_interface_macaddr "wan" $wan_mac
 	[ -n "$label_mac" ] && ucidef_set_label_macaddr $label_mac

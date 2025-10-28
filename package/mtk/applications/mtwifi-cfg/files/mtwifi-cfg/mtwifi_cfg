@@ -1,6 +1,7 @@
 #!/usr/bin/lua
 --[[
  *
+ *
  * Copyright (C) 2023 hanwckf <hanwckf@vip.qq.com>
  *
  * 	This program is free software; you can redistribute it and/or modify
@@ -92,12 +93,14 @@ end
 function ifup(ifname)
     if ifname and #ifname > 0 then
         os.execute("ifconfig "..ifname.." up")
+        nixio.syslog("info", "mtwifi-cfg: ifconfig up "..ifname)
     end
 end
 
 function ifdown(ifname)
     if ifname and #ifname > 0 then
         os.execute("ifconfig "..ifname.." down")
+        nixio.syslog("info", "mtwifi-cfg: ifconfig down "..ifname)
     end
 end
 
@@ -123,9 +126,16 @@ end
 
 function set_idx_dat(dats, apidx, dat, cfg)
     if cfg ~= nil then
-        dats[dat..tostring(apidx)] = cfg
+        local key
+        if apidx == 0 then
+            key = dat
+        else
+            key = dat .. tostring(apidx)
+        end
+        dats[key] = cfg
     end
 end
+
 
 function vif_in_dev(vif, dev)
     if (vif == dev.main_ifname
@@ -147,6 +157,26 @@ function vif_is_apcli(vif, dev)
     end
 end
 
+function is_ax_mode(cfg)
+    if not cfg.config.htmode then
+        return false
+    end
+    if string.sub(cfg.config.htmode,1,2) == "HE" then
+        return true
+    end
+    return false
+end
+
+function is_be_mode(cfg)
+    if not cfg.config.htmode then
+        return false
+    end
+    if string.sub(cfg.config.htmode,1,3) == "EHT" then
+        return true
+    end
+    return false
+end
+
 function vif_count(cfg)
     local vif_num = 0
     local ap_num = 0
@@ -157,7 +187,7 @@ function vif_count(cfg)
         if v.config.mode == "ap" then
             ap_num = ap_num + 1
         elseif v.config.mode == "sta" then
-            apcli_num = apcli_num +1
+            apcli_num = apcli_num + 1
         end
     end
 
@@ -169,7 +199,7 @@ function mtwifi_cfg_foreach_vif(cfg, mode, func)
 
     local vif_num,_,_ = vif_count(cfg)
     for idx=0,vif_num-1 do
-        local v = cfg.interfaces[tostring(idx)]
+        local v = cfg.interfaces[string.format("%d", idx)]
         if v.config.mode and v.config.mode == mode then
             func(v)
         end
@@ -184,11 +214,12 @@ end
 function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
     nixio.syslog("info", "mtwifi-cfg: start "..devname)
     local dev = l1dat.devname_ridx[devname]
-    local dbdc_main_ifname = defs.dbdc_init_ifname
-
     if not dev then return end
 
     if is_dbdc then
+        local dbdc_main_dev = dev.INDEX .. "_1_1"
+        local dbdc_main_ifname = l1dat.devname_ridx[dbdc_main_dev].main_ifname
+
         if not is_dbdc_inited(dbdc_main_ifname) then
             nixio.syslog("info", "mtwifi-cfg: dbdc card init...")
             ifup(dbdc_main_ifname)
@@ -226,7 +257,6 @@ function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
 
     mtwifi_cfg_foreach_vif(cfg, "ap", start_vif)
     mtwifi_cfg_foreach_vif(cfg, "sta", start_vif)
-    os.execute("startwapp.sh")
 end
 
 function mtwifi_down(devname, cfg)
@@ -245,7 +275,6 @@ function mtwifi_down(devname, cfg)
             end
         end
     end
-    os.execute("startwapp.sh")
     return reset_vifs
 end
 
@@ -269,6 +298,8 @@ function mtwifi_reinstall()
     os.execute("modprobe mtk_warp_proxy")
     --os.execute("modprobe mtfwd")
     --os.execute("modprobe mt_whnat")
+
+    utils.sleep(1)
 end
 
 function __exec_iwpriv_cmd(ifname, key, val)
@@ -308,7 +339,7 @@ function set_chip_cfg(cfg, dats)
     for k,v in pairs(defs.chip_cfgs) do
         uci = k
         dat_key = v[1]
-        
+
         -- reset chip cfgs to default
         dats[dat_key] = v[2]
 
@@ -318,7 +349,9 @@ function set_chip_cfg(cfg, dats)
 
     -- setup other dev cfg
     for k,v in pairs(l1dat.devname_ridx) do
-        if k ~= cfg.device then        
+        if k ~= cfg.device and 
+        v.INDEX == l1dat.devname_ridx[cfg.device].INDEX and 
+        v.mainidx == l1dat.devname_ridx[cfg.device].mainidx then        
             dev_dats = load_profile(v.profile_path)
             if dev_dats then
                 for _,j in pairs(defs.chip_cfgs) do
@@ -364,10 +397,70 @@ function mtwifi_cfg_setup(argv)
         nixio.syslog("err", "mtwifi-cfg: only support one apcli vif!")
     end
 
-    if bssid_num > 0 then
-        dats.BssidNum = bssid_num
-    else
-        dats.BssidNum = 1
+        dats.BssidNum = 4
+    
+
+    -- setup wireless mode
+    if type(cfg.config.htmode) ~= type("") then
+        nixio.syslog("err", "mtwifi-cfg: invalid htmode!")
+        return
+    end
+
+    local WirelessMode
+
+    if cfg.config.band == "2g" then
+    WirelessMode = 9  -- PHY_11BGN_MIXED
+    if is_ax_mode(cfg) then
+        WirelessMode = 16  -- PHY_11AX_24G
+    elseif is_be_mode(cfg) then
+        WirelessMode = 22 -- PHY_11BE_24G
+    end
+elseif cfg.config.band == "5g" then
+    WirelessMode = 15 -- PHY_11VHT_N_MIXED
+    if is_ax_mode(cfg) then
+        WirelessMode = 17 -- PHY_11AX_5G
+    elseif is_be_mode(cfg) then
+        WirelessMode = 23 -- PHY_11BE_5G
+    end
+elseif cfg.config.band == "6g" then
+    if is_ax_mode(cfg) then
+        WirelessMode = 18 -- PHY_11AX_6G
+    elseif is_be_mode(cfg) then
+        WirelessMode = 24 -- PHY_11BE_6G
+    end
+end
+
+
+    if not WirelessMode then
+        nixio.syslog("err", "mtwifi-cfg: invalid wireless mode!")
+        return
+    end
+
+    -- setup bandwidth
+    local bw = string.match(cfg.config.htmode, "%d+")
+    if not bw then
+        nixio.syslog("err", "mtwifi-cfg: invalid bandwidth!")
+        return
+    end
+
+    -- default bw is 20MHz
+    dats.HT_BW = 0
+    dats.VHT_BW = 0
+
+    if bw == "40" then
+        dats.HT_BW = 1
+        dats.VHT_BW = 0
+        if cfg.config.noscan ~= nil and cfg.config.noscan == "1" then
+            dats.HT_BSSCoexistence = 0
+        else
+            dats.HT_BSSCoexistence = 1
+        end
+    elseif bw == "80" then
+        dats.HT_BW = 1
+        dats.VHT_BW = 1
+    elseif bw == "160" then
+        dats.HT_BW = 1
+        dats.VHT_BW = 2
     end
 
     -- setup apcli
@@ -404,18 +497,12 @@ function mtwifi_cfg_setup(argv)
     -- setup chip cfgs
     set_chip_cfg(cfg, dats)
 
-    -- setup dev cfgs
-    if cfg.config.twt then
-        dats.TWTSupport = cfg.config.twt
-    else
-        dats.TWTSupport = 0
-    end
-
+    -- setup other dev cfgs
     if type(cfg.config.country) == type("") and #cfg.config.country == 2 then
         dats.CountryCode = cfg.config.country
         if cfg.config.band == "2g" then
             dats.CountryRegion = defs.countryRegions[cfg.config.country][1]
-        elseif cfg.config.band == "5g" then
+        elseif cfg.config.band == "5g" or cfg.config.band == "6g" then
             dats.CountryRegionABand = defs.countryRegions[cfg.config.country][2]
         end
     end
@@ -426,25 +513,6 @@ function mtwifi_cfg_setup(argv)
     else
         dats.AutoChannelSelect = 0
         dats.Channel = cfg.config.channel
-    end
-
-    if cfg.config.htmode == "HT20" or cfg.config.htmode == "VHT20" or cfg.config.htmode == "HE20" then
-        dats.HT_BW = 0
-        dats.VHT_BW = 0
-    elseif cfg.config.htmode == "HT40" or cfg.config.htmode == "VHT40" or cfg.config.htmode == "HE40" then
-        dats.HT_BW = 1
-        dats.VHT_BW = 0
-        if cfg.config.noscan ~= nil and cfg.config.noscan == "1" then
-            dats.HT_BSSCoexistence = 0
-        else
-            dats.HT_BSSCoexistence = 1
-        end
-    elseif cfg.config.htmode == "VHT80" or cfg.config.htmode == "HE80" then
-        dats.HT_BW = 1
-        dats.VHT_BW = 1
-    elseif cfg.config.htmode == "VHT160" or cfg.config.htmode == "HE160" then
-        dats.HT_BW = 1
-        dats.VHT_BW = 2
     end
 
     if cfg.config.txpower and cfg.config.txpower < 100 then
@@ -460,7 +528,7 @@ function mtwifi_cfg_setup(argv)
         if dats.ApCliEnable == 1 then
             dats.MUTxRxEnable = 3
         else
-            dats.MUTxRxEnable = 3
+            dats.MUTxRxEnable = 1
         end
         dats.ITxBfEn = 1
     else
@@ -469,19 +537,10 @@ function mtwifi_cfg_setup(argv)
         dats.ITxBfEn = 0
     end
 
-    local WirelessMode
-    if cfg.config.band == "2g" then
-        if string.sub(cfg.config.htmode,1,2) == "HE" then
-            WirelessMode = 16 -- PHY_11AX_24G
-        else
-            WirelessMode = 9 -- PHY_11BGN_MIXED
-        end
-    elseif cfg.config.band == "5g" then
-        if string.sub(cfg.config.htmode,1,2) == "HE" then
-            WirelessMode = 17 -- PHY_11AX_5G
-        else
-            WirelessMode = 15 -- PHY_11VHT_N_MIXED
-        end
+    if (is_ax_mode(cfg) or is_be_mode(cfg)) and cfg.config.twt then
+        dats.TWTSupport = cfg.config.twt
+    else
+        dats.TWTSupport = 0
     end
 
     -- reset vif cfgs to default
@@ -513,26 +572,38 @@ function mtwifi_cfg_setup(argv)
     -- setup vif cfgs
     local apidx = 1
     for idx = 0,vif_num-1 do
-        v = cfg.interfaces[tostring(idx)]
+        v = cfg.interfaces[string.format("%d", idx)]
         if v.config.mode == "ap" then
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
             set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
+	    set_dat(dats, apidx, "MldGroup", v.config.mlo)
+	    if not v.config.mlo then
+                    set_dat(dats, apidx, "MldGroup", "0")
+            else
+                    set_dat(dats, apidx, "MldGroup", "1")
+            end
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
             set_dat(dats, apidx, "RRMEnable", v.config.ieee80211k)
-            set_dat(dats, apidx, "FtSupport", v.config.ieee80211r)
             set_dat(dats, apidx, "RekeyInterval", v.config.wpa_group_rekey)
-            set_dat(dats, apidx, "MuMimoDlEnable",0)
-            set_dat(dats, apidx, "MuMimoUlEnable",0)
-            set_dat(dats, apidx, "MuOfdmaDlEnable",v.config.ofdma_dl)
-            set_dat(dats, apidx, "MuOfdmaUlEnable",v.config.ofdma_ul)
-            set_dat(dats, apidx, "HT_AMSDU",v.config.amsdu)
-            set_dat(dats, apidx, "HT_AutoBA",v.config.autoba)
-            set_dat(dats, apidx, "APSDCapable",v.config.uapsd)
+            set_dat(dats, apidx, "MuMimoDlEnable", v.config.mumimo_dl)
+            set_dat(dats, apidx, "MuMimoUlEnable", v.config.mumimo_ul)
+            set_dat(dats, apidx, "MuOfdmaDlEnable", v.config.ofdma_dl)
+            set_dat(dats, apidx, "MuOfdmaUlEnable", v.config.ofdma_ul)
+            set_dat(dats, apidx, "HT_AMSDU", v.config.amsdu)
+            set_dat(dats, apidx, "HT_AutoBA", v.config.autoba)
+            set_dat(dats, apidx, "APSDCapable", v.config.uapsd)
             set_dat(dats, apidx, "RTSThreshold", v.config.rts)
             set_dat(dats, apidx, "FragThreshold",v.config.frag)
+            set_dat(dats, apidx, "DtimPeriod",v.config.dtim_period)
             set_dat(dats, apidx, "WirelessMode", WirelessMode)
+
+            if is_ax_mode(cfg) or is_be_mode(cfg) then
+                set_dat(dats, apidx, "HT_BAWinSize", 1024)
+            else
+                set_dat(dats, apidx, "HT_BAWinSize", 64)
+            end
 
             if v.config.macfilter then
                 if v.config.macfilter == "allow" then
@@ -618,18 +689,22 @@ function mtwifi_cfg_setup(argv)
             end
 
             if restart_other_dbdc_dev then
-                for k, _ in pairs(l1dat.devname_ridx) do
-                    local ret = mtwifi_down(k, cfg)
-                    for _, v in ipairs(ret) do
-                        table.insert(restore_vifs, v)
+                for k, j in pairs(l1dat.devname_ridx) do
+                    if j.INDEX == dev.INDEX and j.mainidx == dev.mainidx then
+                        local ret = mtwifi_down(k, cfg)
+                        for _, v in ipairs(ret) do
+                            table.insert(restore_vifs, v)
+                        end
                     end
                 end
                 if #restore_vifs > 0 then
                     nixio.syslog("info", "mtwifi-cfg: dbdc restore_vifs: "..inspect.inspect(restore_vifs))
                 end
 
-                for k, _ in pairs(l1dat.devname_ridx) do
-                    mtwifi_up(k, cfg, restore_vifs, true)
+                for k, j in pairs(l1dat.devname_ridx) do
+                    if j.INDEX == dev.INDEX and j.mainidx == dev.mainidx then
+                        mtwifi_up(k, cfg, restore_vifs, true)
+                    end
                 end
             else
                 mtwifi_down(devname)

@@ -1,0 +1,127 @@
+################################################################
+# STA Common Feature Selection
+################################################################
+#ifdef MT76XX_BT_COEXISTENCE_SUPPORT
+CONFIG_MT76XX_BT_COEXISTENCE_SUPPORT=n
+#endif /* MT76XX_BT_COEXISTENCE_SUPPORT */
+
+#ifdef CONFIG_MT_MAC_BT_COEXISTENCE_SUPPORT
+CONFIG_MT_MAC_BT_COEXISTENCE_SUPPORT=n
+#endif /* CONFIG_MT_MAC_BT_COEXISTENCE_SUPPORT */
+
+#ifdef WOW_SUPPORT
+CONFIG_MT_WOW_SUPPORT=y
+CONFIG_WOW_IFDOWN_SUPPORT=y
+#endif
+
+#ifdef ETH_CONVERT_SUPPORT
+# Support for STA Ethernet Converter
+CONFIG_ETH_CONVERT_SUPPORT=n
+#endif /* ETH_CONVERT_SUPPORT */
+
+#ifdef WNM_SUPPORT
+CONFIG_WNM_SUPPORT=n
+#endif /* WNM_SUPPORT */
+
+# Assign specified profile path when insmod
+CONFIG_PROFILE_DYN_SUPPORT=n
+
+#Support ANDROID_SUPPORT (2.X with WEXT-based)
+CONFIG_ANDROID_SUPPORT=n
+
+#CONFIG_IFUP_IN_PROBE_SUPPORT
+CONFIG_IFUP_IN_PROBE_SUPPORT=n
+
+#Support for USB_SUPPORT_SELECTIVE_SUSPEND
+CONFIG_USB_SUPPORT_SELECTIVE_SUSPEND=n
+
+#Support USB load firmware by multibyte
+CONFIG_USB_FIRMWARE_MULTIBYTE_WRITE=n
+
+CONFIG_DABS_QOS=y
+
+################################################################
+# STA Customized Feature Selection
+################################################################
+#ifdef XLINK_SUPPORT
+# Support XLINK mode
+CONFIG_XLINK=n
+#endif /* XLINK_SUPPORT */
+
+
+################################################################
+# STA Feature Compiler Flag
+################################################################
+WFLAGS += -DCONFIG_STA_SUPPORT -DSCAN_SUPPORT
+
+#ifdef WSC_INCLUDED
+ifeq ($(CONFIG_WSC),y)
+WFLAGS += -DWSC_STA_SUPPORT -DWSC_V2_SUPPORT
+ifeq ($(CONFIG_WSC_LED),y)
+WFLAGS += -DWSC_LED_SUPPORT
+endif
+endif
+#endif /* WSC_INCLUDED */
+
+#ifdef MT76XX_BT_COEXISTENCE_SUPPORT
+ifeq ($(CONFIG_MT76XX_BT_COEXISTENCE_SUPPORT),y)
+WFLAGS += -DMT76XX_BTCOEX_SUPPORT
+endif
+#endif /* MT76XX_BT_COEXISTENCE_SUPPORT */
+
+#ifdef CONFIG_MT_MAC_BT_COEXISTENCE_SUPPORT
+ifeq ($(CONFIG_MT_MAC_BT_COEXISTENCE_SUPPORT),y)
+WFLAGS += -DMT_MAC_BTCOEX
+endif
+#endif /* CONFIG_MT_MAC_BT_COEXISTENCE_SUPPORT */
+
+#ifdef WOW_SUPPORT
+ifeq ($(CONFIG_MT_WOW_SUPPORT),y)
+WFLAGS += -DMT_WOW_SUPPORT
+ifeq ($(CONFIG_WOW_IFDOWN_SUPPORT),y)
+WFLAGS += -DWOW_IFDOWN_SUPPORT
+endif
+endif
+#endif /* WOW_SUPPORT */
+
+#ifdef ETH_CONVERT_SUPPORT
+ifeq ($(CONFIG_ETH_CONVERT_SUPPORT), y)
+WFLAGS += -DETH_CONVERT_SUPPORT  -DMAT_SUPPORT
+endif
+#endif /* ETH_CONVERT_SUPPORT */
+
+#ifdef WNM_SUPPORT
+ifeq ($(CONFIG_WNM_SUPPORT),y)
+WFLAGS += -DCONFIG_DOT11V_WNM
+endif
+#endif /* WNM_SUPPORT */
+
+ifeq ($(CONFIG_PROFILE_DYN_SUPPORT),y)
+WFLAGS += -DPROFILE_PATH_DYNAMIC
+endif
+
+ifeq ($(CONFIG_ANDROID_SUPPORT),y)
+WFLAGS += -DANDROID_SUPPORT
+endif
+
+ifeq ($(CONFIG_IFUP_IN_PROBE_SUPPORT),y)
+WFLAGS += -DIFUP_IN_PROBE
+endif
+
+ifeq ($(CONFIG_USB_SUPPORT_SELECTIVE_SUSPEND),y)
+WFLAGS += -DUSB_SUPPORT_SELECTIVE_SUSPEND
+endif
+
+ifeq ($(CONFIG_USB_FIRMWARE_MULTIBYTE_WRITE),y)
+WFLAGS += -DUSB_FIRMWARE_MULTIBYTE_WRITE -DMULTIWRITE_BYTES=4
+endif
+
+#ifdef XLINK_SUPPORT
+ifeq ($(CONFIG_XLINK),y)
+WFLAGS += -DXLINK_SUPPORT
+endif
+#endif /* XLINK_SUPPORT */
+
+ifeq ($(CONFIG_DABS_QOS), y)
+WFLAGS += -DDABS_QOS
+endif

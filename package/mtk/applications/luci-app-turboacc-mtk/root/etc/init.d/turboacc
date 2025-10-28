@@ -56,7 +56,7 @@ start_service() {
 			echo "8 $fastpath_mh_eth_hnat_v6" > "$hnat_path/hnat_setting"
 
 			config_get "fastpath_mh_eth_hnat_bind_rate" "config" "fastpath_mh_eth_hnat_bind_rate" "30"
-			echo "11 $fastpath_mh_eth_hnat_bind_rate" > "$hnat_path/hnat_setting"
+			echo "7 $fastpath_mh_eth_hnat_bind_rate" > "$hnat_path/hnat_setting"
 
 			config_get "fastpath_mh_eth_hnat_ap" "config" "fastpath_mh_eth_hnat_ap" ""
 		fi

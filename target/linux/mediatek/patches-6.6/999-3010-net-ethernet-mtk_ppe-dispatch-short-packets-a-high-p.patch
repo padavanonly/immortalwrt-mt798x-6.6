@@ -9,19 +9,22 @@ in an unbalanced PHY rate test for the mt7988.
 
 Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
 ---
- drivers/net/ethernet/mediatek/mtk_ppe.c       | 38 +++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe.c       | 18 +++-
+ drivers/net/ethernet/mediatek/mtk_ppe.h       |  3 +
  .../net/ethernet/mediatek/mtk_ppe_debugfs.c   |  2 +-
- .../net/ethernet/mediatek/mtk_ppe_offload.c   |  4 +-
- 3 files changed, 41 insertions(+), 3 deletions(-)
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   | 96 ++++++++++++++++++-
+ 4 files changed, 110 insertions(+), 9 deletions(-)
 
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index 034340c..a9df40a 100644
+index 92e50e1..42dfc4b 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -505,6 +505,38 @@ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+@@ -505,8 +505,17 @@ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
  	return 0;
  }
  
+-static int
+-mtk_flow_entry_match_len(struct mtk_eth *eth, struct mtk_foe_entry *entry)
 +unsigned int mtk_foe_entry_get_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry)
 +{
 +	u32 *ib2 = mtk_foe_entry_ib2(eth, entry);
@@ -32,46 +35,37 @@ index 034340c..a9df40a 100644
 +	return FIELD_GET(MTK_FOE_IB2_QID, *ib2);
 +}
 +
-+void mtk_foe_entry_adj_queue(struct mtk_ppe *ppe, struct mtk_foe_entry *entry)
-+{
-+	struct mtk_eth *eth = ppe->eth;
-+	u32 *ib2 = mtk_foe_entry_ib2(eth, entry);
-+	unsigned int queue;
-+
-+	if (mtk_is_netsys_v2_or_greater(eth)) {
-+		if (!(*ib2 & MTK_FOE_IB2_PSE_QOS_V2))
-+			return;
-+	} else {
-+		if (!(*ib2 & MTK_FOE_IB2_PSE_QOS))
-+			return;
-+	}
-+
-+	queue = mtk_foe_entry_get_queue(eth, entry);
-+	/* To enhance performance in the unbalanced PHY rate test,
-+	 * dispatching short packets to the high priority TXQ.
-+	 */
-+	if (eth->qos_toggle == 2 && (queue >= 3 && queue <= 8))
-+		mtk_foe_entry_set_queue(eth, entry, queue + 6);
-+}
-+
- static int
- mtk_flow_entry_match_len(struct mtk_eth *eth, struct mtk_foe_entry *entry)
++int mtk_flow_entry_match_len(struct mtk_eth *eth, struct mtk_foe_entry *entry)
  {
-@@ -848,6 +880,12 @@ void __mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash)
- 			continue;
- 		}
+ 	int type = mtk_get_ib1_pkt_type(eth, entry->ib1);
  
-+		/* Dispatch the IPv4/IPv6 TCP Ack packets to the high-priority
-+		 * queue, assuming they are less than 100 bytes.
-+		 */
-+		if (!(foe.ib1 & MTK_FOE_IB1_UDP) && skb && skb->len < 100)
-+			mtk_foe_entry_adj_queue(ppe, &entry->data);
-+
- 		entry->hash = hash;
- 		__mtk_foe_entry_commit(ppe, &entry->data, hash);
- 		found = true;
+@@ -516,9 +525,8 @@ mtk_flow_entry_match_len(struct mtk_eth *eth, struct mtk_foe_entry *entry)
+ 		return offsetof(struct mtk_foe_entry, ipv4.ib2);
+ }
+ 
+-static bool
+-mtk_flow_entry_match(struct mtk_eth *eth, struct mtk_flow_entry *entry,
+-		     struct mtk_foe_entry *data, int len)
++bool mtk_flow_entry_match(struct mtk_eth *eth, struct mtk_flow_entry *entry,
++			  struct mtk_foe_entry *data, int len)
+ {
+ 	if ((data->ib1 ^ entry->data.ib1) & MTK_FOE_IB1_UDP)
+ 		return false;
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
+index dc25724..4d7f693 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
+@@ -410,5 +410,8 @@ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index);
+ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth);
+ void mtk_foe_entry_get_stats(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+ 			     int *idle);
++int mtk_flow_entry_match_len(struct mtk_eth *eth, struct mtk_foe_entry *entry);
++bool mtk_flow_entry_match(struct mtk_eth *eth, struct mtk_flow_entry *entry,
++			  struct mtk_foe_entry *data, int len);
+ 
+ #endif
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-index 2d30ae0..46024ef 100644
+index 9a494a3..3c05af2 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 @@ -236,7 +236,7 @@ mtk_ppe_internal_debugfs_write_qos(struct file *file, const char __user *buffer,
@@ -84,22 +78,122 @@ index 2d30ae0..46024ef 100644
  	}
  
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-index f4657dd..e133362 100644
+index a04b4cf..56e3b0f 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-@@ -237,11 +237,11 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+@@ -187,6 +187,89 @@ mtk_flow_get_dsa_port(struct net_device **dev)
+ #endif
+ }
  
- 	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(eth, foe, dsa_port))
++static int
++mtk_flow_get_ct_dir(struct mtk_eth *eth, struct mtk_foe_entry *foe,
++		    struct nf_conn *ct)
++{
++	const struct nf_conntrack_tuple *tuple;
++	struct mtk_flow_entry ct_entry;
++	struct mtk_foe_entry *ct_foe;
++	int i, j, len;
++
++	if (!eth || !foe || !ct)
++		return -EINVAL;
++
++	len = mtk_flow_entry_match_len(eth, foe);
++	ct_foe = &ct_entry.data;
++	ct_foe->ib1 = foe->ib1;
++
++	for (i = 0; i < IP_CT_DIR_MAX; i++) {
++		tuple = &ct->tuplehash[i].tuple;
++
++		if (mtk_get_ib1_pkt_type(eth, foe->ib1) > MTK_PPE_PKT_TYPE_IPV4_DSLITE) {
++			if (nf_ct_l3num(ct) != AF_INET6)
++				return -EINVAL;
++
++			for (j = 0; j < 4; j++) {
++				ct_foe->ipv6.src_ip[j] = ntohl(tuple->src.u3.in6.s6_addr32[j]);
++				ct_foe->ipv6.dest_ip[j] = ntohl(tuple->dst.u3.in6.s6_addr32[j]);
++			}
++			ct_foe->ipv6.src_port = ntohs(tuple->src.u.tcp.port);
++			ct_foe->ipv6.dest_port = ntohs( tuple->dst.u.tcp.port);
++		} else {
++			if (nf_ct_l3num(ct) != AF_INET)
++				return -EINVAL;
++
++			ct_foe->ipv4.orig.src_ip = ntohl(tuple->src.u3.ip);
++			ct_foe->ipv4.orig.dest_ip = ntohl(tuple->dst.u3.ip);
++			ct_foe->ipv4.orig.src_port = ntohs(tuple->src.u.tcp.port);
++			ct_foe->ipv4.orig.dest_port = ntohs(tuple->dst.u.tcp.port);
++		}
++
++		if (mtk_flow_entry_match(eth, &ct_entry, foe, len))
++			return i;
++	}
++
++	return -EINVAL;
++}
++
++static bool
++mtk_flow_is_tcp_ack(struct mtk_eth *eth, struct mtk_foe_entry *foe,
++		    struct nf_conn *ct)
++{
++	const struct nf_conn_counter *counters;
++	struct nf_conn_acct *acct;
++	u64 packets[IP_CT_DIR_MAX], bytes[IP_CT_DIR_MAX], avg[IP_CT_DIR_MAX];
++	int dir;
++
++	if (!ct)
++		return false;
++
++	dir = mtk_flow_get_ct_dir(eth, foe, ct);
++	if (dir < 0 || dir >= IP_CT_DIR_MAX)
++		return false;
++
++	acct = nf_conn_acct_find(ct);
++	if (!acct)
++		return false;
++
++	counters = acct->counter;
++	packets[dir] = atomic64_read(&counters[dir].packets);
++	bytes[dir] = atomic64_read(&counters[dir].bytes);
++	packets[!dir] = atomic64_read(&counters[!dir].packets);
++	bytes[!dir] = atomic64_read(&counters[!dir].bytes);
++
++	/* Avoid division by zero */
++	if (!packets[dir] || !packets[!dir])
++		return false;
++
++	avg[dir] = bytes[dir] / packets[dir];
++	avg[!dir] = bytes[!dir] / packets[!dir];
++
++	/* TCP ACKs are small packets (<= 64 bytes) compared to data packets */
++	return (avg[dir] <= 64 && avg[dir] < avg[!dir]);
++}
++
+ static int
+ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 			   struct net_device *idev, struct net_device *odev,
+@@ -249,13 +332,20 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 		ct_mark = ct->mark;
+ 	}
+ 
+-	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(mac, idev, dsa_port))
++	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(mac, idev, dsa_port)) {
++		if ((dsa_port >= 0) && ct && nf_ct_protonum(ct) == IPPROTO_TCP) {
++			/* Dispatch the IPv4/IPv6 TCP Ack packets to the high-priority
++			 * queue, assuming they are less than 64 bytes.
++			 */
++			if (mtk_flow_is_tcp_ack(eth, foe, ct))
++				queue += 6;
++		}
  		mtk_foe_entry_set_queue(eth, foe, queue);
--	else if (eth->qos_toggle == 1 || (ct->mark & MTK_QDMA_QUEUE_MASK) >= 9) {
-+	else if (eth->qos_toggle == 1 || (ct->mark & MTK_QDMA_QUEUE_MASK) >= 15) {
+-	else if (eth->qos_toggle == 1 || (ct_mark & MTK_QDMA_QUEUE_MASK) >= 9) {
++	} else if (eth->qos_toggle == 1 || (ct_mark & MTK_QDMA_QUEUE_MASK) >= 15) {
  		u8 qos_ul_toggle;
  
  		if (eth->qos_toggle == 2)
--			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 9 ? 1 : 0;
-+			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 15 ? 1 : 0;
+-			qos_ul_toggle = ((ct_mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 9 ? 1 : 0;
++			qos_ul_toggle = ((ct_mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 15 ? 1 : 0;
  		else
- 			qos_ul_toggle = ((ct->mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 1 ? 1 : 0;
+ 			qos_ul_toggle = ((ct_mark >> 16) & MTK_QDMA_QUEUE_MASK) >= 1 ? 1 : 0;
  
 -- 
 2.45.2

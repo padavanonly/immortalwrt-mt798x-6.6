@@ -24,7 +24,7 @@ else
 	uci -q set "turboacc.config.fastpath"="none"
 fi
 
-uci -q set "turboacc.config.fullcone"="2"
+uci -q set "turboacc.config.fullcone"="1"
 
 uci -q commit "turboacc"
 

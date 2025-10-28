@@ -1,0 +1,23 @@
+diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-25 23:35:35.238002373 +0800
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-25 23:43:56.711002613 +0800
+@@ -1610,6 +1610,19 @@
+ 			};
+ 		};
+ 
++		hnat: hnat@15000000 {
++                       compatible = "mediatek,mtk-hnat_v5";
++                       reg = <0 0x15100000 0 0x80000>;
++                       resets = <&ethsys 0>;
++                       reset-names = "mtketh";
++                       mtketh-wan = "eth1";
++		       mtketh-lan = "lan";
++		       mtketh-lan2 = "eth2";
++		       mtketh-max-gmac = <3>;
++		       mtketh-ppe-num = <3>;
++		       ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4","phy";
++               };
++
+ 		wo_ccif0: syscon@151a5000 {
+ 			compatible = "mediatek,mt7988-wo-ccif", "syscon";
+ 			reg = <0 0x151a5000 0 0x1000>;

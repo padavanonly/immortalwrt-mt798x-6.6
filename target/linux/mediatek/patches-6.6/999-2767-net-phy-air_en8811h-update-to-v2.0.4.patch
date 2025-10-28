@@ -1,0 +1,2424 @@
+From 8a043740a36072c3b36ab999b0803192e3bb92eb Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 21 May 2025 13:16:13 +0800
+Subject: [PATCH] net: phy: air_en8811h: update to v2.0.4
+
+---
+ drivers/clk/clk.c             |    1 +
+ drivers/net/phy/Kconfig       |    6 +
+ drivers/net/phy/air_en8811h.c | 1909 ++++++++++++++++++++++++++++++++-
+ drivers/net/phy/air_en8811h.h |  261 +++++
+ 4 files changed, 2159 insertions(+), 18 deletions(-)
+ create mode 100644 drivers/net/phy/air_en8811h.h
+
+diff --git a/drivers/clk/clk.c b/drivers/clk/clk.c
+index 8474099..427f754 100644
+--- a/drivers/clk/clk.c
++++ b/drivers/clk/clk.c
+@@ -565,6 +565,7 @@ unsigned int __clk_get_enable_count(struct clk *clk)
+ {
+ 	return !clk ? 0 : clk->core->enable_count;
+ }
++EXPORT_SYMBOL_GPL(__clk_get_enable_count);
+ 
+ static unsigned long clk_core_get_rate_nolock(struct clk_core *core)
+ {
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index 17c6de7..223db6f 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -166,6 +166,12 @@ config AIR_EN8811H_PHY
+ 	help
+ 	  Currently supports the Airoha EN8811H PHY.
+ 
++config AIR_EN8811H_PHY_DEBUGFS
++	bool "EN8811H debugfs support"
++	depends on AIR_EN8811H_PHY
++	help
++	  Enable creation of debugfs files for the EN8811H drivers.
++
+ config AMD_PHY
+ 	tristate "AMD and Altima PHYs"
+ 	help
+diff --git a/drivers/net/phy/air_en8811h.c b/drivers/net/phy/air_en8811h.c
+index 3cdc8c6..2b26933 100644
+--- a/drivers/net/phy/air_en8811h.c
++++ b/drivers/net/phy/air_en8811h.c
+@@ -11,11 +11,16 @@
+  * Copyright (C) 2023 Airoha Technology Corp.
+  */
+ 
++#include <linux/clk.h>
++#include <linux/clk-provider.h>
+ #include <linux/phy.h>
+ #include <linux/firmware.h>
+ #include <linux/property.h>
+ #include <linux/wordpart.h>
+ #include <asm/unaligned.h>
++#include <linux/crc32.h>
++#include <linux/debugfs.h>
++#include "air_en8811h.h"
+ 
+ #define EN8811H_PHY_ID		0x03a2a411
+ 
+@@ -103,6 +108,9 @@
+ #define   AIR_PHY_LED_BLINK_2500RX		BIT(11)
+ 
+ /* Registers on BUCKPBUS */
++#define EN8811H_CONTROL			0x3a9c
++#define   EN8811H_CONTROL_INTERNAL		BIT(11)
++
+ #define EN8811H_2P5G_LPA		0x3b30
+ #define   EN8811H_2P5G_LPA_2P5G			BIT(0)
+ 
+@@ -115,6 +123,12 @@
+ #define EN8811H_GPIO_OUTPUT		0xcf8b8
+ #define   EN8811H_GPIO_OUTPUT_345		(BIT(3) | BIT(4) | BIT(5))
+ 
++#define EN8811H_HWTRAP1		0xcf914
++#define EN8811H_HWTRAP1_CKO		BIT(12)
++
++#define EN8811H_CLK_CGM		0xcf958
++#define EN8811H_CLK_CGM_CKO		BIT(26)
++
+ #define EN8811H_FW_CTRL_1		0x0f0018
+ #define   EN8811H_FW_CTRL_1_START		0x0
+ #define   EN8811H_FW_CTRL_1_FINISH		0x1
+@@ -126,8 +140,8 @@
+ 
+ /* Default LED setup:
+  * GPIO5 <-> LED0  On: Link detected, blink Rx/Tx
+- * GPIO4 <-> LED1  On: Link detected at 2500 or 1000 Mbps
+- * GPIO3 <-> LED2  On: Link detected at 2500 or  100 Mbps
++ * GPIO4 <-> LED1  On: Link detected at 2500 and 1000 Mbps
++ * GPIO3 <-> LED2  On: Link detected at 2500 and  100 Mbps
+  */
+ #define AIR_DEFAULT_TRIGGER_LED0 (BIT(TRIGGER_NETDEV_LINK)      | \
+ 				  BIT(TRIGGER_NETDEV_RX)        | \
+@@ -142,10 +156,36 @@ struct led {
+ 	unsigned long state;
+ };
+ 
++#define clk_hw_to_en8811h_priv(_hw)			\
++	container_of(_hw, struct en8811h_priv, hw)
++
+ struct en8811h_priv {
+-	u32		firmware_version;
+-	bool		mcu_needs_restart;
+-	struct led	led[EN8811H_LED_COUNT];
++	u32			firmware_version;
++	bool			mcu_needs_restart;
++	struct led		led[EN8811H_LED_COUNT];
++	bool			led_hw_control;
++	struct clk_hw		hw;
++	struct phy_device	*phydev;
++	bool			restart_mcu;
++	unsigned int		dm_crc32;
++	unsigned int		dsp_crc32;
++	char			buf[512];
++	int			pol;
++	int			surge;
++	int			hw_addr;
++	int			dts_addr;
++	struct dentry		*debugfs_root;
++	int			running_status;
++	int			pair[4];
++	int			an;
++	int			link;
++	int			speed;
++	int			duplex;
++	int			pause;
++	int			asym_pause;
++	u16			on_crtl[3];
++	u16			blk_crtl[3];
++	int			need_an;
+ };
+ 
+ enum {
+@@ -177,7 +217,7 @@ enum {
+ 	AIR_LED_MODE_USER_DEFINE,
+ };
+ 
+-#define AIR_PHY_LED_DUR_UNIT	1024
++#define AIR_PHY_LED_DUR_UNIT	781
+ #define AIR_PHY_LED_DUR (AIR_PHY_LED_DUR_UNIT << AIR_PHY_LED_DUR_BLINK_64MS)
+ 
+ static const unsigned long en8811h_led_trig = BIT(TRIGGER_NETDEV_FULL_DUPLEX) |
+@@ -188,6 +228,17 @@ static const unsigned long en8811h_led_trig = BIT(TRIGGER_NETDEV_FULL_DUPLEX) |
+ 					      BIT(TRIGGER_NETDEV_LINK_2500)   |
+ 					      BIT(TRIGGER_NETDEV_RX)          |
+ 					      BIT(TRIGGER_NETDEV_TX);
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++static const char * const tx_rx_string[32] = {
++	"Tx Reverse, Rx Normal",
++	"Tx Normal, Rx Normal",
++	"Tx Reverse, Rx Reverse",
++	"Tx Normal, Rx Reverse",
++};
++
++static void airphy_debugfs_remove(struct phy_device *phydev);
++static int airphy_debugfs_init(struct phy_device *phydev);
++#endif
+ 
+ static int air_phy_read_page(struct phy_device *phydev)
+ {
+@@ -457,11 +508,15 @@ static int en8811h_load_firmware(struct phy_device *phydev)
+ 	ret = request_firmware_direct(&fw1, EN8811H_MD32_DM, dev);
+ 	if (ret < 0)
+ 		return ret;
+-
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++	priv->dm_crc32 = ~crc32(~0, fw1->data, fw1->size);
++#endif
+ 	ret = request_firmware_direct(&fw2, EN8811H_MD32_DSP, dev);
+ 	if (ret < 0)
+ 		goto en8811h_load_firmware_rel1;
+-
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++	priv->dsp_crc32 = ~crc32(~0, fw2->data, fw2->size);
++#endif
+ 	ret = air_buckpbus_reg_write(phydev, EN8811H_FW_CTRL_1,
+ 				     EN8811H_FW_CTRL_1_START);
+ 	if (ret < 0)
+@@ -486,6 +541,12 @@ static int en8811h_load_firmware(struct phy_device *phydev)
+ 	if (ret < 0)
+ 		goto en8811h_load_firmware_out;
+ 
++	ret = air_buckpbus_reg_modify(phydev, EN8811H_CONTROL,
++				      EN8811H_CONTROL_INTERNAL,
++				      EN8811H_CONTROL_INTERNAL);
++	if (ret < 0)
++		return ret;
++
+ 	ret = air_buckpbus_reg_write(phydev, EN8811H_FW_CTRL_1,
+ 				     EN8811H_FW_CTRL_1_FINISH);
+ 	if (ret < 0)
+@@ -514,11 +575,21 @@ static int en8811h_restart_mcu(struct phy_device *phydev)
+ {
+ 	int ret;
+ 
++	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, EN8811H_PHY_FW_STATUS, 0x0);
++	if (ret < 0)
++		return ret;
++
+ 	ret = air_buckpbus_reg_write(phydev, EN8811H_FW_CTRL_1,
+ 				     EN8811H_FW_CTRL_1_START);
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = air_buckpbus_reg_modify(phydev, EN8811H_CONTROL,
++				      EN8811H_CONTROL_INTERNAL,
++				      EN8811H_CONTROL_INTERNAL);
++	if (ret < 0)
++		return ret;
++
+ 	ret = air_buckpbus_reg_write(phydev, EN8811H_FW_CTRL_1,
+ 				     EN8811H_FW_CTRL_1_FINISH);
+ 	if (ret < 0)
+@@ -544,10 +615,6 @@ static int air_hw_led_on_set(struct phy_device *phydev, u8 index, bool on)
+ 
+ 	changed |= (priv->led[index].rules != 0);
+ 
+-	/* clear netdev trigger rules in case LED_OFF has been set */
+-	if (!on)
+-		priv->led[index].rules = 0;
+-
+ 	if (changed)
+ 		return phy_modify_mmd(phydev, MDIO_MMD_VEND2,
+ 				      AIR_PHY_LED_ON(index),
+@@ -806,9 +873,98 @@ static int en8811h_led_hw_is_supported(struct phy_device *phydev, u8 index,
+ 	return 0;
+ };
+ 
++static unsigned long en8811h_clk_recalc_rate(struct clk_hw *hw, unsigned long parent)
++{
++	struct en8811h_priv *priv = clk_hw_to_en8811h_priv(hw);
++	struct phy_device *phydev = priv->phydev;
++	u32 pbus_value;
++	int ret;
++
++	ret = air_buckpbus_reg_read(phydev, EN8811H_HWTRAP1, &pbus_value);
++	if (ret < 0)
++		return ret;
++
++	return (pbus_value & EN8811H_HWTRAP1_CKO) ? 50000000 : 25000000;
++}
++
++static int en8811h_clk_enable(struct clk_hw *hw)
++{
++	struct en8811h_priv *priv = clk_hw_to_en8811h_priv(hw);
++	struct phy_device *phydev = priv->phydev;
++
++	return air_buckpbus_reg_modify(phydev, EN8811H_CLK_CGM,
++				EN8811H_CLK_CGM_CKO, EN8811H_CLK_CGM_CKO);
++}
++
++static void en8811h_clk_disable(struct clk_hw *hw)
++{
++	struct en8811h_priv *priv = clk_hw_to_en8811h_priv(hw);
++	struct phy_device *phydev = priv->phydev;
++
++	air_buckpbus_reg_modify(phydev, EN8811H_CLK_CGM,
++				EN8811H_CLK_CGM_CKO, 0);
++}
++
++static int en8811h_clk_is_enabled(struct clk_hw *hw)
++{
++	struct en8811h_priv *priv = clk_hw_to_en8811h_priv(hw);
++	struct phy_device *phydev = priv->phydev;
++	u32 pbus_value;
++	int ret;
++
++	ret = air_buckpbus_reg_read(phydev, EN8811H_CLK_CGM, &pbus_value);
++	if (ret < 0)
++		return ret;
++
++	return (pbus_value & EN8811H_CLK_CGM_CKO);
++}
++
++static void en8811h_clk_restore_context(struct clk_hw *hw)
++{
++	if (!__clk_get_enable_count(hw->clk))
++		en8811h_clk_disable(hw);
++	else
++		en8811h_clk_enable(hw);
++}
++
++static const struct clk_ops en8811h_clk_ops = {
++	.recalc_rate		= en8811h_clk_recalc_rate,
++	.enable			= en8811h_clk_enable,
++	.disable		= en8811h_clk_disable,
++	.is_enabled		= en8811h_clk_is_enabled,
++	.restore_context	= en8811h_clk_restore_context,
++};
++
++static int en8811h_clk_provider_setup(struct device *dev, struct clk_hw *hw)
++{
++	struct clk_init_data init;
++	int ret;
++
++	if (!IS_ENABLED(CONFIG_COMMON_CLK))
++		return 0;
++
++	init.name = devm_kasprintf(dev, GFP_KERNEL, "%s-cko",
++				   fwnode_get_name(dev_fwnode(dev)));
++	if (!init.name)
++		return -ENOMEM;
++
++	init.ops = &en8811h_clk_ops;
++	init.flags = 0;
++	init.num_parents = 0;
++	hw->init = &init;
++
++	ret = devm_clk_hw_register(dev, hw);
++	if (ret)
++		return ret;
++
++	return devm_of_clk_add_hw_provider(dev, of_clk_hw_simple_get, hw);
++}
++
+ static int en8811h_probe(struct phy_device *phydev)
+ {
++	struct device *dev = &phydev->mdio.dev;
+ 	struct en8811h_priv *priv;
++	u32 pbus_value;
+ 	int ret;
+ 
+ 	priv = devm_kzalloc(&phydev->mdio.dev, sizeof(struct en8811h_priv),
+@@ -817,12 +973,18 @@ static int en8811h_probe(struct phy_device *phydev)
+ 		return -ENOMEM;
+ 	phydev->priv = priv;
+ 
++	ret = air_buckpbus_reg_write(phydev, 0x1e00d0, 0xf);
++	ret |= air_buckpbus_reg_write(phydev, 0x1e0228, 0xf0);
++	if (ret < 0)
++		return ret;
++
+ 	ret = en8811h_load_firmware(phydev);
+ 	if (ret < 0)
+ 		return ret;
+ 
+ 	/* mcu has just restarted after firmware load */
+ 	priv->mcu_needs_restart = false;
++	priv->restart_mcu =	false;
+ 
+ 	priv->led[0].rules = AIR_DEFAULT_TRIGGER_LED0;
+ 	priv->led[1].rules = AIR_DEFAULT_TRIGGER_LED1;
+@@ -830,6 +992,13 @@ static int en8811h_probe(struct phy_device *phydev)
+ 
+ 	/* MDIO_DEVS1/2 empty, so set mmds_present bits here */
+ 	phydev->c45_ids.mmds_present |= MDIO_DEVS_PMAPMD | MDIO_DEVS_AN;
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++	ret = airphy_debugfs_init(phydev);
++	if (ret < 0) {
++		phydev_err(phydev, "air_debug_procfs_init fail. (ret=%d)\n", ret);
++		airphy_debugfs_remove(phydev);
++	}
++#endif /* CONFIG_AIR_EN8811H_PHY_DEBUGFS */
+ 
+ 	ret = air_leds_init(phydev, EN8811H_LED_COUNT, AIR_PHY_LED_DUR,
+ 			    AIR_LED_MODE_DISABLE);
+@@ -838,6 +1007,12 @@ static int en8811h_probe(struct phy_device *phydev)
+ 		return ret;
+ 	}
+ 
++	priv->phydev = phydev;
++	/* Co-Clock Output */
++	ret = en8811h_clk_provider_setup(&phydev->mdio.dev, &priv->hw);
++	if (ret)
++		return ret;
++
+ 	/* Configure led gpio pins as output */
+ 	ret = air_buckpbus_reg_modify(phydev, EN8811H_GPIO_OUTPUT,
+ 				      EN8811H_GPIO_OUTPUT_345,
+@@ -845,6 +1020,51 @@ static int en8811h_probe(struct phy_device *phydev)
+ 	if (ret < 0)
+ 		return ret;
+ 
++	if (!device_property_read_bool(dev, "airoha,phy-handle")) {
++		ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, AIR_PHY_MCU_CMD_1,
++				    AIR_PHY_MCU_CMD_1_MODE1);
++		if (ret < 0)
++			return ret;
++		ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, AIR_PHY_MCU_CMD_2,
++				    AIR_PHY_MCU_CMD_2_MODE1);
++		if (ret < 0)
++			return ret;
++		ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, AIR_PHY_MCU_CMD_3,
++				    AIR_PHY_MCU_CMD_3_MODE1);
++		if (ret < 0)
++			return ret;
++		ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, AIR_PHY_MCU_CMD_4,
++				    AIR_PHY_MCU_CMD_4_MODE1);
++		if (ret < 0)
++			return ret;
++
++		/* Serdes polarity */
++		pbus_value = 0;
++		if (device_property_read_bool(dev, "airoha,pnswap-rx"))
++			pbus_value |=  EN8811H_POLARITY_RX_REVERSE;
++		else
++			pbus_value &= ~EN8811H_POLARITY_RX_REVERSE;
++		if (device_property_read_bool(dev, "airoha,pnswap-tx"))
++			pbus_value &= ~EN8811H_POLARITY_TX_NORMAL;
++		else
++			pbus_value |=  EN8811H_POLARITY_TX_NORMAL;
++		ret = air_buckpbus_reg_modify(phydev, EN8811H_POLARITY,
++					      EN8811H_POLARITY_RX_REVERSE |
++					      EN8811H_POLARITY_TX_NORMAL, pbus_value);
++		if (ret < 0)
++			return ret;
++
++		ret = air_buckpbus_reg_modify(phydev, EN8811H_CONTROL,
++					      EN8811H_CONTROL_INTERNAL, 0);
++		if (ret < 0)
++			return ret;
++
++		phydev_info(phydev, "EN8811H initialize OK! (%s)\n",
++			    EN8811H_DRIVER_VERSION);
++	} else
++		phydev_info(phydev, "EN8811H probe OK! (%s)\n",
++			    EN8811H_DRIVER_VERSION);
++
+ 	return 0;
+ }
+ 
+@@ -855,19 +1075,22 @@ static int en8811h_config_init(struct phy_device *phydev)
+ 	u32 pbus_value;
+ 	int ret;
+ 
++	ret = air_buckpbus_reg_write(phydev, 0x1e00d0, 0xf);
++	ret |= air_buckpbus_reg_write(phydev, 0x1e0228, 0xf0);
++	if (ret < 0)
++		return ret;
++
+ 	/* If restart happened in .probe(), no need to restart now */
+ 	if (priv->mcu_needs_restart) {
+ 		ret = en8811h_restart_mcu(phydev);
+ 		if (ret < 0)
+ 			return ret;
++		priv->restart_mcu = true;
+ 	} else {
+ 		/* Next calls to .config_init() mcu needs to restart */
+ 		priv->mcu_needs_restart = true;
+ 	}
+ 
+-	/* Select mode 1, the only mode supported.
+-	 * Configures the SerDes for 2500Base-X with rate adaptation
+-	 */
+ 	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, AIR_PHY_MCU_CMD_1,
+ 			    AIR_PHY_MCU_CMD_1_MODE1);
+ 	if (ret < 0)
+@@ -908,6 +1131,34 @@ static int en8811h_config_init(struct phy_device *phydev)
+ 		return ret;
+ 	}
+ 
++	if (!priv->restart_mcu) {
++		ret = air_buckpbus_reg_write(phydev, 0x1e0228, 0xf);
++		if (ret < 0)
++			return ret;
++	}
++
++	ret = air_buckpbus_reg_modify(phydev, EN8811H_CONTROL,
++				      EN8811H_CONTROL_INTERNAL, 0);
++	if (ret < 0)
++		return ret;
++
++	ret = air_buckpbus_reg_read(phydev, EN8811H_CLK_CGM, &pbus_value);
++	if (ret < 0)
++		return ret;
++	if (pbus_value & EN8811H_CLK_CGM_CKO) {
++		ret = air_buckpbus_reg_read(phydev, EN8811H_HWTRAP1, &pbus_value);
++		if (ret < 0)
++			return ret;
++
++		phydev_info(phydev, "CKO Output %dMHz - Enabled\n",
++			    (pbus_value & EN8811H_HWTRAP1_CKO) ? 50 : 25);
++	} else {
++		phydev_info(phydev, "CKO Output - Disabled.\n");
++	}
++
++	phydev_info(phydev, "EN8811H initialize OK! (%s)\n",
++		    EN8811H_DRIVER_VERSION);
++
+ 	return 0;
+ }
+ 
+@@ -983,6 +1234,9 @@ static int en8811h_read_status(struct phy_device *phydev)
+ 			 phydev->lp_advertising,
+ 			 pbus_value & EN8811H_2P5G_LPA_2P5G);
+ 
++	/* Only supports full duplex */
++	phydev->duplex = DUPLEX_FULL;
++
+ 	if (phydev->autoneg_complete)
+ 		phy_resolve_aneg_pause(phydev);
+ 
+@@ -1014,9 +1268,6 @@ static int en8811h_read_status(struct phy_device *phydev)
+ 				 phydev->speed == SPEED_2500);
+ 	}
+ 
+-	/* Only supports full duplex */
+-	phydev->duplex = DUPLEX_FULL;
+-
+ 	return 0;
+ }
+ 
+@@ -1052,11 +1303,34 @@ static irqreturn_t en8811h_handle_interrupt(struct phy_device *phydev)
+ 	return IRQ_HANDLED;
+ }
+ 
++static int air_phy_resume(struct phy_device *phydev)
++{
++	clk_restore_context();
++
++	return genphy_resume(phydev);
++}
++
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++static void en8811h_remove(struct phy_device *phydev)
++{
++	struct en8811h_priv *priv = phydev->priv;
++
++	if (priv) {
++		phydev_info(phydev, "%s: airphy_debugfs_remove\n", __func__);
++		airphy_debugfs_remove(phydev);
++		kfree(priv);
++	}
++}
++#endif
++
+ static struct phy_driver en8811h_driver[] = {
+ {
+ 	PHY_ID_MATCH_MODEL(EN8811H_PHY_ID),
+ 	.name			= "Airoha EN8811H",
+ 	.probe			= en8811h_probe,
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++	.remove         = en8811h_remove,
++#endif
+ 	.get_features		= en8811h_get_features,
+ 	.config_init		= en8811h_config_init,
+ 	.get_rate_matching	= en8811h_get_rate_matching,
+@@ -1071,6 +1345,8 @@ static struct phy_driver en8811h_driver[] = {
+ 	.led_brightness_set	= air_led_brightness_set,
+ 	.led_hw_control_set	= air_led_hw_control_set,
+ 	.led_hw_control_get	= air_led_hw_control_get,
++	.resume			= air_phy_resume,
++	.suspend		= genphy_suspend,
+ } };
+ 
+ module_phy_driver(en8811h_driver);
+@@ -1080,6 +1356,1603 @@ static struct mdio_device_id __maybe_unused en8811h_tbl[] = {
+ 	{ }
+ };
+ 
++#ifdef CONFIG_AIR_EN8811H_PHY_DEBUGFS
++#define phydev_mdio_bus(_dev) (_dev->mdio.bus)
++#define phydev_addr(_dev) (_dev->mdio.addr)
++#define phydev_dev(_dev) (&_dev->mdio.dev)
++#define phydev_kobj(_dev) (&_dev->mdio.dev.kobj)
++
++static struct trrg_s _fldRW_tr_reg__EcVarTrainingGain_ECNC_C8h = {
++	.TrRGDesc.DescVal = 0x81900302,
++	.RgMask =   0x0000000C
++};
++
++static struct trrg_s _fldRW_tr_reg__EcVarTrainingTime_ECNC_C8h = {
++	.TrRGDesc.DescVal = 0x81900F04,
++	.RgMask =   0x0000FFF0
++};
++
++static void air_polarity_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "echo [tx polarity] [rx polarity] > /[debugfs]/polarity\n"
++		  "option: tx_normal, tx_reverse, rx_normal, rx_revers\n");
++}
++
++static int air_set_polarity(struct phy_device *phydev, int tx_rx)
++{
++	int ret = 0;
++	unsigned int pbus_data = 0;
++
++	pr_debug("\nPolarit %s\n", tx_rx_string[tx_rx]);
++
++	air_buckpbus_reg_read(phydev, 0xca0f8, &pbus_data);
++	pbus_data &= ~(BIT(0) | BIT(1));
++	pbus_data |= tx_rx;
++	ret = air_buckpbus_reg_write(phydev, 0xca0f8, pbus_data);
++	if (ret < 0)
++		pr_notice("\n%s:air_buckpbus_reg_write fail\n", __func__);
++
++	air_buckpbus_reg_read(phydev, 0xca0f8, &pbus_data);
++	pr_notice("\nPolarity %s confirm....(%02lx)\n",
++		  tx_rx_string[tx_rx], pbus_data & (BIT(0) | BIT(1)));
++
++	return ret;
++}
++
++static int air_set_mode(struct phy_device *phydev, int dbg_mode)
++{
++	int ret = 0, val = 0;
++	struct en8811h_priv *priv = phydev->priv;
++
++	switch (dbg_mode) {
++	case AIR_PORT_MODE_FORCE_100:
++		pr_notice("\nForce 100M\n");
++		val = phy_read(phydev, MII_ADVERTISE) | BIT(8);
++		ret = phy_write(phydev, MII_ADVERTISE, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_CTRL1000) & ~BIT(9);
++		ret = phy_write(phydev, MII_CTRL1000, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read_mmd(phydev, 0x7, 0x20) & ~BIT(7);
++		ret = phy_write_mmd(phydev, 0x7, 0x20, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_BMCR) | BIT(9);
++		ret = phy_write(phydev, MII_BMCR, val);
++		if (unlikely(ret < 0))
++			break;
++		priv->need_an = 1;
++		break;
++	case AIR_PORT_MODE_FORCE_1000:
++		pr_notice("\nForce 1000M\n");
++		val = phy_read(phydev, MII_ADVERTISE) & ~BIT(8);
++		ret = phy_write(phydev, MII_ADVERTISE, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_CTRL1000) | BIT(9);
++		ret = phy_write(phydev, MII_CTRL1000, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read_mmd(phydev, 0x7, 0x20) & ~BIT(7);
++		ret = phy_write_mmd(phydev, 0x7, 0x20, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_BMCR) | BIT(9);
++		ret = phy_write(phydev, MII_BMCR, val);
++		if (unlikely(ret < 0))
++			break;
++		priv->need_an = 1;
++		break;
++	case AIR_PORT_MODE_FORCE_2500:
++		pr_notice("\nForce 2500M\n");
++		val = phy_read(phydev, MII_ADVERTISE) & ~BIT(8);
++		ret = phy_write(phydev, MII_ADVERTISE, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_CTRL1000) & ~BIT(9);
++		ret = phy_write(phydev, MII_CTRL1000, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read_mmd(phydev, 0x7, 0x20) | BIT(7);
++		ret = phy_write_mmd(phydev, 0x7, 0x20, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_BMCR) | BIT(9);
++		ret = phy_write(phydev, MII_BMCR, val);
++		if (unlikely(ret < 0))
++			break;
++		priv->need_an = 1;
++		break;
++	case AIR_PORT_MODE_AUTONEGO:
++		pr_notice("\nAutonego mode\n");
++		val = phy_read(phydev, MII_ADVERTISE) | BIT(8);
++		ret = phy_write(phydev, MII_ADVERTISE, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_CTRL1000) | BIT(9);
++		ret = phy_write(phydev, MII_CTRL1000, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read_mmd(phydev, 0x7, 0x20) | BIT(7);
++		ret = phy_write_mmd(phydev, 0x7, 0x20, val);
++		if (unlikely(ret < 0))
++			break;
++		val = phy_read(phydev, MII_BMCR);
++		val |= BMCR_ANENABLE;
++		ret = phy_write(phydev, MII_BMCR, val);
++		if (unlikely(ret < 0))
++			break;
++		if (priv->need_an) {
++			val = phy_read(phydev, MII_BMCR);
++			val |= BMCR_ANRESTART;
++			ret = phy_write(phydev, MII_BMCR, val);
++			if (unlikely(ret < 0))
++				break;
++			priv->need_an = 0;
++			pr_notice("\nRe-an\n");
++		}
++		break;
++	case AIR_PORT_MODE_POWER_DOWN:
++		pr_notice("\nPower Down\n");
++		val = phy_read(phydev, MII_BMCR) | BIT(11);
++		ret = phy_write(phydev, MII_BMCR, val);
++		break;
++	case AIR_PORT_MODE_POWER_UP:
++		pr_notice("\nPower Up\n");
++		val = phy_read(phydev, MII_BMCR) & ~BIT(11);
++		ret = phy_write(phydev, MII_BMCR, val);
++		break;
++	default:
++		pr_notice("\nWrong Port mode\n");
++		break;
++	}
++	return ret;
++}
++
++static int airoha_led_control(struct phy_device *phydev, int force_mode)
++{
++	int ret = 0, id, on_evt;
++	struct en8811h_priv *priv = phydev->priv;
++
++	for (id = 0; id < EN8811H_LED_COUNT; id++) {
++		if (force_mode) {
++			on_evt = phy_read_mmd(phydev, 0x1f,
++					      LED_ON_CTRL(id));
++			on_evt &= ~(LED_ON_EVT_LINK_2500M |
++				  LED_ON_EVT_LINK_100M | LED_ON_EVT_LINK_1000M);
++			if (force_mode == AIR_LED_FORCE_ON)
++				on_evt |= LED_ON_EVT_FORCE;
++			else
++				on_evt &= ~LED_ON_EVT_FORCE;
++
++			ret = phy_write_mmd(phydev, 0x1f,
++					    LED_ON_CTRL(id), on_evt);
++			if (ret < 0)
++				return ret;
++			ret = phy_write_mmd(phydev, 0x1f,
++					    LED_BLK_CTRL(id), 0);
++		} else {
++			ret = phy_write_mmd(phydev, 0x1f,
++					    LED_ON_CTRL(id), priv->on_crtl[id]);
++			ret |= phy_write_mmd(phydev, 0x1f,
++					     LED_BLK_CTRL(id), priv->blk_crtl[id]);
++		}
++		if (ret < 0)
++			return ret;
++	}
++	return 0;
++}
++
++static void airphy_led_mode_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "echo 0 > /[debugfs]/led_mode\n"
++		  "echo 1 > /[debugfs]/led_mode\n"
++		  "echo normal > /[debugfs]/led_mode\n");
++}
++
++static ssize_t airphy_led_mode(struct file *file, const char __user *ptr,
++			       size_t len, loff_t *off)
++{
++	struct phy_device *phydev = file->private_data;
++	char buf[32], cmd[32];
++	int count = len, ret = 0;
++	int num = 0;
++
++	memset(buf, 0, 32);
++	memset(cmd, 0, 32);
++
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, ptr, len))
++		return -EFAULT;
++
++	num = sscanf(buf, "%8s", cmd);
++	if (num < 1 || num > 2)
++		return -EFAULT;
++
++	if (!strncmp("0", cmd, strlen("0")))
++		ret = airoha_led_control(phydev, AIR_LED_FORCE_OFF);
++	else if (!strncmp("1", cmd, strlen("1")))
++		ret = airoha_led_control(phydev, AIR_LED_FORCE_ON);
++	else if (!strncmp("normal", cmd, strlen("normal")))
++		ret = airoha_led_control(phydev, AIR_LED_NORMAL);
++	else if (!strncmp("help", cmd, strlen("help")))
++		airphy_led_mode_help();
++
++	if (ret < 0)
++		return ret;
++
++	return count;
++}
++
++static int airphy_info_show(struct seq_file *seq, void *v)
++{
++	struct phy_device *phydev = seq->private;
++	struct en8811h_priv *priv = phydev->priv;
++	unsigned int val = 0;
++
++	seq_puts(seq, "<<AIR EN8811H Driver info>>\n");
++	air_buckpbus_reg_read(phydev, 0xcf914, &val);
++	seq_printf(seq, "| Boot mode            : %s\n",
++		   ((val & BIT(24)) >> 24) ? "Flash" : "Download Code");
++	seq_printf(seq, "| EthMD32.dm.bin  CRC32: %08x\n",
++		   priv->dm_crc32);
++	seq_printf(seq, "| EthMD32.DSP.bin CRC32: %08x\n",
++		   priv->dsp_crc32);
++	seq_printf(seq, "| MD32 FW Version      : %08x\n", priv->firmware_version);
++
++	air_buckpbus_reg_read(phydev, 0x3a9c, &val);
++	if (val & BIT(3))
++		seq_puts(seq, "| Surge Protection     : 5R\n");
++	else
++		seq_puts(seq, "| Surge Protection     : 0R\n");
++
++	air_buckpbus_reg_read(phydev, EN8811H_CLK_CGM, &val);
++	if (val & EN8811H_CLK_CGM_CKO)
++		seq_puts(seq, "| Co-Clock Ouput       : Enable\n");
++	else
++		seq_puts(seq, "| Co-Clock Ouput       : Disable\n");
++
++	air_buckpbus_reg_read(phydev, 0xca0f8, &val);
++	val &= 0x3;
++	seq_printf(seq, "| Tx, Rx Polarity      : %s(%02d)\n",
++		   tx_rx_string[val], val);
++	seq_puts(seq, "\n");
++
++	return 0;
++}
++
++static int airphy_info_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, airphy_info_show, inode->i_private);
++}
++
++static int airphy_fcm_counter_show(struct phy_device *phydev,
++				   struct seq_file *seq)
++{
++	int ret = 0;
++	u32 pkt_cnt = 0;
++
++	seq_puts(seq, "|\t<<FCM Counter>>\n");
++	seq_puts(seq, "| Rx from Line side_S      :");
++	air_buckpbus_reg_read(phydev, 0xe0090, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Rx from Line side_T      :");
++	air_buckpbus_reg_read(phydev, 0xe0094, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Tx to System side_S      :");
++	air_buckpbus_reg_read(phydev, 0xe009c, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Tx to System side_T      :");
++	air_buckpbus_reg_read(phydev, 0xe00A0, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Rx from System side_S    :");
++	air_buckpbus_reg_read(phydev, 0xe0078, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Rx from System side_T    :");
++	air_buckpbus_reg_read(phydev, 0xe007C, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Tx to Line side_S        :");
++	air_buckpbus_reg_read(phydev, 0xe0084, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Tx to Line side_T        :");
++	air_buckpbus_reg_read(phydev, 0xe0088, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Pause from Line side     :");
++	air_buckpbus_reg_read(phydev, 0xe0098, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Pause to System side     :");
++	air_buckpbus_reg_read(phydev, 0xe00A4, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Pause from System side   :");
++	air_buckpbus_reg_read(phydev, 0xe0080, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Pause to Line side       :");
++	air_buckpbus_reg_read(phydev, 0xe008C, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	ret = air_buckpbus_reg_write(phydev, 0xe0074, 0x3);
++	if (ret < 0)
++		return ret;
++	return 0;
++}
++
++/**
++ * airphy_mac_counter - Internal MAC counter
++ * @seq: Pointer to the sequence file structure.
++ * @phydev: target phy_device struct
++ * NOTE: MAC counter should not be polled continuously.
++ */
++static int airphy_mac_counter_show(struct seq_file *seq,
++				   struct phy_device *phydev)
++{
++	u32 pkt_cnt = 0;
++
++	seq_puts(seq, "|\t<<MAC Counter>>\n");
++	seq_puts(seq, "| Tx Error from System side:");
++	air_buckpbus_reg_read(phydev, 0x131000, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Rx Error to System side  :");
++	air_buckpbus_reg_read(phydev, 0x132000, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Tx from System side      :");
++	air_buckpbus_reg_read(phydev, 0x131004, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| Rx to System Side        :");
++	air_buckpbus_reg_read(phydev, 0x132004, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	return 0;
++}
++
++static int airphy_ss_counter_show(struct phy_device *phydev,
++				  struct seq_file *seq)
++{
++	int ret = 0;
++	u32 pkt_cnt = 0;
++
++	seq_puts(seq, "|\t<<SS Counter>>\n");
++	ret = air_buckpbus_reg_write(phydev, 0xC602C, 0x3);
++	if (ret < 0)
++		return ret;
++	seq_puts(seq, "| TX Start                 :");
++	air_buckpbus_reg_read(phydev, 0xC60B0, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| TX Terminal              :");
++	air_buckpbus_reg_read(phydev, 0xC60B4, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| RX Start                 :");
++	air_buckpbus_reg_read(phydev, 0xC60BC, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	seq_puts(seq, "| RX Terminal              :");
++	air_buckpbus_reg_read(phydev, 0xC60C0, &pkt_cnt);
++	seq_printf(seq, "%010u |\n", pkt_cnt);
++	ret = air_buckpbus_reg_write(phydev, 0xC602C, 0x4);
++	if (ret < 0)
++		return ret;
++	return 0;
++}
++
++static int air_get_autonego(struct phy_device *phydev, int *an)
++{
++	int reg;
++
++	reg = phy_read(phydev, MII_BMCR);
++	if (reg < 0)
++		return -EINVAL;
++	if (reg & BMCR_ANENABLE)
++		*an = AUTONEG_ENABLE;
++	else
++		*an = AUTONEG_DISABLE;
++	return 0;
++}
++
++static int air_ref_clk_speed(struct phy_device *phydev, int para)
++{
++	int ret;
++	struct en8811h_priv *priv = phydev->priv;
++	int saved_page;
++
++	saved_page = phy_select_page(phydev, AIR_PHY_PAGE_STANDARD);
++	ret = __phy_write(phydev, 0x1f, 0x0);
++	/* Get real speed from vendor register */
++	ret = __phy_read(phydev, AIR_AUX_CTRL_STATUS);
++	if (ret < 0)
++		return ret;
++	switch (ret & AIR_AUX_CTRL_STATUS_SPEED_MASK) {
++	case AIR_AUX_CTRL_STATUS_SPEED_2500:
++		if (para == AIR_PARA_PRIV)
++			priv->speed = SPEED_2500;
++		else
++			phydev->speed = SPEED_2500;
++		break;
++	case AIR_AUX_CTRL_STATUS_SPEED_1000:
++		if (para == AIR_PARA_PRIV)
++			priv->speed = SPEED_1000;
++		else
++			phydev->speed = SPEED_1000;
++		break;
++	case AIR_AUX_CTRL_STATUS_SPEED_100:
++		if (para == AIR_PARA_PRIV)
++			priv->speed = SPEED_100;
++		else
++			phydev->speed = SPEED_100;
++		break;
++	}
++	return phy_restore_page(phydev, saved_page, ret);
++}
++
++static int air_read_status(struct phy_device *phydev)
++{
++	int ret = 0, reg = 0;
++	struct en8811h_priv *priv = phydev->priv;
++
++	priv->speed = SPEED_UNKNOWN;
++	priv->duplex = DUPLEX_UNKNOWN;
++	priv->pause = 0;
++	priv->asym_pause = 0;
++
++	reg = phy_read(phydev, MII_BMSR);
++	if (reg < 0) {
++		phydev_err(phydev, "MII_BMSR reg %d!\n", reg);
++		return reg;
++	}
++	reg = phy_read(phydev, MII_BMSR);
++	if (reg < 0) {
++		phydev_err(phydev, "MII_BMSR reg %d!\n", reg);
++		return reg;
++	}
++	if (reg & BMSR_LSTATUS) {
++		priv->link = 1;
++		ret = air_ref_clk_speed(phydev, AIR_PARA_PRIV);
++		if (ret < 0)
++			return ret;
++		reg = phy_read(phydev, MII_ADVERTISE);
++		if (reg < 0)
++			return reg;
++		priv->pause = GET_BIT(reg, 10);
++		priv->asym_pause = GET_BIT(reg, 11);
++	} else
++		priv->link = 0;
++
++	priv->duplex = DUPLEX_FULL;
++	return 0;
++}
++
++static int airphy_counter_show(struct seq_file *seq, void *v)
++{
++	struct phy_device *phydev = seq->private;
++
++	int ret = 0;
++	u32 pkt_cnt = 0;
++	struct en8811h_priv *priv = phydev->priv;
++
++	ret = air_read_status(phydev);
++	if (ret < 0)
++		return ret;
++	seq_puts(seq, "==========AIR PHY COUNTER==========\n");
++	if (priv->link) {
++		ret = airphy_ss_counter_show(phydev, seq);
++		if (ret < 0)
++			return ret;
++	}
++	ret = airphy_fcm_counter_show(phydev, seq);
++	if (ret < 0)
++		return ret;
++	if (priv->link) {
++		ret = airphy_mac_counter_show(seq, phydev);
++		if (ret < 0)
++			return ret;
++	}
++	if (priv->link && priv->speed == SPEED_2500) {
++		seq_puts(seq, "|\t<<LS Counter>>\n");
++		ret = air_buckpbus_reg_write(phydev, 0x30718, 0x10);
++		if (ret < 0)
++			return ret;
++		ret = air_buckpbus_reg_write(phydev, 0x30718, 0x0);
++		if (ret < 0)
++			return ret;
++		seq_puts(seq, "|\tBefore EF\n");
++		seq_puts(seq, "| Tx to Line side_S        :");
++		air_buckpbus_reg_read(phydev, 0x3071c, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Tx to Line side_T        :");
++		air_buckpbus_reg_read(phydev, 0x30720, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Tx_ENC                   :");
++		air_buckpbus_reg_read(phydev, 0x30724, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Rx from Line side_S      :");
++		air_buckpbus_reg_read(phydev, 0x3072c, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Rx from Line side_T      :");
++		air_buckpbus_reg_read(phydev, 0x30730, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Rx_DEC                   :");
++		air_buckpbus_reg_read(phydev, 0x30728, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "|\tAfter EF\n");
++		seq_puts(seq, "| Tx to Line side_S        :");
++		air_buckpbus_reg_read(phydev, 0x30734, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Tx to Line side_T        :");
++		air_buckpbus_reg_read(phydev, 0x30738, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Rx from Line side_S      :");
++		air_buckpbus_reg_read(phydev, 0x30764, &pkt_cnt);
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Rx from Line side_T      :");
++		air_buckpbus_reg_read(phydev, 0x30768, &pkt_cnt);
++		seq_printf(seq, "%010u |\n\n", pkt_cnt);
++		ret = air_buckpbus_reg_write(phydev, 0x30718, 0x13);
++		ret |= air_buckpbus_reg_write(phydev, 0x30718, 0x3);
++		ret |= air_buckpbus_reg_write(phydev, 0x30718, 0x10);
++		ret |= air_buckpbus_reg_write(phydev, 0x30718, 0x0);
++		if (ret < 0)
++			return ret;
++	}
++	if (priv->link && ((priv->speed != SPEED_2500))) {
++		seq_puts(seq, "|\t<<LS Counter>>\n");
++		ret = phy_write(phydev, 0x1f, 1);
++		if (ret < 0)
++			return ret;
++		seq_puts(seq, "| Rx from Line side        :");
++		pkt_cnt = phy_read(phydev, 0x12) & 0x7fff;
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Rx Error from Line side  :");
++		pkt_cnt = phy_read(phydev, 0x17) & 0xff;
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		ret = phy_write(phydev, 0x1f, 0);
++		if (ret < 0)
++			return ret;
++		ret = phy_write(phydev, 0x1f, 0x52B5);
++		ret |= phy_write(phydev, 0x10, 0xBF92);
++		if (ret < 0)
++			return ret;
++		seq_puts(seq, "| Tx to Line side          :");
++		pkt_cnt = (phy_read(phydev, 0x11) & 0x7ffe) >> 1;
++		seq_printf(seq, "%010u |\n", pkt_cnt);
++		seq_puts(seq, "| Tx Error to Line side    :");
++		pkt_cnt = phy_read(phydev, 0x12);
++		pkt_cnt &= 0x7f;
++		seq_printf(seq, "%010u |\n\n", pkt_cnt);
++		ret = phy_write(phydev, 0x1f, 0);
++		if (ret < 0)
++			return ret;
++	}
++	return ret;
++}
++
++static int airphy_counter_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, airphy_counter_show, inode->i_private);
++}
++
++static ssize_t airphy_polarity_write(struct file *file, const char __user *ptr,
++				     size_t len, loff_t *off)
++{
++	struct phy_device *phydev = file->private_data;
++	char buf[32], param1[32], param2[32];
++	int count = len, ret = 0, tx_rx = 0;
++
++	memset(buf, 0, 32);
++	memset(param1, 0, 32);
++	memset(param2, 0, 32);
++
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, ptr, len))
++		return -EFAULT;
++	if (sscanf(buf, "%12s %12s", param1, param2) == -1)
++		return -EFAULT;
++
++	if (!strncmp("tx_normal", param1, strlen("tx_normal"))) {
++		if (!strncmp("rx_normal", param2, strlen("rx_normal"))) {
++			tx_rx = AIR_POL_TX_NOR_RX_NOR;
++		} else if (!strncmp("rx_reverse", param2, strlen("rx_reverse"))) {
++			tx_rx = AIR_POL_TX_NOR_RX_REV;
++		} else {
++			pr_notice("\nRx param is not correct.\n");
++			return -EINVAL;
++		}
++	} else if (!strncmp("tx_reverse", param1, strlen("tx_reverse"))) {
++		if (!strncmp("rx_normal", param2, strlen("rx_normal"))) {
++			tx_rx = AIR_POL_TX_REV_RX_NOR;
++		} else if (!strncmp("rx_reverse", param2, strlen("rx_reverse"))) {
++			tx_rx = AIR_POL_TX_REV_RX_REV;
++		} else {
++			pr_notice("\nRx param is not correct.\n");
++			return -EINVAL;
++		}
++	} else {
++		air_polarity_help();
++		return count;
++	}
++	pr_notice("\nSet Polarity %s\n", tx_rx_string[tx_rx]);
++	ret = air_set_polarity(phydev, tx_rx);
++	if (ret < 0)
++		return ret;
++	return count;
++}
++
++static void airphy_port_mode_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "echo [mode] [para] > /[debugfs]/port_mode\n"
++		  "echo re-an > /[debugfs]/port_mode\n"
++		  "echo auto > /[debugfs]/port_mode\n"
++		  "echo 2500 > /[debugfs]/port_mode\n"
++		  "echo 1000 > /[debugfs]/port_mode\n"
++		  "echo 100 > /[debugfs]/port_mode\n"
++		  "echo power up/down >  /[debugfs]/port_mode\n");
++}
++
++static ssize_t airphy_port_mode(struct file *file, const char __user *ptr,
++				size_t len, loff_t *off)
++{
++	struct phy_device *phydev = file->private_data;
++	char buf[32], cmd[32], param[32];
++	int count = len, ret = 0;
++	int num = 0, val = 0;
++
++	memset(buf, 0, 32);
++	memset(cmd, 0, 32);
++	memset(param, 0, 32);
++
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, ptr, len))
++		return -EFAULT;
++
++	num = sscanf(buf, "%8s %8s", cmd, param);
++	if (num < 1 || num > 3)
++		return -EFAULT;
++
++	if (!strncmp("auto", cmd, strlen("auto"))) {
++		ret = air_set_mode(phydev, AIR_PORT_MODE_AUTONEGO);
++	} else if (!strncmp("2500", cmd, strlen("2500"))) {
++		ret = air_set_mode(phydev, AIR_PORT_MODE_FORCE_2500);
++	} else if (!strncmp("1000", cmd, strlen("1000"))) {
++		ret = air_set_mode(phydev, AIR_PORT_MODE_FORCE_1000);
++	} else if (!strncmp("100", cmd, strlen("100"))) {
++		ret = air_set_mode(phydev, AIR_PORT_MODE_FORCE_100);
++	} else if (!strncmp("re-an", cmd, strlen("re-an"))) {
++		val = phy_read(phydev, MII_BMCR) | BIT(9);
++		ret = phy_write(phydev, MII_BMCR, val);
++	} else if (!strncmp("power", cmd, strlen("power"))) {
++		if (!strncmp("down", param, strlen("down")))
++			ret = air_set_mode(phydev, AIR_PORT_MODE_POWER_DOWN);
++		else if (!strncmp("up", param, strlen("up")))
++			ret = air_set_mode(phydev, AIR_PORT_MODE_POWER_UP);
++	} else if (!strncmp("help", cmd, strlen("help"))) {
++		airphy_port_mode_help();
++	}
++
++	if (ret < 0)
++		return ret;
++
++	return count;
++}
++
++static void airphy_debugfs_buckpbus_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "Read:\n"
++		  "echo r [buckpbus_register] > /[debugfs]/buckpbus_op\n"
++		  "Write:\n"
++		  "echo w [buckpbus_register] [value] > /[debugfs]/buckpbus_op\n");
++}
++
++static ssize_t airphy_debugfs_buckpbus(struct file *file,
++				       const char __user *buffer, size_t count,
++				       loff_t *data)
++{
++	struct phy_device *phydev = file->private_data;
++	char buf[64];
++	int ret = 0, i;
++	unsigned int reg, val, num;
++
++	memset(buf, 0, 64);
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, buffer, count))
++		return -EFAULT;
++
++	if (buf[0] == 'w') {
++		if (sscanf(buf, "w %15x %15x", &reg, &val) == -1)
++			return -EFAULT;
++
++		pr_notice("\nphy=%d, reg=0x%x, val=0x%x\n",
++			phydev_addr(phydev), reg, val);
++		ret = air_buckpbus_reg_write(phydev, reg, val);
++		if (ret < 0) {
++			pr_notice("\nbuckpbus_reg_write fail\n");
++			return -EIO;
++		}
++		air_buckpbus_reg_read(phydev, reg, &val);
++		pr_notice("\nphy=%d, reg=0x%x, val=0x%x confirm..\n",
++			phydev_addr(phydev), reg, val);
++	} else if (buf[0] == 'r') {
++		if (sscanf(buf, "r %15x", &reg) == -1)
++			return -EFAULT;
++
++		air_buckpbus_reg_read(phydev, reg, &val);
++		pr_notice("\nphy=%d, reg=0x%x, val=0x%x\n",
++		phydev_addr(phydev), reg, val);
++	} else if (buf[0] == 'x') {
++		if (sscanf(buf, "x %15x %6d", &reg, &num) == -1)
++			return -EFAULT;
++		if (num > 0x1000 || num == 0) {
++			pr_notice("\nphy%d: number(0x%x) is invalid number\n",
++				phydev_addr(phydev), num);
++			return -EFAULT;
++		}
++		for (i = 0; i < num; i++) {
++			air_buckpbus_reg_read(phydev, (reg + (i * 4)), &val);
++			pr_notice("phy=%d, reg=0x%x, val=0x%x",
++				phydev_addr(phydev), reg + (i * 4), val);
++			pr_notice("");
++		}
++	} else
++		airphy_debugfs_buckpbus_help();
++
++	return count;
++}
++
++static int airphy_link_status(struct seq_file *seq, void *v)
++{
++	int ret = 0;
++	struct phy_device *phydev = seq->private;
++	struct en8811h_priv *priv = phydev->priv;
++
++	ret = air_read_status(phydev);
++	if (ret < 0)
++		return ret;
++
++	seq_printf(seq, "%s Information:\n", dev_name(phydev_dev(phydev)));
++	seq_printf(seq, "\tPHYAD: %02d\n", phydev_addr(phydev));
++	seq_printf(seq, "\tLink Status: %s\n", priv->link ? "UP" : "DOWN");
++	if (priv->link) {
++		ret = air_get_autonego(phydev, &priv->an);
++		if (ret < 0)
++			return ret;
++		seq_printf(seq, "\tAuto-Nego: %s\n",
++				priv->an ? "on" : "off");
++		seq_puts(seq, "\tSpeed: ");
++		if (priv->speed == SPEED_UNKNOWN)
++			seq_printf(seq, "Unknown! (%i)\n", priv->speed);
++		else
++			seq_printf(seq, "%uMb/s\n", priv->speed);
++
++		seq_printf(seq, "\tDuplex: %s\n",
++			   priv->duplex ? "Full" : "Half");
++		seq_puts(seq, "\n");
++	}
++
++	return ret;
++}
++
++static int airphy_link_status_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, airphy_link_status, inode->i_private);
++}
++
++static int dbg_regs_show(struct seq_file *seq, void *v)
++{
++	struct phy_device *phydev = seq->private;
++	int reg;
++	unsigned int val;
++
++	seq_puts(seq, "\t<<DEBUG REG DUMP>>\n");
++	for (reg = MII_BMCR; reg <= MII_STAT1000; reg++) {
++		seq_printf(seq, "| RG_MII_REG_%02x         : 0x%08x |\n",
++			   reg, phy_read(phydev, reg));
++	}
++
++	seq_printf(seq, "| RG_MII_2G5_ADV        : 0x%08x |\n",
++		   phy_read_mmd(phydev, 0x7, 0x20));
++
++	air_buckpbus_reg_read(phydev, 0x3b30, &val);
++	seq_printf(seq, "| RG_MII_2G5_LP         : 0x%08x |\n", val);
++
++	seq_printf(seq, "| RG_MII_REF_CLK        : 0x%08x |\n",
++		   phy_read(phydev, 0x1d));
++
++	air_buckpbus_reg_read(phydev, 0xcf910, &val);
++	seq_printf(seq, "| RG_HW_STRAP1          : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xcf914, &val);
++	seq_printf(seq, "| RG_HW_STRAP2          : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xca0f8, &val);
++	seq_printf(seq, "| RG_PHY_ANA            : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xe0004, &val);
++	seq_printf(seq, "| RG_SYS_LINK_MODE      : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xe000C, &val);
++	seq_printf(seq, "| RG_FCM_CTRL           : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xe0020, &val);
++	seq_printf(seq, "| RG_SS_PAUSE_TIME      : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xe002C, &val);
++	seq_printf(seq, "| RG_MIN_IPG_NUM        : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xc0000, &val);
++	seq_printf(seq, "| RG_CSR_AN0            : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0xc0b04, &val);
++	seq_printf(seq, "| RG_SS_LINK_STATUS     : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0x1020c, &val);
++	seq_printf(seq, "| RG_FN_PWR_CTRL_STATUS : 0x%08x |\n", val);
++
++	seq_printf(seq, "| RG_MD32_FW_READY      : 0x%08x |\n",
++		   phy_read_mmd(phydev, 0x1e, 0x8009));
++
++	air_buckpbus_reg_read(phydev, 0x3a64, &val);
++	seq_printf(seq, "| RG_RX_SYNC_CNT        : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0x3a48, &val);
++	seq_printf(seq, "| RG_WHILE_LOOP_COUNT   : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0x3afc, &val);
++	seq_printf(seq, "| RG_GOBL_CR            : 0x%08x |\n", val);
++
++	air_buckpbus_reg_read(phydev, 0x3a9c, &val);
++	seq_printf(seq, "| RG_SW_DBG_FLAG        : 0x%08x |\n", val);
++
++	return 0;
++}
++
++static int airphy_dbg_regs_show_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, dbg_regs_show, inode->i_private);
++}
++
++
++static int airphy_temp_show(struct seq_file *seq, void *v)
++{
++	struct phy_device *phydev = seq->private;
++	int ret = 0;
++	u32 pbus_value = 0;
++
++	seq_puts(seq, "<<AIR EN8811H Temp>>\n");
++	ret |= phy_write_mmd(phydev, 0x1e, 0x800e, 0x1100);
++	ret |= phy_write_mmd(phydev, 0x1e, 0x800f, 0xe5);
++	if (ret < 0) {
++		pr_notice("\nmii_cl45_write fail\n");
++		return -EIO;
++	}
++	air_buckpbus_reg_read(phydev, 0x3B38, &pbus_value);
++	seq_printf(seq, "| Temperature  : %dC |\n", pbus_value);
++	seq_puts(seq, "\n");
++
++	return 0;
++}
++
++static int airphy_temp_show_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, airphy_temp_show, inode->i_private);
++}
++
++
++static unsigned int air_read_lp_speed(struct phy_device *phydev)
++{
++	int val = 0, ret = 0;
++	int lpa, lpagb;
++	int count = 15;
++	struct en8811h_priv *priv = phydev->priv;
++
++	if (priv->firmware_version < 0x24011202) {
++		val = phy_read(phydev, MII_BMCR) | BIT(9);
++		ret = phy_write(phydev, MII_BMCR, val);
++		if (unlikely(ret < 0))
++			return ret;
++		msleep(1500);
++		do {
++			msleep(100);
++			ret = phy_read_mmd(phydev, MDIO_MMD_AN, 0x21);
++			ret &= BIT(5);
++			if (ret)
++				break;
++			count--;
++		} while (count);
++
++		count = 10;
++		do {
++			msleep(500);
++			val = phy_read(phydev, MII_BMSR);
++			if (val < 0) {
++				phydev_err(phydev, "MII_BMSR reg 0x%x!\n", val);
++				return val;
++			}
++			val = phy_read(phydev, MII_BMSR);
++			if (val < 0) {
++				phydev_err(phydev, "MII_BMSR reg 0x%x!\n", val);
++				return val;
++			}
++			phydev_dbg(phydev, "val 0x%x\n", val);
++			if (val & BMSR_LSTATUS) {
++				val = phy_read(phydev, MII_LPA);
++				if (val < 0)
++					return val;
++				lpa = (val & (BIT(5) | BIT(6) | BIT(7) | BIT(8))) >> 5;
++				val = phy_read(phydev, MII_STAT1000);
++				if (val < 0)
++					return val;
++				lpagb = GET_BIT(val, 11) << 4;
++				ret |= (lpagb | lpa);
++				return ret;
++			}
++		} while (count--);
++	} else {
++		ret = phy_read(phydev, MII_BMSR);
++		if (ret < 0) {
++			phydev_err(phydev, "MII_BMSR reg 0x%x!\n", ret);
++			return ret;
++		}
++		ret = phy_read(phydev, MII_BMSR);
++		if (ret < 0) {
++			phydev_err(phydev, "MII_BMSR reg 0x%x!\n", ret);
++			return ret;
++		}
++		phydev_dbg(phydev, "val 0x%x\n", ret);
++		if (ret & BMSR_LSTATUS) {
++			air_buckpbus_reg_read(phydev, 0x3b30, &ret);
++			ret = GET_BIT(ret, 0) << 5;
++			lpa = phy_read(phydev, MII_LPA);
++			if (lpa < 0)
++				return lpa;
++			lpa &= (BIT(5) | BIT(6) | BIT(7) | BIT(8));
++			lpa >>= 5;
++			lpagb = phy_read(phydev, MII_STAT1000);
++			if (lpagb < 0)
++				return lpagb;
++			lpagb = GET_BIT(lpagb, 11) << 4;
++			ret |= (lpagb | lpa);
++			return ret;
++		}
++	}
++	return 0;
++}
++
++static int airphy_lp_speed(struct seq_file *seq, void *v)
++{
++	unsigned int ret = 0, val = 0, did1 = 0, i;
++	struct phy_device *phydev = seq->private;
++	static const struct {
++		unsigned int bit_index;
++		const char *name;
++	} mode_defs[] = {
++		{ AIR_LINK_MODE_10baseT_Half_BIT,
++		"10baseT/Half" },
++		{ AIR_LINK_MODE_10baseT_Full_BIT,
++		"10baseT/Full" },
++		{ AIR_LINK_MODE_100baseT_Half_BIT,
++		"100baseT/Half" },
++		{ AIR_LINK_MODE_100baseT_Full_BIT,
++		"100baseT/Full" },
++		{ AIR_LINK_MODE_1000baseT_Full_BIT,
++		"1000baseT/Full" },
++		{ AIR_LINK_MODE_2500baseT_Full_BIT,
++		"2500baseT/Full" }
++	};
++
++	seq_printf(seq, "%s Link Partner Ability:\n",
++		   dev_name(phydev_dev(phydev)));
++	ret = air_read_lp_speed(phydev);
++	if (val < 0)
++		return val;
++	for (i = 0; i < ARRAY_SIZE(mode_defs); i++) {
++		if (ret & BIT(mode_defs[i].bit_index)) {
++			seq_printf(seq, "\t\t\t %s\n",
++				   mode_defs[i].name);
++			did1++;
++		}
++	}
++	if (did1 == 0)
++		seq_puts(seq, "\t\t\t Not reported\n");
++
++	return 0;
++}
++
++static int airphy_lp_speed_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, airphy_lp_speed, inode->i_private);
++}
++
++static void airphy_debugfs_mii_cl22_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "Read:\n"
++		  "echo r [phy_register] > /[debugfs]/mii_mgr_op\n"
++		  "Write:\n"
++		  "echo w [phy_register] [value] > /[debugfs]/mii_mgr_op\n");
++}
++
++
++static ssize_t airphy_debugfs_cl22(struct file *file,
++				   const char __user *buffer, size_t count,
++				   loff_t *data)
++{
++	struct phy_device *phydev = file->private_data;
++
++
++	char buf[64];
++	int ret = 0;
++	unsigned int reg, val;
++
++	memset(buf, 0, 64);
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, buffer, count))
++		return -EFAULT;
++
++	if (buf[0] == 'w') {
++		if (sscanf(buf, "w %15x %15x", &reg, &val) == -1)
++			return -EFAULT;
++
++		pr_notice("\nphy=%d, reg=0x%x, val=0x%x\n",
++			  phydev_addr(phydev), reg, val);
++		ret = phy_write(phydev, reg, val);
++		if (ret < 0) {
++			pr_notice("\nmii_cl22_write fail\n");
++			return -EIO;
++		}
++		val = phy_read(phydev, reg);
++		pr_notice("\nphy=%d, reg=0x%x, val=0x%x confirm..\n",
++			  phydev_addr(phydev), reg, val);
++	} else if (buf[0] == 'r') {
++		if (sscanf(buf, "r %15x", &reg) == -1)
++			return -EFAULT;
++
++		val = phy_read(phydev, reg);
++		pr_notice("\nphy=%d, reg=0x%x, val=0x%x\n",
++			  phydev_addr(phydev), reg, val);
++	} else
++		airphy_debugfs_mii_cl22_help();
++
++	return count;
++}
++
++static void airphy_debugfs_mii_cl45_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "Read:\n"
++		  "echo r [device number] [phy_register] > /[debugfs]/cl45_op\n"
++		  "Write:\n"
++		  "echo w [device number] [phy_register] [value] > /[debugfs]/cl45_op\n");
++}
++
++static ssize_t airphy_debugfs_cl45(struct file *file,
++				   const char __user *buffer, size_t count,
++				   loff_t *data)
++{
++	struct phy_device *phydev = file->private_data;
++	char buf[64];
++	int ret = 0;
++	unsigned int reg, val, devnum;
++
++	memset(buf, 0, 64);
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, buffer, count))
++		return -EFAULT;
++
++	if (buf[0] == 'w') {
++		if (sscanf(buf, "w %15x %15x %15x", &devnum, &reg, &val) == -1)
++			return -EFAULT;
++
++		pr_notice("\nphy=%d, devnum=0x%x, reg=0x%x, val=0x%x\n",
++			  phydev_addr(phydev), devnum, reg, val);
++		ret = phy_write_mmd(phydev, devnum, reg, val);
++		if (ret < 0) {
++			pr_notice("\nmii_cl45_write fail\n");
++			return -EIO;
++		}
++		val = phy_read_mmd(phydev, devnum, reg);
++		pr_notice("\nphy=%d, devnum=0x%x, reg=0x%x, val=0x%x confirm..\n",
++			  phydev_addr(phydev), devnum, reg, val);
++	} else if (buf[0] == 'r') {
++		if (sscanf(buf, "r %15x %15x", &devnum, &reg) == -1)
++			return -EFAULT;
++
++		val = phy_read_mmd(phydev, devnum, reg);
++		pr_notice("\nphy=%d, devnum=0x%x, reg=0x%x, val=0x%x\n",
++			  phydev_addr(phydev), devnum, reg, val);
++	} else
++		airphy_debugfs_mii_cl45_help();
++
++	return count;
++}
++
++static void
++air_cable_pair_swap(int pair0, int pair1,
++	struct air_cable_test_rsl *ptr_cable)
++{
++	int tmp_status;
++	unsigned int tmp_length;
++
++	tmp_status = ptr_cable->status[pair0];
++	tmp_length = ptr_cable->length[pair0];
++	ptr_cable->status[pair0] = ptr_cable->status[pair1];
++	ptr_cable->length[pair0] = ptr_cable->length[pair1];
++	ptr_cable->status[pair1] = tmp_status;
++	ptr_cable->length[pair1] = tmp_length;
++}
++
++static int air_wait_md32_fw(struct phy_device *phydev)
++{
++	int reg;
++	int retry = 60;
++
++	do {
++		msleep(1000);
++		reg = phy_read_mmd(phydev, 0x1e, 0x8009);
++		if (reg == EN8811H_PHY_READY) {
++			phydev_dbg(phydev, "%s: PHY ready!\n", __func__);
++			break;
++		}
++		if (!(retry % 10))
++			phydev_info(phydev, "Waiting for MD32 FW ready....(%d)", reg);
++
++		if (!retry) {
++			phydev_err(phydev, "%s: MD32 FW is not ready.(Status: 0x%x)\n",
++				   __func__, reg);
++			return -EPERM;
++		}
++	} while (retry--);
++	return 0;
++}
++
++static int air_cable_normal(struct phy_device *phydev,
++			    int step_col_12, int step_col_13)
++{
++	int ret = 0, reg;
++
++	ret |= phy_write(phydev, 0x1f, 0);
++	reg = ((phy_read(phydev, 0x11)  & BIT(12)) >> 12);
++	if (!reg) {
++		reg = phy_read(phydev, MII_BMCR);
++		ret |= phy_write(phydev,
++				MII_BMCR, reg | BMCR_PDOWN);
++		ret |= phy_write(phydev,
++				MII_BMCR, reg & ~BMCR_PDOWN);
++		phydev_dbg(phydev, "%s Power Down -> Power UP.\n", __func__);
++		msleep(1000);
++		ret |= phy_write(phydev, 0x1f, 0x1);
++		ret |= phy_write(phydev, 0x18, 0x8000);
++		ret |= air_wait_md32_fw(phydev);
++		if (ret < 0) {
++			phydev_err(phydev,
++				   "%s: cable normal 1-1 fail!\n", __func__);
++			return -EPERM;
++		}
++	}
++	ret |= phy_write_mmd(phydev, 0x1e, 0x800e, 0x1100);
++	ret |= phy_write_mmd(phydev, 0x1e, 0x800f, 0xd4);
++	ret |= air_wait_md32_fw(phydev);
++	if (ret < 0) {
++		phydev_err(phydev,
++			   "%s: cable normal 1-2 fail!\n", __func__);
++		return -EPERM;
++	}
++	return 0;
++}
++
++static int airphy_cable_step2(struct phy_device *phydev)
++{
++	int ret = 0;
++	int step_col_12 = 0;
++	int step_col_13 = 0;
++
++
++	ret = air_cable_normal(phydev, step_col_12, step_col_13);
++	if (ret < 0) {
++		phydev_err(phydev, "%s: air_cable_normal fail (ret=%d)\n",
++			   __func__, ret);
++		return -EPERM;
++	}
++	step_col_12 = phy_read_mmd(phydev, 0x1e, 0x800c);
++	step_col_13 = phy_read_mmd(phydev, 0x1e, 0x800d);
++	phydev_dbg(phydev, "%s step_col_12 %d, step_col_13 %d\n",
++		   __func__, step_col_12, step_col_13);
++	phydev_dbg(phydev, "%s: successful\n", __func__);
++	return 0;
++}
++
++static int airphy_cable_step4(struct phy_device *phydev,
++			      struct air_cable_test_rsl *cable_rsl)
++{
++	int reg = 0, status, test_pair = 0;
++	unsigned int pbus_value = 0, cable_len, cable_info;
++	int ret = 0;
++	static const char * const pair_str[] = {"A", "B", "C", "D"};
++
++	msleep(1000);
++	ret |= phy_write_mmd(phydev, 0x1e, 0x800e, 0x1100);
++	ret |= phy_write_mmd(phydev, 0x1e, 0x800f, 0xFA);
++	ret |= air_wait_md32_fw(phydev);
++	if (ret < 0) {
++		phydev_err(phydev,
++			   "%s: cable step4 fail!\n", __func__);
++		return -EPERM;
++	}
++	ret |= phy_write(phydev, 0x1f, 0x0);
++	reg = ((phy_read(phydev, 0x11)  & BIT(12)) >> 12);
++	for (test_pair = 0; test_pair < 4; test_pair++) {
++		air_buckpbus_reg_read(phydev, 0x11e0 + test_pair * 4, &cable_info);
++		phydev_dbg(phydev, "pair%s cable_info(0x%x) 0x%x\n",
++			   pair_str[test_pair], 0x11e0 + test_pair * 4, pbus_value);
++		cable_len = cable_info & 0xffff;
++		status = cable_info >> 16;
++		if (!status) {
++			phydev_dbg(phydev, "Pair %d, term=%d, len=%d\n",
++				   test_pair, status, cable_len);
++		} else {
++			cable_rsl->status[test_pair] = status;
++			cable_rsl->length[test_pair] = cable_len;
++			phydev_dbg(phydev, "2.pair %s, status %d, cable_len %d\n",
++				   pair_str[test_pair], cable_rsl->status[test_pair],
++				   cable_rsl->length[test_pair]);
++		}
++	}
++	if (!reg) {
++		phydev_dbg(phydev, "%s: air_cable_pair_swap\n", __func__);
++		air_cable_pair_swap(AIR_PORT_CABLE_TEST_PAIR_A,
++				    AIR_PORT_CABLE_TEST_PAIR_B, cable_rsl);
++		air_cable_pair_swap(AIR_PORT_CABLE_TEST_PAIR_C,
++				    AIR_PORT_CABLE_TEST_PAIR_D, cable_rsl);
++	}
++	ret |= phy_write_mmd(phydev, 0x1E, 0x800D, 0x0);
++	if (ret < 0)
++		return ret;
++	phydev_dbg(phydev, "%s successful\n", __func__);
++	return 0;
++}
++
++static int airphy_cable_step1(struct phy_device *phydev)
++{
++	int ret = 0, pair, len = 0, reg, retry;
++	static const char * const link_str[] = {"X", "100M", "1G", "2.5G", "LinkDown"};
++	unsigned int pbus_value = 0;
++	struct air_cable_test_rsl cable_rsl = {0};
++	char str_out[CMD_MAX_LENGTH] = {0};
++	struct en8811h_priv *priv = phydev->priv;
++	int status;
++
++	air_buckpbus_reg_read(phydev, 0x3b3c, &pbus_value);
++	phydev_info(phydev, "MD32 FW Version: %x\n", pbus_value);
++	msleep(1000);
++	ret |= phy_write_mmd(phydev, 0x1E, 0x800e, 0x1100);
++	ret |= phy_write_mmd(phydev, 0x1E, 0x800f, 0xd6);
++	if (ret < 0)
++		return ret;
++	retry = 5;
++	do {
++		status = air_wait_md32_fw(phydev);
++		if (!retry) {
++			phydev_info(phydev, "%s: md32 fw is not ready(%d)", __func__, status);
++			return -EPERM;
++		}
++		retry--;
++	} while (status);
++	air_buckpbus_reg_read(phydev, 0x11fc, &pbus_value);
++	if ((pbus_value == 1) || (pbus_value == 3)) {
++		phydev_info(phydev, "%s -> No Support!\n",
++			    link_str[pbus_value]);
++	} else if (pbus_value == 2) {
++		phydev_info(phydev, "%s - Link-Up Mode!\n",
++			    link_str[pbus_value]);
++	} else if (pbus_value == 4) {
++		phydev_info(phydev, "Link-Down Mode!\n");
++	}
++	if ((pbus_value == 2) || (pbus_value == 4)) {
++		ret = airphy_cable_step2(phydev);
++		if (ret < 0)
++			goto phy_reset;
++		ret = airphy_cable_step4(phydev, &cable_rsl);
++		if (ret < 0)
++			goto phy_reset;
++	}
++	phydev_info(phydev, "%7s %15s %15s %15s\n", "pair-a", "pair-b", "pair-c", "pair-d");
++	phydev_info(phydev, "%7s %7s %7s %7s %7s %7s %7s %7s\n",
++		    "status", "length", "status", "length", "status", "length", "status", "length");
++	for (pair = 0; pair < 4; pair++) {
++		if (cable_rsl.status[pair] == AIR_PORT_CABLE_STATUS_ERROR)
++			len += snprintf(str_out + len, CMD_MAX_LENGTH, "%7s", "error");
++		else if (cable_rsl.status[pair] == AIR_PORT_CABLE_STATUS_OPEN)
++			len += snprintf(str_out + len, CMD_MAX_LENGTH, "%7s", " open");
++		else if (cable_rsl.status[pair] == AIR_PORT_CABLE_STATUS_SHORT)
++			len += snprintf(str_out + len, CMD_MAX_LENGTH, "%7s", " short");
++		else if (cable_rsl.status[pair] == AIR_PORT_CABLE_STATUS_NORMAL)
++			len += snprintf(str_out + len, CMD_MAX_LENGTH, "%7s", "normal");
++
++		len += snprintf(str_out + len, CMD_MAX_LENGTH, "  %3d.%dm ",
++			cable_rsl.length[pair] / 10, cable_rsl.length[pair] % 10);
++		priv->pair[pair] = cable_rsl.length[pair];
++	}
++	phydev_info(phydev, "%s", str_out);
++	phydev_info(phydev, "%s air_cable_diag sucessfull.\n", __func__);
++
++	return 0;
++phy_reset:
++	phydev_info(phydev, "%s air_cable_diag fail.\n", __func__);
++	phydev_info(phydev, "%s phy_reset.\n", __func__);
++	ret |= phy_write(phydev, 0x1f, 0x0);
++	reg = phy_read(phydev, MII_BMCR);
++	ret |= phy_write(phydev, MII_BMCR, reg | BMCR_PDOWN);
++	ret |= phy_write(phydev, MII_BMCR, reg & ~BMCR_PDOWN);
++	if (ret < 0)
++		return ret;
++	msleep(1000);
++	phydev_dbg(phydev, "%s Power Down -> Power UP.\n", __func__);
++
++	return 0;
++}
++
++static void air_token_ring_write(struct phy_device *phydev, struct trrg_s TrRG,
++				 unsigned int WrtVal)
++{
++	int data;
++
++	unsigned int TmpVal;
++	struct hal_tr_data_s TR_DATA;
++
++	phy_lock_mdio_bus(phydev);
++	data = __phy_read_mmd(phydev, 0x1e, 0x148);
++	AIR_EN8811H_SET_VALUE(data, 1, 9, 1);
++	__phy_write_mmd(phydev, 0x1e, 0x148, data);
++	/* change page to 0x52b5 */
++	__phy_write(phydev, 0x1F, 0x52B5);
++
++	/* write addr */
++	TrRG.TrRGDesc.param.WR_RD_CTRL = 1;
++	__phy_write(phydev, 0x10, TrRG.TrRGDesc.Raw[1]);
++	/* read data */
++	TR_DATA.data_hi = __phy_read(phydev, 0x12);
++	TR_DATA.data_lo = __phy_read(phydev, 0x11);
++	TmpVal = ~TrRG.RgMask &
++		 (((unsigned int)TR_DATA.data_hi) << 16 | (unsigned int)TR_DATA.data_lo);
++
++	TrRG.TrRGDesc.param.WR_RD_CTRL = 0;
++	WrtVal = (WrtVal<<TrRG.TrRGDesc.param.TrRG_LSB) | (TmpVal & ~TrRG.RgMask);
++	/* write data */
++	__phy_write(phydev, 0x12, (WrtVal >> 16) & 0x00FF);
++	__phy_write(phydev, 0x11, WrtVal & 0xFFFF);
++	__phy_write(phydev, 0x10, TrRG.TrRGDesc.Raw[1]);
++
++	/* change page to 0 */
++	__phy_write(phydev, 0x1F, 0x0);
++
++	data = __phy_read_mmd(phydev, 0x1E, 0x148);
++	AIR_EN8811H_SET_VALUE(data, 0, 0x9, 0x1);
++	__phy_write_mmd(phydev, 0x1E, 0x148, data);
++	phy_unlock_mdio_bus(phydev);
++}
++
++static void airphy_trigger_cable_diag(struct phy_device *phydev)
++{
++	struct en8811h_priv *priv = phydev->priv;
++
++	priv->running_status = 1;
++	air_token_ring_write(phydev, _fldRW_tr_reg__EcVarTrainingTime_ECNC_C8h, 0x2);
++	air_token_ring_write(phydev, _fldRW_tr_reg__EcVarTrainingGain_ECNC_C8h, 0x0);
++	airphy_cable_step1(phydev);
++	air_token_ring_write(phydev, _fldRW_tr_reg__EcVarTrainingTime_ECNC_C8h, 0xf4);
++	air_token_ring_write(phydev, _fldRW_tr_reg__EcVarTrainingGain_ECNC_C8h, 0x1);
++	priv->running_status = 0;
++}
++
++static void airphy_cable_diag_help(void)
++{
++	pr_notice("\nUsage:\n"
++		  "[debugfs] = /sys/kernel/debug/mdio-bus\':[phy_addr]\n"
++		  "echo start > /[debugfs]/cable_diag\n");
++}
++
++static ssize_t airphy_cable_diag(struct file *file, const char __user *ptr,
++				 size_t len, loff_t *off)
++{
++	struct phy_device *phydev = file->private_data;
++	char buf[32], cmd[32];
++	int count = len, ret = 0;
++	int num = 0;
++
++	memset(buf, 0, 32);
++	memset(cmd, 0, 32);
++
++	if (count > sizeof(buf) - 1)
++		return -EINVAL;
++	if (copy_from_user(buf, ptr, len))
++		return -EFAULT;
++
++	num = sscanf(buf, "%s", cmd);
++	if (num != 1)
++		return -EFAULT;
++
++	if (!strncmp("start", cmd, strlen("start")))
++		airphy_trigger_cable_diag(phydev);
++	else
++		airphy_cable_diag_help();
++
++	if (ret < 0)
++		return ret;
++
++	return count;
++}
++
++static const struct file_operations airphy_lp_speed_fops = {
++	.owner = THIS_MODULE,
++	.open = airphy_lp_speed_open,
++	.read = seq_read,
++	.llseek = noop_llseek,
++	.release = single_release,
++};
++
++static const struct file_operations airphy_info_fops = {
++	.owner = THIS_MODULE,
++	.open = airphy_info_open,
++	.read = seq_read,
++	.llseek = noop_llseek,
++	.release = single_release,
++};
++
++static const struct file_operations airphy_counter_fops = {
++	.owner = THIS_MODULE,
++	.open = airphy_counter_open,
++	.read = seq_read,
++	.llseek = noop_llseek,
++	.release = single_release,
++};
++
++static const struct file_operations airphy_debugfs_buckpbus_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_debugfs_buckpbus,
++	.llseek = noop_llseek,
++};
++
++static const struct file_operations airphy_port_mode_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_port_mode,
++	.llseek = noop_llseek,
++};
++
++static const struct file_operations airphy_polarity_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_polarity_write,
++	.llseek = noop_llseek,
++};
++
++static const struct file_operations airphy_link_status_fops = {
++	.owner = THIS_MODULE,
++	.open = airphy_link_status_open,
++	.read = seq_read,
++	.llseek = noop_llseek,
++	.release = single_release,
++};
++
++static const struct file_operations airphy_dbg_reg_show_fops = {
++	.owner = THIS_MODULE,
++	.open = airphy_dbg_regs_show_open,
++	.read = seq_read,
++	.llseek = noop_llseek,
++	.release = single_release,
++};
++
++static const struct file_operations airphy_temp_fops = {
++	.owner = THIS_MODULE,
++	.open = airphy_temp_show_open,
++	.read = seq_read,
++	.llseek = noop_llseek,
++	.release = single_release,
++};
++
++static const struct file_operations airphy_debugfs_cl22_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_debugfs_cl22,
++	.llseek = noop_llseek,
++};
++
++static const struct file_operations airphy_debugfs_cl45_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_debugfs_cl45,
++	.llseek = noop_llseek,
++};
++
++static const struct file_operations airphy_cable_diag_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_cable_diag,
++	.llseek = noop_llseek,
++};
++
++static const struct file_operations airphy_led_mode_fops = {
++	.owner = THIS_MODULE,
++	.open = simple_open,
++	.write = airphy_led_mode,
++	.llseek = noop_llseek,
++};
++
++int airphy_debugfs_init(struct phy_device *phydev)
++{
++	int ret = 0;
++	struct en8811h_priv *priv = phydev->priv;
++	struct dentry *dir = priv->debugfs_root;
++
++	dir = debugfs_create_dir(dev_name(phydev_dev(phydev)), NULL);
++	if (!dir) {
++		dev_err(phydev_dev(phydev), "%s:err at %d\n",
++					 __func__, __LINE__);
++		ret = -ENOMEM;
++	}
++	debugfs_create_file(DEBUGFS_DRIVER_INFO, S_IFREG | 0444,
++			    dir, phydev,
++			    &airphy_info_fops);
++	debugfs_create_file(DEBUGFS_COUNTER, S_IFREG | 0444,
++			    dir, phydev,
++			    &airphy_counter_fops);
++	debugfs_create_file(DEBUGFS_BUCKPBUS_OP, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_debugfs_buckpbus_fops);
++	debugfs_create_file(DEBUGFS_PORT_MODE, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_port_mode_fops);
++	debugfs_create_file(DEBUGFS_POLARITY, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_polarity_fops);
++	debugfs_create_file(DEBUGFS_LINK_STATUS, S_IFREG | 0444,
++			    dir, phydev,
++			    &airphy_link_status_fops);
++	debugfs_create_file(DEBUGFS_DBG_REG_SHOW, S_IFREG | 0444,
++			    dir, phydev,
++			    &airphy_dbg_reg_show_fops);
++	debugfs_create_file(DEBUGFS_TEMPERATURE, S_IFREG | 0444,
++			    dir, phydev,
++			    &airphy_temp_fops);
++	debugfs_create_file(DEBUGFS_LP_SPEED, S_IFREG | 0444,
++			    dir, phydev,
++			    &airphy_lp_speed_fops);
++	debugfs_create_file(DEBUGFS_MII_CL22_OP, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_debugfs_cl22_fops);
++	debugfs_create_file(DEBUGFS_MII_CL45_OP, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_debugfs_cl45_fops);
++	debugfs_create_file(DEBUGFS_CABLE_DIAG, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_cable_diag_fops);
++	debugfs_create_file(DEBUGFS_LED_MODE, S_IFREG | 0200,
++			    dir, phydev,
++			    &airphy_led_mode_fops);
++	priv->debugfs_root = dir;
++	return ret;
++}
++
++static void airphy_debugfs_remove(struct phy_device *phydev)
++{
++	struct en8811h_priv *priv = phydev->priv;
++
++	debugfs_remove_recursive(priv->debugfs_root);
++	priv->debugfs_root = NULL;
++}
++#endif /*CONFIG_AIR_EN8811H_PHY_DEBUGFS*/
++
+ MODULE_DEVICE_TABLE(mdio, en8811h_tbl);
+ MODULE_FIRMWARE(EN8811H_MD32_DM);
+ MODULE_FIRMWARE(EN8811H_MD32_DSP);
+diff --git a/drivers/net/phy/air_en8811h.h b/drivers/net/phy/air_en8811h.h
+new file mode 100644
+index 0000000..0b243d1
+--- /dev/null
++++ b/drivers/net/phy/air_en8811h.h
+@@ -0,0 +1,261 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*************************************************
++ * FILE NAME:  air_en8811h.h
++ * PURPOSE:
++ *      EN8811H PHY Driver for Linux
++ * NOTES:
++ *
++ *  Copyright (C) 2023 Airoha Technology Corp.
++ *************************************************/
++#ifndef __EN8811H_H
++#define __EN8811H_H
++
++#define MAX_RETRY                   25
++
++#define EN8811H_DRIVER_VERSION  "v2.0.4"
++
++
++/***************************************************************
++ * The following led_cfg example is for reference only.
++ * LED0 Link 2500/Blink 2500 TxRx   (GPIO5)    <-> BASE_T_LED0,
++ * LED1 Link 1000/Blink 1000 TxRx   (GPIO4)    <-> BASE_T_LED1,
++ * LED2 Link 100 /Blink 100  TxRx   (GPIO3)    <-> BASE_T_LED2,
++ ***************************************************************/
++/* User-defined.B */
++#define AIR_LED0_ON     (LED_ON_EVT_LINK_2500M)
++#define AIR_LED0_BLK    (LED_BLK_EVT_2500M_TX_ACT | LED_BLK_EVT_2500M_RX_ACT)
++#define AIR_LED1_ON     (LED_ON_EVT_LINK_1000M)
++#define AIR_LED1_BLK    (LED_BLK_EVT_1000M_TX_ACT | LED_BLK_EVT_1000M_RX_ACT)
++#define AIR_LED2_ON     (LED_ON_EVT_LINK_100M)
++#define AIR_LED2_BLK    (LED_BLK_EVT_100M_TX_ACT | LED_BLK_EVT_100M_RX_ACT)
++/* User-defined.E */
++
++/* CL45 MDIO control */
++#define MII_MMD_ACC_CTL_REG         0x0d
++#define MII_MMD_ADDR_DATA_REG       0x0e
++#define MMD_OP_MODE_DATA            BIT(14)
++
++#define LED_ON_CTRL(i)              (0x024 + ((i)*2))
++#define LED_ON_EN                   (1 << 15)
++#define LED_ON_POL                  (1 << 14)
++#define LED_ON_EVT_MASK             (0x1ff)
++/* LED ON Event Option.B */
++#define LED_ON_EVT_LINK_2500M       (1 << 8)
++#define LED_ON_EVT_FORCE            (1 << 6)
++#define LED_ON_EVT_LINK_DOWN        (1 << 3)
++#define LED_ON_EVT_LINK_100M        (1 << 1)
++#define LED_ON_EVT_LINK_1000M       (1 << 0)
++/* LED ON Event Option.E */
++
++#define LED_BLK_CTRL(i)             (0x025 + ((i)*2))
++#define LED_BLK_EVT_MASK            (0xfff)
++/* LED Blinking Event Option.B*/
++#define LED_BLK_EVT_2500M_RX_ACT    (1 << 11)
++#define LED_BLK_EVT_2500M_TX_ACT    (1 << 10)
++#define LED_BLK_EVT_FORCE           (1 << 9)
++#define LED_BLK_EVT_100M_RX_ACT     (1 << 3)
++#define LED_BLK_EVT_100M_TX_ACT     (1 << 2)
++#define LED_BLK_EVT_1000M_RX_ACT    (1 << 1)
++#define LED_BLK_EVT_1000M_TX_ACT    (1 << 0)
++/* LED Blinking Event Option.E*/
++#define EN8811H_LED_COUNT           3
++
++#define LED_BCR                     (0x021)
++#define LED_BCR_EXT_CTRL            (1 << 15)
++#define LED_BCR_CLK_EN              (1 << 3)
++#define LED_BCR_TIME_TEST           (1 << 2)
++#define LED_BCR_MODE_MASK           (3)
++#define LED_BCR_MODE_DISABLE        (0)
++
++#define LED_ON_DUR                  (0x022)
++#define LED_ON_DUR_MASK             (0xffff)
++
++#define LED_BLK_DUR                 (0x023)
++#define LED_BLK_DUR_MASK            (0xffff)
++
++#define UNIT_LED_BLINK_DURATION     1024
++
++#define GET_BIT(val, bit) ((val & BIT(bit)) >> bit)
++
++#define INVALID_DATA                0xffff
++#define PBUS_INVALID_DATA           0xffffffff
++#define EN8811H_DEFAULT_ADDR  0xf
++
++struct air_cable_test_rsl {
++	int status[4];
++	unsigned int length[4];
++};
++
++struct air_base_t_led_cfg {
++	u16 en;
++	u16 gpio;
++	u16 pol;
++	u16 on_cfg;
++	u16 blk_cfg;
++};
++enum air_led_gpio {
++	AIR_LED2_GPIO3 = 3,
++	AIR_LED1_GPIO4,
++	AIR_LED0_GPIO5,
++	AIR_LED_LAST
++};
++
++enum air_base_t_led {
++	AIR_BASE_T_LED0,
++	AIR_BASE_T_LED1,
++	AIR_BASE_T_LED2,
++	AIR_BASE_T_LED3
++};
++
++enum air_led_blk_dur {
++	AIR_LED_BLK_DUR_32M,
++	AIR_LED_BLK_DUR_64M,
++	AIR_LED_BLK_DUR_128M,
++	AIR_LED_BLK_DUR_256M,
++	AIR_LED_BLK_DUR_512M,
++	AIR_LED_BLK_DUR_1024M,
++	AIR_LED_BLK_DUR_LAST
++};
++
++#define DEBUGFS_COUNTER		        "counter"
++#define DEBUGFS_DRIVER_INFO	        "drvinfo"
++#define DEBUGFS_PORT_MODE           "port_mode"
++#define DEBUGFS_BUCKPBUS_OP         "buckpbus_op"
++#define DEBUGFS_POLARITY            "polarity"
++#define DEBUGFS_LINK_STATUS         "link_status"
++#define DEBUGFS_DBG_REG_SHOW        "dbg_regs_show"
++#define DEBUGFS_TEMPERATURE         "temp"
++#define DEBUGFS_LP_SPEED            "lp_speed"
++#define DEBUGFS_MII_CL22_OP         "cl22_op"
++#define DEBUGFS_MII_CL45_OP         "cl45_op"
++#define DEBUGFS_CABLE_DIAG          "cable_diag"
++#define DEBUGFS_LED_MODE            "led_mode"
++
++#define CMD_MAX_LENGTH 128
++
++/* bits range: for example AIR_BITS_RANGE(16, 4) = 0x0F0000 */
++#ifndef AIR_BITS_RANGE
++#define AIR_BITS_RANGE(offset, range) GENMASK((offset) + (range) - 1U, (offset))
++#endif /* End of AIR_BITS_RANGE */
++
++/* bits offset right: for example AIR_BITS_OFF_R(0x1234, 8, 4) = 0x2 */
++#ifndef AIR_BITS_OFF_R
++#define AIR_BITS_OFF_R(val, offset, range) (((val) >> (offset)) & GENMASK((range) - 1U, 0))
++#endif /* End of AIR_BITS_OFF_R */
++
++/* bits offset left: for example AIR_BITS_OFF_L(0x1234, 8, 4) = 0x400 */
++#ifndef AIR_BITS_OFF_L
++#define AIR_BITS_OFF_L(val, offset, range) (((val) & GENMASK((range) - 1U, 0)) << (offset))
++#endif /* End of AIR_BITS_OFF_L */
++
++#define AIR_EN8811H_SET_VALUE(__out__, __val__, __offset__, __length__)	\
++{							\
++	(__out__) &= ~AIR_BITS_RANGE((__offset__), (__length__));			\
++	(__out__) |= AIR_BITS_OFF_L((__val__), (__offset__), (__length__));	\
++}
++
++enum air_port_mode {
++	AIR_PORT_MODE_FORCE_100,
++	AIR_PORT_MODE_FORCE_1000,
++	AIR_PORT_MODE_FORCE_2500,
++	AIR_PORT_MODE_AUTONEGO,
++	AIR_PORT_MODE_POWER_DOWN,
++	AIR_PORT_MODE_POWER_UP,
++	AIR_PORT_MODE_LAST = 0xFF,
++};
++
++enum air_polarity {
++	AIR_POL_TX_REV_RX_NOR,
++	AIR_POL_TX_NOR_RX_NOR,
++	AIR_POL_TX_REV_RX_REV,
++	AIR_POL_TX_NOR_RX_REV,
++	AIR_POL_TX_NOR_RX_LAST = 0xff,
++};
++
++/* Link mode bit indices */
++enum air_link_mode_bit {
++	AIR_LINK_MODE_10baseT_Half_BIT	 = 0,
++	AIR_LINK_MODE_10baseT_Full_BIT	 = 1,
++	AIR_LINK_MODE_100baseT_Half_BIT	 = 2,
++	AIR_LINK_MODE_100baseT_Full_BIT	 = 3,
++	AIR_LINK_MODE_1000baseT_Full_BIT = 4,
++	AIR_LINK_MODE_2500baseT_Full_BIT = 5,
++};
++
++enum air_led_force {
++	AIR_LED_NORMAL = 0,
++	AIR_LED_FORCE_OFF,
++	AIR_LED_FORCE_ON,
++	AIR_LED_FORCE_LAST = 0xff,
++};
++
++enum air_para {
++	AIR_PARA_PRIV,
++	AIR_PARA_PHYDEV,
++	AIR_PARA_LAST = 0xff
++};
++
++enum air_port_cable_status {
++	AIR_PORT_CABLE_STATUS_ERROR,
++	AIR_PORT_CABLE_STATUS_OPEN,
++	AIR_PORT_CABLE_STATUS_SHORT,
++	AIR_PORT_CABLE_STATUS_NORMAL,
++	AIR_PORT_CABLE_STATUS_LAST = 0xff
++};
++
++enum air_surge {
++	AIR_SURGE_0R,
++	AIR_SURGE_5R,
++	AIR_SURGE_LAST = 0xff
++};
++
++enum air_port_cable_test_pair {
++	AIR_PORT_CABLE_TEST_PAIR_A,
++	AIR_PORT_CABLE_TEST_PAIR_B,
++	AIR_PORT_CABLE_TEST_PAIR_C,
++	AIR_PORT_CABLE_TEST_PAIR_D,
++	AIR_PORT_CABLE_TEST_PAIR_ALL,
++	AIR_PORT_CABLE_TEST_PAIR_LAST
++};
++
++enum air_cko {
++	AIR_CKO_DIS,
++	AIR_CKO_EN,
++	AIR_CKO_LAST = 0xff
++};
++
++struct trrg_param_s {
++	unsigned int TrRG_LSB     :5;
++	unsigned int Reserved_21  :3;
++	unsigned int TrRG_MSB     :5;
++	unsigned int Reserved_29  :3;
++	unsigned int Reserved_0   :1;
++	unsigned int DATA_ADDR    :6;
++	unsigned int NODE_ADDR    :4;
++	unsigned int CH_ADDR      :2;
++	unsigned int WR_RD_CTRL   :1;
++	unsigned int Reserved_14  :1;
++	unsigned int PKT_XMT_STA  :1;
++};
++
++union trrgdesc_s {
++	struct trrg_param_s param;
++	unsigned short     Raw[2];
++	unsigned int       DescVal;
++};
++
++struct trrg_s {
++	union trrgdesc_s TrRGDesc;
++	unsigned int     RgMask;
++};
++
++struct hal_tr_data_s {
++	unsigned short data_lo;
++	unsigned char data_hi;
++};
++
++#ifndef unlikely
++#  define unlikely(x)	(x)
++#endif
++
++#endif /* End of __EN8811H_H */
+-- 
+2.45.2
+

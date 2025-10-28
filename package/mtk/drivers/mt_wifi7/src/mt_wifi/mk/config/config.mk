@@ -1,0 +1,600 @@
+################################################################
+# Common Feature Selection/Definitions/Compiler Flag
+################################################################
+ifeq ($(CONFIG_NATIVE_CFG),y)
+include $(TOP_DIR)/mk/config/config_common.mk
+endif
+
+#Support statistics count
+CONFIG_STATS_COUNT=y
+
+CONFIG_ERR_RECOVERY=y
+
+CONFIG_HW_HAL_OFFLOAD=y
+
+#Wifi System FW cmd support version
+CONFIG_WIFI_SYS_FW_V1=y
+CONFIG_WIFI_SYS_FW_V2=y
+
+# Falcon TXCMD
+CONFIG_FALCON_TXCMD_SUPPORT_DBG=y
+
+#ifdef FW_LOG_DUMP
+CONFIG_FW_LOG_DUMP_SUPPORT=y
+#endif
+
+#Pre Cfg Feature
+CONFIG_PRE_CFG_SUPPORT=y
+
+#default on, but CCN34 has to disable this flag
+CONFIG_RTMP_WLAN_HOOK_SUPPORT=y
+
+CONFIG_MGMT_TXPWR_CTRL=y
+#Enable DBG
+CONFIG_DBG_CFG ?= y
+
+################################################################
+# Mandatory feature definitions
+################################################################
+CC := $(CROSS_COMPILE)gcc
+LD := $(CROSS_COMPILE)ld
+
+WFLAGS := -I$(TOP_DIR)/include -I$(TOP_DIR)/include/hw_ctrl/phy -I$(TOP_DIR)/include/chip
+WFLAGS += -I$(TOP_DIR)/include/common -I$(TOP_DIR)/include/hw_ctrl -I$(TOP_DIR)/include/ap
+WFLAGS += -I$(TOP_DIR)/include/sta -I$(TOP_DIR)/include/dvt -I$(TOP_DIR)/include/feature
+WFLAGS += -I$(TOP_DIR)/include/protocol -I$(TOP_DIR)/include/os -I$(TOP_DIR)/dvt/include
+WFLAGS += -I$(TOP_DIR)/include/feature/cosr
+WFLAGS += -Wall -Wstrict-prototypes -Wno-trigraphs -Wno-date-time
+WFLAGS += -DENHANCED_STAT_DISPLAY
+WFLAGS += -DRTMP_EFUSE_SUPPORT -DWMM_SUPPORT
+WFLAGS += -DSYSTEM_LOG_SUPPORT -DWIFI_MODE=$(WIFI_MODE) -DCHIPSET=$(MODULE)
+WFLAGS += -DIP_ASSEMBLY -DMCS_LUT_SUPPORT
+WFLAGS += -DWIFI_MODULE_DVT
+WFLAGS += -DNEWSEC -DRX_COUNT_DETECT
+WFLAGS += -DMT_WIFI_MODULE -DPROPRIETARY_DRIVER_SUPPORT # Need to think about 3st platform
+WFLAGS += -DWIFI_UNIFIED_COMMAND_EXT_ID_WAR -DTX_POWER_CONTROL_SUPPORT_V2
+ifeq ($(TARGET),LINUX)
+WFLAGS += -DLINUX
+endif
+ifeq ($(TARGET),NONE)
+WFLAGS += -DNONE
+WFLAGS += -Wno-unused-but-set-variable -Wno-unused-variable -Wno-pointer-sign
+endif
+#WFLAGS += -DDBG_DIAGNOSE
+#WFLAGS += -Wframe-larger-than=4096
+
+ifeq ($(CONFIG_DBG_CFG),y)
+WFLAGS += -DDBG -DDBG_ENHANCE -Werror
+endif
+
+
+# For linux kernel > 3.5 to select SLAB or PAGE memory alloc method
+#WFLAGS += -DCONFIG_WIFI_PAGE_ALLOC_SKB
+#WFLAGS += -DCONFIG_WIFI_SLAB_ALLOC_SKB
+
+ifeq ($(CONFIG_RTMP_WLAN_HOOK_SUPPORT),y)
+WFLAGS += -DRTMP_WLAN_HOOK_SUPPORT
+endif
+
+ifeq ($(CONFIG_HWIFI_SUPPORT),y)
+WFLAGS += -DHWIFI_SUPPORT
+endif
+
+ifeq ($(CONFIG_GREENAP_SUPPORT),y)
+WFLAGS += -DGREENAP_SUPPORT
+endif
+
+ifeq ($(CONFIG_WIFI_TWT_SUPPORT),y)
+WFLAGS += -DWIFI_TWT_SUPPORT
+endif
+
+
+#ifdef CONFIG_AP_SUPPORT
+################################################################
+# AP Feature Selection and definitions
+################################################################
+ifneq ($(findstring AP,$(WIFI_MODE)),)
+include $(TOP_DIR)/mk/config/config_ap.mk
+endif
+#endif /* CONFIG_AP_SUPPORT */
+
+#ifdef CONFIG_STA_SUPPORT
+################################################################
+# STA Feature Selection and definitions
+################################################################
+ifneq ($(findstring STA,$(WIFI_MODE)),)
+include $(TOP_DIR)/mk/config/config_sta.mk
+endif
+#endif /* CONFIG_STA_SUPPORT */
+
+
+################################################################
+# Chipset definitions
+################################################################
+include $(TOP_DIR)/mk/config/config_chipset.mk
+
+
+################################################################
+# Common Feature Compiler Flag
+################################################################
+
+ifeq ($(CONFIG_PROFILE_OFF),y)
+WFLAGS += -DCONFIG_PROFILE_OFF
+endif
+
+ifeq ($(CONFIG_ATE_SUPPORT),y)
+WFLAGS += -DCONFIG_ATE
+WFLAGS += -I$(TOP_DIR)/ate/include
+endif
+
+ifeq ($(CONFIG_WLAN_SERVICE),y)
+WFLAGS += -DCONFIG_WLAN_SERVICE
+WFLAGS += -I$(TOP_DIR)/ate/wlan_service/include \
+		-I$(TOP_DIR)/ate/wlan_service/service/include \
+		-I$(TOP_DIR)/ate/wlan_service/glue/hal/include \
+		-I$(TOP_DIR)/ate/wlan_service/glue/osal/include
+endif
+
+#ifdef TXBF_SUPPORT
+ifeq ($(CONFIG_TXBF_SUPPORT),y)
+WFLAGS += -DTXBF_SUPPORT -DVHT_TXBF_SUPPORT -DHE_TXBF_SUPPORT -DEHT_TXBF_SUPPORT
+endif
+#endif /* TXBF_SUPPORT */
+
+#ifdef UAPSD_SUPPORT
+ifeq ($(CONFIG_UAPSD),y)
+WFLAGS += -DUAPSD_SUPPORT -DUAPSD_DEBUG
+endif
+#endif
+
+ifeq ($(CONFIG_BEACON_MISS_ON_PRIMARY_CHANNEL),y)
+WFLAGS += -DBEACON_MISS_ON_PRIMARY_CHANNEL
+endif
+
+#ifdef DOT11_N_SUPPORT
+ifeq ($(CONFIG_DOT11_N_SUPPORT),y)
+WFLAGS += -DDOT11_N_SUPPORT -DDOT11N_DRAFT3
+endif
+#endif /* DOT11_N_SUPPORT */
+
+#ifdef DOT11_VHT_SUPPORT
+ifeq ($(CONFIG_DOT11_VHT_SUPPORT),y)
+WFLAGS += -DDOT11_VHT_AC -DG_BAND_256QAM
+endif
+#endif /* DOT11_VHT_SUPPORT */
+
+#ifdef DOT11_HE_SUPPORT
+ifeq ($(CONFIG_DOT11_HE_SUPPORT),y)
+WFLAGS += -DDOT11_HE_AX
+endif
+#endif /* DOT11_HE_SUPPORT */
+
+#ifdef DOT11_EHT_BE
+ifeq ($(CONFIG_DOT11_EHT_SUPPORT),y)
+WFLAGS += -DDOT11_EHT_BE
+endif
+#endif /* DOT11_EHT_BE */
+
+#ifdef DOT11W_PMF_SUPPORT
+#ifeq ($(CONFIG_P2P_SUPPORT),n)
+ifeq ($(CONFIG_DOT11W_PMF_SUPPORT),y)
+WFLAGS += -DDOT11W_PMF_SUPPORT -DBCN_PROTECTION_SUPPORT
+endif
+#endif
+#endif /* DOT11W_PMF_SUPPORT */
+
+ifeq ($(CONFIG_STATS_COUNT),y)
+WFLAGS += -DSTATS_COUNT_SUPPORT
+endif
+
+ifeq ($(CONFIG_RATE_ADAPT_AGBS_SUPPORT),y)
+WFLAGS += -DRATE_ADAPT_AGBS_SUPPORT
+WFLAGS += -DRACTRL_FW_OFFLOAD_SUPPORT
+endif
+
+ifeq ($(CONFIG_CSO_SUPPORT), y)
+WFLAGS += -DCONFIG_CSO_SUPPORT
+endif
+
+#ifdef LED_CONTROL_SUPPORT
+ifeq ($(CONFIG_LED_CONTROL_SUPPORT),y)
+WFLAGS += -DLED_CONTROL_SUPPORT
+endif
+#endif /* LED_CONTROL_SUPPORT */
+
+ifeq ($(CONFIG_ERR_RECOVERY),y)
+WFLAGS += -DERR_RECOVERY
+endif
+
+ifeq ($(CONFIG_TCP_RACK_SUPPORT),y)
+WFLAGS += -DREDUCE_TCP_ACK_SUPPORT
+endif
+
+ifeq ($(CONFIG_THERMAL_PROTECT_SUPPORT),y)
+WFLAGS += -DTHERMAL_PROTECT_SUPPORT
+endif
+
+ifeq ($(CONFIG_ICAP_SUPPORT),y)
+WFLAGS += -DINTERNAL_CAPTURE_SUPPORT
+endif
+
+ifeq ($(CONFIG_SPECTRUM_SUPPORT),y)
+WFLAGS += -DWIFI_SPECTRUM_SUPPORT
+endif
+
+ifeq ($(CONFIG_PHY_ICS_SUPPORT),y)
+WFLAGS += -DPHY_ICS_SUPPORT
+endif
+
+ifeq ($(CONFIG_HW_HAL_OFFLOAD),y)
+WFLAGS += -DCONFIG_HW_HAL_OFFLOAD
+endif
+
+ifeq ($(CONFIG_LLTD),y)
+WFLAGS += -DLLTD_SUPPORT
+endif
+
+ifeq ($(CONFIG_SINGLE_SKU),y)
+WFLAGS += -DSINGLE_SKU_V2
+endif
+
+ifeq ($(CONFIG_RLM_CAL_CACHE),y)
+WFLAGS += -DRLM_CAL_CACHE_SUPPORT
+endif
+
+ifeq ($(CONFIG_CAL_FREE_IC_SUPPORT),y)
+WFLAGS += -DCAL_FREE_IC_SUPPORT
+endif
+
+
+ifeq ($(CONFIG_WIFI_SYS_FW_V1),y)
+WFLAGS += -DWIFI_SYS_FW_V1
+endif
+
+ifeq ($(CONFIG_WIFI_SYS_FW_V2),y)
+WFLAGS += -DWIFI_SYS_FW_V2
+endif
+
+
+
+ifeq ($(CONFIG_SNMP_SUPPORT),y)
+WFLAGS += -DSNMP_SUPPORT
+endif
+
+ifeq ($(CONFIG_TSSI_ANTENNA_VARIATION),y)
+WFLAGS += -DTSSI_ANTENNA_VARIATION
+endif
+
+#ifdef DOT11R_FT_SUPPORT
+ifeq ($(CONFIG_DOT11R_FT_SUPPORT),y)
+WFLAGS += -DDOT11R_FT_SUPPORT
+endif
+#endif /* DOT11R_FT_SUPPORT */
+
+#EAP-RA Phy rate support
+ifeq ($(CONFIG_RA_PHY_RATE_SUPPORT),y)
+WFLAGS += -DCONFIG_RA_PHY_RATE_SUPPORT
+endif
+
+#ifdef DOT11K_RRM_SUPPORT
+ifeq ($(CONFIG_DOT11K_RRM_SUPPORT),y)
+WFLAGS += -DDOT11K_RRM_SUPPORT -DAP_SCAN_SUPPORT -DSCAN_SUPPORT -DAPPLE_11K_IOT
+endif
+#endif /* DOT11K_RRM_SUPPORT */
+
+#ifdef CFG_RED_SUPPORT
+ifeq ($(CONFIG_RED_SUPPORT),y)
+WFLAGS += -DCFG_RED_SUPPORT
+WFLAGS += -DHWIFI_TXSTATS_SUPPORT
+endif
+#endif /* CFG_RED_SUPPORT */
+
+#ifdef FW_LOG_DUMP
+ifeq ($(CONFIG_FW_LOG_DUMP_SUPPORT),y)
+WFLAGS += -DFW_LOG_DUMP
+endif
+#endif
+
+ifeq ($(CONFIG_EXT_BUILD_CHANNEL_LIST),y)
+WFLAGS += -DEXT_BUILD_CHANNEL_LIST
+endif
+
+ifeq ($(CONFIG_BCN_EXTCAP_VAR_LEN),y)
+WFLAGS += -DBCN_EXTCAP_VAR_LEN
+endif
+
+ifeq ($(CONFIG_KTHREAD_SUPPORT),y)
+WFLAGS += -DKTHREAD_SUPPORT
+endif
+
+ifeq ($(CONFIG_MEM_ALLOC_INFO_SUPPORT),y)
+WFLAGS += -DMEM_ALLOC_INFO_SUPPORT
+endif
+
+#ifdef MULTI_CARD
+ifeq ($(CONFIG_MC_SUPPORT),y)
+WFLAGS += -DMULTIPLE_CARD_SUPPORT
+endif
+#endif /* MULTI_CARD */
+
+ifeq ($(CONFIG_FW_DUMP_SUPPORT),y)
+WFLAGS += -DFW_DUMP_SUPPORT
+endif
+
+ifeq ($(CONFIG_USB_IOT_WORKAROUND2),y)
+WFLAGS += -DUSB_IOT_WORKAROUND2
+endif
+
+ifeq ($(CONFIG_DELAY_INT),y)
+WFLAGS += -DCONFIG_DELAY_INT
+endif
+
+#ifdef CONFIG_TRACE_SUPPORT
+ifeq ($(CONFIG_TRACE_SUPPORT),y)
+WFLAGS += -DCONFIG_TRACE_SUPPORT
+endif
+#endif
+
+#ifdef CONFIG_FW_DEBUG_SUPPORT
+ifeq ($(CONFIG_FW_DEBUG_SUPPORT),y)
+WFLAGS += -DCONFIG_FW_DEBUG
+endif
+#endif
+
+#ifdef WIFI_EAP_FEATURE
+ifeq ($(CONFIG_WIFI_EAP_FEATURE),y)
+WFLAGS += -DWIFI_EAP_FEATURE
+endif
+#endif
+
+#ifdef CONFIG_KEEP_ALIVE_OFFLOAD
+ifeq ($(CONFIG_KEEP_ALIVE_OFFLOAD),y)
+WFLAGS += -DCONFIG_KEEP_ALIVE_OFFLOAD
+endif
+#endif
+
+ifeq ($(CONFIG_WIFI_MTD),y)
+WFLAGS += -DCONFIG_WIFI_MTD
+endif
+
+#ifdef CONFIG_CALIBRATION_COLLECTION
+ifeq ($(CONFIG_CALIBRATION_COLLECTION_SUPPORT),y)
+WFLAGS += -DCONFIG_CALIBRATION_COLLECTION
+endif
+#endif
+
+#ifdef WIFI_REGION32_HIDDEN_SSID_SUPPORT
+ifeq ($(CONFIG_WIFI_REGION32_HIDDEN_SSID_SUPPORT),y)
+WFLAGS += -DWIFI_REGION32_HIDDEN_SSID_SUPPORT
+endif
+#endif /* WIFI_REGION32_HIDDEN_SSID_SUPPORT */
+
+ifeq ($(CONFIG_FLASH_SUPPORT),y)
+WFLAGS += -DRTMP_FLASH_SUPPORT
+endif
+
+ifeq ($(CONFIG_WIFI_SYSDVT),y)
+WFLAGS += -DCONFIG_WIFI_SYSDVT -DTRAFFIC_NOTIFY
+endif
+
+#ifeq ($(CONFIG_WIFI_DBG_TXCMD),y)
+WFLAGS += -I$(TOP_DIR)/common/dbg_txcmd/include
+WFLAGS += -DCONFIG_WIFI_DBG_TXCMD
+#endif
+
+ifeq ($(CONFIG_FALCON_TXCMD_SUPPORT_DBG),y)
+WFLAGS += -DCFG_SUPPORT_FALCON_TXCMD_DBG
+endif
+
+ifeq ($(CONFIG_FALCON_MURU_SUPPORT),y)
+WFLAGS += -DCFG_SUPPORT_FALCON_MURU
+endif
+
+ifeq ($(CONFIG_MUMIMO_SUPPORT),y)
+WFLAGS += -DCFG_SUPPORT_MU_MIMO
+endif
+
+ifeq ($(CONFIG_MU_RA_SUPPORT),y)
+WFLAGS += -DCFG_SUPPORT_MU_MIMO_RA
+endif
+
+ifeq ($(CONFIG_CFG_SUPPORT_FALCON_SR),y)
+WFLAGS += -DCFG_SUPPORT_FALCON_SR
+endif
+
+ifeq ($(CONFIG_CFG_SUPPORT_FALCON_PP),y)
+WFLAGS += -DCFG_SUPPORT_FALCON_PP
+endif
+
+# TPC
+ifeq ($(CONFIG_TPC_SUPPORT),y)
+WFLAGS += -DTPC_SUPPORT
+endif
+
+ifeq ($(CONFIG_MBO_SUPPORT),y)
+WFLAGS += -DMBO_SUPPORT -DWAPP_SUPPORT -DFT_R1KH_KEEP
+endif
+
+ifeq ($(CONFIG_VLAN_SUPPORT),y)
+WFLAGS += -DVLAN_SUPPORT
+endif
+
+ifeq ($(CONFIG_ANTENNA_CONTROL_SUPPORT),y)
+WFLAGS += -DANTENNA_CONTROL_SUPPORT
+endif
+
+ifeq ($(CONFIG_TX_LATENCY_SUPPORT),y)
+WFLAGS += -DEAP_STATS_SUPPORT
+WFLAGS += -DEAP_ENHANCE_STATS_SUPPORT
+WFLAGS += -DHWIFI_TXSTATS_SUPPORT
+endif
+
+ifeq ($(CONFIG_MGMT_TXPWR_CTRL),y)
+WFLAGS += -DMGMT_TXPWR_CTRL
+endif
+
+#DATA TXPWR CTRL
+ifeq ($(CONFIG_DATA_TXPWR_CTRL),y)
+WFLAGS += -DDATA_TXPWR_CTRL
+endif
+
+ifeq ($(CONFIG_OFFCHANNEL_SCAN_FEATURE),y)
+WFLAGS += -DOFFCHANNEL_SCAN_FEATURE
+endif
+
+ifeq ($(CONFIG_RTMP_FLASH_SUPPORT),y)
+WFLAGS += -DRTMP_FLASH_SUPPORT
+endif
+
+ifeq ($(CONFIG_BAND_STEERING),y)
+WFLAGS += -DBAND_STEERING
+endif
+
+ifeq ($(CONFIG_OCE_SUPPORT),y)
+WFLAGS += -DOCE_SUPPORT -DOCE_FILS_SUPPORT
+endif
+
+ifeq ($(CONFIG_6G_SUPPORT),y)
+WFLAGS += -DCONFIG_6G_SUPPORT
+endif
+
+ifeq ($(CONFIG_6G_AFC_SUPPORT),y)
+WFLAGS += -DCONFIG_6G_AFC_SUPPORT
+endif
+
+ifeq ($(CONFIG_EAP_QUICK_CHANNEL_SWITCH_WITHOUT_CSA), y)
+WFLAGS += -DCONFIG_EAP_QUICK_CHANNEL_SWITCH_WITHOUT_CSA
+endif
+
+ifeq ($(CONFIG_TR181_SUPPORT),y)
+WFLAGS += -DTR181_SUPPORT
+WFLAGS += -DSTAT_ENHANCE_SUPPORT
+WFLAGS += -DEAP_STATS_SUPPORT
+endif
+
+ifeq ($(CONFIG_EHT_PARTIAL_BW_MU_MIMO_FEATURE),y)
+WFLAGS += -DEHT_PARTIAL_BW_MU_MIMO_FEATURE
+endif
+
+ifeq ($(CONFIG_EXPERIMENTAL_FEATURES_SUPPORT),y)
+WFLAGS += -DEXPERIMENTAL_FEATURES
+endif
+
+#ifdef DOT11_EHT_BE
+ifeq ($(CONFIG_PRE_CFG_SUPPORT),y)
+ifeq ($(CONFIG_DOT11_EHT_SUPPORT),y)
+WFLAGS += -DPRE_CFG_SUPPORT
+endif
+endif
+#endif /* DOT11_EHT_BE */
+
+ifeq ($(CONFIG_MLME_MULTI_QUEUE_SUPPORT),y)
+WFLAGS += -DMLME_MULTI_QUEUE_SUPPORT
+endif
+
+ifeq ($(CONFIG_ZERO_PKT_LOSS_SUPPORT),y)
+WFLAGS += -DZERO_PKT_LOSS_SUPPORT
+endif
+
+ifeq ($(CONFIG_SPECIAL_RPS_SUPPORT),y)
+WFLAGS += -DCONFIG_SPECIAL_RPS_SUPPORT
+endif
+
+ifeq ($(CONFIG_BA_REORDER_ARRAY_SUPPORT),y)
+WFLAGS += -DCONFIG_BA_REORDER_ARRAY_SUPPORT
+endif
+
+ifeq ($(CONFIG_CCN34_SPLIT_MAC_SUPPORT),y)
+WFLAGS += -DCCN34_SPLIT_MAC_SUPPORT
+WFLAGS += -DFIXED_HE_GI_SUPPORT
+WFLAGS += -DACTION_MONITOR_SUPPORT
+endif
+
+ifeq ($(CONFIG_CCN67_SPLIT_MAC_SUPPORT),y)
+WFLAGS += -DCCN67_SPLIT_MAC_SUPPORT
+endif
+
+ifeq ($(CONFIG_SW_CONNECT_SUPPORT),y)
+WFLAGS += -DSW_CONNECT_SUPPORT
+WFLAGS += -DCONFIG_LINUX_CRYPTO
+endif
+
+
+ifeq ($(CONFIG_SWACI_MECHANISM_SUPPORT),y)
+WFLAGS += -DSWACI_MECHANISM
+endif
+
+ifeq ($(CONFIG_ARCH_DMA_ADDR_T_64BIT), y)
+	WFLAGS += -DCONFIG_LOGAN_ARHT_SOC_NOT_USE
+endif
+
+ifeq ($(CONFIG_MEMORY_SLIM_SUPPORT), y)
+	WFLAGS += -DMEMORY_SLIM
+endif
+
+ifeq ($(CONFIG_FTM_SUPPORT),y)
+WFLAGS += -DFTM_SUPPORT
+endif
+
+################################################################
+# 6. CFG80211 Feature Flag (Linux Only)
+################################################################
+ifeq ($(CONFIG_CFG80211_SUPPORT),y)
+ifneq ($(CFG_CFG80211_VERSION),)
+VERSION_STR = $(subst \",,$(subst ., , $(subst -, ,$(subst v,,$(CFG_CFG80211_VERSION)))))
+X = $(firstword $(VERSION_STR))
+Y = $(word 2 ,$(VERSION_STR))
+Z = $(word 3 ,$(VERSION_STR))
+ifeq ($Z, )
+    Z = 0
+endif
+VERSION := $(shell echo "$$(( $X * 65536 + $Y * 256 + $Z))" )
+WFLAGS += -DCFG_CFG80211_VERSION=$(VERSION)
+endif
+WFLAGS += -DRT_CFG80211_SUPPORT -DDISABLE_HOSTAPD_BEACON -DDISABLE_HOSTAPD_PROBE_RESP
+ifeq ($(CONFIG_APCLI_SUPPLICANT_SUPPORT),y)
+WFLAGS += -DAPCLI_CFG80211_SUPPORT -DAPCLI_RANDOM_MAC_SUPPORT
+WFLAGS += -DSUPP_SAE_SUPPORT -DSUPP_OWE_SUPPORT -DSUPP_RANDOM_MAC_IN_DRIVER_SUPPORT
+endif
+ifeq ($(CONFIG_IWCOMMAND_CFG80211_SUPPORT),y)
+WFLAGS += -DIWCOMMAND_CFG80211_SUPPORT
+endif
+ifeq ($(CONFIG_CFG80211_FULL_OPS_SUPPORT),y)
+WFLAGS += -DCFG80211_FULL_OPS_SUPPORT
+endif
+ifeq ($(CONFIG_PWHM_SUPPORT),y)
+WFLAGS += -DPWHM_SUPPORT
+endif
+ifeq ($(CONFIG_HOSTAPD_MBSS_SUPPORT),y)
+WFLAGS += -DHOSTAPD_MBSS_SUPPORT
+endif
+ifeq ($(CONFIG_WPA3_SUPPORT),y)
+WFLAGS += -DHOSTAPD_WPA3_SUPPORT -DHOSTAPD_OWE_SUPPORT -DHOSTAPD_SAE_SUPPORT
+WFLAGS += -DHOSTAPD_SUITEB_SUPPORT -DDOT11W_PMF_SUPPORT
+WFLAGS += -DHOSTAPD_PMKID_IN_DRIVER_SUPPORT
+endif
+ifeq ($(CONFIG_CUSTOMISED_HOSTAPD_SUPPORT),y)
+WFLAGS += -DDISABLE_HOSTAPD_BEACON -DDISABLE_HOSTAPD_PROBE_RESP -DHOSTAPD_AUTO_CH_SUPPORT
+endif
+ifeq ($(CONFIG_DOT11R_FT_SUPPORT),y)
+WFLAGS += -DHOSTAPD_11R_SUPPORT
+endif
+ifeq ($(CONFIG_DOT11K_RRM_SUPPORT),y)
+WFLAGS += -DHOSTAPD_11K_SUPPORT
+endif
+ifeq ($(CONFIG_WNM_SUPPORT),y)
+WFLAGS += -DHOSTAPD_11V_BTM_SUPPORT
+endif
+ifeq ($(CONFIG_PASSPOINT_R2),y)
+WFLAGS += -DHOSTAPD_HS_R2_SUPPORT -DHOSTAPD_HS_R3_SUPPORT
+endif
+ifeq ($(CONFIG_RSNO_SUPPORT),y)
+WFLAGS += -DCFG_RSNO_SUPPORT
+endif
+endif #CONFIG_CFG80211_SUPPORT
+
+
+################################################################
+# Platform definitions
+################################################################
+include $(TOP_DIR)/mk/config/config_platform.mk

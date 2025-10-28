@@ -18,7 +18,7 @@ if grep -Eq "ipq40xx|ipq806x" "/etc/openwrt_release"; then
 	wifi_temp="$(awk '{printf("%.1f°C ", $0 / 1000)}' "$IEEE_PATH"/phy*/device/hwmon/hwmon*/temp1_input | awk '$1=$1')"
 else
 	wifi_temp1="$(get_mtwifi_temp ra0)"
-	wifi_temp2="$(get_mtwifi_temp rax0)"
+	wifi_temp2="$(get_mtwifi_temp rai0)"
 	wifi_temp="$(echo "$wifi_temp1 $wifi_temp2" | xargs)"
 fi
 

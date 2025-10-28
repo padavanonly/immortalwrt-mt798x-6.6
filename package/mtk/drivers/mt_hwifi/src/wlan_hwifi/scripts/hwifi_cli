@@ -1,0 +1,101 @@
+#!/bin/bash
+
+function go(){
+	insmod ../wlan_driver/wlan/os/linux/mt7915_ap.ko
+	insmod ../warp_driver/warp/mtk_warp.ko
+	insmod mtk_hwifi.ko
+	insmod mtk_pci.ko
+#	insmod mac80211_if.ko
+	insmod connac_if.ko phy_alloc_mode=0
+	insmod mt7915.ko mac_type=1
+	insmod mt7916.ko
+	insmod mt7915_dbg.ko
+	insmod mt7990_dbg.ko
+	insmod mt7992_dbg.ko
+}
+
+function leave(){
+	rmmod mt7915_dbg.ko
+	rmmod mt7990_dbg.ko
+	rmmod mt7992_dbg.ko
+	rmmod mt7916.ko
+	rmmod mt7915.ko
+	rmmod mtk_pci.ko
+#	rmmod mac80211_if.ko
+	rmmod connac_if.ko
+	rmmod mtk_hwifi.ko
+	rmmod mtk_warp.ko
+	rmmod mt7915_ap.ko
+}
+
+function start_ap() {
+	 hostapd /etc/hostapd/hostapd-minimal.conf &
+}
+
+function stop_ap() {
+	killall -9 hostapd
+}
+
+function start() {
+#	wpa_supplicant -d -Dwext -iwls1 -c/etc/wpa_supplicant/wpa_supplicant.conf &
+	wpa_passphrase MT7915_AP_STAR >> /tmp/wifi.conf
+	wpa_supplicant -B -i wls1 -c /tmp/wifi.conf
+}
+
+function stop() {
+	killall -9 wpa_supplicant
+	rm -rf /tmp/wifi.conf
+}
+
+function mon_start() {
+	ifconfig wls1 down
+	iw wls1 set type monitor
+	ifconfig wls1 up
+	#BW80 Channel 36
+	iw wls1 set freq 5180 80 5210
+}
+
+function mon_stop() {
+	ifconfig wls1 down
+	iw wls1 set type managed
+	ifconfig wls1 up
+}
+
+case ${1} in
+	"start")
+		echo "start hwifi modules!"
+		go;
+	;;
+	"stop")
+		echo "stop hwifi modules!"
+		leave;
+	;;
+	"ap_start")
+		echo "start AP mode!"
+		start_ap;
+	;;
+	"ap_stop")
+		echo "stop AP mode!"
+		stop_ap;
+	;;
+	"sta_start")
+		echo "start STA mode!"
+		start;
+	;;
+	"sta_stop")
+		echo "stop STA mode!"
+		stop;
+	;;
+	"mon_start")
+		echo "start Monitor mode!"
+		mon_start;
+	;;
+	"mon_stop")
+		echo "stop Monitor mode!"
+		mon_stop;
+	;;
+	*)
+		echo "Usage ${0} { start | stop | ap_start | ap_stop | sta_start | sta_stop | mon_start | mon_stop }"
+	;;
+esac
+

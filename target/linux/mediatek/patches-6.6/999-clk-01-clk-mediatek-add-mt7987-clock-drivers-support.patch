@@ -8,8 +8,6 @@ Subject: [PATCH 2/3] clk: mediatek: add mt7987 clock drivers support
  drivers/clk/mediatek/Makefile | 5 +++++
  2 files changed, 14 insertions(+)
 
-diff --git a/drivers/clk/mediatek/Kconfig b/drivers/clk/mediatek/Kconfig
-index 486401e1..1201df41 100644
 --- a/drivers/clk/mediatek/Kconfig
 +++ b/drivers/clk/mediatek/Kconfig
 @@ -423,6 +423,15 @@ config COMMON_CLK_MT7986_ETHSYS
@@ -28,11 +26,9 @@ index 486401e1..1201df41 100644
  config COMMON_CLK_MT7988
  	tristate "Clock driver for MediaTek MT7988"
  	depends on ARCH_MEDIATEK || COMPILE_TEST
-diff --git a/drivers/clk/mediatek/Makefile b/drivers/clk/mediatek/Makefile
-index eeccfa03..19a97fd3 100644
 --- a/drivers/clk/mediatek/Makefile
 +++ b/drivers/clk/mediatek/Makefile
-@@ -62,6 +62,11 @@ obj-$(CONFIG_COMMON_CLK_MT7986) += clk-mt7986-apmixed.o
+@@ -62,6 +62,11 @@ obj-$(CONFIG_COMMON_CLK_MT7986) += clk-m
  obj-$(CONFIG_COMMON_CLK_MT7986) += clk-mt7986-topckgen.o
  obj-$(CONFIG_COMMON_CLK_MT7986) += clk-mt7986-infracfg.o
  obj-$(CONFIG_COMMON_CLK_MT7986_ETHSYS) += clk-mt7986-eth.o
@@ -44,6 +40,3 @@ index eeccfa03..19a97fd3 100644
  obj-$(CONFIG_COMMON_CLK_MT7988) += clk-mt7988-apmixed.o
  obj-$(CONFIG_COMMON_CLK_MT7988) += clk-mt7988-topckgen.o
  obj-$(CONFIG_COMMON_CLK_MT7988) += clk-mt7988-infracfg.o
--- 
-2.45.2
-

@@ -1,0 +1,98 @@
+menuconfig MTK_SECURE_BOOT
+	bool "Enable Secure Boot"
+	select PACKAGE_dmsetup
+	select PACKAGE_cryptsetup
+	default n
+	help
+	  Select mtk secure boot
+
+if MTK_SECURE_BOOT
+
+config SBC_KEY_DIR
+	string "secure boot key directory"
+	default "../../keys"
+
+config FIT_SIGN_KEY_NAME
+	string "FIT sign key name"
+	default "fit_key"
+
+config FIT_SIGN_ALG
+	string "FIT sign algorithm"
+	default "sha256,rsa2048"
+
+menuconfig MTK_FW_ENC
+	bool "Enable firmware encryption"
+	default n
+	help
+	  Select mtk firmware encryption
+
+if MTK_FW_ENC
+
+choice
+	prompt "Choose rootfs encryption method"
+	default MTK_FW_ENC_USE_RAMDISK
+
+config MTK_FW_ENC_USE_RAMDISK
+	bool "use RAM disk"
+	select KERNEL_BLK_DEV_RAM
+	help
+	  decrypt the whold rootfs to RAM, and mounting as RAM disk
+
+endchoice
+
+choice
+	prompt "Choose firmware decryption backend"
+	default FW_ENC_DECRYPT_VIA_BL32
+
+config FW_ENC_DECRYPT_VIA_BL31
+	bool "Decrypt firmware via BL31"
+
+config FW_ENC_DECRYPT_VIA_BL32
+	bool "Decrypt firmware via BL32"
+	select PACKAGE_optee-mediatek
+	select OPTEE_FW_ENC_EARLY_TA
+
+endchoice
+
+config FW_ENC_ALG
+	string
+	default "tee_aes256" if FW_ENC_DECRYPT_VIA_BL31
+	default "optee_aes256" if FW_ENC_DECRYPT_VIA_BL32
+
+config PLAT_KEY_NAME
+	string "platform key name"
+	default "plat_key"
+
+config ROE_SALT
+	string "ROE key salt"
+	default "salt/roe_salt.bin"
+
+config KERNEL_SALT
+	string "Kernel encryption key salt"
+	default "salt/kernel_salt.bin"
+
+config ROOTFS_SALT
+	string "Rootfs encryption key salt"
+	default "salt/rootfs_salt.bin"
+
+endif # MTK_FW_ENC
+
+menuconfig MTK_ANTI_ROLLBACK
+	bool "Enable Anti-Rollback"
+	default n
+	help
+	  Select mtk anti-rollback
+
+if MTK_ANTI_ROLLBACK
+
+config ANTI_ROLLBACK_TABLE
+	string "Anti-Rollback table"
+	default "../../fw_ar_table.xml"
+
+config AUTO_AR_CONF
+	string "Anti-Rollback auto config"
+	default "auto_ar_conf.mk"
+
+endif # MTK_ANTI_ROLLBACK
+
+endif # MTK_SECURE_BOOT

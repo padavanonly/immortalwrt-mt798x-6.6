@@ -1,0 +1,96 @@
+if PACKAGE_kmod-mt_hwifi
+
+config MTK_HWIFI_PCI_SUPPORT
+	bool "HWIFI PCIE/AXI Support"
+	default y
+	select PACKAGE_kmod-mtk_pci
+	depends on PACKAGE_kmod-mt_hwifi
+
+config MTK_HWIFI_CONNAC_IF_SUPPORT
+	bool "HWIFI abstraction layer for CONNAC3/5 interface"
+	default y
+	select PACKAGE_kmod-connac_if
+	depends on PACKAGE_kmod-mt_hwifi
+
+config MTK_HWIFI_WED_SUPPORT
+	bool "HWIFI WED Support"
+	select PACKAGE_kmod-mtk_wed
+	depends on PACKAGE_kmod-warp && PACKAGE_kmod-mtk_pci
+	default n
+
+config EN_HWIFI_NPU_SUPPORT
+	bool "HWIFI NPU Support"
+	select PACKAGE_kmod-en_npu
+	depends on PACKAGE_kmod-warp && PACKAGE_kmod-mtk_pci && PACKAGE_kmod-mtk_wed
+	default n
+
+config MTK_HWIFI_MD_COEX_SUPPORT
+	bool "HWIFI MD COEX Support"
+	depends on MTK_HWIFI_WED_SUPPORT
+	default n
+
+config MTK_HWIFI_SW_AMSDU
+	bool "HWIFI SW AMSDU Support"
+	depends on PACKAGE_kmod-mt_hwifi
+	default n
+
+config MTK_HWIFI_RX_PROCESS_WORKQUEUE
+	bool "HWIFI Rx Process WQ Support"
+	depends on PACKAGE_kmod-mt_hwifi
+	default n
+
+config MTK_HWIFI_MEM_SHRINK
+	bool "HWIFI Memory Shrink"
+	depends on PACKAGE_kmod-mt_hwifi
+	default n
+
+menu "HWIFI Chips Support"
+	config MTK_HWIFI_MT7915
+		bool "mt7915"
+		select PACKAGE_kmod-mt7915_
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_MT7916
+		bool "mt7916"
+		select PACKAGE_kmod-mt7916_
+		depends on PACKAGE_kmod-mt_hwifi
+
+	config MTK_HWIFI_BELLWETHER
+		bool "bellwether"
+		select PACKAGE_kmod-bellwether
+		depends on PACKAGE_kmod-mt_hwifi
+
+	config MTK_HWIFI_MT7990
+		bool "mt7990"
+		select PACKAGE_kmod-mt7990
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_MT7991
+		bool "mt7991"
+		select PACKAGE_kmod-mt7991
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_MT7992
+		bool "mt7992"
+		select PACKAGE_kmod-mt7992
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_MT799A
+		bool "mt799a"
+		select PACKAGE_kmod-mt799a
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_MT7993
+		bool "mt7993"
+		select PACKAGE_kmod-mt7993
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_MT799B
+		bool "mt799b"
+		select PACKAGE_kmod-mt799b
+		depends on PACKAGE_kmod-mt7993
+	config MTK_HWIFI_BLACKHAWK_A0
+		bool "blackhawk_a0"
+		select PACKAGE_kmod-blackhawk_a0
+		depends on PACKAGE_kmod-mt_hwifi
+	config MTK_HWIFI_BLACKHAWK_A0_PCIE1
+		bool "blackhawk_a0_pcie1"
+		select PACKAGE_kmod-blackhawk_a0_pcie1
+		depends on PACKAGE_kmod-blackhawk_a0
+endmenu
+
+endif #PACKAGE_kmod-mt_hwifi#

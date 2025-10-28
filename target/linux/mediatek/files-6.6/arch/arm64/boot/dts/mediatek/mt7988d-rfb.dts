@@ -14,7 +14,7 @@
 		     "mediatek,mt7988";
 
 	chosen {
-		bootargs = "console=ttyS0,115200n1 loglevel=8  \
+		bootargs = "console=ttyS0,115200n1 loglevel=6  \
 			    earlycon=uart8250,mmio32,0x11000000 \
 			    pci=pcie_bus_perf ubi.block=0,firmware root=/dev/fit0 \
 			    rootwait";
@@ -44,3 +44,37 @@
 		};
 	};
 };
+
+/*
+ * MT7988A have 4 pcies:
+ * -pcie0: pcie@11300000 - Gen3 2 lanes
+ * -pcie1: pcie@11310000 - Gen3 2 lanes
+ * -pcie2: pcie@11280000 - Gen3 1 lane (shared with u3 port of ssusb0)
+ * -pcie3: pcie@11290000 - Gen3 1 lane
+ * and 2 usb controllers
+ * -ssusb0: usb@11190000 (u2 port and u3 port, u3 port shared with pcie2)
+ * -ssusb1: usb@11200000 (u2 port and u3 port)
+ *
+ * MT7988D only support 2 pcies:
+ * -pcie0: pcie@11300000 - Gen3 2 lanes
+ * -pcie3: pcie@11290000 - Gen3 1 lane
+ * and 1 usb controller
+ * -ssusb1: usb@11200000 (u2 port and u3 port)
+ */
+
+&pcie1 {
+	status = "disabled";
+};
+
+&pcie2 {
+	status = "disabled";
+};
+
+&ssusb0 {
+	status = "disabled";
+};
+
+&xphy {
+	status = "disabled";
+};
+

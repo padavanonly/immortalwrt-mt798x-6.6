@@ -1,0 +1,179 @@
+--- a/drivers/net/phy/mediatek/mtk-2p5ge.c	2025-08-14 01:19:46.613002351 +0800
++++ b/drivers/net/phy/mediatek/mtk-2p5ge.c	2025-08-14 12:18:24.302000076 +0800
+@@ -65,7 +65,7 @@
+ #define CM_CTRL_P23			(0x5124)
+ #define DM_CTRL_P01			(0x5200)
+ #define DM_CTRL_P23			(0x5224)
+-
++#define MTK_PHY_LP_DETECTED_MASK        GENMASK(7, 6)
+ #define MTK_2P5GPHY_CHIP_SCU_BASE	(0x0f0cf800)
+ #define MTK_2P5GPHY_CHIP_SCU_LEN	(0x12c)
+ #define SYS_SW_RESET			(0x128)
+@@ -554,7 +554,19 @@
+ 	ret = genphy_update_link(phydev);
+ 	if (ret)
+ 		return ret;
+-
++	if (phydev->autoneg == AUTONEG_ENABLE && !phydev->autoneg_complete)
++		{
++		ret = phy_read_paged(phydev, MTK_PHY_PAGE_EXTENDED_1,
++                                    MTK_PHY_AUX_CTRL_AND_STATUS);
++                if (!FIELD_GET(MTK_PHY_LP_DETECTED_MASK, ret)){
++                       if (phydev->link !=1){
++                               phydev->link = 1;
++                               phydev->speed = SPEED_2500;
++                               phydev->duplex = DUPLEX_FULL;
++                       		}
++                       return 0;
++               		}
++		}
+ 	phydev->speed = SPEED_UNKNOWN;
+ 	phydev->duplex = DUPLEX_UNKNOWN;
+ 	phydev->pause = 0;
+@@ -568,6 +580,7 @@
+ 		ret = genphy_c45_read_lpa(phydev);
+ 		if (ret < 0)
+ 			return ret;
++               
+ 
+ 		/* Clause 45 doesn't define 1000BaseT support. Read the link
+ 		 * partner's 1G advertisement via Clause 22.
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -2338,9 +2338,17 @@ static const struct usb_device_id option
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x2cb7, 0x0a06, 0xff) },			/* Fibocom FM650-CN (RNDIS mode) */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x2cb7, 0x0a07, 0xff) },			/* Fibocom FM650-CN (MBIM mode) */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x2df3, 0x9d03, 0xff) },			/* LongSung M5710 */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1402, 0xff) },			/* GosunCn GM800 (Download mode) */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1403, 0xff) },			/* GosunCn GM800 (rmnet, old) */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1404, 0xff) },			/* GosunCn GM500 RNDIS */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1405, 0xff) },			/* GosunCn GM500 MBIM */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1406, 0xff) },			/* GosunCn GM500 ECM/NCM */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1421, 0xff) },			/* GosunCn GM800 (rmnet) */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1422, 0xff) },			/* GosunCn GM800 (EAP) */
++	{ USB_DEVICE(0x2077, 0x2001) }, /* T&W RNDIS */
++	{ USB_DEVICE(0x2077, 0x2004) }, /* T&W QMI */
++	{ USB_DEVICE(0x2077, 0x2007) }, /* T&W MBIM */
++	{ USB_DEVICE(0x2077, 0x2008) }, /* T&W ECM */
+ 	{ USB_DEVICE(0x33f8, 0x0104),						/* Rolling RW101-GL (laptop RMNET) */
+ 	  .driver_info = RSVD(4) | RSVD(5) },
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x33f8, 0x01a2, 0xff) },			/* Rolling RW101-GL (laptop MBIM) */
+--- a/drivers/net/phy/mediatek/mtk-ge-soc.c	2025-06-15 22:32:46.110001496 +0800
++++ b/drivers/net/phy/mediatek/mtk-ge-soc.c	2025-06-16 21:13:04.290000141 +0800
+@@ -1208,7 +1208,7 @@
+ 
+ 	if (!buf[0] || !buf[1] || !buf[2] || !buf[3] || len < 4 * sizeof(u32)) {
+ 		phydev_err(phydev, "invalid efuse data\n");
+-		ret = -EINVAL;
++		ret = 0;
+ 		goto out;
+ 	}
+ 
+@@ -1463,6 +1463,7 @@
+ 		.config_intr	= genphy_no_config_intr,
+ 		.handle_interrupt = genphy_handle_interrupt_no_ack,
+ 		.probe		= mt7981_phy_probe,
++		.read_status	= mtk_gphy_cl22_read_status,
+ 		.suspend	= genphy_suspend,
+ 		.resume		= genphy_resume,
+ 		.read_page	= mtk_phy_read_page,
+@@ -1480,6 +1481,7 @@
+ 		.config_intr	= genphy_no_config_intr,
+ 		.handle_interrupt = genphy_handle_interrupt_no_ack,
+ 		.probe		= mt7988_phy_probe,
++		.read_status	= mtk_gphy_cl22_read_status,
+ 		.suspend	= genphy_suspend,
+ 		.resume		= genphy_resume,
+ 		.read_page	= mtk_phy_read_page,
+diff -u -r a/drivers/net/phy/mediatek/mtk.h b/drivers/net/phy/mediatek/mtk.h
+--- a/drivers/net/phy/mediatek/mtk.h	2025-06-15 22:32:46.110001496 +0800
++++ b/drivers/net/phy/mediatek/mtk.h	2025-06-16 21:11:47.089000105 +0800
+@@ -11,12 +11,30 @@
+ #define MTK_EXT_PAGE_ACCESS			0x1f
+ #define MTK_PHY_PAGE_STANDARD			0x0000
+ #define MTK_PHY_PAGE_EXTENDED_1			0x0001
++#define MTK_PHY_AUX_CTRL_AND_STATUS		0x14
++/* suprv_media_select_RefClk */
++#define   MTK_PHY_LP_DETECTED_MASK		GENMASK(7, 6)
++#define   MTK_PHY_ENABLE_DOWNSHIFT		BIT(4)
++#define MTK_PHY_PAGE_EXTENDED_1			0x0001
+ #define MTK_PHY_PAGE_EXTENDED_52B5		0x52b5
+ #define MTK_PHY_AUX_CTRL_AND_STATUS		0x14
+ 
+ /* suprv_media_select_RefClk */
+ #define   MTK_PHY_ENABLE_DOWNSHIFT		BIT(4)
+ 
++/* Registers on Token Ring debug nodes */
++/* ch_addr = 0x0, node_addr = 0xf, data_addr = 0x2 */
++#define   AN_STATE_MASK			GENMASK(22, 19)
++#define   AN_STATE_SHIFT		19
++#define   AN_STATE_TX_DISABLE		1
++
++/* ch_addr = 0x0, node_addr = 0xf, data_addr = 0x3c */
++#define AN_NEW_LP_CNT_LIMIT_MASK		GENMASK(23, 20)
++#define AUTO_NP_10XEN				BIT(6)
++
++/* Registers on MDIO_MMD_VEND1 */
++#define MTK_PHY_LINK_STATUS_MISC	(0xa2)
++#define   MTK_PHY_FINAL_SPEED_1000	BIT(3)
+ /* Registers on MDIO_MMD_VEND2 */
+ #define MTK_PHY_LED0_ON_CTRL			0x24
+ #define MTK_PHY_LED1_ON_CTRL			0x26
+@@ -81,7 +99,7 @@
+ 		       u8 data_addr, u32 set);
+ void __mtk_tr_clr_bits(struct phy_device *phydev, u8 ch_addr, u8 node_addr,
+ 		       u8 data_addr, u32 clr);
+-
++int mtk_gphy_cl22_read_status(struct phy_device *phydev);
+ int mtk_phy_read_page(struct phy_device *phydev);
+ int mtk_phy_write_page(struct phy_device *phydev, int page);
+ 
+diff -u -r a/drivers/net/phy/mediatek/mtk-phy-lib.c b/drivers/net/phy/mediatek/mtk-phy-lib.c
+--- a/drivers/net/phy/mediatek/mtk-phy-lib.c	2025-06-15 22:32:46.110001496 +0800
++++ b/drivers/net/phy/mediatek/mtk-phy-lib.c	2025-06-16 21:10:32.784000069 +0800
+@@ -361,6 +361,45 @@
+ }
+ EXPORT_SYMBOL_GPL(mtk_phy_leds_state_init);
+ 
++int mtk_gphy_cl22_read_status(struct phy_device *phydev)
++{
++	int ret;
++
++	ret = genphy_read_status(phydev);
++	if (ret)
++		return ret;
++
++	if (phydev->autoneg == AUTONEG_ENABLE && !phydev->autoneg_complete) {
++		ret = phy_read_paged(phydev, MTK_PHY_PAGE_EXTENDED_1,
++				     MTK_PHY_AUX_CTRL_AND_STATUS);
++		if (ret < 0)
++			return ret;
++
++		/* Once LP_DETECTED is set, it means that"ability_match" in
++		 * IEEE 802.3 Figure 28-18 is set. This happens after we plug in
++		 * cable. Also, LP_DETECTED will be cleared after AN complete.
++		 */
++		if (!FIELD_GET(MTK_PHY_LP_DETECTED_MASK, ret)){
++			if (phydev->link !=1){
++                        	phydev->link = 1;
++                        	phydev->speed = SPEED_2500;
++                        	phydev->duplex = DUPLEX_FULL;
++			}
++			return 0;
++		}
++
++		ret = phy_read(phydev, MII_CTRL1000);
++		//if (ret & (ADVERTISE_1000FULL | ADVERTISE_1000HALF)) {
++		//	ret = extend_an_new_lp_cnt_limit(phydev);
++		//	if (ret < 0)
++		//		return ret;
++		//	}
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(mtk_gphy_cl22_read_status);
++
+ MODULE_DESCRIPTION("MediaTek Ethernet PHY driver common");
+ MODULE_AUTHOR("Sky Huang <SkyLake.Huang@mediatek.com>");
+ MODULE_AUTHOR("Daniel Golle <daniel@makrotopia.org>");

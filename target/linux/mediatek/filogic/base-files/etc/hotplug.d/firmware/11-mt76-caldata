@@ -13,8 +13,6 @@ case "$FIRMWARE" in
 		ln -sf /tmp/tp_data/MT7981_EEPROM.bin \
 			/lib/firmware/$FIRMWARE
 		;;
-	sl,3000-emmc|\
-	umi,uax3000e|\
 	ubnt,unifi-6-plus)
 		caldata_extract_mmc "factory" 0x0 0x1000
 		;;

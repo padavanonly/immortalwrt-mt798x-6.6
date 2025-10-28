@@ -1,0 +1,333 @@
+diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-07-02 01:09:25.192002459 +0800
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-07-05 00:04:21.642001693 +0800
+@@ -12,6 +12,15 @@
+ #include <dt-bindings/pinctrl/mt65xx.h>
+ #include <dt-bindings/reset/mediatek,mt7988-resets.h>
+ #include <dt-bindings/thermal/thermal.h>
++
++#include <dt-bindings/reset/ti-syscon.h>		
++			
++		
++			
++			
++			
++		
++		
+ 
+ /* TOPRGU resets */
+ #define MT7988_TOPRGU_SGMII0_GRST		1
+@@ -193,6 +202,86 @@
+ 		regulator-always-on;
+ 	};
+ 
++	wed: wed@15010000 {
++		compatible = "mediatek,wed";
++		wed_num = <3>;
++		/* add this property for wed get the pci slot number. */
++		pci_slot_map = <0>, <1>, <2>;
++		reg = <0 0x15010000 0 0x2000>,
++		      <0 0x15012000 0 0x2000>,
++		      <0 0x15014000 0 0x2000>;
++		interrupt-parent = <&gic>;
++		interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 270 IRQ_TYPE_LEVEL_HIGH>;
++	};
++	wed2: wed2@15012000 {
++		compatible = "mediatek,wed2";
++		wed_num = <3>;
++		/* add this property for wed get the pci slot number. */
++		reg = <0 0x15010000 0 0x2000>,
++		      <0 0x15012000 0 0x2000>,
++		      <0 0x15014000 0 0x2000>;
++		interrupt-parent = <&gic>;
++		interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 270 IRQ_TYPE_LEVEL_HIGH>;
++	};
++	wed3: wed3@15014000 {
++		compatible = "mediatek,wed3";
++		wed_num = <3>;
++		/* add this property for wed get the pci slot number. */
++		reg = <0 0x15010000 0 0x2000>,
++		      <0 0x15012000 0 0x2000>,
++		      <0 0x15014000 0 0x2000>;
++		interrupt-parent = <&gic>;
++		interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 270 IRQ_TYPE_LEVEL_HIGH>;
++	};
++	wdma: wdma@15104800 {
++		compatible = "mediatek,wed-wdma";
++		reg = <0 0x15104800 0 0x400>,
++		      <0 0x15104c00 0 0x400>,
++		      <0 0x15105000 0 0x400>;
++	};
++	ap2woccif: ap2woccif@151A5000 {
++		compatible = "mediatek,ap2woccif";
++		reg = <0 0x151A5000 0 0x1000>,
++		      <0 0x152A5000 0 0x1000>,
++		      <0 0x153A5000 0 0x1000>;
++		interrupt-parent = <&gic>;
++		interrupts = <GIC_SPI 211 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 212 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 272 IRQ_TYPE_LEVEL_HIGH>;
++	};
++	wocpu0_ilm: wocpu0_ilm@151E0000 {
++		compatible = "mediatek,wocpu0_ilm";
++		reg = <0 0x151E0000 0 0x8000>;
++	};
++	wocpu1_ilm: wocpu1_ilm@152E0000 {
++		compatible = "mediatek,wocpu1_ilm";
++		reg = <0 0x152E0000 0 0x8000>;
++	};
++	wocpu2_ilm: wocpu2_ilm@153E0000 {
++		compatible = "mediatek,wocpu2_ilm";
++		reg = <0 0x153E0000 0 0x8000>;
++	};
++	wocpu_dlm: wocpu_dlm@151E8000 {
++		compatible = "mediatek,wocpu_dlm";
++		reg = <0 0x151E8000 0 0x2000>,
++		      <0 0x152E8000 0 0x2000>,
++		      <0 0x153E8000 0 0x2000>;
++		resets = <&ethsysrst 0>;
++		reset-names = "wocpu_rst";
++	};
++	cpu_boot: wocpu_boot@15194000 {
++		compatible = "mediatek,wocpu_boot";
++		reg = <0 0x15194000 0 0x1000>,
++		      <0 0x15294000 0 0x1000>,
++		      <0 0x15394000 0 0x1000>;
++	};
++
+ 	reserved-memory {
+ 		ranges;
+ 		#address-cells = <2>;
+@@ -204,31 +293,36 @@
+ 			no-map;
+ 		};
+ 
+-		wmcpu_emi: wmcpu-reserved@47cc0000 {
+-			reg = <0 0x47cc0000 0 0x00100000>;
++		wmcpu_emi: wmcpu-reserved@50000000 {
++			compatible = "mediatek,wmcpu-reserved";
+ 			no-map;
++			reg = <0 0x50000000 0 0x0>;
+ 		};
+-
+-		wo_emi0: wo-emi@4f600000 {
+-			reg = <0 0x4f600000 0 0x40000>;
++		wocpu0_emi: wocpu0_emi@4F600000 {
++			compatible = "mediatek,wocpu0_emi";
+ 			no-map;
++			reg = <0 0x4F600000 0 0x40000>;
++			shared = <0>;
+ 		};
+-
+-		wo_emi1: wo-emi@4f640000 {
+-			reg = <0 0x4f640000 0 0x40000>;
++		wocpu1_emi: wocpu1_emi@4F640000 {
++			compatible = "mediatek,wocpu1_emi";
+ 			no-map;
++			reg = <0 0x4F640000 0 0x40000>;
++			shared = <0>;
+ 		};
+-
+-		wo_emi2: wo-emi@4f680000 {
+-			reg = <0 0x4f680000 0 0x40000>;
++		wocpu2_emi: wocpu2_emi@4F680000 {
++			compatible = "mediatek,wocpu2_emi";
+ 			no-map;
++			reg = <0 0x4F680000 0 0x40000>;
++			shared = <0>;
+ 		};
+-
+-		wo_data: wo-data@4f700000 {
+-			reg = <0 0x4f700000 0 0x800000>;
++		wocpu_data: wocpu_data@4F700000 {
++			compatible = "mediatek,wocpu_data";
+ 			no-map;
++			reg = <0 0x4F700000 0 0x800000>;
+ 			shared = <1>;
+ 		};
++
+ 	};
+ 
+ 	gsw: gsw@15020000 {
+@@ -824,6 +918,22 @@
+ 			status = "disabled";
+ 		};
+ 
++		wbsys: wbsys@18000000 {
++			compatible = "mediatek,wbsys";
++			reg = <0 0x18000000 0  0x1000000>;
++			linux,pci-domain = <4>;
++			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
++			chip_id = <0x7981>;
++		};
++
++		wed_pcie: wed_pcie@10003000 {
++			compatible = "mediatek,wed_pcie";
++			reg = <0 0x10003000 0 0x10>;
++		};
++
+ 		spi0: spi@11007000 {
+ 			compatible = "mediatek,ipm-spi-quad", "mediatek,spi-ipm";
+ 			reg = <0 0x11007000 0 0x100>;
+@@ -1260,56 +1370,22 @@
+ 		};
+ 
+ 		ethsys: syscon@15000000 {
+-			compatible = "mediatek,mt7988-ethsys", "syscon";
+-			reg = <0 0x15000000 0 0x1000>;
++		#address-cells = <1>;
++		#size-cells = <1>;
++		compatible = "mediatek,mt7988-ethsys",
++			     "syscon";
++		reg = <0 0x15000000 0 0x1000>;
+ 			#clock-cells = <1>;
+ 			#reset-cells = <1>;
+-			#address-cells = <1>;
+-			#size-cells = <1>;
+-		};
+-
+-		wed0: wed@15010000 {
+-			compatible = "mediatek,mt7988-wed",
+-				     "syscon";
+-			reg = <0 0x15010000 0 0x2000>;
+-			interrupt-parent = <&gic>;
+-			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>;
+-			memory-region = <&wo_emi0>, <&wo_data>;
+-			memory-region-names = "wo-emi", "wo-data";
+-			mediatek,wo-ccif = <&wo_ccif0>;
+-			mediatek,wo-ilm = <&wo_ilm0>;
+-			mediatek,wo-dlm = <&wo_dlm0>;
+-			mediatek,wo-cpuboot = <&wo_cpuboot0>;
+-		};
+-
+-		wed1: wed@15012000 {
+-			compatible = "mediatek,mt7988-wed",
+-				     "syscon";
+-			reg = <0 0x15012000 0 0x2000>;
+-			interrupt-parent = <&gic>;
+-			interrupts = <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>;
+-			memory-region = <&wo_emi1>, <&wo_data>;
+-			memory-region-names = "wo-emi", "wo-data";
+-			mediatek,wo-ccif = <&wo_ccif1>;
+-			mediatek,wo-ilm = <&wo_ilm1>;
+-			mediatek,wo-dlm = <&wo_dlm1>;
+-			mediatek,wo-cpuboot = <&wo_cpuboot1>;
+-		};
+-
+-		wed2: wed@15014000 {
+-			compatible = "mediatek,mt7988-wed",
+-				     "syscon";
+-			reg = <0 0x15014000 0 0x2000>;
+-			interrupt-parent = <&gic>;
+-			interrupts = <GIC_SPI 270 IRQ_TYPE_LEVEL_HIGH>;
+-			memory-region = <&wo_emi2>, <&wo_data>;
+-			memory-region-names = "wo-emi", "wo-data";
+-			mediatek,wo-ccif = <&wo_ccif2>;
+-			mediatek,wo-ilm = <&wo_ilm2>;
+-			mediatek,wo-dlm = <&wo_dlm2>;
+-			mediatek,wo-cpuboot = <&wo_cpuboot2>;
++		ethsysrst: reset-controller {
++			compatible = "ti,syscon-reset";
++			#reset-cells = <1>;
++			ti,reset-bits =
++				<0x34 4 0x34 4 0x34 4
++				 (ASSERT_SET | DEASSERT_CLEAR | STATUS_SET)>;
++			};
+ 		};
+-
++		
+ 		switch: switch@15020000 {
+ 			compatible = "mediatek,mt7988-switch";
+ 			reg = <0 0x15020000 0 0x8000>;
+@@ -1545,7 +1621,7 @@
+ 						 <&apmixedsys CLK_APMIXED_SGMPLL>;
+ 			mediatek,ethsys = <&ethsys>;
+ 			mediatek,infracfg = <&topmisc>;
+-			mediatek,wed = <&wed0>, <&wed1>, <&wed2>;
++			mediatek,wed = <&wed>;
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+ 
+@@ -1619,72 +1695,7 @@
+ 		       ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4","phy";
+                };
+ 
+-		wo_ccif0: syscon@151a5000 {
+-			compatible = "mediatek,mt7988-wo-ccif", "syscon";
+-			reg = <0 0x151a5000 0 0x1000>;
+-			interrupt-parent = <&gic>;
+-			interrupts = <GIC_SPI 211 IRQ_TYPE_LEVEL_HIGH>;
+-		};
+-
+-		wo_ccif1: syscon@152a5000 {
+-			compatible = "mediatek,mt7988-wo-ccif", "syscon";
+-			reg = <0 0x152a5000 0 0x1000>;
+-			interrupt-parent = <&gic>;
+-			interrupts = <GIC_SPI 212 IRQ_TYPE_LEVEL_HIGH>;
+-		};
+-
+-		wo_ccif2: syscon@153a5000 {
+-			compatible = "mediatek,mt7988-wo-ccif", "syscon";
+-			reg = <0 0x153a5000 0 0x1000>;
+-			interrupt-parent = <&gic>;
+-			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>;
+-		};
+-
+-		wo_ilm0: syscon@151e0000 {
+-			compatible = "mediatek,mt7988-wo-ilm", "syscon";
+-			reg = <0 0x151e0000 0 0x8000>;
+-		};
+-
+-		wo_ilm1: syscon@152e0000 {
+-			compatible = "mediatek,mt7988-wo-ilm", "syscon";
+-			reg = <0 0x152e0000 0 0x8000>;
+-		};
+-
+-		wo_ilm2: syscon@153e0000 {
+-			compatible = "mediatek,mt7988-wo-ilm", "syscon";
+-			reg = <0 0x153e0000 0 0x8000>;
+-		};
+-
+-		wo_dlm0: syscon@151e8000 {
+-			compatible = "mediatek,mt7988-wo-dlm", "syscon";
+-			reg = <0 0x151e8000 0 0x2000>;
+-		};
+-
+-		wo_dlm1: syscon@152e8000 {
+-			compatible = "mediatek,mt7988-wo-dlm", "syscon";
+-			reg = <0 0x152e8000 0 0x2000>;
+-		};
+-
+-		wo_dlm2: syscon@153e8000 {
+-			compatible = "mediatek,mt7988-wo-dlm", "syscon";
+-			reg = <0 0x153e8000 0 0x2000>;
+-		};
+-
+-		wo_cpuboot0: syscon@15194000 {
+-			compatible = "mediatek,mt7988-wo-cpuboot", "syscon";
+-			reg = <0 0x15194000 0 0x1000>;
+-		};
+-
+-		wo_cpuboot1: syscon@15294000 {
+-			compatible = "mediatek,mt7988-wo-cpuboot", "syscon";
+-			reg = <0 0x15294000 0 0x1000>;
+-		};
+-
+-		wo_cpuboot2: syscon@15394000 {
+-			compatible = "mediatek,mt7988-wo-cpuboot", "syscon";
+-			reg = <0 0x15394000 0 0x1000>;
+-		};
+-
++		
+ 		crypto: crypto@15600000 {
+ 			compatible = "inside-secure,safexcel-eip197b",
+ 				     "security-ip-197-srv";

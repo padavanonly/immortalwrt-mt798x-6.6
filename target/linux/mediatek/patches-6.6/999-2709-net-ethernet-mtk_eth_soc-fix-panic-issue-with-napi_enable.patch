@@ -1,0 +1,80 @@
+From 22ce7caa4e9024a168656d1abea4171b0dc8cfce Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 2 Jul 2025 13:53:10 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: fix panic issue with napi_enable
+ in mtk_open
+
+In some scenarios, the ETH may be initialized late, making it very
+close to when mtk_open is called. This could lead to a kernel panic at
+netif_napi_enable because the ETH driver does not call netif_napi_add().
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 28 +++++++++++++--------
+ 1 file changed, 17 insertions(+), 11 deletions(-)
+
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -4561,6 +4561,12 @@ static void mtk_pending_work(struct work
+ 	rtnl_unlock();
+ }
+ 
++static void mtk_napi_del(struct mtk_eth *eth)
++{
++	netif_napi_del(&eth->tx_napi);
++	netif_napi_del(&eth->rx_napi);
++}
++
+ static int mtk_free_dev(struct mtk_eth *eth)
+ {
+ 	int i;
+@@ -5671,6 +5677,15 @@ static int mtk_probe(struct platform_dev
+ 		}
+ 	}
+ 
++	/* we run 2 devices on the same DMA ring so we need a dummy device
++	 * for NAPI to work
++	 */
++	init_dummy_netdev(&eth->dummy_dev);
++	eth->dummy_dev.threaded = 1;
++	strcpy(eth->dummy_dev.name, "mtk_eth");
++	netif_napi_add(&eth->dummy_dev, &eth->tx_napi, mtk_napi_tx);
++	netif_napi_add(&eth->dummy_dev, &eth->rx_napi, mtk_napi_rx);
++
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+ 		if (!eth->netdev[i])
+ 			continue;
+@@ -5685,15 +5700,6 @@ static int mtk_probe(struct platform_dev
+ 				   eth->netdev[i]->base_addr, eth->irq[0]);
+ 	}
+ 
+-	/* we run 2 devices on the same DMA ring so we need a dummy device
+-	 * for NAPI to work
+-	 */
+-	init_dummy_netdev(&eth->dummy_dev);
+-	eth->dummy_dev.threaded = 1;
+-	strcpy(eth->dummy_dev.name, "mtk_eth");
+-	netif_napi_add(&eth->dummy_dev, &eth->tx_napi, mtk_napi_tx);
+-	netif_napi_add(&eth->dummy_dev, &eth->rx_napi, mtk_napi_rx);
+-
+ 	mtketh_debugfs_init(eth);
+ 	debug_proc_init(eth);
+ 
+@@ -5704,6 +5710,7 @@ static int mtk_probe(struct platform_dev
+ 	return 0;
+ 
+ err_deinit_ppe:
++	mtk_napi_del(eth);
+ 	mtk_ppe_deinit(eth);
+ 	mtk_release_all_muxes(eth);
+ 	mtk_mdio_cleanup(eth);
+@@ -5742,8 +5749,7 @@ static int mtk_remove(struct platform_de
+ 	mtk_wed_exit();
+ 	mtk_hw_deinit(eth);
+ 
+-	netif_napi_del(&eth->tx_napi);
+-	netif_napi_del(&eth->rx_napi);
++	mtk_napi_del(eth);
+ 	mtk_cleanup(eth);
+ 	mtk_mdio_cleanup(eth);
+ 	mtk_release_all_muxes(eth);

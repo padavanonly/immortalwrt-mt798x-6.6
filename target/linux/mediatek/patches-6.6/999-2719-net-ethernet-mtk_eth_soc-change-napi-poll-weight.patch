@@ -13,7 +13,7 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
 index 29d6c7d..6b7e4c8 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -6436,19 +6436,22 @@ static int mtk_probe(struct platform_device *pdev)
+@@ -6549,19 +6549,22 @@ static int mtk_probe(struct platform_dev
  	 */
  	init_dummy_netdev(&eth->dummy_dev);
  
@@ -46,7 +46,7 @@ diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/
 index fbfc4c0..19b2d0d 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -37,6 +37,7 @@
+@@ -36,6 +36,7 @@
  #define MTK_DMA_SIZE(x)		(SZ_##x)
  #define MTK_FQ_DMA_HEAD		32
  #define MTK_FQ_DMA_LENGTH	2048

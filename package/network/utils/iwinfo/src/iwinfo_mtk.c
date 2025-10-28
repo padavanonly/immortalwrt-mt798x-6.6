@@ -335,7 +335,7 @@ static void mtk_parse_rateinfo(RT_802_11_MAC_ENTRY *pe,
 	unsigned int nss_r = 0;
 
 	TxRate.word = pe->TxRate.word;
-	RxRate.word = pe->LastRxRate.word;
+	RxRate.word = pe->LastRxRate;
 
 	mcs = TxRate.field.MCS;
 	mcs_r = RxRate.field.MCS;
@@ -708,9 +708,9 @@ uciout:
 
 	if (band) {
 		if (!strcmp(band,"2g"))
-			*buf = (IWINFO_80211_N | IWINFO_80211_AX);
+			*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
 		else if (!strcmp(band,"5g"))
-			*buf = (IWINFO_80211_AC | IWINFO_80211_AX);
+			*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
 		return 0;
 	}
 
@@ -725,11 +725,11 @@ uciout:
 		{
 			if (e->channel <= 14 ) //2.4Ghz
 			{
-				*buf = (IWINFO_80211_N | IWINFO_80211_AX);
+				*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
 			}
 			else //5Ghz
 			{
-				*buf = (IWINFO_80211_AC | IWINFO_80211_AX);
+				*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
 			}
 		}
 
@@ -762,10 +762,11 @@ uciout:
 
 	if (band) {
 		if (!strcmp(band,"2g"))
-			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40);
+			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
 		else if (!strcmp(band,"5g"))
 			*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
-			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160);
+			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
 		return 0;
 	}
 
@@ -780,12 +781,13 @@ uciout:
 		{
 			if (e->channel <= 14 ) //2.4Ghz
 			{
-				*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40);
+				*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
 			}
 			else //5Ghz
 			{
 				*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
-				| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160);
+				| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+				| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
 			}
 		}
 
@@ -821,7 +823,16 @@ static int mtk_get_htmode(const char *dev, int *buf)
 
 		if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0)
 		{
-			if (WMODE_CAP_AX(wmode)) {
+			 if (WMODE_CAP_BE(wmode)) {
+                                switch (bw) {
+                                        case BW_20: *buf = IWINFO_HTMODE_EHT20; break;
+                                        case BW_40: *buf = IWINFO_HTMODE_EHT40; break;
+                                        case BW_80: *buf = IWINFO_HTMODE_EHT80; break;
+                                        case BW_8080: *buf = IWINFO_HTMODE_EHT80_80; break;
+                                        case BW_160: *buf = IWINFO_HTMODE_EHT160; break;
+                                }
+                        }
+                        else if (WMODE_CAP_AX(wmode)) {
 				switch (bw) {
 					case BW_20: *buf = IWINFO_HTMODE_HE20; break;
 					case BW_40: *buf = IWINFO_HTMODE_HE40; break;
@@ -1005,11 +1016,16 @@ static int mtk_get_hardware_id_from_l1profile(struct iwinfo_hardware_id *id)
 		id->device_id = 0x7981;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
-	} else if (!strcmp(buf, "MT7986")) {
+	} else if (!strcmp(buf, "MT7992")) {
 		id->vendor_id = 0x14c3;
-		id->device_id = 0x7986;
+		id->device_id = 0x7992;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
+	} else if (!strcmp(buf, "MT7990")) {
+                id->vendor_id = 0x14c3;
+                id->device_id = 0x7990;
+                id->subsystem_vendor_id = id->vendor_id;
+                id->subsystem_device_id = id->device_id;
 	} else {
 		return -1;
 	}

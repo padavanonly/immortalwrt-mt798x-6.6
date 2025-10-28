@@ -1,0 +1,92 @@
+From c65c5ea4d6d9b2364ed74c549419ea836b6498ac Mon Sep 17 00:00:00 2001
+From: Mason Chang <mason-cw.chang@mediatek.com>
+Date: Fri, 27 Jun 2025 18:07:24 +0800
+Subject: [PATCH] arm64: dts: mt7988: add cpufreq cooling device
+
+---
+ arch/arm64/boot/dts/mediatek/mt7988a.dtsi    | 19 +++++++++++++++++++
+ arch/arm64/boot/dts/mediatek/mt7988d-rfb.dts | 10 ++++++++++
+ 2 files changed, 29 insertions(+)
+
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -51,6 +51,7 @@
+ 			clock-names = "cpu", "intermediate";
+ 			operating-points-v2 = <&cluster0_opp>;
+ 			mediatek,cci = <&cci>;
++			#cooling-cells = <2>;
+ 		};
+ 
+ 		cpu1: cpu@1 {
+@@ -63,6 +64,7 @@
+ 			clock-names = "cpu", "intermediate";
+ 			operating-points-v2 = <&cluster0_opp>;
+ 			mediatek,cci = <&cci>;
++			#cooling-cells = <2>;
+ 		};
+ 
+ 		cpu2: cpu@2 {
+@@ -75,6 +77,7 @@
+ 			clock-names = "cpu", "intermediate";
+ 			operating-points-v2 = <&cluster0_opp>;
+ 			mediatek,cci = <&cci>;
++			#cooling-cells = <2>;
+ 		};
+ 
+ 		cpu3: cpu@3 {
+@@ -87,6 +90,7 @@
+ 			clock-names = "cpu", "intermediate";
+ 			operating-points-v2 = <&cluster0_opp>;
+ 			mediatek,cci = <&cci>;
++			#cooling-cells = <2>;
+ 		};
+ 
+ 		cluster0_opp: opp_table0 {
+@@ -1702,6 +1706,12 @@
+ 					type = "hot";
+ 				};
+ 
++				cpu_trip_active_hot: active-hot {
++					temperature = <117000>;
++					hysteresis = <2000>;
++					type = "active";
++				};
++
+ 				cpu_trip_active_high: active-high {
+ 					temperature = <115000>;
+ 					hysteresis = <2000>;
+@@ -1722,6 +1732,15 @@
+ 			};
+ 
+ 			cooling-maps {
++				cpu-active-hot {
++				/* active: dynamic cpu frequency scaling */
++					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
++							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
++							 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
++							 <&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
++					trip = <&cpu_trip_active_hot>;
++				};
++
+ 				cpu-active-high {
+ 				/* active: set fan to cooling level 2 */
+ 					cooling-device = <&fan 3 3>;
+--- a/arch/arm64/boot/dts/mediatek/mt7988d-rfb.dts
++++ b/arch/arm64/boot/dts/mediatek/mt7988d-rfb.dts
+@@ -45,6 +45,16 @@
+ 	};
+ };
+ 
++&cpu_thermal {
++	cooling-maps {
++		cpu-active-hot {
++			cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
++					 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
++					 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
++		};
++	};
++};
++
+ /*
+  * MT7988A have 4 pcies:
+  * -pcie0: pcie@11300000 - Gen3 2 lanes

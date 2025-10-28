@@ -16,7 +16,7 @@
 			pcie_sel: aw35710qnr_sel {
 				gpio-hog;
 				gpios = <11 GPIO_ACTIVE_HIGH>;
-				output-high;
+				output-low;
 			};
 		};
 	};

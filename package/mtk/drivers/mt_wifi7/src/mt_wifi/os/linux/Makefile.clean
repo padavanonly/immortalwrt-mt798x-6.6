@@ -1,0 +1,24 @@
+include $(TOP_DIR)/mk/config/config.mk
+
+PHONY := clean install uninstall
+
+clean:
+	rm -f *.o *.ko *.mod.o *.mod.c *.mod.su
+	rm -f .*.cmd .*.flags .*.d
+	rm -fr .tmp_versions
+#Must clean Module.symvers; or you will suffer symbol version not match
+#when OS_ABL = YES.
+	rm -f Module.symvers
+	rm -f Modules.symvers
+	rm -f Module.markers
+	rm -f modules.order
+	find ../../ -name *.o -delete
+	find ../../ -name .*.cmd -delete
+	find ../../ -name .*.flags -delete
+	find ../../ -name .*.d -delete
+	find ../../ -name '*.su' -delete
+
+# Declare the contents of the .PHONY variable as phony.  We keep that
+# information in a variable so we can use it in if_changed and friends.
+.PHONY: $(PHONY)
+

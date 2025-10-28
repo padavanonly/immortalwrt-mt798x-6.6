@@ -1,0 +1,83 @@
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-28 21:30:09.731001441 +0800
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-28 21:34:08.226001555 +0800
+@@ -1002,10 +1002,9 @@
+ 			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P2>,
+ 				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P2>,
+ 				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P2>,
+-				 <&infracfg CLK_INFRA_133M_PCIE_CK_P2>,
+-				 <&topckgen CLK_TOP_PEXTP_P2_SEL>;
++				 <&infracfg CLK_INFRA_133M_PCIE_CK_P2>;
+ 			clock-names = "pl_250m", "tl_26m", "peri_26m",
+-				      "top_133m", "pextp_clk";
++				      "top_133m";
+ 			pinctrl-names = "default";
+ 			pinctrl-0 = <&pcie2_pins>;
+ 			phys = <&xphyu3port0 PHY_TYPE_PCIE>;
+@@ -1044,10 +1043,9 @@
+ 			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P3>,
+ 				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P3>,
+ 				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P3>,
+-				 <&infracfg CLK_INFRA_133M_PCIE_CK_P3>,
+-				 <&topckgen CLK_TOP_PEXTP_P3_SEL>;
++				 <&infracfg CLK_INFRA_133M_PCIE_CK_P3>;
+ 			clock-names = "pl_250m", "tl_26m", "peri_26m",
+-				      "top_133m", "pextp_clk";
++				      "top_133m";
+ 			pinctrl-names = "default";
+ 			pinctrl-0 = <&pcie3_pins>;
+ 			#interrupt-cells = <1>;
+@@ -1084,10 +1082,9 @@
+ 			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P0>,
+ 				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P0>,
+ 				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P0>,
+-				 <&infracfg CLK_INFRA_133M_PCIE_CK_P0>,
+-				 <&topckgen CLK_TOP_PEXTP_P0_SEL>;
++				 <&infracfg CLK_INFRA_133M_PCIE_CK_P0>;
+ 			clock-names = "pl_250m", "tl_26m", "peri_26m",
+-				      "top_133m", "pextp_clk";
++				      "top_133m";
+ 			pinctrl-names = "default";
+ 			pinctrl-0 = <&pcie0_pins>;
+ 			#interrupt-cells = <1>;
+@@ -1124,10 +1121,9 @@
+ 			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P1>,
+ 				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P1>,
+ 				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P1>,
+-				 <&infracfg CLK_INFRA_133M_PCIE_CK_P1>,
+-				 <&topckgen CLK_TOP_PEXTP_P1_SEL>;
++				 <&infracfg CLK_INFRA_133M_PCIE_CK_P1>;
+ 			clock-names = "pl_250m", "tl_26m", "peri_26m",
+-				      "top_133m", "pextp_clk";
++				      "top_133m";
+ 			pinctrl-names = "default";
+ 			pinctrl-0 = <&pcie1_pins>;
+ 			#interrupt-cells = <1>;
+
+--- a/drivers/pci/controller/pcie-mediatek-gen3.c	2025-06-28 21:30:09.724001441 +0800
++++ b/drivers/pci/controller/pcie-mediatek-gen3.c	2025-06-29 11:35:51.737000212 +0800
+@@ -1219,6 +1219,17 @@
+ 	return err;
+ }
+ 
++static void mtk_pcie_shutdown(struct platform_device *pdev)
++{
++	struct mtk_gen3_pcie *pcie = platform_get_drvdata(pdev);
++	u32 val;
++
++	val = readl_relaxed(pcie->base + PCIE_RST_CTRL_REG);
++	val |= PCIE_PE_RSTB;           
++	writel_relaxed(val, pcie->base + PCIE_RST_CTRL_REG);
++
++	mdelay(100);
++}
+ static int mtk_pcie_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+@@ -1466,6 +1477,7 @@
+ 
+ static struct platform_driver mtk_pcie_driver = {
+ 	.probe = mtk_pcie_probe,
++	
+ 	.remove_new = mtk_pcie_remove,
+ 	.driver = {
+ 		.name = "mtk-pcie-gen3",

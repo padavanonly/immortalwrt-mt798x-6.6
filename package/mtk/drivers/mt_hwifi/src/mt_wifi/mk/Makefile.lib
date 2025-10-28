@@ -1,0 +1,153 @@
+#WIFI_MODE - AP, STA, APSTA
+WIFI_MODE ?= AP
+
+#TARTET - LINUX, NONE, UCOS, ECOS, or THREADX.
+TARGET ?= NONE
+
+#WIFI_HIF - pcie | usb | ut | none
+WIFI_HIF ?= pcie
+
+#CHIPSET - mt7915 bellwether mt7990 mt7992 mt7993
+CHIPSET ?= mt7990
+
+#SKU - BE7200 BE5040 BE6500 for mt7992
+SKU ?= BE7200
+
+#Using Driver Native feature configuration or not
+CONFIG_NATIVE_CFG = y
+
+#UL_CTRL: Upper Layer daemon contrl (ex. hostapd/wpa_supplicant)
+# NONE, CFG80211
+UL_CTRL ?= NONE
+
+# Add debug symbol
+ADD_DBG_SYM ?= n
+
+MODULE = $(word 1, $(CHIPSET))
+
+#PLATFORM: Target platform
+PLATFORM ?= PC
+
+#TOP_DIR = home directory of wlan source code
+TOP_DIR ?= $(shell pwd)
+
+#TOP_BIN_DIR = parent directory of bin folder, used by bin2h
+TOP_BIN_DIR ?= $(shell cd ..;pwd)
+TOP_OS_DIR := $(TOP_DIR)/os
+
+MAKE = make
+AR = ar
+CC = gcc
+CFLAGS = -g -Wall -Werror
+CFLAGS += $(WFLAGS)
+
+export TOP_DIR TOP_BIN_DIR TOP_OS_DIR WIFI_MODE LINUX_SRC CROSS_COMPILE PLATFORM CHIPSET MODULE TARGET CONFIG_NATIVE_CFG SKU ADD_DBG_SYM
+
+# The targets that may be used.
+PHONY += all build_tools LINUX clean
+
+include $(TOP_DIR)/mk/config/config.mk
+PARENT_DIR := $(TOP_DIR)
+SERV_DIR := $(TOP_DIR)/ate/wlan_service
+
+obj_ap :=
+obj_ate :=
+obj_chip :=
+obj_common :=
+obj_feature :=
+obj_hif :=
+obj_hw_ctrl :=
+obj_os :=
+obj_sta :=
+obj_protocol :=
+obj_dvt :=
+obj_profiles :=
+
+###############################################################################
+#
+# config for AP mode
+#
+###############################################################################
+ifeq ($(WIFI_MODE),AP)
+include $(TOP_DIR)/mk/obj/ap.mk
+include $(TOP_DIR)/mk/obj/sta.mk
+endif
+
+###############################################################################
+#
+# config for STA mode
+#
+###############################################################################
+ifeq ($(WIFI_MODE),STA)
+include $(TOP_DIR)/mk/obj/sta.mk
+endif
+
+include $(TOP_DIR)/mk/obj/ate.mk
+include $(TOP_DIR)/mk/obj/chip.mk
+include $(TOP_DIR)/mk/obj/common.mk
+include $(TOP_DIR)/mk/obj/feature.mk
+include $(TOP_DIR)/mk/obj/hif.mk
+include $(TOP_DIR)/mk/obj/hw_ctrl.mk
+include $(TOP_DIR)/mk/obj/os.mk
+include $(TOP_DIR)/mk/obj/protocol.mk
+include $(TOP_DIR)/mk/obj/dvt.mk
+include $(TOP_DIR)/mk/obj/profiles.mk
+include $(TOP_DIR)/ut/google_test/rules.mk
+
+LIB_OBJECTS := \
+	$(obj_ap)\
+	$(obj_ate)\
+	$(obj_chips)\
+	$(obj_common)\
+	$(obj_feature)\
+	$(obj_hif)\
+	$(obj_hw_ctrl)\
+	$(obj_os)\
+	$(obj_sta)\
+	$(obj_protocol)\
+	$(obj_dvt)\
+	$(obj_profiles)\
+	$(obj_gtest)
+LIB_SOURCES = $(LIB_OBJECTS:.o=.c)
+LIB_NAME = logan.a
+
+all: build_information build_tools build_power_limit_tables $(LIB_NAME)
+	rm -f $(TOP_DIR)/ut/google_test/$(LIB_NAME)
+	mv $(LIB_NAME) $(TOP_DIR)/ut/google_test
+
+build_information:
+	@echo =========================================
+	@echo        Build Option Information
+	@echo =========================================
+	@echo WIFI_MODE       = $(WIFI_MODE)
+	@echo TARGET          = $(TARGET)
+	@echo WIFI_HIF        = $(WIFI_HIF)
+	@echo CHIPSET         = $(CHIPSET)
+	@echo SKU             = $(SKU)
+	@echo WM_RAM          = $(WM_RAM)
+	@echo PLATFORM        = $(PLATFORM)
+	@echo UL_CTRL         = $(UL_CTRL)
+	@echo =========================================
+
+build_power_limit_tables:
+	$(MAKE) -C $(TOP_DIR)/hw_ctrl/phy/txpwr
+	$(TOP_DIR)/hw_ctrl/phy/txpwr/data2h
+
+build_tools:
+	$(MAKE) -C $(TOP_DIR)/tools
+	$(TOP_DIR)/tools/bin2h
+
+$(LIB_NAME): $(LIB_OBJECTS)
+	$(AR) rcs $@ $(LIB_OBJECTS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(LIB_NAME) $(LIB_OBJECTS)
+
+# Declare the contents of the .PHONY variable as phony.  We keep that information in a variable
+.PHONY: $(PHONY)
+
+
+

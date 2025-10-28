@@ -1,0 +1,177 @@
+From 8ae65bfb8e775a8a77b0bc8f2d55a92476c6a298 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Wed, 23 Jul 2025 13:55:25 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: add keep dscp toggle
+
+Some use scenarios require preserving the DSCP value when packets are
+forwarded by the PPE. Therefore, we have designed a new mode to achieve
+this. Users can enable this feature using the following commands.
+ - echo 1 > /sys/kernel/debug/mtk_ppe/dscp_toggle
+
+Without this patch, the DSCP value may be changed if the DSCP field in
+IB2 is not the same as that in the ingress packets.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   |  1 +
+ drivers/net/ethernet/mediatek/mtk_ppe.c       | 19 +++++++
+ drivers/net/ethernet/mediatek/mtk_ppe.h       |  3 ++
+ .../net/ethernet/mediatek/mtk_ppe_debugfs.c   | 52 +++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe_regs.h  |  1 +
+ 5 files changed, 76 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index e971c6f..2f57a6b 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1708,6 +1708,7 @@ struct mtk_eth {
+ 	struct metadata_dst		*dsa_meta[MTK_MAX_DSA_PORTS];
+ 
+ 	u8				debug_level;
++	u8				dscp_toggle;
+ 	u8				qos_toggle;
+ 	struct mtk_ppe			*ppe[3];
+ 	struct rhashtable		flow_table;
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index 5b91e0f..cea64bb 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -368,6 +368,17 @@ mtk_foe_entry_ib2(struct mtk_eth *eth, struct mtk_foe_entry *entry)
+ 	return &entry->ipv4.ib2;
+ }
+ 
++static inline u32 *
++mtk_foe_entry_udf(struct mtk_eth *eth, struct mtk_foe_entry *entry)
++{
++	int type = mtk_get_ib1_pkt_type(eth, entry->ib1);
++
++	if (type >= MTK_PPE_PKT_TYPE_IPV4_DSLITE)
++		return &entry->ipv6.udf;
++
++	return &entry->ipv4.udf_tsid;
++}
++
+ int mtk_foe_entry_prepare(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 			  int type, int l4proto, u8 pse_port, u8 *src_mac,
+ 			  u8 *dest_mac)
+@@ -551,6 +562,12 @@ int mtk_foe_entry_set_dscp(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+ 	*ib2 &= ~MTK_FOE_IB2_DSCP;
+ 	*ib2 |= FIELD_PREP(MTK_FOE_IB2_DSCP, dscp);
+ 
++	if (mtk_is_netsys_v3_or_greater(eth) && eth->dscp_toggle == 1) {
++		u32 *udf = mtk_foe_entry_udf(eth, entry);
++		*udf |= FIELD_PREP(MTK_FOE_UDF_KEEP_ECN, 1) |
++			FIELD_PREP(MTK_FOE_UDF_KEEP_DSCP, 1);
++	}
++
+ 	return 0;
+ }
+ 
+@@ -1238,6 +1255,8 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+ 			 MTK_PPE_ENTRIES_SHIFT);
+ 	if (mtk_is_netsys_v2_or_greater(ppe->eth))
+ 		val |= MTK_PPE_TB_CFG_INFO_SEL;
++	if (mtk_is_netsys_v3_or_greater(ppe->eth))
++		val |= MTK_PPE_TB_CFG_KEEP_DSCP_ECN_EN;
+ 	if (!mtk_is_netsys_v3_or_greater(ppe->eth))
+ 		val |= MTK_PPE_TB_CFG_ENTRY_80B;
+ 	ppe_w32(ppe, MTK_PPE_TB_CFG, val);
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
+index 1077695..fdb1619 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
+@@ -97,6 +97,9 @@ enum {
+ #define MTK_FOE_WINFO_AMSDU_HF		BIT(23)
+ #define MTK_FOE_WINFO_AMSDU_EN		BIT(24)
+ 
++#define MTK_FOE_UDF_KEEP_ECN		BIT(9)
++#define MTK_FOE_UDF_KEEP_DSCP		BIT(10)
++
+ #define MTK_FOE_TPORT_IDX		GENMASK(3, 0)
+ 
+ enum {
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+index c35878c..2cefa7a 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+@@ -195,6 +195,56 @@ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index)
+ 	return 0;
+ }
+ 
++static int
++mtk_ppe_internal_debugfs_read_dscp(struct seq_file *m, void *private)
++{
++	struct mtk_eth *eth = m->private;
++
++	if (eth->dscp_toggle == 0)
++		pr_info("Keep DSCP mode is disabled now!\n");
++	else if (eth->dscp_toggle == 1)
++		pr_info("Keep DSCP mode is enabled now!\n");
++
++	return 0;
++}
++
++static int mtk_ppe_internal_debugfs_open_dscp(struct inode *inode, struct file *file)
++{
++	return single_open(file, mtk_ppe_internal_debugfs_read_dscp,
++			   inode->i_private);
++}
++
++static ssize_t
++mtk_ppe_internal_debugfs_write_dscp(struct file *file, const char __user *buffer,
++				    size_t count, loff_t *data)
++{
++	struct seq_file *m = file->private_data;
++	struct mtk_eth *eth = m->private;
++	char buf[8];
++	int len = count;
++
++	if ((len > 8) || copy_from_user(buf, buffer, len))
++		return -EFAULT;
++
++	if (buf[0] == '0') {
++		pr_info("Keep DSCP mode is going to be disabled !\n");
++		eth->dscp_toggle = 0;
++	} else if (buf[0] == '1') {
++		pr_info("Keep DSCP mode is going to be enabled !\n");
++		eth->dscp_toggle = 1;
++	}
++
++	return len;
++}
++
++static const struct file_operations mtk_ppe_internal_debugfs_dscp_fops = {
++	.open = mtk_ppe_internal_debugfs_open_dscp,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.write = mtk_ppe_internal_debugfs_write_dscp,
++	.release = single_release,
++};
++
+ static int
+ mtk_ppe_internal_debugfs_read_qos(struct seq_file *m, void *private)
+ {
+@@ -369,6 +419,8 @@ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
+ 			    &mtk_ppe_internal_debugfs_foe_all_fops);
+ 	debugfs_create_file("bind", S_IRUGO, root, eth,
+ 			    &mtk_ppe_internal_debugfs_foe_bind_fops);
++	debugfs_create_file("dscp_toggle", S_IRUGO, root, eth,
++			    &mtk_ppe_internal_debugfs_dscp_fops);
+ 	debugfs_create_file("qos_toggle", S_IRUGO, root, eth,
+ 			    &mtk_ppe_internal_debugfs_qos_fops);
+ 	debugfs_create_file("debug_level", S_IRUGO, root, eth,
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
+index 0b9527a..9b2209d 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
+@@ -65,6 +65,7 @@
+ #define MTK_PPE_TB_CFG_HASH_DEBUG		GENMASK(19, 18)
+ #define MTK_PPE_TB_CFG_INFO_SEL			BIT(20)
+ #define MTK_PPE_TB_TICK_SEL			BIT(24)
++#define MTK_PPE_TB_CFG_KEEP_DSCP_ECN_EN		BIT(25)
+ 
+ #define MTK_PPE_BIND_LMT1			0x230
+ #define MTK_PPE_NTU_KEEPALIVE			GENMASK(23, 16)
+-- 
+2.45.2
+

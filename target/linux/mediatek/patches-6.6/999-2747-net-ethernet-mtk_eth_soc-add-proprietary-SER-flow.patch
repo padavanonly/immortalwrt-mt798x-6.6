@@ -1,0 +1,62 @@
+From d0f044ee29f758cf125536913f4e83b105270498 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Tue, 17 Jun 2025 14:44:34 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: add proprietary SER flow
+
+---
+ drivers/net/ethernet/mediatek/Makefile      | 2 +-
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 5 +++++
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h | 1 +++
+ 3 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/mediatek/Makefile b/drivers/net/ethernet/mediatek/Makefile
+index 013945a..39338a6 100644
+--- a/drivers/net/ethernet/mediatek/Makefile
++++ b/drivers/net/ethernet/mediatek/Makefile
+@@ -4,7 +4,7 @@
+ #
+ 
+ obj-$(CONFIG_NET_MEDIATEK_SOC) += mtk_eth.o
+-mtk_eth-y := mtk_eth_soc.o mtk_eth_path.o mtk_eth_dbg.o mtk_ppe.o mtk_ppe_debugfs.o mtk_ppe_offload.o
++mtk_eth-y := mtk_eth_soc.o mtk_eth_path.o mtk_eth_reset.o mtk_eth_dbg.o mtk_ppe.o mtk_ppe_debugfs.o mtk_ppe_offload.o
+ mtk_eth-$(CONFIG_NET_MEDIATEK_SOC_WED) += mtk_wed.o mtk_wed_mcu.o mtk_wed_wo.o
+ ifdef CONFIG_DEBUG_FS
+ mtk_eth-$(CONFIG_NET_MEDIATEK_SOC_WED) += mtk_wed_debugfs.o
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 3a938fd..62292ff 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -37,6 +37,7 @@
+ #include "mtk_wed.h"
+ 
+ #if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
++#include "mtk_eth_reset.h"
+ #include "mtk_hnat/nf_hnat_mtk.h"
+ #endif
+ 
+@@ -6822,6 +6823,10 @@ static int mtk_probe(struct platform_device *pdev)
+ 	debug_proc_init(eth);
+ 
+ 	platform_set_drvdata(pdev, eth);
++#if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
++	eth->reset.netdevice_notifier.notifier_call = mtk_eth_netdevice_event;
++	register_netdevice_notifier(&eth->reset.netdevice_notifier);
++#endif
+ 	schedule_delayed_work(&eth->reset.monitor_work,
+ 			      MTK_DMA_MONITOR_TIMEOUT);
+ 
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 1f38d23..378a399 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1714,6 +1714,7 @@ struct mtk_eth {
+ 
+ 	struct {
+ 		struct delayed_work monitor_work;
++		struct notifier_block netdevice_notifier;
+ 		atomic_t force;
+ 		u32 wdidx[3];
+ 		u32 adidx[3];
+-- 
+2.45.2
+

@@ -11,18 +11,18 @@ do not exceed the QDMA bandwidth.
 
 Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
 ---
- drivers/net/ethernet/mediatek/mtk_eth_soc.h   |  5 +++++
- drivers/net/ethernet/mediatek/mtk_ppe.c       | 36 +++++++++++++++++--
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   |  5 +++
+ drivers/net/ethernet/mediatek/mtk_ppe.c       | 33 +++++++++++++++++--
  drivers/net/ethernet/mediatek/mtk_ppe.h       |  1 +
  .../net/ethernet/mediatek/mtk_ppe_debugfs.c   |  7 ++++
  .../net/ethernet/mediatek/mtk_ppe_offload.c   |  2 +-
- 5 files changed, 47 insertions(+), 4 deletions(-)
+ 5 files changed, 45 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 38c3f85..6058e8d 100644
+index d2cdcb1..d04b508 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1921,6 +1921,11 @@ mtk_ppe_check_pppq_path(struct mtk_mac *mac, struct mtk_foe_entry *foe, int dsa_
+@@ -1922,6 +1922,11 @@ mtk_ppe_check_pppq_path(struct mtk_mac *mac, struct net_device *idev, int dsa_po
  	    (dsa_port == 5 && wifi_rx))
  		return 1;
  
@@ -35,10 +35,10 @@ index 38c3f85..6058e8d 100644
  }
  
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index d528d09..e7f03c8 100644
+index d610d4b..61d11f1 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -768,16 +768,29 @@ __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+@@ -718,16 +718,29 @@ __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
  
  	if (entry->hash != 0xffff && set_state) {
  		struct mtk_foe_entry *hwe = mtk_foe_get_entry(ppe, entry->hash);
@@ -69,23 +69,20 @@ index d528d09..e7f03c8 100644
  
  	if (entry->type != MTK_FLOW_TYPE_L2_SUBFLOW)
  		return;
-@@ -898,7 +911,10 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
+@@ -848,7 +861,8 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
  	struct mtk_eth *eth = ppe->eth;
  	u16 timestamp = mtk_eth_timestamp(eth);
  	struct mtk_foe_entry *hwe;
 -	u32 val;
 +	u32 val, *ib2;
 +	int queue;
-+
-+	hwe = mtk_foe_get_entry(ppe, hash);
  
- 	if (mtk_is_netsys_v2_or_greater(eth)) {
- 		entry->ib1 &= ~MTK_FOE_IB1_BIND_TIMESTAMP_V2;
-@@ -910,7 +926,21 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
+ 	hwe = mtk_foe_get_entry(ppe, hash);
+ 
+@@ -865,6 +879,21 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
  					 timestamp);
  	}
  
--	hwe = mtk_foe_get_entry(ppe, hash);
 +	if (mtk_is_netsys_v3_or_greater(ppe->eth) && ppe->eth->qos_toggle == 3) {
 +		ib2 = mtk_foe_entry_ib2(ppe->eth, entry);
 +		if (*ib2 & MTK_FOE_IB2_PSE_QOS_V2) {
@@ -105,7 +102,7 @@ index d528d09..e7f03c8 100644
  	wmb();
  	hwe->ib1 = entry->ib1;
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
-index 6640196..45f170c 100644
+index cca64f7..2ecf448 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
 @@ -379,6 +379,7 @@ mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash)
@@ -142,18 +139,18 @@ index 3c05af2..c35878c 100644
  
  	return len;
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-index f9152db..2907d0f 100644
+index cdb8c33..56e3b0f 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-@@ -243,7 +243,7 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
- 		queue = (pse_port == PSE_GDM3_PORT) ? 2 : pse_port - 1;
+@@ -332,7 +332,7 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 		ct_mark = ct->mark;
  	}
  
--	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(mac, foe, dsa_port))
-+	if ((eth->qos_toggle == 2 || eth->qos_toggle == 3) && mtk_ppe_check_pppq_path(mac, foe, dsa_port))
- 		mtk_foe_entry_set_queue(eth, foe, queue);
- 	else if (eth->qos_toggle == 1 || (ct->mark & MTK_QDMA_QUEUE_MASK) >= 15) {
- 		u8 qos_ul_toggle;
+-	if (eth->qos_toggle == 2 && mtk_ppe_check_pppq_path(mac, idev, dsa_port)) {
++	if ((eth->qos_toggle == 2 || eth->qos_toggle == 3) && mtk_ppe_check_pppq_path(mac, idev, dsa_port)) {
+ 		if ((dsa_port >= 0) && ct && nf_ct_protonum(ct) == IPPROTO_TCP) {
+ 			/* Dispatch the IPv4/IPv6 TCP Ack packets to the high-priority
+ 			 * queue, assuming they are less than 64 bytes.
 -- 
 2.45.2
 

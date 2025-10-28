@@ -869,7 +869,7 @@
 			nvmem-cells = <&lvts_calibration>;
 			nvmem-cell-names = "lvts-calib-data-1";
 			#thermal-sensor-cells = <1>;
-			status = "disabled";
+			status = "okay";
 		};
 
 		ssusb0: usb@11190000 {
@@ -1479,7 +1479,7 @@
 		eth: ethernet@15100000 {
 			compatible = "mediatek,mt7988-eth";
 			reg = <0 0x15100000 0 0x80000>,
-			      <0 0x15400000 0 0x200000>;
+			      <0 0x15400000 0 0x380000>;
 			interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 191 IRQ_TYPE_LEVEL_HIGH>,

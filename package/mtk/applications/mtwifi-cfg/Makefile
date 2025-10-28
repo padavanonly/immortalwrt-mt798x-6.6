@@ -2,7 +2,6 @@
 # This is free software, licensed under the GNU General Public License v2.
 #
 
-
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mtwifi-cfg
@@ -17,7 +16,7 @@ define Package/mtwifi-cfg
   CATEGORY:=MTK Properties
   SUBMENU:=Applications
   TITLE:=mtwifi configure scripts for mt798x
-  DEPENDS:=+iwinfo +wifi-dats +lua-cjson +datconf-lua  
+  DEPENDS:=+iwinfo +wifi-dats +lua-cjson +datconf-lua @!PACKAGE_luci-app-mtk @!PACKAGE_wifi-profile
 endef
 
 define Build/Compile

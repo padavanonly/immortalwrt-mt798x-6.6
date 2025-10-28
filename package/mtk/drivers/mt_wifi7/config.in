@@ -1,0 +1,1311 @@
+if PACKAGE_kmod-mt_wifi7
+
+config MTK_WIFI7_SUPPORT_OPENWRT
+	bool
+	default y
+	depends on PACKAGE_kmod-mt_wifi7
+
+config MTK_WIFI7_DRIVER
+	bool
+	default y
+	depends on PACKAGE_kmod-mt_wifi7
+
+if MTK_WIFI7_DRIVER
+
+#
+# Feature depends on chip
+#
+config MTK_WIFI7_UNIFIED_COMMAND
+	bool
+	default n
+
+config MTK_WIFI7_DOT11_N_SUPPORT
+	bool
+	default y
+
+config MTK_WIFI7_DOT11_AX_SUPPORT
+	bool
+	default y
+
+config MTK_WIFI7_DOT11_BE_SUPPORT
+	bool
+	default n
+
+#
+# Chips
+#
+config MTK_WIFI7_MT_MAC
+	bool
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+if MTK_WIFI7_MT_MAC
+	config MTK_WIFI7_CHIP_MT7915
+		bool
+	config MTK_WIFI7_CHIP_MT7990
+		bool
+	config MTK_WIFI7_CHIP_BELLWETHER
+		bool
+	config MTK_WIFI7_CHIP_MT7992
+		bool
+	config MTK_WIFI7_CHIP_MT7993
+		bool
+	config MTK_WIFI7_CHIP_BLACKHAWK
+		bool
+endif
+
+choice
+	prompt "Choose First WiFi7 Interface"
+	config MTK_WIFI7_FIRST_IF_NONE
+	bool "None"
+
+	config MTK_WIFI7_FIRST_IF_MT7915
+	bool "MT7915 (Harrier)"
+        select MTK_WIFI7_CHIP_MT7915
+
+	config MTK_WIFI7_FIRST_IF_MT7990
+	bool "MT7990 (Eagle)"
+        select MTK_WIFI7_CHIP_MT7990
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BELLWETHER
+	bool "Test chip, Bellwether"
+        select MTK_WIFI7_CHIP_BELLWETHER
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_MT7992
+	bool "MT7992 (Kite)"
+        select MTK_WIFI7_CHIP_MT7992
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_MT7993
+	bool "MT7993 (Griffin)"
+        select MTK_WIFI7_CHIP_MT7993
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	bool "Test chip, Blackhawk_A0"
+        select MTK_WIFI7_CHIP_BLACKHAWK
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+endchoice
+
+choice
+	prompt "Choose Second WiFi7 Interface"
+	config MTK_WIFI7_SECOND_IF_NONE
+	bool "None"
+
+	config MTK_WIFI7_SECOND_IF_MT7915
+        bool "MT7915 (Harrier)"
+        select MTK_WIFI7_CHIP_MT7915
+
+	config MTK_WIFI7_SECOND_IF_MT7990
+        bool "MT7990 (Eagle)"
+        select MTK_WIFI7_CHIP_MT7990
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_SECOND_IF_BELLWETHER
+        bool "Test chip, Bellwether"
+        select MTK_WIFI7_CHIP_BELLWETHER
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_SECOND_IF_MT7992
+        bool "MT7992 (Kite)"
+        select MTK_WIFI7_CHIP_MT7992
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_SECOND_IF_MT7993
+		bool "MT7993 (Griffin)"
+        select MTK_WIFI7_CHIP_MT7993
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	bool "Test chip, Blackhawk_A0"
+        select MTK_WIFI7_CHIP_BLACKHAWK
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+endchoice
+
+choice
+	prompt "Choose Third WiFi7 Interface"
+	config MTK_WIFI7_THIRD_IF_NONE
+	bool "None"
+
+	config MTK_THIRD_IF_MT7915
+        bool "MT7915 (Harrier)"
+        select MTK_WIFI7_CHIP_MT7915
+	select MTK_WIFI7_MULTI_INF_SUPPORT
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_THIRD_IF_MT7990
+        bool "MT7990 (Eagle)"
+        select MTK_WIFI7_CHIP_MT7990
+	select MTK_WIFI7_MULTI_INF_SUPPORT
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_THIRD_IF_MT7992
+        bool "MT7992 (Kite)"
+        select MTK_WIFI7_CHIP_MT7992
+	select MTK_WIFI7_MULTI_INF_SUPPORT
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_THIRD_IF_MT7993
+		bool "MT7993 (Griffin)"
+        select MTK_WIFI7_CHIP_MT7993
+	select MTK_WIFI7_MULTI_INF_SUPPORT
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+
+	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	bool "Test chip, Blackhawk_A0"
+        select MTK_WIFI7_CHIP_BLACKHAWK
+	select MTK_WIFI7_UNIFIED_COMMAND
+	select MTK_WIFI7_DOT11_BE_SUPPORT
+endchoice
+
+config  MTK_WIFI7_FIRST_IF_RF_OFFSET
+        hex
+        depends on ! MTK_WIFI7_FIRST_IF_NONE
+        default 0xc0000
+
+config  MTK_WIFI7_SECOND_IF_RF_OFFSET
+        hex
+        depends on ! MTK_WIFI7_SECOND_IF_NONE
+        default 0xc8000
+
+config  MTK_WIIF7_THIRD_IF_RF_OFFSET
+        hex
+        depends on ! MTK_WIFI7_THIRD_IF_NONE
+        default 0xd0000
+
+config MTK_WIFI7_MT_WIFI
+	tristate "MT WIFI7 Driver"
+	select MTK_WIFI7_BASIC_FUNC if MTK_WIFI7_MT_WIFI
+
+config MTK_WIFI7_MT_WIFI_PATH
+	string
+	depends on MTK_WIFI7_MT_WIFI
+	default "mt_wifi"
+
+config MTK_WIFI7_HWIFI_SUPPORT
+	bool "HWIFI_SUPPORT"
+	default y
+
+config MTK_WIFI7_PROXYARP_SUPPORT
+	bool "PROXYARP_SUPPORT"
+	default y
+
+config MTK_WIFI7_OFFCHANNEL_SUPPORT
+	bool "OFFCHANNEL_MONITER_SUPPORT"
+	default y
+
+config MTK_WIFI7_BS_MAP_BL_SUPPORT
+	bool "BS_MAP_BL_SUPPORT"
+	default y
+
+config MTK_WIFI7_PWHM_SUPPORT
+	bool "PWHM_SUPPORT"
+	default n
+
+config MTK_WIFI7_OSAL_SUPPORT
+	bool "OS Abstraction Layer"
+	default n
+
+if MTK_WIFI7_MT_WIFI
+menu "WiFi Generic Feature Options"
+choice
+	prompt "EEPROM Type of 1st Card"
+	depends on ! MTK_WIFI7_FIRST_IF_NONE
+
+	config MTK_WIFI7_FIRST_IF_EEPROM_FLASH
+	bool "FLASH"
+
+	config MTK_WIFI7_FIRST_IF_EEPROM_PROM
+	bool "EEPROM"
+
+	config MTK_WIFI7_FIRST_IF_EEPROM_EFUSE
+	bool "EFUSE"
+
+endchoice
+
+config  MTK_WIFI7_RT_FIRST_IF_RF_OFFSET
+        hex
+        depends on ! MTK_FIRST_IF_NONE
+        default 0xc0000
+
+config  MTK_WIFI7_RT_SECOND_IF_RF_OFFSET
+        hex
+        depends on ! MTK_SECOND_IF_NONE
+        default 0xc8000
+
+config  MTK_WIFI7_RT_THIRD_IF_RF_OFFSET
+        hex
+        depends on ! MTK_THIRD_IF_NONE
+        default 0xd0000
+
+config MTK_WIFI7_MULTI_INF_SUPPORT
+	bool
+	default y if !MTK_WIFI7_FIRST_IF_NONE && !MTK_WIFI7_SECOND_IF_NONE
+
+config MTK_WIFI7_6G_AFC_SUPPORT
+	bool "WIFI_6G_AFC_SUPPORT"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_BASIC_FUNC
+	bool "Basic Functions"
+	select MTK_WIFI7_WIRELESS_EXT
+	select MTK_WIFI7_WEXT_SPY
+	select MTK_WIFI7_WEXT_PRIV
+
+config MTK_WIFI7_DOT11_VHT_AC
+	bool "802.11AC support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_N_SUPPORT
+	default y
+
+config MTK_WIFI7_DOT11_HE_AX
+	bool "802.11AX support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_VHT_AC
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	default y
+
+config MTK_WIFI7_DOT11_EHT_BE
+	bool "802.11BE support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_VHT_AC
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	depends on MTK_WIFI7_DOT11_BE_SUPPORT
+	default y
+
+config MTK_WIFI7_CFG_SUPPORT_FALCON_MURU
+	bool "MURU support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_VHT_AC
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	default y
+
+config MTK_WIFI7_CFG_SUPPORT_FALCON_TXCMD_DBG
+	bool "TXCMD DBG support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_VHT_AC
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	default y
+
+config MTK_WIFI7_CFG_SUPPORT_FALCON_SR
+	bool "SR(Spatial Reuse) support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	default y
+
+config MTK_WIFI7_CFG_SUPPORT_FALCON_PP
+	bool "PP(Preamble Puncture) support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	default y
+
+config MTK_WIFI7_WIFI_TWT_SUPPORT
+	bool "TWT(Target Wake Time) support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_HE_AX
+	depends on MTK_WIFI7_DOT11_AX_SUPPORT
+	default y
+
+config MTK_WIFI7_G_BAND_256QAM_SUPPORT
+	bool "2.4G 256QAM support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_DOT11_VHT_AC
+        default y
+
+config MTK_WIFI7_BRCM_256QAM_SUPPORT
+	bool "BRCM 2.4G 256QAM support"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_G_BAND_256QAM_SUPPORT
+	default n
+
+config MTK_WIFI7_VHT_TXBF_2G_EPIGRAM_IE_SUPPORT
+    bool "BRCM 2.4G VHT Sounding support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_TPC_SUPPORT
+	bool "802.11h TPC Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_ICAP_SUPPORT
+	bool "ICAP Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_SPECTRUM_SUPPORT
+	bool "Wifi Spectrum Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_PHY_ICS_SUPPORT
+	bool "Wifi PHY ICS Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_BACKGROUND_SCAN_SUPPORT
+	bool "Background Scan Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_SMART_CARRIER_SENSE_SUPPORT
+	bool "Smart Carrier Sense Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_EXT_BUILD_CHANNEL_LIST
+	bool "Extension Channel List"
+	depends on MTK_WIFI7_DRIVER
+    default n
+
+config MTK_WIFI7_BCN_EXTCAP_VAR_LEN
+	bool "Config Beacon Ext Cap Length"
+	depends on MTK_WIFI7_DRIVER && MTK_WIFI7_WIFI_TWT_SUPPORT
+    default n
+
+config MTK_WIFI7_THERMAL_PROTECT_SUPPORT
+        bool "THERMAL PROTECT SUPPORT"
+        depends on MTK_WIFI7_DRIVER && MTK_WIFI7_SMART_CARRIER_SENSE_SUPPORT
+        default n
+
+config MTK_WIFI7_SCS_FW_OFFLOAD
+        bool "SCS FW OFFLOAD Support"
+        depends on MTK_WIFI7_DRIVER && MTK_WIFI7_SMART_CARRIER_SENSE_SUPPORT
+        default n
+
+config MTK_WIFI7_MT_DFS_SUPPORT
+	bool "Dynamic Frequency Selection Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_MT_BAND4_DFS_SUPPORT
+	bool "Band4 Dfs Support"
+	depends on MTK_WIFI7_DRIVER && MTK_WIFI7_MT_DFS_SUPPORT
+	default n
+
+config MTK_WIFI7_OFFCHANNEL_SCAN_FEATURE
+	bool "Channel Quality Monitor"
+	depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_HDR_TRANS_TX_SUPPORT
+	bool "Tx Header Translation"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_HDR_TRANS_RX_SUPPORT
+	bool "Rx Header Translation"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_DBDC_MODE
+	bool "dbdc mode support"
+	select MULTI_PROFILE_SUPPORT
+	select DEFAULT_5G_PROFILE
+	default y
+
+config MTK_WIFI7_MULTI_PROFILE_SUPPORT
+        bool "Multi Profile Support"
+	depends on MTK_WIFI7_DRIVER
+        default n
+
+config MTK_WIFI7_DEFAULT_5G_PROFILE
+	bool "5G default profile for DBDC"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_WSC_INCLUDED
+	bool "WSC (WiFi Simple Config)"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_WSC_V2_SUPPORT
+	bool "WSC V2(WiFi Simple Config Version 2.0)"
+	depends on MTK_WIFI7_WSC_INCLUDED
+	default y
+
+config MTK_WIFI7_DOT11W_PMF_SUPPORT
+	bool "PMF"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_ZERO_PKT_LOSS_SUPPORT
+	bool "Zero Packet Loss"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_TXBF_SUPPORT
+	bool "Tx Bean Forming Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_FAST_NAT_SUPPORT
+       bool "Fast-NAT support"
+       depends on MTK_WIFI7_DRIVER
+       default n
+
+config MTK_WIFI7_WHNAT_SUPPORT
+	tristate "Wifi Hardware NAT support"
+	depends on MTK_WIFI7_WLAN_HOOK
+	depends on MTK_WIFI7_FAST_NAT_SUPPORT
+	depends on PACKAGE_kmod-hw_nat || PACKAGE_kmod-mediatek_hnat
+	default n
+
+config MTK_WIFI7_WARP_V2
+	bool "Warp driver version 2 support"
+	depends on PACKAGE_kmod-warp && MTK_WIFI7_WHNAT_SUPPORT
+	default n
+
+config MTK_WIFI7_DEBUGGER_SUPPORT
+	tristate "driver tx/rx debugger"
+	default n
+
+config MTK_WIFI7_WFA_SCRIPTS
+	bool "scripts for WFA"
+	default n
+
+config MTK_WIFI7_RTMP_FLASH_SUPPORT
+	bool "Flash Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_PRE_CAL_TRX_SET1_SUPPORT
+	bool "Calibration To Flash/BinFile Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_RLM_CAL_CACHE_SUPPORT
+	bool "RlmCalibrationCache Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_PRE_CAL_TRX_SET2_SUPPORT
+	bool "Pre-calibration to Flash Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_CAL_BIN_FILE_SUPPORT
+	bool "Calibration to BinFile Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_RF_LOCKDOWN_SUPPORT
+	bool "RF Lockdown Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_LINK_TEST_SUPPORT
+	bool "Link Test Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_FPGA_MODE
+	bool "FPGA Mode"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_ATE_SUPPORT
+	bool "ATE/QA Support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_WLAN_SERVICE
+        bool "Wlan Service Library Support"
+        depends on MTK_WIFI7_DRIVER
+	depends on MTK_WIFI7_ATE_SUPPORT
+        default y
+
+config MTK_WIFI7_PASSPOINT_R2
+	bool "Passpoint Release-2 Support"
+	depends on MTK_WIFI7_DRIVER
+	select MTK_WIFI7_DOT11W_PMF_SUPPORT
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_MBO_SUPPORT
+        bool "MBO Support"
+        depends on MTK_WIFI7_DRIVER
+        select MTK_WIFI7_INTERWORKING
+        select MTK_WIFI7_WNM_SUPPORT
+        select MTK_WIFI7_DOT11K_RRM_SUPPORT
+        select MTK_WIFI7_DOT11R_FT_SUPPORT
+        select MTK_WIFI7_DOT11W_PMF_SUPPORT
+        default n
+
+config MTK_WIFI7_OCE_SUPPORT
+	bool "Optimized Connectivity Experience Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_MBO_SUPPORT
+	default y
+
+config MTK_WIFI7_MAP_SUPPORT
+        bool "MAP Support"
+        depends on MTK_WIFI7_DRIVER
+        select MTK_WIFI7_INTERWORKING
+        select MTK_WIFI7_WNM_SUPPORT
+        select MTK_WIFI7_DOT11K_RRM_SUPPORT
+        select MTK_WIFI7_DOT11R_FT_SUPPORT
+        select MTK_WIFI7_DOT11W_PMF_SUPPORT
+        default n
+
+config MTK_WIFI7_FTM_SUPPORT
+	bool "FTM Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_MAP_R2_VER_SUPPORT
+        bool "Multi-AP R2 version support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_R3_VER_SUPPORT
+        bool "Multi-AP R3 version support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_R2_6E_SUPPORT
+        bool "Multi-AP R2 6E support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_R3_6E_SUPPORT
+        bool "Multi-AP R3 6E support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_VENDOR_SUPPORT
+        bool "Multi-AP vendor support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_REPORT_CH_TXPWR_SUPPORT
+        bool "Multi-AP channel tx power support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_R6_SUPPORT
+        bool "Multi-AP R6 support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_HOSTAPD_SUPPORT
+        bool "Multi-AP hostapd support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_R4_VER_SUPPORT
+        bool "Multi-AP R4 version support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_MAP_R5_VER_SUPPORT
+        bool "Multi-AP R5 version support"
+        depends on MTK_WIFI7_MAP_SUPPORT
+        default n
+
+config MTK_WIFI7_UAPSD
+	bool "UAPSD support"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_TCP_RACK_SUPPORT
+	bool "TCP Reduced ACK  support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_HIGH_PRIO_QUEUE_SUPPORT
+	bool "High Priority Packet Queueing"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+#### PA_LNA_Type choice
+
+config MTK_WIFI7_RED_SUPPORT
+        bool "RED(Random Early Drop) support"
+	depends on MTK_WIFI7_DRIVER
+        default y
+
+config MTK_WIFI7_FQ_SCH_SUPPORT
+        bool "Fair Queueing support"
+        depends on MTK_WIFI7_DRIVER
+        depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_VOW_SUPPORT
+        depends on MTK_WIFI7_CHIP_MT7622
+        default y
+
+config MTK_WIFI7_CTXD_MEM_CPY_SUPPORT
+	bool "CTXD(sw mode) support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_CTXD_SCATTER_AND_GATHER_SUPPORT
+        bool "CTXD(hw mode) support"
+        depends on MTK_WIFI7_DRIVER
+        default n
+
+config MTK_WIFI7_FDB_SUPPORT
+       bool "FW Debug Port"
+       depends on MTK_WIFI7_DRIVER
+       default n
+
+config MTK_WIFI7_SEL_DUAL_BAND_SUPPORT
+	bool "Selectable Dual band support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+choice
+        prompt "PA LNA Type of 1st Card"
+		depends on ! MTK_WIFI7_FIRST_IF_NONE
+
+		config MTK_WIFI7_FIRST_IF_EPAELNA
+		bool "ePAeLNA"
+		config MTK_WIFI7_FIRST_IF_IPAILNA
+		bool "iPAiLNA"
+		config MTK_WIFI7_FIRST_IF_IPAELNA
+		bool "iPAeLNA"
+#		config MTK_WIFI7_FIRST_IF_EPAILNA
+#		bool "ePAiLNA"
+endchoice
+choice
+        prompt "PA LNA Type of 2nd Card"
+		depends on ! MTK_WIFI7_SECOND_IF_NONE
+
+		config MTK_WIFI7_SECOND_IF_EPAELNA
+		bool "ePAeLNA"
+		config MTK_WIFI7_SECOND_IF_IPAILNA
+		bool "iPAiLNA"
+		config MTK_WIFI7_SECOND_IF_IPAELNA
+		bool "iPAeLNA"
+#		config MTK_WIFI7_SECOND_IF_EPAILNA
+#		bool "ePAiLNA"
+endchoice
+choice
+        prompt "PA LNA Type of 3rd Card"
+		depends on ! MTK_WIFI7_THIRD_IF_NONE
+
+		config MTK_WIFI7_THIRD_IF_EPAELNA
+		bool "ePAeLNA"
+		config MTK_WIFI7_THIRD_IF_IPAILNA
+		bool "iPAiLNA"
+		config MTK_WIFI7_THIRD_IF_IPAELNA
+		bool "iPAeLNA"
+#		config MTK_WIFI7_THIRD_IF_EPAILNA
+#		bool "ePAiLNA"
+endchoice
+#### PA_LNA_Type choice END
+
+config MTK_WIFI7_FW_BIN_LOAD
+       bool "load wifi fw with bin file"
+       default n
+
+config MTK_WIFI7_SKU_TYPE
+       depends on MTK_WIFI7_DRIVER
+       string "SKU Type Eagle: BE19000 or BE13000_255, Kite: BE7200, BE6500, BE5040, BE3600SDB"
+       default "BE19000"
+
+config MTK_WIFI7_FW_LOG_TYPE
+       depends on MTK_WIFI7_DRIVER
+       string "FW log type: string_log or idx_log"
+       default "string_log"
+
+config MTK_WIFI7_FW_CASAN_SUPPORT
+       depends on MTK_WIFI7_DRIVER
+       bool "FW CASAN SUPPORT"
+       default n
+
+choice
+        prompt "A-die Type"
+	depends on MTK_WIFI7_CHIP_BELLWETHER
+
+	config MTK_WIFI7_ADIE_MT7976
+	bool "A-die MT7976"
+	config MTK_WIFI7_ADIE_MT7977
+	bool "A-die MT7977"
+endchoice
+
+config MTK_WIFI7_DUAL_ADIE_MT7977
+	bool "Dual A-DIE MT7977"
+	depends on MTK_WIFI7_ADIE_MT7977
+
+choice
+        prompt "A-die Type (MT7990)"
+        depends on MTK_WIFI7_CHIP_MT7990
+
+        config MTK_WIFI7_3ADIE_TRIBAND
+        bool "A-die MT7976_MT7977"
+        default y
+
+        config MTK_WIFI7_2ADIE_TRIBAND
+        bool "A-die MT7976C_MT7977"
+endchoice
+
+choice
+        prompt "A-die Type Comb (MT7990 for pre-w8)"
+        depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND
+
+        config MTK_WIFI7_PRE8_ADIE_NONE
+        bool "NONE"
+        default y
+
+        config MTK_WIFI7_PRE8_ADIE_7977
+        bool "A-die MT7976_MT7977"
+
+        config MTK_WIFI7_PRE8_ADIE_7979
+        bool "A-die MT7975_MT7979"
+
+        config MTK_WIFI7_PRE8_ADIE_7777
+        bool "A-die MT7976_MT7777"
+endchoice
+
+config MTK_WIFI7_ADIE_TYPE
+        depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND && (MTK_WIFI7_PRE8_ADIE_7977 || MTK_WIFI7_PRE8_ADIE_7979 || MTK_WIFI7_PRE8_ADIE_7777)
+        string
+        default "MT7977"        if MTK_WIFI7_PRE8_ADIE_7977
+        default "MT7979"        if MTK_WIFI7_PRE8_ADIE_7979
+        default "MT7777"        if MTK_WIFI7_PRE8_ADIE_7777
+
+#
+# Section for interfaces
+#
+config MTK_WIFI7_RTMP_PCI_SUPPORT
+	bool
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+config MTK_WIFI7_RTMP_USB_SUPPORT
+	bool
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_RTMP_RBUS_SUPPORT
+	bool
+	depends on MTK_WIFI7_DRIVER
+	default n
+config MTK_WIFI7_TR181_SUPPORT
+	bool "TR181 Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_EXPERIMENTAL_FEATURES
+	bool "EXPERIMENTAL_FEATURES_SUPPORT Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_SPECIAL_RPS_SUPPORT
+	bool "Special RPS Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_CSI_SUPPORT
+	bool "CSI Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_MEMORY_SLIM_SUPPORT
+	bool "Memory Slim Support"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_BA_REORDER_ARRAY_SUPPORT
+	bool "Array based BA reorder algorithm"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_ICVERR_RESET_RRO
+	bool "Reset RRO when receive ICV error PKT"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+
+endmenu
+
+menu "WiFi Operation Modes"
+choice
+	prompt "Main Mode"
+	default MTK_WIFI7_MODE_AP
+
+	config MTK_WIFI7_MODE_AP
+		tristate "AP"
+		select MTK_WIFI7_MT_AP_SUPPORT
+		default y
+
+	config MTK_WIFI7_MODE_STA
+		tristate "STA"
+		select MTK_WIFI7_MT_STA_SUPPORT
+
+	config MTK_WIFI7_MODE_BOTH
+		tristate "APSTA"
+		select MTK_WIFI7_MT_AP_SUPPORT
+		select MTK_WIFI7_MT_STA_SUPPORT
+endchoice
+
+config MTK_WIFI7_MT_AP_SUPPORT
+	tristate "Mediatek AP support"
+	select MTK_WIFI7_WIRELESS_EXT
+	select MTK_WIFI7_WEXT_SPY
+	select MTK_WIFI7_WEXT_PRIV
+
+config MTK_WIFI7_WDS_SUPPORT
+	bool "WDS"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_MBSS_SUPPORT
+	bool "MBSSID"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_APCLI_SUPPORT
+	bool "AP-Client Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_APCLI_CERT_SUPPORT
+	bool "AP-Client TGn Cert Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_APCLI_SUPPORT
+        default n
+
+config MTK_WIFI7_MAC_REPEATER_SUPPORT
+	bool "MAC Repeater Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_APCLI_SUPPORT
+	default y
+
+config MTK_WIFI7_APCLI_CONNECTION_TRIAL
+        bool "Trial Connection"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        depends on MTK_WIFI7_APCLI_SUPPORT
+        default n
+
+config MTK_WIFI7_MWDS
+	bool "Mixed WDS(MWDS)"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	select MTK_WIFI7_APCLI_SUPPORT
+	default n
+
+config MTK_WIFI7_SYSDVT
+	bool "Wifi System DVT tool Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_MUMIMO_SUPPORT
+        bool "MU-MIMO Support"
+        depends on MTK_WIFI7_DRIVER
+        select MTK_WIFI7_MU_RA_SUPPORT
+        default y
+
+config MTK_WIFI7_MU_RA_SUPPORT
+  	bool "MU-RGA Support"
+  	depends on MTK_WIFI7_MUMIMO_SUPPORT
+
+config MTK_WIFI7_DOT11R_FT_SUPPORT
+	bool "802.11r Fast BSS Transition"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_DOT11K_RRM_SUPPORT
+	bool "802.11k Radio Resource Management"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_ENTERPRISE_AP_SUPPORT
+	bool "Enterprise AP Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_MLME_MULTI_QUEUE_SUPPORT
+	bool "Mlme MultiQueue Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_EAP_FEATURE
+	bool "EAP Feature"
+	depends on MTK_WIFI7_DRIVER
+	default y
+
+#VLAN
+config MTK_WIFI7_VLAN_SUPPORT
+	bool "VLAN Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_EAP_FEATURE
+	default n
+
+#Sniffer
+config MTK_WIFI7_SNIFFER_SUPPORT
+	bool "SNIFFER"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_EAP_FEATURE
+	default n
+
+config MTK_WIFI7_SNIFFER_RADIOTAP_SUPPORT
+	bool "SNIFFER_RADIOTAP"
+	default y
+
+#TxRx Statistic
+config MTK_WIFI7_TXRX_STAT_SUPPORT
+	bool "TxRx Stats Support"
+	depends on MTK_WIFI7_DRIVER && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#Antenna control
+config MTK_WIFI7_ANTENNA_CONTROL_SUPPORT
+	bool "Antenna Control"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#Mgmt Tx Power
+config MTK_WIFI7_MGMT_TXPWR_CTRL
+	bool "Mgmt TxPower Control"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#TxD based Mgmt Tx Power
+config MTK_WIFI7_TXD_MGMT_TXPWR_CTRL
+	bool "TxD based Mgmt TxPower Control"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#Channel Utilization
+config MTK_WIFI7_CHUTIL_SUPPORT
+	bool "Channel Utilization Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#Noise Floor
+config MTK_WIFI7_NF_SUPPORT
+	bool "Noise Floor Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#RA_PHY_RATE
+config MTK_WIFI7_RA_PHY_RATE_SUPPORT
+	bool "RA PHY RATE Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#AMPDU Config
+config MTK_WIFI7_AMPDU_CONF_SUPPORT
+	bool "AMPDU Config retry & agglimitSupport"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#ACK CTS Timeout
+config MTK_WIFI7_ACK_CTS_TIMEOUT_SUPPORT
+	bool "ACK CTS Timeout cck & ofdm Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#Tx Latency
+config MTK_WIFI7_TX_LATENCY_SUPPORT
+	bool "Tx Latency Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+	default n
+
+#DATA TXPWR CTRL
+config MTK_WIFI7_DATA_TXPWR_CTRL
+        bool "Data TxPwr Ctrl"
+        depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
+        default y
+
+#SWITCH_CHANNEL_NO_CSA
+config MTK_WIFI7_EAP_QUICK_CHANNEL_SWITCH_WITHOUT_CSA
+	bool "switch channel with csa and deauth"
+	depends on MTK_WIFI7_EAP_FEATURE
+	default n
+
+
+#MBSS_DTIM_SUPPORT
+config MTK_WIFI7_MBSS_DTIM_SUPPORT
+	bool "MBSS DTIM SUPPORT"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_VLAN_GTK_SUPPORT
+        bool "Per VLAN GTK Support"
+	depends on MTK_WIFI7_ENTERPRISE_AP_SUPPORT
+        depends on MTK_WIFI7_CFG80211_SUPPORT
+        depends on MTK_WIFI7_DYNAMIC_VLAN_SUPPORT
+        default n
+
+config MTK_WIFI7_RADIUS_MAC_AUTH_SUPPORT
+    bool "RADIUS MAC Auth Support"
+    depends on MTK_WIFI7_ENTERPRISE_AP_SUPPORT
+    depends on MTK_WIFI7_CFG80211_SUPPORT
+    default n
+
+config MTK_WIFI7_DYNAMIC_VLAN_SUPPORT
+	bool "Dynamic VLAN Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_ENTERPRISE_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_CFG80211_SUPPORT
+	bool "CFG80211"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_IWCOMMAND_CFG80211_SUPPORT
+	bool "CFG80211 IW command"
+	depends on MTK_WIFI7_CFG80211_SUPPORT
+	default n
+
+config MTK_WIFI7_CFG80211_FULL_OPS_SUPPORT
+	bool "CFG80211 FULL OPS"
+	depends on MTK_WIFI7_CFG80211_SUPPORT
+	default n
+
+#CUSTOMISED HOSTAPD
+config MTK_WIFI7_HOSTAPD_MBSS_SUPPORT
+	bool "HOSTAPD_MBSS"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_CFG80211_SUPPORT
+	default n
+
+config MTK_WIFI7_CUSTOMISED_HOSTAPD_SUPPORT
+	bool "Customised Hostapd Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_CFG80211_SUPPORT
+	default n
+
+#APCLI STA
+config MTK_WIFI7_APCLI_SUPPLICANT_SUPPORT
+	bool "APCLI Supplicant Support"
+	depends on MTK_WIFI7_APCLI_SUPPORT
+	depends on MTK_WIFI7_CFG80211_SUPPORT
+	default n
+
+#WDS STA
+config MTK_WIFI7_WDS_STA_SUPPORT
+	bool "WDS STA Support"
+	depends on MTK_WIFI7_APCLI_SUPPORT
+	depends on MTK_WIFI7_CFG80211_SUPPORT
+	default n
+
+#WDS AP
+config MTK_WIFI7_MBSS_AS_WDS_AP_SUPPORT
+	bool "MBSS AS WDS AP Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_MBSS_SUPPORT
+	default n
+
+config MTK_WIFI7_DSCP_QOS_MAP_SUPPORT
+	bool "Dscp Qos Mapping Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_DSCP_PRI_SUPPORT
+	bool "Dscp Priority Mapping Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_QOS_R1_SUPPORT
+        bool "MTK QoS R1 support"
+        default n
+
+config MTK_WIFI7_MIN_PHY_RATE_SUPPORT
+        bool "Minimum PHY rate support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_FAST_UP_RATE_SUPPORT
+        bool "Fast UP rate support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_CON_WPS_SUPPORT
+	bool "Concurrent WPS Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	depends on MTK_WIFI7_APCLI_SUPPORT
+	depends on MTK_WIFI7_WSC_INCLUDED
+	depends on MTK_WIFI7_WSC_V2_SUPPORT
+#	depends on MTK_WIFI7_MULTI_INF_SUPPORT
+	default n
+
+config MTK_WIFI7_MCAST_RATE_SPECIFIC
+	bool "User specific tx rate of mcast pkt"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_VOW_SUPPORT
+	bool "MediaAir(VOW) support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_BAND_STEERING
+	bool "Band Steering"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_LED_CONTROL_SUPPORT
+	bool "LED Control Support"
+	default n
+
+config MTK_WIFI7_WLAN_HOOK
+       bool "WLAN hook Support"
+       depends on MTK_WIFI7_DRIVER
+       default n
+
+config MTK_WIFI7_RADIUS_ACCOUNTING_SUPPORT
+	bool "Radius Accounting Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_GREENAP_SUPPORT
+	bool "GreenAP Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_VENDOR_FEATURE11_SUPPORT
+        bool "Vendor11 Feature Enable"
+        depends on MTK_WIFI7_DRIVER
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_VERIFICATION_MODE
+	bool "Verification Mode"
+	depends on MTK_WIFI7_DRIVER
+	default n
+
+config MTK_WIFI7_PCIE_ASPM_DYM_CTRL_SUPPORT
+	bool "Pcie Aspm Dynamic Control Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default y
+
+config MTK_WIFI7_COEX_SUPPORT
+	bool "Coex Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_EASY_SETUP_SUPPORT
+	bool "Whole Home Coverage - Easy Setup"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_EVENT_NOTIFIER_SUPPORT
+	bool "Whole Home Coverage - Event Notifier"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_AIR_MONITOR
+        bool "Air Monitor"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_WNM_SUPPORT
+        bool "802.11v WNM Support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_INTERWORKING
+        bool "802.11u Interworking"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_LINUX_NET_TXQ_SUPPORT
+	bool "NET TX Queue Support"
+	default n
+
+config  MTK_WIFI7_WPA3_SUPPORT
+        bool "WPA3 Support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config  MTK_WIFI7_OWE_SUPPORT
+        bool "Enhanced Open Support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config  MTK_WIFI7_RSNO_SUPPORT
+        bool "RSN Override Support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config  MTK_WIFI7_SINGLE_SKU
+        bool "Single SKU Support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
+
+config MTK_WIFI7_PROFILING_SUPPORT
+        bool "WIFI Profiling Support"
+        default n
+
+config MTK_WIFI7_6G_SUPPORT
+	bool "WIFI 6G Support"
+	default n
+
+config MTK_WIFI7_NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT
+	bool "Non wifi frequency for 5Mhz shift"
+	default n
+
+config MTK_WIFI7_MLD_GROUP_RESTORE
+	bool "mld group restore support"
+	depends on MTK_WIFI7_DOT11_EHT_BE
+	default n
+
+config MTK_WIFI7_UNIFIED_COUNTRY_CONFIG_SUPPORT
+	bool "unified country config"
+	default y
+
+
+config MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT
+        bool "split mac support for ccn34"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_CCN67_SPLIT_MAC_SUPPORT
+        bool "split mac support for ccn67"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_SW_CONNECT_SUPPORT
+        bool "Pure S/W STA Increase Connection Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_CHIP_MT7990
+	default n
+
+config MTK_WIFI7_DFS_SLAVE_SUPPORT
+	bool "DFS-Slave Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+config MTK_WIFI7_ANDLINK_SUPPORT
+	bool "Andlink Support"
+	default n
+
+config MTK_WIFI7_GTB_APP_SUPPORT
+	bool "GTB Application Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+endmenu
+
+endif
+
+endif #MTK_WIFI7_DRIVER#
+
+config MTK_WIFI7_IGMP_SNOOP_SUPPORT
+	tristate "IGMP snooping"
+	depends on PACKAGE_kmod-mt_wifi7
+	default y
+
+config MTK_WIFI7_RTMP_WLAN_HOOK_SUPPORT
+	tristate "RTMP_WLAN_HOOK_SUPPORT Support"
+	depends on PACKAGE_kmod-mt_wifi7
+	default y
+
+
+endif #PACKAGE_kmod-mt_wifi7#

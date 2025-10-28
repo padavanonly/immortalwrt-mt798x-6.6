@@ -1,0 +1,35 @@
+if PACKAGE_kmod-hwifi
+
+config HWIFI
+        bool "Enable HWIFI kernel module"
+	default y
+
+config HWIFI_HE_SUPPORT
+	bool "HWIFI driver HE support"
+	default n
+
+config HWIFI_HIF_PCI
+	bool "HWIFI PCIE driver support"
+	default y
+
+config HWIFI_IF_MTK
+	bool "HWIFI MTK MAC interface support"
+	default y
+
+config HWIFI_IF_MAC80211
+	bool "HWIFI MAC80211 interface support"
+	default n
+
+config HWIFI_CHIP_MT7915
+	bool "HWIFI MT7915 chip support"
+	default y
+
+config HWIFI_CHIP_MT7916
+	bool "HWIFI MT7916 chip support"
+	default y
+
+config HWIFI_CHIP_MT7915_IF_TYPE
+	int "MT7915 default interface type"
+	default 1
+
+endif

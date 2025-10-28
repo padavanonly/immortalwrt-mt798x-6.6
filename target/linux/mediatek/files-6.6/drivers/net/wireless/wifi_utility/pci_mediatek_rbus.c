@@ -307,8 +307,6 @@ static int rbus_probe(struct platform_device *pdev)
 	if (of_property_read_u32_index(node, "chip_id", 0, &rbus->chip_id)) {
 		rbus->chip_id = RBUS_DEFAULT_CHIP_ID;
 	}
-	
-	printk("rbus porting");
 
 	if (of_property_read_u32_index(node, "vend_id", 0, &rbus->vend_id)) {
 		rbus->vend_id = RBUS_DEFAULT_VEND_ID;

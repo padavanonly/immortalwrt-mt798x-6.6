@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0
+SRC_DIR= $(PWD)
+KVERSION := $(shell uname -r)
+KERNEL_DIR=/lib/modules/$(shell uname -r)/build
+CONFIG_MODULE_SIG=n
+
+# WM RAM TYPE
+#WM_RAM - mobile | rebb
+WM_RAM ?= mobile
+
+# Connac3 driver repo
+# DRIVER_REPO - wlan | logan
+DRIVER_REPO ?= wlan
+
+export WM_RAM DRIVER_REPO
+
+# X86
+all:
+	make -C $(KERNEL_DIR) M=$(SRC_DIR) modules
+clean:
+	make -C $(KERNEL_DIR) M=$(SRC_DIR) clean
