@@ -176,7 +176,7 @@ int mtk_pce_dipfilter_entry_del(struct dip_desc *ddesc)
 	struct fe_mem_msg fmsg;
 	struct dipfilter_entry *dip_entry;
 	unsigned long flag;
-	int ret;
+	int ret = 0;
 
 	if (!ddesc)
 		return 0;
@@ -189,7 +189,7 @@ int mtk_pce_dipfilter_entry_del(struct dip_desc *ddesc)
 
 	if (!refcount_dec_and_test(&dip_entry->refcnt))
 		/* dipfilter descriptor is still in use */
-		return 0;
+		goto unlock;
 
 	mtk_pce_fe_mem_msg_config(&fmsg, FE_MEM_CMD_WRITE, FE_MEM_TYPE_DIPFILTER,
 				  dip_entry->index);
@@ -198,7 +198,7 @@ int mtk_pce_dipfilter_entry_del(struct dip_desc *ddesc)
 	ret = mtk_pce_fe_mem_msg_send(&fmsg);
 	if (ret) {
 		PCE_NOTICE("fe_mem send dipfilter desc failed\n");
-		return ret;
+		goto unlock;
 	}
 
 	memset(&dip_entry->ddesc, 0, sizeof(struct dip_desc));
@@ -207,7 +207,7 @@ int mtk_pce_dipfilter_entry_del(struct dip_desc *ddesc)
 unlock:
 	spin_unlock_irqrestore(&dip_hw.lock, flag);
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(mtk_pce_dipfilter_entry_del);
 
