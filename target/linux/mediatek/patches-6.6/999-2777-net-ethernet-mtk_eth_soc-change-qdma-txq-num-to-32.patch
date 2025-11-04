@@ -1,0 +1,69 @@
+From 95ce01f3591ef10e7866629bf4d03976e0593d8e Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Tue, 4 Nov 2025 14:02:01 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: change qdma txq num to 32
+
+Without this patch, the QDMA TXQ number is insufficient
+when supporting multiple switch PPPQ.
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 9 ++++++---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h | 2 +-
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 7554336..6e2c4aa 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -1049,7 +1049,8 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+ 		eth->qdma_shaper.speed[idx] = speed;
+ 
+ out:
+-	ofs = MTK_QTX_OFFSET * idx;
++	mtk_w32(eth, (idx / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
++	ofs = MTK_QTX_OFFSET * (idx % MTK_QTX_PER_PAGE);
+ 	mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
+ }
+ 
+@@ -3060,6 +3061,8 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+ 		mtk_w32(eth, ring->last_free_ptr, soc->reg_map->qdma.drx_ptr);
+ 
+ 		for (i = 0, ofs = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
++			mtk_w32(eth, (i / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
++
+ 			val = (QDMA_RES_THRES << 8) | QDMA_RES_THRES;
+ 			mtk_w32(eth, val, soc->reg_map->qdma.qtx_cfg + ofs);
+ 
+@@ -3077,7 +3080,7 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+ 			if (mtk_is_netsys_v1(eth))
+ 				val |= MTK_QTX_SCH_LEAKY_BUCKET_EN;
+ 			mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
+-			ofs += MTK_QTX_OFFSET;
++			ofs = (ofs + MTK_QTX_OFFSET) % (MTK_QTX_OFFSET * MTK_QTX_PER_PAGE);
+ 		}
+ 		val = MTK_QDMA_TX_SCH_MAX_WFQ | (MTK_QDMA_TX_SCH_MAX_WFQ << 16);
+ 		mtk_w32(eth, val, soc->reg_map->qdma.tx_sch_rate);
+@@ -4740,7 +4743,7 @@ static void mtk_hw_dump_all(struct mtk_eth *eth)
+ 	mtk_hw_dump_reg(eth, "ADMA", reg_map->pdma.rx_ptr, 0x300);
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA)) {
+ 		for (id = 0; id < MTK_QDMA_NUM_QUEUES / 16; id++) {
+-			mtk_w32(eth, id, reg_map->qdma.page);
++			mtk_w32(eth, (id / MTK_QTX_PER_PAGE), reg_map->qdma.page);
+ 			pr_info("\nQDMA PAGE:%x ", mtk_r32(eth, reg_map->qdma.page));
+ 			mtk_hw_dump_reg(eth, "QDMA", reg_map->qdma.qtx_cfg, 0x100);
+ 			mtk_w32(eth, 0, reg_map->qdma.page);
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index cfa362e..a108917 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -27,7 +27,7 @@
+ #define MTK_MAX_DSA_PORTS	7
+ #define MTK_DSA_PORT_MASK	GENMASK(2, 0)
+ 
+-#define MTK_QDMA_NUM_QUEUES	16
++#define MTK_QDMA_NUM_QUEUES	32
+ #define MTK_QDMA_QUEUE_MASK	((1ULL << MTK_QDMA_NUM_QUEUES) - 1)
+ #define MTK_QDMA_PAGE_SIZE	2048
+ #define MTK_MAX_RX_LENGTH	1536
+-- 
+2.45.2
+
