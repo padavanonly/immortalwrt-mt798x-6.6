@@ -60,7 +60,7 @@ index 49bb70f..a868126 100644
  
 +	if (pcie->wifi_reset) {
 +		gpiod_set_value_cansleep(pcie->wifi_reset, 0);
-+		msleep(pcie->wifi_reset_delay_ms);
++	msleep(pcie->wifi_reset_delay_ms);printk("start wifi reset");
 +		gpiod_set_value_cansleep(pcie->wifi_reset, 1);
 +	}
 +
