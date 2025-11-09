@@ -126,6 +126,7 @@ reload_service() {
 
 stop_service() {
         wifi down
+	ifconfig eth1 down
         stop
 }
 
