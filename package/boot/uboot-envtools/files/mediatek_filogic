@@ -34,17 +34,23 @@ ubootenv_add_ubi_default() {
 
 case "$board" in
 abt,asr3000|\
+cetron,ct3003-ubootmod|\
 cmcc,a10-ubootmod|\
 cudy,tr3000-v1-ubootmod|\
 h3c,magic-nx30-pro|\
+imou,lc-hx3001|\
 jcg,q30-pro|\
-konka,komi-a31|\
+livinet,zr-3020-ubootmod|\
 mercusys,mr90x-v1-ubi|\
 netcore,n60|\
+netcore,n60-pro|\
 netis,nx31|\
 nokia,ea0326gmp|\
 qihoo,360t7|\
 routerich,ax3000-ubootmod|\
+tplink,tl-7dr7230-v1|\
+tplink,tl-7dr7230-v2|\
+tplink,tl-7dr7250-v1|\
 tplink,tl-xdr4288|\
 tplink,tl-xdr6086|\
 tplink,tl-xdr6088|\
@@ -62,7 +68,7 @@ glinet,gl-mt2500|\
 glinet,gl-mt6000|\
 glinet,gl-x3000|\
 glinet,gl-xe3000|\
-huasifei,wh3000)
+huasifei,wh3000-emmc)
 	local envdev=$(find_mmc_part "u-boot-env")
 	ubootenv_add_uci_config "$envdev" "0x0" "0x80000"
 	;;
@@ -74,7 +80,9 @@ bananapi,bpi-r3-mini|\
 bananapi,bpi-r4|\
 bananapi,bpi-r4-poe|\
 cmcc,rax3000m|\
-jdcloud,re-cp-03)
+cmcc,rax3000me|\
+jdcloud,re-cp-03|\
+konka,komi-a31)
 	. /lib/upgrade/fit.sh
 	export_fitblk_bootdev
 	case "$CI_METHOD" in
@@ -90,15 +98,17 @@ jdcloud,re-cp-03)
 		;;
 	esac
 	;;
-comfast,cf-e393ax)
-	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x80000"
-	;;
 cetron,ct3003|\
 edgecore,eap111|\
+h3c,magic-nx30-pro-nmbm|\
+livinet,zr-3020|\
 netgear,wax220|\
 zbtlink,zbt-z8102ax|\
 zbtlink,zbt-z8103ax)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000"
+	;;
+comfast,cf-e393ax)
+	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x80000"
 	;;
 dlink,aquila-pro-ai-m30-a1|\
 dlink,aquila-pro-ai-m60-a1)
