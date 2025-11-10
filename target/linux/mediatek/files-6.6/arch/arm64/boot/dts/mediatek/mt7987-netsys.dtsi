@@ -145,11 +145,11 @@
 &hnat {
 	mtketh-wan = "eth1";
 	mtketh-lan = "eth0";
-	mtketh-lan2 = "eth1";
-	mtketh-ppd = "eth1";
+	mtketh-lan2 = "eth2";
+	mtketh-ppd = "eth2";
 	mtketh-max-gmac = <2>;
 	mtketh-ppe-num = <2>;
-	ext-devices-prefix = "usb","wwan","rmnet","eth3","eth2","phy";
+	ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4";
 	status = "okay";
 };
 
