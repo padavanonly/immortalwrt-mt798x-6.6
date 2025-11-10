@@ -61,9 +61,9 @@ MT7990_whnat()
 		CPU3_AFFINITY="$eth_rx3 $usb_irq"
 
 		CPU0_RPS=""
-		CPU1_RPS="$ethif1 $ethif2"
-		CPU2_RPS="$ethif1 $ethif2"
-		CPU3_RPS="$ethif1 $ethif2"
+		CPU1_RPS="$ethif1 $ethif2 $ethif3"
+		CPU2_RPS="$ethif1 $ethif2 $ethif3"
+		CPU3_RPS="$ethif1 $ethif2 $ethif3"
 	elif [ "$num_of_wifi" = "1" ]; then
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
@@ -71,9 +71,9 @@ MT7990_whnat()
 		CPU3_AFFINITY="$eth_rx3 $usb_irq"
 
 		CPU0_RPS="                $wifi1 $wifi1_apcli0"
-		CPU1_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
-		CPU2_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
-		CPU3_RPS="$ethif1 $ethif2 "
+		CPU1_RPS="$ethif1 $ethif2 $ethif3 $wifi1 $wifi1_apcli0"
+		CPU2_RPS="$ethif1 $ethif2 $ethif3 $wifi1 $wifi1_apcli0"
+		CPU3_RPS="$ethif1 $ethif2 $ethif3"
 	elif [ "$num_of_wifi" = "2" ]; then
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
@@ -81,9 +81,9 @@ MT7990_whnat()
 		CPU3_AFFINITY="$eth_rx3 $usb_irq"
 
 		CPU0_RPS="                $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
-		CPU1_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
-		CPU2_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
-		CPU3_RPS="$ethif1 $ethif2"
+		CPU1_RPS="$ethif1 $ethif2 $ethif3  $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
+		CPU2_RPS="$ethif1 $ethif2 $ethif3 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
+		CPU3_RPS="$ethif1 $ethif2 $ethif3"
 	elif [ "$num_of_wifi" = "3" ]; then
 		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
 		CPU1_AFFINITY="$wifi2_irq $eth_rx1"
@@ -91,9 +91,9 @@ MT7990_whnat()
 		CPU3_AFFINITY="$eth_tx $eth_rx3 $usb_irq"
 
 		CPU0_RPS=""
-		CPU1_RPS="$ethif1 $ethif2                                           $wifi3 $wifi3_apcli0"
-		CPU2_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
-		CPU3_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
+		CPU1_RPS="$ethif1 $ethif2 $wifi3 $wifi3_apcli0 $ethif3"
+		CPU2_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0 $ethif3"
+		CPU3_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0 $ethif3"
 	else
 		dbg "MT7990_whnat with $NUM_OF_WIFI Wi-Fi bands is not support"
 	fi
@@ -640,9 +640,10 @@ get_eth_if_name()
 {
 	ethif1="eth0"
 	ethif2="eth1"
+	ethif3="eth2"
 	dbg2 "# Ethernet interface list"
 	dbg2 "\$ethif1=$ethif1\n\$ethif2=$ethif2"
-	RPS_IF_LIST="$RPS_IF_LIST $ethif1 $ethif2"
+	RPS_IF_LIST="$RPS_IF_LIST $ethif1 $ethif2 $ethif3"
 }
 
 # Try to get Wi-Fi interface name from l1profile

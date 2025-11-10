@@ -336,8 +336,8 @@ modem_network_task()
 	    /etc/init.d/firewall restart
         fi
 	fi
-	rdisc6 eth2 &
-        ndisc6 fe80::1 eth2 &
+	rdisc6 eth3 &
+        ndisc6 fe80::1 eth3 &
         sleep 5s
     done
 }
