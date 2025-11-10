@@ -125,7 +125,9 @@ reload_service() {
 }
 
 stop_service() {
-	wifi down
+	ifconfig rai0 down
+	ifconfig ra0 down
+	rmmod xhci-mtk-hcd
         stop
 }
 
