@@ -81,8 +81,12 @@
 		gmac2: mac@2 {
 			compatible = "mediatek,eth-mac";
 			reg = <2>;
-			pcs-handle = <&sgmiipcs1>;
-			status = "disabled";
+			phy-mode = "internal";
+			fixed-link {
+				speed = <2500>;
+				full-duplex;
+				pause;
+			};
 		};
 
 		mdio: mdio-bus {
