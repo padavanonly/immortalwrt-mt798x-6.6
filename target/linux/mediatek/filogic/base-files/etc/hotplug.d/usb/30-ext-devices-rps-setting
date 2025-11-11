@@ -8,7 +8,6 @@ for IFACE in /sys/class/net/*; do
     IFNAME_PREFIX="${INTERFACE%%[0-9]*}"
 
     if [ "$INTERFACE" != "eth0" ] && [ "$INTERFACE" != "eth1" ] && \
-	[ "$INTERFACE" != "eth2" ] && \
        { [ "$IFNAME_PREFIX" = "usb" ] || [ "$IFNAME_PREFIX" = "wwan" ] || [ "$IFNAME_PREFIX" = "rmnet" ] || [ "$IFNAME_PREFIX" = "eth" ]; }; then
 
         if [ "$NPROCS" -gt 2 ]; then

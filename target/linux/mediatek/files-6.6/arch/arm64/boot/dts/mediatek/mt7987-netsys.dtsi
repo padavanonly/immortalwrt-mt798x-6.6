@@ -82,6 +82,7 @@
 			compatible = "mediatek,eth-mac";
 			reg = <2>;
 			phy-mode = "internal";
+			label = "hnat";
 			fixed-link {
 				speed = <2500>;
 				full-duplex;
@@ -145,11 +146,11 @@
 &hnat {
 	mtketh-wan = "eth1";
 	mtketh-lan = "eth0";
-	mtketh-lan2 = "eth2";
-	mtketh-ppd = "eth2";
+	mtketh-lan2 = "hnat";
+	mtketh-ppd = "hnat";
 	mtketh-max-gmac = <2>;
 	mtketh-ppe-num = <2>;
-	ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4";
+	ext-devices-prefix = "usb","wwan","rmnet","eth2","eth3";
 	status = "okay";
 };
 
