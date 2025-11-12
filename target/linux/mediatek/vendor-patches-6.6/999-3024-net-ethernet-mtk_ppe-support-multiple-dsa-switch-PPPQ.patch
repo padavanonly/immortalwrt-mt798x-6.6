@@ -1,0 +1,44 @@
+From 15ab4370f0f1efdc22e6abd1f459485d63059c7e Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Wed, 12 Nov 2025 18:45:45 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: support multiple dsa switch PPPQ
+
+Without this patch, when multiple dsa switch exists,
+the same QDMA TX queue would be used by two different
+DSA device if their dp->index are the same, which would
+leads to throughput bound in QDMA queue.
+
+Command to dump PPPQ TXQ mapping
+	cat /sys/kernel/debug/mtketh/qdma_pppq
+---
+ drivers/net/ethernet/mediatek/mtk_ppe_offload.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index 8183d6d..8d38108 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -330,7 +330,7 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 
+ 	if (dsa_port >= 0) {
+ 		mtk_foe_entry_set_dsa(eth, foe, dsa_proto, dsa_port);
+-		queue = 3 + dsa_port;
++		queue = MTK_MAX_DEVS + eth->pppq_ofs[mac->id] + mac->dsa_user_idx[dsa_port];
+ 	} else {
+ 		queue = (pse_port == PSE_GDM3_PORT) ? 2 : pse_port - 1;
+ 	}
+@@ -346,9 +346,9 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 			 * queue, assuming they are less than 64 bytes.
+ 			 */
+ 			if (mtk_flow_is_tcp_ack(eth, foe, ct))
+-				queue += 6;
++				queue += eth->pppq_ofs[MTK_MAX_DEVS];
+ 		}
+-		mtk_foe_entry_set_queue(eth, foe, queue);
++		mtk_foe_entry_set_queue(eth, foe, queue & MTK_QDMA_QUEUE_MASK);
+ 	} else if (eth->qos_toggle == 1 || (ct_mark & MTK_QDMA_QUEUE_MASK) >= 15) {
+ 		u8 qos_ul_toggle;
+ 
+-- 
+2.45.2
+
