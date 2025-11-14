@@ -127,7 +127,6 @@ reload_service() {
 stop_service() {
 	ifconfig rai0 down
 	ifconfig ra0 down
-	rmmod xhci-mtk-hcd
         stop
 }
 
