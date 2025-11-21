@@ -89,7 +89,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  		queue = mac->id;
 -
 +	
-+	queue = mac->id ? 32 : 0;
++	
  	if (queue >= dev->num_tx_queues)
  		queue = 0;
  
@@ -101,7 +101,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/
  /* QDMA TX NUM */
  #define QID_BITS_V2(x)		(((x) & 0x3f) << 16)
 -#define MTK_QDMA_GMAC2_QID	8
-+#define MTK_QDMA_GMAC2_QID	32
++#define MTK_QDMA_GMAC2_QID	8
  
  #define MTK_TX_DMA_BUF_SHIFT	8
  
