@@ -436,6 +436,7 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
 		memcpy(e->mac, pe->Addr, 6);
 		e->signal = pe->AvgRssi0;
 		e->signal_avg = pe->AvgRssi0;
+		e->noise = pe->AvgRssi0 - pe->AvgSnr;
 		e->connected_time = pe->ConnectedTime;
 		mtk_parse_rateinfo(pe, &e->rx_rate, &e->tx_rate);
 
