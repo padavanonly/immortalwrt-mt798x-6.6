@@ -1264,6 +1264,7 @@ typedef struct _RT_802_11_MAC_ENTRY {
 	CHAR AvgRssi1;
 	CHAR AvgRssi2;
 	CHAR AvgRssi3;
+	UCHAR AvgSnr;
 	UINT32 ConnectedTime;
 	union _HTTRANSMIT_SETTING TxRate;
 	UINT32 LastRxRate;

@@ -23158,6 +23158,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
     IN PRTMP_ADAPTER pAd,
     IN RTMP_IOCTL_INPUT_STRUCT *wrq)
 {
+	UINT8 u1Snr = 0;
     INT i;
     BOOLEAN need_send = FALSE;
     RT_802_11_MAC_TABLE *pMacTab = NULL;
@@ -23199,10 +23200,14 @@ VOID RTMPIoctlGetMacTableStaInfo(
             pDst->AvgRssi1 = pEntry->RssiSample.AvgRssi[1];
             pDst->AvgRssi2 = pEntry->RssiSample.AvgRssi[2];
             pDst->AvgRssi3 = pEntry->RssiSample.AvgRssi[3];
+			/* Fill in SNR per entry*/
+			UniCmdPerStaGetSNR(pAd, pEntry->wcid, &u1Snr);
+			pDst->AvgSnr = u1Snr;
             /* the connected time per entry*/
             pDst->ConnectedTime = pEntry->StaConnectTime;
             pDst->TxRate.word = RTMPGetLastTxRateTW(pAd, pEntry);
-            pDst->EncryMode = pEntry->SecConfig.PairwiseCipher;				    pDst->AuthMode = pEntry->SecConfig.AKMMap;
+            pDst->EncryMode = pEntry->SecConfig.PairwiseCipher;
+			pDst->AuthMode = pEntry->SecConfig.AKMMap;
 	    pMacTab->Num += 1;
             /* Add to avoid Array cross board */
            	if (pMacTab->Num >= 544)
