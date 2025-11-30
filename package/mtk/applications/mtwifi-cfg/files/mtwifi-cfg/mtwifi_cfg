@@ -630,6 +630,7 @@ end
             set_dat(dats, apidx, "FragThreshold",v.config.frag)
             set_dat(dats, apidx, "DtimPeriod",v.config.dtim_period)
             set_dat(dats, apidx, "WirelessMode", WirelessMode)
+            set_dat(dats, apidx, "WNMEnable", v.config.bss_transition)
 
             if is_be_mode(cfg) then
                 set_dat(dats, apidx, "PpMuMimoDlEnable", not v.config.mumimo_dl and 0 or 1)

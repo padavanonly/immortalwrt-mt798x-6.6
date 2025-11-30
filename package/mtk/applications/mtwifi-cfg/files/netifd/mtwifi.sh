@@ -20,8 +20,8 @@ drv_mtwifi_init_device_config() {
 }
 
 drv_mtwifi_init_iface_config() {
-	config_add_string 'ssid:string' macfilter bssid kicklow assocthres
-	config_add_boolean mlo wmm hidden isolate ieee80211k
+	config_add_string 'ssid:string' macfilter bssid kicklow assocthres 'macaddr:macaddr'
+	config_add_boolean mlo wmm hidden isolate ieee80211k bss_transition
 	config_add_int wpa_group_rekey frag rts dtim_period
 	config_add_array 'maclist:list(macaddr)'
 	config_add_boolean mumimo_dl mumimo_ul ofdma_dl ofdma_ul amsdu autoba uapsd
