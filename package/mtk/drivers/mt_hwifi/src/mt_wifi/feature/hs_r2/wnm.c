@@ -3312,15 +3312,11 @@ void PeerWNMAction(IN PRTMP_ADAPTER pAd,
 VOID WNMCtrlInit(IN PRTMP_ADAPTER pAd)
 {
 	PWNM_CTRL pWNMCtrl;
-	BOOLEAN WNMBTMEnable = TRUE;
 	UCHAR Index;
 #ifdef CONFIG_AP_SUPPORT
 	for (Index = 0; Index < MAX_MBSSID_NUM(pAd); Index++) {
 		pWNMCtrl = &pAd->ApCfg.MBSSID[Index].WNMCtrl;
-#ifndef CONFIG_HOTSPOT_R2
-		if(pWNMCtrl->WNMBTMEnable)
-			WNMBTMEnable = pWNMCtrl->WNMBTMEnable;
-#endif
+		BOOLEAN WNMBTMEnable = pWNMCtrl->WNMBTMEnable;
 		NdisZeroMemory(pWNMCtrl, sizeof(*pWNMCtrl));
 		RTMP_SEM_EVENT_INIT(&pWNMCtrl->BTMPeerListLock, &pAd->RscSemMemList);
 		NdisAllocateSpinLock(pAd, &pWNMCtrl->ProxyARPListLock);
@@ -3340,6 +3336,7 @@ VOID WNMCtrlInit(IN PRTMP_ADAPTER pAd)
 #ifdef CONFIG_STA_SUPPORT
 	for (Index = 0; Index < MAX_MULTI_STA; Index++) {
 		pWNMCtrl = &pAd->StaCfg[Index].WNMCtrl;
+		BOOLEAN WNMBTMEnable = pWNMCtrl->WNMBTMEnable;
 		NdisZeroMemory(pWNMCtrl, sizeof(*pWNMCtrl));
 		RTMP_SEM_EVENT_INIT(&pWNMCtrl->BTMPeerListLock, &pAd->RscSemMemList);
 		DlListInit(&pWNMCtrl->BTMPeerList);

@@ -811,6 +811,7 @@ static VOID HSCtrlOff(
 	pHSCtrl->L2Filter = 0;
 	pHSCtrl->ICMPv4Deny = 0;
 #ifdef CONFIG_DOT11V_WNM
+	pWNMCtrl->WNMBTMEnable = 0;
 	pWNMCtrl->ProxyARPEnable = 0;
 #ifdef CONFIG_HOTSPOT_R2
 	pWNMCtrl->WNMNotifyEnable = 0;

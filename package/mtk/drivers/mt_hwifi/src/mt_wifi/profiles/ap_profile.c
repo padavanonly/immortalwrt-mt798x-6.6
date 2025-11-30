@@ -2459,6 +2459,8 @@ void WNM_ReadParametersFromFile(
 {
 	INT loop;
 	RTMP_STRING *macptr;
+	/* WNMEnable */
+#ifdef CONFIG_AP_SUPPORT
 	if (RTMPGetKeyParameter("WNMEnable", tmpbuf, 255, buffer, TRUE)) {
 		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
 				(macptr && loop < MAX_MBSSID_NUM(pAd));
@@ -2467,7 +2469,7 @@ void WNM_ReadParametersFromFile(
 			Enable = simple_strtol(macptr, 0, 10);
 			pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMBTMEnable =
 				(Enable > 0) ? TRUE : FALSE;
-			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO,
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
 				"%s::(bDot11vWNMEnable[%d]=%d)\n",
 				__FUNCTION__, loop,
 				pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMBTMEnable);
@@ -2476,6 +2478,29 @@ void WNM_ReadParametersFromFile(
 		for (loop = 0; loop < MAX_MBSSID_NUM(pAd); loop++)
 			pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMBTMEnable = FALSE;
 	}
+#endif /* CONFIG_AP_SUPPORT */
+#ifdef CONFIG_STA_SUPPORT
+		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+			"pAd->MSTANum=%d\n", pAd->MSTANum);
+	if (RTMPGetKeyParameter("WNMEnable", tmpbuf, 255, buffer, TRUE)) {
+		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
+				(macptr && loop < pAd->MSTANum);
+					macptr = rstrtok(NULL, ";"), loop++) {
+			LONG Enable;
+
+			Enable = simple_strtol(macptr, 0, 10);
+			pAd->StaCfg[loop].WNMCtrl.WNMBTMEnable =
+				(Enable > 0) ? TRUE : FALSE;
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+				"%s::(STA-bDot11vWNMEnable[%d]=%d)\n",
+				__FUNCTION__, loop,
+				pAd->StaCfg[loop].WNMCtrl.WNMBTMEnable);
+		}
+	} else {
+		for (loop = 0; loop < pAd->MSTANum; loop++)
+			pAd->StaCfg[loop].WNMCtrl.WNMBTMEnable = FALSE;
+	}
+#endif /* CONFIG_STA_SUPPORT */
 	return;
 }
 #endif /* CONFIG_DOT11V_WNM */
