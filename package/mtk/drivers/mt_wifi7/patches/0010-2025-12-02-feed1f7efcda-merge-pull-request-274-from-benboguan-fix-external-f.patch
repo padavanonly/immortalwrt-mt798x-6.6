@@ -1,0 +1,29 @@
+From: benboguan <nanchuci023@gmail.com>
+Date: Sun, 30 Nov 2025 17:20:06 +0800
+Subject: [PATCH] mt_wifi7: mt_hwifi: Fix HWIFI_FW_HDR_SUPPORT
+
+Restore vendor driver change from feed1f7efcda.
+
+[sKyissKy: extract mt_wifi7 patch from commit feed1f7efcda]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ wlan_hwifi/Makefile | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/wlan_hwifi/Makefile b/wlan_hwifi/Makefile
+index ff17216..7e1474a 100644
+--- a/wlan_hwifi/Makefile
++++ b/wlan_hwifi/Makefile
+@@ -75,7 +75,11 @@ ifeq ($(CONFIG_ARCH_DMA_ADDR_T_64BIT), y)
+ 	ccflags-y += -DCONFIG_HWIFI_64BIT_SUPPORT
+ endif
+ 
+-ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
++ifeq ($(CONFIG_HWIFI_FW_HDR_SUPPORT), y)
++	ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
++endif
++
++#ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
+ ccflags-y += -Wno-error=enum-conversion
+ ccflags-y += -Wno-error=attribute-warning
+ ccflags-y += -Wno-error=enum-int-mismatch
