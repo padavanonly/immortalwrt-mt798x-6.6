@@ -44,6 +44,11 @@ config MTK_HWIFI_MEM_SHRINK
 	depends on PACKAGE_kmod-mt_hwifi
 	default n
 
+config MTK_HWIFI_FW_HDR_SUPPORT
+	bool "Built in firmware"
+	depends on PACKAGE_kmod-mt_hwifi
+	default n
+
 menu "HWIFI Chips Support"
 	config MTK_HWIFI_MT7915
 		bool "mt7915"
