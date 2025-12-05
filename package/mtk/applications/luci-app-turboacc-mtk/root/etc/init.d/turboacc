@@ -21,6 +21,8 @@ start_service() {
 		rmmod "shortcut_fe_cm" 2>"/dev/null"
 	fi
 
+	echo 0 > /sys/kernel/debug/hnat/hook_toggle
+        echo 1 > /sys/kernel/debug/hnat/hook_toggle
 	if [ "$fastpath" != "mediatek_hnat" ] && lsmod | grep -q "mtkhnat"; then
 		echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
 	fi
@@ -113,7 +115,7 @@ else
     echo "Invalid IPv4 address: $fastpath_mh_eth_hnat_ap"
 fi
 	sed -i '/prefer-family/d' /etc/wgetrc
-	echo "prefer-family = IPv4" >> /etc/wgetrc
+	echo "prefer-family = IPv4" >> /etc/wgetrc	
 }
 
 reload_service() {
@@ -123,7 +125,8 @@ reload_service() {
 stop_service() {
 	ifconfig rai0 down
 	ifconfig ra0 down
-        stop
+        echo 0 > /sys/kernel/debug/hnat/hook_toggle 
+	stop
 }
 
 service_triggers() {
