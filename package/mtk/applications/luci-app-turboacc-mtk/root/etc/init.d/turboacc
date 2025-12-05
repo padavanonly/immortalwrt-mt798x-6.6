@@ -47,8 +47,6 @@ start_service() {
 		local hnat_path="/sys/kernel/debug/hnat"
 
 		config_get_bool "fastpath_mh_eth_hnat" "config" "fastpath_mh_eth_hnat" "1"
-		echo 1 > "$hnat_path/hook_toggle"
-		echo 0 > "$hnat_path/hook_toggle"
 		echo "$fastpath_mh_eth_hnat" > "$hnat_path/hook_toggle"
 
 		if [ "$fastpath_mh_eth_hnat" -eq "1" ]; then
@@ -114,10 +112,8 @@ done
 else
     echo "Invalid IPv4 address: $fastpath_mh_eth_hnat_ap"
 fi
-    echo 4096 > /proc/sys/vm/min_free_kbytes
-    echo 3 > /proc/sys/vm/drop_caches
-    sed -i '/prefer-family/d' /etc/wgetrc
-    echo "prefer-family = IPv4" >> /etc/wgetrc
+	sed -i '/prefer-family/d' /etc/wgetrc
+	echo "prefer-family = IPv4" >> /etc/wgetrc
 }
 
 reload_service() {
