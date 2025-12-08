@@ -1,0 +1,26 @@
+From: padavanonly <padavanonly@github.com>
+Date: Mon, 8 Dec 2025 22:41:17 +0800
+Subject: [PATCH] mtwifi:reduce memory usage
+
+Restore vendor driver change from 9c6da44ae3f5.
+
+[sKyissKy: extract mt_hwifi patch from commit 9c6da44ae3f5]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/mk/config/config.mk | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/mt_wifi/mk/config/config.mk b/mt_wifi/mk/config/config.mk
+index 706a215..75a80bc 100644
+--- a/mt_wifi/mk/config/config.mk
++++ b/mt_wifi/mk/config/config.mk
+@@ -528,9 +528,7 @@ ifeq ($(CONFIG_ARCH_DMA_ADDR_T_64BIT), y)
+ 	WFLAGS += -DCONFIG_LOGAN_ARHT_SOC_NOT_USE
+ endif
+ 
+-ifeq ($(CONFIG_MEMORY_SLIM_SUPPORT), y)
+ 	WFLAGS += -DMEMORY_SLIM
+-endif
+ 
+ ifeq ($(CONFIG_FTM_SUPPORT),y)
+ WFLAGS += -DFTM_SUPPORT
