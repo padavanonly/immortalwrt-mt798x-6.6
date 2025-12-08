@@ -4,9 +4,7 @@ ifeq ($(CONFIG_WARP_DBG_SUPPORT), y)
 ccflags-y += -DCONFIG_WARP_DBG_SUPPORT
 endif
 
-ifeq ($(CONFIG_MTK_MEMORY_SHRINK), y)
 ccflags-y += -DMEMORY_SHRINK
-endif
 
 ifeq ($(CONFIG_WARP_MEMORY_LEAK_DBG), y)
 ccflags-y += -DMEM_LEAK_DBG
