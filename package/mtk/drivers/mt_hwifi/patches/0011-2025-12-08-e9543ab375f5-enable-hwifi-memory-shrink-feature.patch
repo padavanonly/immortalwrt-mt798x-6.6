@@ -1,0 +1,25 @@
+From: padavanonly <83120842+padavanonly@users.noreply.github.com>
+Date: Mon, 8 Dec 2025 13:17:19 +0800
+Subject: [PATCH] Enable HWIFI memory shrink feature
+
+Restore vendor driver change from e9543ab375f5.
+
+[sKyissKy: extract mt_hwifi patch from commit e9543ab375f5]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ wlan_hwifi/config.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/wlan_hwifi/config.mk b/wlan_hwifi/config.mk
+index b0a79a8..0aa0d37 100644
+--- a/wlan_hwifi/config.mk
++++ b/wlan_hwifi/config.mk
+@@ -4,7 +4,7 @@ CONFIG_HWIFI=m
+ #HWIFI Features
+ CONFIG_HWIFI_HE_SUPPORT=n
+ CONFIG_HWIFI_SW_AMSDU=n
+-CONFIG_HWIFI_MEM_SHRINK=n
++CONFIG_HWIFI_MEM_SHRINK=y
+ 
+ #HWIFI DBG
+ CONFIG_HWIFI_DBG=n
