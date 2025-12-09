@@ -239,8 +239,8 @@ define U-Boot/mt7981_cetron_ct3003
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=spim-nand
   BL2_SOC:=mt7981
-  BL2_DDRTYPE:=ddr3-1866mhz
-  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3-1866mhz
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
 endef
 
 define U-Boot/mt7981_cmcc_a10
@@ -279,28 +279,16 @@ define U-Boot/mt7981_cmcc_rax3000m-nand
   DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr4
 endef
 
-define U-Boot/mt7981_cmcc_rax3000me-emmc-ddr3
+define U-Boot/mt7981_cmcc_rax3000me-emmc
   NAME:=CMCC RAX3000Me
   BUILD_SUBTARGET:=filogic
   BUILD_DEVICES:=cmcc_rax3000me
-  UBOOT_CONFIG:=mt7981_cmcc_rax3000me-emmc-ddr3
+  UBOOT_CONFIG:=mt7981_cmcc_rax3000me-emmc
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=emmc
   BL2_SOC:=mt7981
-  BL2_DDRTYPE:=ddr3-1866mhz
-  DEPENDS:=+trusted-firmware-a-mt7981-emmc-ddr3-1866mhz
-endef
-
-define U-Boot/mt7981_cmcc_rax3000me-emmc-ddr4
-  NAME:=CMCC RAX3000Me
-  BUILD_SUBTARGET:=filogic
-  BUILD_DEVICES:=cmcc_rax3000me
-  UBOOT_CONFIG:=mt7981_cmcc_rax3000me-emmc-ddr4
-  UBOOT_IMAGE:=u-boot.fip
-  BL2_BOOTDEV:=emmc
-  BL2_SOC:=mt7981
-  BL2_DDRTYPE:=ddr4
-  DEPENDS:=+trusted-firmware-a-mt7981-emmc-ddr4
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7981-emmc-ddr3
 endef
 
 define U-Boot/mt7981_cmcc_rax3000me-nand-ddr3
@@ -311,8 +299,8 @@ define U-Boot/mt7981_cmcc_rax3000me-nand-ddr3
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=spim-nand
   BL2_SOC:=mt7981
-  BL2_DDRTYPE:=ddr3-1866mhz
-  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3-1866mhz
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
 endef
 
 define U-Boot/mt7981_cmcc_rax3000me-nand-ddr4
@@ -918,35 +906,11 @@ define U-Boot/mt7988_bananapi_bpi-r4-poe-snand
   DEPENDS:=+trusted-firmware-a-mt7988-spim-nand-ubi-comb
 endef
 
-define U-Boot/mt7988_tplink_tl-7dr7230-v1
-  NAME:=TP-Link TL-7DR7230 v1
+define U-Boot/mt7988_tplink_tl-7dr7230-rev1.0-sp2
+  NAME:=TP-Link TL-7DR7230-Rev1.0 sp2
   BUILD_SUBTARGET:=filogic
-  BUILD_DEVICES:=tplink_tl-7dr7230-v1
-  UBOOT_CONFIG:=mt7988d_tplink_tl-7dr7230-v1
-  UBOOT_IMAGE:=u-boot.fip
-  BL2_BOOTDEV:=spim-nand
-  BL2_SOC:=mt7988
-  BL2_DDRTYPE:=ddr4
-  DEPENDS:=+trusted-firmware-a-mt7988-spim-nand-ddr4
-endef
-
-define U-Boot/mt7988_tplink_tl-7dr7230-v2
-  NAME:=TP-Link TL-7DR7230 v2
-  BUILD_SUBTARGET:=filogic
-  BUILD_DEVICES:=tplink_tl-7dr7230-v2
-  UBOOT_CONFIG:=mt7988d_tplink_tl-7dr7230-v2
-  UBOOT_IMAGE:=u-boot.fip
-  BL2_BOOTDEV:=spim-nand
-  BL2_SOC:=mt7988
-  BL2_DDRTYPE:=ddr3
-  DEPENDS:=+trusted-firmware-a-mt7988-spim-nand-ddr3
-endef
-
-define U-Boot/mt7988_tplink_tl-7dr7250-v1
-  NAME:=TP-Link TL-7DR7250 v1
-  BUILD_SUBTARGET:=filogic
-  BUILD_DEVICES:=tplink_tl-7dr7250-v1
-  UBOOT_CONFIG:=mt7988d_tplink_tl-7dr7250-v1
+  BUILD_DEVICES:=tplink_tl-7dr7230-rev1.0-sp2
+  UBOOT_CONFIG:=mt7988d_tplink_tl-7dr7230-rev1.0-sp2
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=spim-nand
   BL2_SOC:=mt7988
@@ -1040,8 +1004,7 @@ UBOOT_TARGETS := \
 	mt7981_cmcc_a10 \
 	mt7981_cmcc_rax3000m-emmc \
 	mt7981_cmcc_rax3000m-nand \
-	mt7981_cmcc_rax3000me-emmc-ddr3 \
-	mt7981_cmcc_rax3000me-emmc-ddr4 \
+	mt7981_cmcc_rax3000me-emmc \
 	mt7981_cmcc_rax3000me-nand-ddr3 \
 	mt7981_cmcc_rax3000me-nand-ddr4 \
 	mt7981_cudy_tr3000-v1 \
@@ -1093,9 +1056,6 @@ UBOOT_TARGETS := \
 	mt7988_bananapi_bpi-r4-poe-emmc \
 	mt7988_bananapi_bpi-r4-poe-sdmmc \
 	mt7988_bananapi_bpi-r4-poe-snand \
-	mt7988_tplink_tl-7dr7230-v1 \
-	mt7988_tplink_tl-7dr7230-v2 \
-	mt7988_tplink_tl-7dr7250-v1 \
 	mt7988_rfb-spim-nand \
 	mt7988_rfb-snand \
 	mt7988_rfb-nor \
@@ -1106,7 +1066,8 @@ UBOOT_CUSTOMIZE_CONFIG := \
 	--disable TOOLS_KWBIMAGE \
 	--disable TOOLS_LIBCRYPTO \
 	--disable TOOLS_MKEFICAPSULE \
-	--enable SERIAL_RX_BUFFER
+	--enable SERIAL_RX_BUFFER \
+	--set-val SERIAL_RX_BUFFER_SIZE 256
 
 ifdef CONFIG_TARGET_mediatek
 UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)

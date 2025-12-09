@@ -1627,6 +1627,31 @@ define Device/tplink_tl-xtr8488
 endef
 TARGET_DEVICES += tplink_tl-xtr8488
 
+define Device/tplink_tl-7dr7230-rev1.0-sp2
+  DEVICE_VENDOR := TP-Link
+  DEVICE_MODEL := TL-7DR7230
+  DEVICE_VARIANT := rev1.0-sp2
+  DEVICE_DTS := mt7988d-tplink-tl-7dr7230-rev1.0-sp2
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_DTS_LOADADDR := 0x45f00000
+  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt7992-firmware \
+			 mt7988-wo-firmware kmod-phy-airoha-en8811h airoha-en8811h-firmware
+  KERNEL_LOADADDR := 0x46000000
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  KERNEL_IN_UBI := 1
+  UBOOTENV_IN_UBI := 1
+  IMAGES := sysupgrade.itb
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | pad-rootfs | append-metadata
+endef
+TARGET_DEVICES += tplink_tl-7dr7230-rev1.0-sp2
+
 define Device/ubnt_unifi-6-plus
   DEVICE_VENDOR := Ubiquiti
   DEVICE_MODEL := UniFi U6+

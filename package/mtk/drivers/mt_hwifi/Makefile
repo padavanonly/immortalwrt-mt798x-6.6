@@ -28,7 +28,7 @@ TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 define KernelPackage/mt_hwifi
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HW abstraction layer driver
-	DEPENDS:=+kmod-mt_wifi7 +MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_osal +!MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_cmn
+	DEPENDS:=+kmod-mt_wifi7 +kmod-mt_wifi_cmn
 	FILES:=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_hwifi.ko
 	AUTOLOAD:=$(call AutoLoad,62,mtk_hwifi)
 	SUBMENU:=Drivers
@@ -46,7 +46,7 @@ endef
 define KernelPackage/mtk_pci
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI PCI driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_PCI_SUPPORT +MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_osal +!MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_cmn
+	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_PCI_SUPPORT +kmod-mt_wifi_cmn
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_pci.ko
 	AUTOLOAD:=$(call AutoLoad,63,mtk_pci)
 	SUBMENU:=Drivers

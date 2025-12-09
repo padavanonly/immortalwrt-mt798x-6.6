@@ -1,3 +1,15 @@
+--- a/drivers/net/phy/Makefile	2025-06-21 06:34:45.633002781 +0800
++++ b/drivers/net/phy/Makefile	2025-06-21 10:51:35.902000421 +0800
+@@ -51,7 +51,8 @@
+ obj-$(CONFIG_ADIN1100_PHY)	+= adin1100.o
+ obj-$(CONFIG_AIROHA_EN8801SC_PHY)   += en8801sc.o
+ obj-$(CONFIG_AIR_AN8855_PHY)		+= air_an8855.o
+-obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811h.o
++air_en8811-y := air_en8811h_main.o air_en8811h_api.o
++obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811.o
+ obj-$(CONFIG_AMD_PHY)		+= amd.o
+ obj-$(CONFIG_AQUANTIA_PHY)	+= aquantia/
+ obj-$(CONFIG_AX88796B_PHY)	+= ax88796b.o
 --- a/drivers/usb/serial/option.c
 +++ b/drivers/usb/serial/option.c
 @@ -2338,9 +2338,17 @@ static const struct usb_device_id option

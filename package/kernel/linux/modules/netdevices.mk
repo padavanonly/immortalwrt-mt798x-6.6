@@ -499,8 +499,8 @@ define KernelPackage/phy-airoha-en8811h
   DEPENDS:=+airoha-en8811h-firmware +kmod-libphy
   KCONFIG:=CONFIG_AIR_EN8811H_PHY
   FILES:= \
-   $(LINUX_DIR)/drivers/net/phy/air_en8811h.ko
-  AUTOLOAD:=$(call AutoLoad,18,air_en8811h,1)
+   $(LINUX_DIR)/drivers/net/phy/air_en8811.ko
+  AUTOLOAD:=$(call AutoLoad,20,air_en8811h,1)
 endef
 
 define KernelPackage/phy-airoha-en8811h/description
