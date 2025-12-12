@@ -1,0 +1,109 @@
+From 38b51269aabf06cdbe2883a2dbf38edc37c65a62 Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Fri, 12 Dec 2025 16:47:10 +0800
+Subject: [PATCH] refactor wdma init flow to avoid double init
+
+Signed-off-by: Rex Lu <rex.lu@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 52 ++++++++++++-------------
+ 1 file changed, 24 insertions(+), 28 deletions(-)
+
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -2192,31 +2192,32 @@ mtk_wed_ring_alloc(struct mtk_wed_device
+ }
+ 
+ static int
+-mtk_wed_wdma_rx_ring_setup(struct mtk_wed_device *dev, int idx, int size,
+-			   bool reset)
++mtk_wed_wdma_rx_ring_setup(struct mtk_wed_device *dev, int size, bool reset)
+ {
+ 	struct mtk_wed_ring *wdma;
++	int idx;
+ 
+-	if (idx >= ARRAY_SIZE(dev->rx_wdma))
+-		return -EINVAL;
++	for (idx = 0; idx < ARRAY_SIZE(dev->rx_wdma); idx++) {
++		wdma = &dev->rx_wdma[idx];
+ 
+-	wdma = &dev->rx_wdma[idx];
+-	if (!reset && mtk_wed_ring_alloc(dev, wdma, MTK_WED_WDMA_RING_SIZE,
+-					 dev->hw->soc->wdma_desc_size, true))
+-		return -ENOMEM;
++		if (!wdma->desc && mtk_wed_ring_alloc(dev, wdma, MTK_WED_WDMA_RING_SIZE,
++						      dev->hw->soc->wdma_desc_size, true))
++			return -ENOMEM;
+ 
+-	wdma->flags |= MTK_WED_RING_CONFIGURED;
++		wdma->flags |= MTK_WED_RING_CONFIGURED;
+ 
+-	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_BASE,
+-		 wdma->desc_phys);
+-	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_COUNT,
+-		 size);
+-	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_CPU_IDX, 0);
++		wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_BASE,
++			wdma->desc_phys);
++		wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_COUNT,
++			size);
++		if (reset)
++			wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_CPU_IDX, 0);
+ 
+-	wed_w32(dev, MTK_WED_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_BASE,
+-		wdma->desc_phys);
+-	wed_w32(dev, MTK_WED_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_COUNT,
+-		size);
++		wed_w32(dev, MTK_WED_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_BASE,
++			wdma->desc_phys);
++		wed_w32(dev, MTK_WED_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_COUNT,
++			size);
++	}
+ 
+ 	return 0;
+ }
+@@ -2231,7 +2232,7 @@ mtk_wed_wdma_tx_ring_setup(struct mtk_we
+ 		return -EINVAL;
+ 
+ 	wdma = &dev->tx_wdma[idx];
+-	if (!reset && mtk_wed_ring_alloc(dev, wdma, MTK_WED_WDMA_RING_SIZE,
++	if (!wdma->desc && mtk_wed_ring_alloc(dev, wdma, MTK_WED_WDMA_RING_SIZE,
+ 					 dev->hw->soc->wdma_desc_size, true))
+ 		return -ENOMEM;
+ 
+@@ -2716,10 +2717,6 @@ mtk_wed_start(struct mtk_wed_device *dev
+ 	if (mtk_wed_get_rx_capa(dev) && mtk_wed_rx_buffer_alloc(dev))
+ 		return;
+ 
+-	for (i = 0; i < ARRAY_SIZE(dev->rx_wdma); i++)
+-		if (!dev->rx_wdma[i].desc)
+-			mtk_wed_wdma_rx_ring_setup(dev, i, 16, false);
+-
+ 	if (dev->wlan.hw_rro) {
+ 		for (i = 0; i < MTK_WED_RX_PAGE_QUEUES; i++) {
+ 			u32 addr = MTK_WED_RRO_MSDU_PG_CTRL0(i) +
+@@ -2877,12 +2874,11 @@ mtk_wed_tx_ring_setup(struct mtk_wed_dev
+ 	if (WARN_ON(idx >= ARRAY_SIZE(dev->tx_ring)))
+ 		return -EINVAL;
+ 
+-	if (!reset && mtk_wed_ring_alloc(dev, ring, MTK_WED_TX_RING_SIZE,
++	if (!ring->desc && mtk_wed_ring_alloc(dev, ring, MTK_WED_TX_RING_SIZE,
+ 					 sizeof(*ring->desc), true))
+ 		return -ENOMEM;
+ 
+-	if (mtk_wed_wdma_rx_ring_setup(dev, idx, MTK_WED_WDMA_RING_SIZE,
+-				       reset))
++	if (mtk_wed_wdma_rx_ring_setup(dev, MTK_WED_WDMA_RING_SIZE, reset))
+ 		return -ENOMEM;
+ 
+ 	ring->reg_base = MTK_WED_RING_TX(idx);
+@@ -2953,8 +2949,8 @@ mtk_wed_rx_ring_setup(struct mtk_wed_dev
+ 	if (WARN_ON(idx >= ARRAY_SIZE(dev->rx_ring)))
+ 		return -EINVAL;
+ 
+-	if (!reset && mtk_wed_ring_alloc(dev, ring, MTK_WED_RX_RING_SIZE,
+-					 sizeof(*ring->desc), false))
++	if (!ring->desc && mtk_wed_ring_alloc(dev, ring, MTK_WED_RX_RING_SIZE,
++					      sizeof(*ring->desc), false))
+ 		return -ENOMEM;
+ 
+ 	if (mtk_wed_wdma_tx_ring_setup(dev, idx, MTK_WED_WDMA_RING_SIZE,
