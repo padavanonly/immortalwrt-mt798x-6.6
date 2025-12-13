@@ -403,7 +403,7 @@ Signed-off-by: SkyLake.Huang <skylake.huang@mediatek.com>
  }
 --- /dev/null
 +++ b/drivers/net/phy/mediatek/mtk-phy-lib.c
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,245 @@
 +// SPDX-License-Identifier: GPL-2.0
 +#include <linux/phy.h>
 +#include <linux/module.h>
@@ -416,14 +416,8 @@ Signed-off-by: SkyLake.Huang <skylake.huang@mediatek.com>
 +				unsigned long rules,
 +				unsigned long supported_triggers)
 +{
-+	if (index > 1)
-+		return -EINVAL;
-+
-+	/* All combinations of the supported triggers are allowed */
-+	if (rules & ~supported_triggers)
-+		return -EOPNOTSUPP;
-+
-+	return 0;
++	/* Disable hardware LED offload - use software control instead */
++	return -EOPNOTSUPP;
 +}
 +EXPORT_SYMBOL_GPL(mtk_phy_led_hw_is_supported);
 +
