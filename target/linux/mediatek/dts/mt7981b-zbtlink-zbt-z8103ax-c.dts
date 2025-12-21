@@ -8,14 +8,3 @@
 	model = "Zbtlink 3000M(WiFi6) ZBT-Z8103AX-C";
 	compatible = "zbtlink,zbt-z8103ax-c", "mediatek,mt7981b";
 };
-
-&chosen {
-	bootargs = "earlycon=uart8250,mmio32,0x11002000 console=ttyS0,115200n8 loglevel=8";
-};
-
-&partitions {
-	partition@580000 {
-		label = "ubi";
-		reg = <0x580000 0x7280000>;
-	};
-};
