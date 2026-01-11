@@ -1,0 +1,34 @@
+---
+[v2] net: phy: sfp: fix SFP_QUIRK_S patch conflict
+
+Fix SFP_QUIRK_S patch conflict caused by the kernel update to v6.12.70
+---
+v2: fix SFP_QUIRK_S patch conflict caused by the kernel update to
+    v6.12.70
+v1: add TP-LINK TL-SM410U 2.5G quirk
+---
+
+From eac216a8c702bbd0aba81222a8d4acfb7b9028cd Mon Sep 17 00:00:00 2001
+From: "neal.yen" <neal.yen@mediatek.com>
+Date: Sun, 11 Jan 2026 13:12:01 +0800
+Subject: [PATCH] net: phy: sfp: disable tp-link 2500basex auto-nego due
+to in-band signaling auto-nego is not supported on MTK lynix PCS.
+
+---
+ drivers/net/phy/sfp.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 1c16700..5020cb9 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -629,4 +629,7 @@ static const struct sfp_quirk sfp_quirks[] = {
+ 	// OEM SFP-GE-T is a 1000Base-T module with broken TX_FAULT indicator
+ 	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
++	// TP-LINK TL-SM410U can operate at 2500base-T, but not report
++	// in their EEPROM
++	SFP_QUIRK_M("TP-LINK", "TL-SM410U", sfp_quirk_oem_2_5g),
+ 
+ 	SFP_QUIRK_F("OEM", "SFP-10G-T-I", sfp_fixup_rollball_cc),
+-- 
+2.45.2
