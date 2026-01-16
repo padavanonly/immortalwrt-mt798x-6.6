@@ -450,19 +450,18 @@ define Device/mediatek_mt7987a-rfb
 endef
 TARGET_DEVICES += mediatek_mt7987a-rfb
 
-
 define Device/hiveton-h5000m
   DEVICE_VENDOR := Hiveton
   DEVICE_MODEL := H5000M
   DEVICE_DTS := mt7987a-hiveton-h5000m
   DEVICE_DTS_DIR := $(DTS_DIR)/
   KERNEL_LOADADDR := 0x40080000
-  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-sfp blkid
+  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-hwmon-pwmfan \
+	kmod-usb3 blkid f2fsck mkf2fs
   SUPPORTED_DEVICES += hiveton,h5000m
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += hiveton-h5000m
-
 
 define Device/bananapi_bpi-r4-lite
   DEVICE_VENDOR := Bananapi

@@ -1,0 +1,56 @@
+msgid "Fan Control Settings"
+msgstr "风扇控制设置"
+
+msgid "Configure the parameters for the fan control service."
+msgstr "配置风扇控制服务的相关参数。"
+
+msgid "General"
+msgstr "常规"
+
+msgid "Enable Service"
+msgstr "启用服务"
+
+msgid "Thermal File Path"
+msgstr "温度文件路径"
+
+msgid "Fan Control File Path"
+msgstr "风扇控制文件路径"
+
+msgid "Initial Speed"
+msgstr "启动初始速度"
+
+msgid "Max Speed"
+msgstr "最大速度"
+
+msgid "Start Temperature (°C)"
+msgstr "启动温度 (°C)"
+
+msgid "Live Status"
+msgstr "实时状态"
+
+msgid "Service Status"
+msgstr "服务状态"
+
+msgid "CPU Temperature"
+msgstr "CPU 温度"
+
+msgid "Fan Speed Level"
+msgstr "风扇转速等级"
+
+msgid "Loading..."
+msgstr "正在加载..."
+
+msgid "Running"
+msgstr "运行中"
+
+msgid "Stopped"
+msgstr "已停止"
+
+msgid "Invalid"
+msgstr "无效"
+
+msgid "N/A"
+msgstr "不可用"
+
+msgid "Fan General Control"
+msgstr "通用风扇控制小程序"
