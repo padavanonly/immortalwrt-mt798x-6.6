@@ -1,0 +1,66 @@
+From d933c660a042bd291511cba53b9cfb444d49fbaa Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Tue, 20 Jan 2026 16:35:52 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: fix mtk_eth_offload_init memory
+ leak
+
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c     | 9 +++++----
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h     | 2 +-
+ drivers/net/ethernet/mediatek/mtk_ppe.c         | 1 +
+ drivers/net/ethernet/mediatek/mtk_ppe_offload.c | 4 +---
+ 4 files changed, 8 insertions(+), 8 deletions(-)
+
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -6959,11 +6959,12 @@ static int mtk_probe(struct platform_dev
+ 				err = -ENOMEM;
+ 				goto err_deinit_ppe;
+ 			}
+-			err = mtk_eth_offload_init(eth, i);
+-
+-			if (err)
+-				goto err_deinit_ppe;
+ 		}
++
++		err = mtk_eth_offload_init(eth);
++		if (err)
++			goto err_deinit_ppe;
++
+ 		mtk_ppe_internal_debugfs_init(eth);
+ 	}
+ #endif
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1985,7 +1985,7 @@ int mtk_gmac_gephy_path_setup(struct mtk
+ int mtk_gmac_rgmii_path_setup(struct mtk_eth *eth, int mac_id);
+ int mtk_gmac_usxgmii_path_setup(struct mtk_eth *eth, int mac_id);
+ 
+-int mtk_eth_offload_init(struct mtk_eth *eth, u8 id);
++int mtk_eth_offload_init(struct mtk_eth *eth);
+ int mtk_eth_setup_tc(struct net_device *dev, enum tc_setup_type type,
+ 		     void *type_data);
+ int mtk_flow_offload_cmd(struct mtk_eth *eth, struct flow_cls_offload *cls,
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -1205,6 +1205,7 @@ void mtk_ppe_deinit(struct mtk_eth *eth)
+ 			return;
+ 		rhashtable_destroy(&eth->ppe[i]->l2_flows);
+ 	}
++	rhashtable_destroy(&eth->flow_table);
+ }
+ 
+ static void mtk_ppe_init_foe_table(struct mtk_ppe *ppe)
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -776,9 +776,7 @@ int mtk_eth_setup_tc(struct net_device *
+ 	}
+ }
+ 
+-int mtk_eth_offload_init(struct mtk_eth *eth, u8 id)
++int mtk_eth_offload_init(struct mtk_eth *eth)
+ {
+-	if (!eth->ppe[id] || !eth->ppe[id]->foe_table)
+-		return 0;
+ 	return rhashtable_init(&eth->flow_table, &mtk_flow_ht_params);
+ }
