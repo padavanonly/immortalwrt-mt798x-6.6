@@ -20,24 +20,20 @@ server the client received the lease from. Only set serverid_ok = true
 on an empty stored server-id when we are not validating a Reconfigure;
 for DHCPV6_MSG_UNKNOWN we leave it false so the response is dropped.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 
 (cherry picked from commit 0a4e51db30d5a13175cdda7830a5fcb882e88659)
 [the message-type parameter is named 'type' in 24.10, not 'req_msg_type']
 ---
- src/dhcpv6.c | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
-
 --- a/src/dhcpv6.c
 +++ b/src/dhcpv6.c
-@@ -819,7 +819,7 @@ static bool dhcpv6_response_is_valid(con
+@@ -1119,7 +1119,7 @@
  			if (server_id_len)
- 				serverid_ok = (olen + 4U == server_id_len) && !memcmp(
- 						&odata[-4], server_id, server_id_len);
+ 				serverid_ok = (olen + DHCPV6_OPT_HDR_SIZE_U == server_id_len) && !memcmp(
+ 						&odata[-DHCPV6_OPT_HDR_SIZE], server_id, server_id_len);
 -			else
-+			else if (type != DHCPV6_MSG_UNKNOWN)
++			else if (req_msg_type != DHCPV6_MSG_UNKNOWN)
  				serverid_ok = true;
- 		} else if (otype == DHCPV6_OPT_AUTH && olen == -4 +
- 				sizeof(struct dhcpv6_auth_reconfigure)) {
+ 			break;
+ 

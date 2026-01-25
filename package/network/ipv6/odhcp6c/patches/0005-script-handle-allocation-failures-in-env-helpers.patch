@@ -16,17 +16,13 @@ Check each allocation and skip the corresponding environment variable
 when it fails. While at it, replace the cosmetic realloc(NULL, ...) idiom
 with plain malloc() to make intent clearer.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit 01130f80338a250f94ae0df786306c11662c88fb)
 ---
- src/script.c | 42 ++++++++++++++++++++++++++++++++----------
- 1 file changed, 32 insertions(+), 10 deletions(-)
-
 --- a/src/script.c
 +++ b/src/script.c
-@@ -98,7 +98,10 @@ static void ipv6_to_env(const char *name
+@@ -97,7 +97,10 @@
  		const struct in6_addr *addr, size_t cnt)
  {
  	size_t buf_len = strlen(name);
@@ -38,7 +34,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  
  	memcpy(buf, name, buf_len);
  	buf[buf_len++] = '=';
-@@ -121,7 +124,10 @@ static void fqdn_to_env(const char *name
+@@ -120,7 +123,10 @@
  	size_t buf_len = strlen(name);
  	size_t buf_size = len + buf_len + 2;
  	const uint8_t *fqdn_end = fqdn + len;
@@ -50,7 +46,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  
  	memcpy(buf, name, buf_len);
  	buf[buf_len++] = '=';
-@@ -148,9 +154,12 @@ static void bin_to_env(uint8_t *opts, si
+@@ -172,9 +178,12 @@
  	uint16_t otype, olen;
  
  	dhcpv6_for_each_option(opts, oend, otype, olen, odata) {
@@ -64,9 +60,9 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  		snprintf(buf, 14, "OPTION_%hu=", otype);
  		buf_len += strlen(buf);
  
-@@ -173,7 +182,10 @@ static void entry_to_env(const char *nam
+@@ -197,7 +206,10 @@
  	// Worst case: ENTRY_PREFIX with iaid != 1 and exclusion
- 	const size_t max_entry_len = (INET6_ADDRSTRLEN-1 + 5 + 22 + 15 + 10 +
+ 	const size_t max_entry_len = (INET6_ADDRSTRLEN-1 + 5 + 44 + 15 + 10 +
  				      INET6_ADDRSTRLEN-1 + 11 + 1);
 -	char *buf = realloc(NULL, buf_len + 2 + (len / sizeof(*e)) * max_entry_len);
 +	char *buf = malloc(buf_len + 2 + (len / sizeof(*e)) * max_entry_len);
@@ -76,7 +72,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  
  	memcpy(buf, name, buf_len);
  	buf[buf_len++] = '=';
-@@ -238,8 +250,13 @@ static void entry_to_env(const char *nam
+@@ -265,8 +277,13 @@
  static void search_to_env(const char *name, const uint8_t *start, size_t len)
  {
  	size_t buf_len = strlen(name);
@@ -92,7 +88,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  	*c++ = '=';
  
  	for (struct odhcp6c_entry *e = (struct odhcp6c_entry*)start;
-@@ -262,7 +279,10 @@ static void search_to_env(const char *na
+@@ -289,7 +306,10 @@
  static void int_to_env(const char *name, int value)
  {
  	size_t len = 13 + strlen(name);
@@ -104,7 +100,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  
  	snprintf(buf, len, "%s=%d", name, value);
  	putenv(buf);
-@@ -495,9 +515,11 @@ void script_call(const char *status, int
+@@ -539,9 +559,11 @@
  		int_to_env("RA_RETRANSMIT", ra_get_retransmit());
  
  		char *buf = malloc(10 + passthru_len * 2);

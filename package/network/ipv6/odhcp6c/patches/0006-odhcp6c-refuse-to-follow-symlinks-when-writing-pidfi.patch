@@ -18,17 +18,13 @@ result; the file is still truncated and replaced when it is a regular
 file, but a symlink in the path causes open() to fail with ELOOP and
 we simply skip pidfile creation rather than clobbering the target.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit 0a19052dc9fb73530adeff9b61edb3a35f15bc2a)
 ---
- src/odhcp6c.c | 15 +++++++++++----
- 1 file changed, 11 insertions(+), 4 deletions(-)
-
 --- a/src/odhcp6c.c
 +++ b/src/odhcp6c.c
-@@ -454,10 +454,17 @@ int main(_unused int argc, char* const a
+@@ -521,10 +521,17 @@
  			pidfile = (char*)buf;
  		}
  
@@ -48,5 +44,5 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 +				close(pidfd);
 +			}
  		}
- 	}
- 
+ 	} else {
+ 		config_dhcp->log_syslog = false;

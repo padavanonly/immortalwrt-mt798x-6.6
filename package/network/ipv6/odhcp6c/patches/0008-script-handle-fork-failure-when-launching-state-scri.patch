@@ -15,27 +15,24 @@ Log the failure, clear 'running' so subsequent calls do not chase a
 ghost pid, and return without going through the (parent-only)
 post-fork bookkeeping.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 
 (cherry picked from commit c938c168cbef5642cab42389d96c340e40f4f8ff)
 [use syslog() instead of the error() log helper, which is not present in 24.10]
+[adjusted includes for 2026-01-25 snapshot]
 ---
- src/script.c | 7 +++++++
- 1 file changed, 7 insertions(+)
-
 --- a/src/script.c
 +++ b/src/script.c
 @@ -14,6 +14,7 @@
   */
  
- #include <stdio.h>
+ #include <arpa/inet.h>
 +#include <errno.h>
+ #include <inttypes.h>
  #include <netdb.h>
- #include <resolv.h>
- #include <stdlib.h>
-@@ -441,6 +442,12 @@ void script_call(const char *status, int
+ #include <netinet/in.h>
+@@ -471,6 +472,12 @@
  
  	pid_t pid = fork();
  

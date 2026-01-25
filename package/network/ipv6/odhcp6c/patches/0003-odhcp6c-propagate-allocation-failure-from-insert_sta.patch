@@ -21,17 +21,13 @@ Return -1 when odhcp6c_resize_state() returns NULL, matching the
 documented contract of the function and the behaviour of
 odhcp6c_add_state().
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit 49d9c0112bb8cd9760cc13495caa5009b61cf2ad)
 ---
- src/odhcp6c.c | 11 ++++++-----
- 1 file changed, 6 insertions(+), 5 deletions(-)
-
 --- a/src/odhcp6c.c
 +++ b/src/odhcp6c.c
-@@ -735,12 +735,13 @@ int odhcp6c_insert_state(enum odhcp6c_st
+@@ -988,12 +988,13 @@
  
  	uint8_t *n = odhcp6c_resize_state(state, len);
  

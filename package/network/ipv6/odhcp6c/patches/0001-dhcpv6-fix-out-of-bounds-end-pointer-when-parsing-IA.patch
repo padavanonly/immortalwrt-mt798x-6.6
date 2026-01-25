@@ -16,22 +16,19 @@ sub-options, polluting STATE_IA_NA / STATE_IA_PD with garbage.
 The sibling call site in dhcpv6_handle_reply already passes the
 correct 'odata + olen'. Match that here.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit b6f0c70f5fc26632d8a6c748efec5aa335aa4fde)
+[adjusted context for 2026-01-25 snapshot]
 ---
- src/dhcpv6.c | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
-
 --- a/src/dhcpv6.c
 +++ b/src/dhcpv6.c
-@@ -959,7 +959,7 @@ static int dhcpv6_handle_advert(enum dhc
+@@ -1269,7 +1269,7 @@
  				 (otype == DHCPV6_OPT_IA_NA && na_mode != IA_MODE_NONE)) &&
- 				olen > -4 + sizeof(struct dhcpv6_ia_hdr)) {
- 			struct dhcpv6_ia_hdr *ia_hdr = (void*)(&odata[-4]);
--			dhcpv6_parse_ia(ia_hdr, odata + olen + sizeof(*ia_hdr));
-+			dhcpv6_parse_ia(ia_hdr, odata + olen);
+ 				olen > sizeof(struct dhcpv6_ia_hdr) - DHCPV6_OPT_HDR_SIZE) {
+ 			struct dhcpv6_ia_hdr *ia_hdr = (void*)(&odata[-DHCPV6_OPT_HDR_SIZE]);
+-			dhcpv6_parse_ia(ia_hdr, odata + olen + sizeof(*ia_hdr), NULL);
++			dhcpv6_parse_ia(ia_hdr, odata + olen, NULL);
  		}
  
- 		if (otype == DHCPV6_OPT_SERVERID && olen <= 130) {
+ 		switch (otype) {

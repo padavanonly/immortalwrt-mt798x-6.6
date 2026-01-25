@@ -24,17 +24,13 @@ written, and gate iteration purely on the bounds check
 'odata + olen <= end'. Callers see the same variables, in the same
 order, just without the spurious type-0 truncation.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit 9177f236c2d74144a8a2cbdc7da0fcf2f582bc2c)
 ---
- src/odhcp6c.h | 6 ++++--
- 1 file changed, 4 insertions(+), 2 deletions(-)
-
 --- a/src/odhcp6c.h
 +++ b/src/odhcp6c.h
-@@ -267,8 +267,10 @@ struct dhcpv6_s46_rule {
+@@ -387,8 +387,10 @@
  
  #define dhcpv6_for_each_option(start, end, otype, olen, odata)\
  	for (uint8_t *_o = (uint8_t*)(start); _o + 4 <= (uint8_t*)(end) &&\

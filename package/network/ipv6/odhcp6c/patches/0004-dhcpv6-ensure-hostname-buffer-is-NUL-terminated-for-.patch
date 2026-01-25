@@ -13,24 +13,21 @@ fqdn_buf[].
 Pass one fewer byte to gethostname() and explicitly NUL-terminate the
 last byte so dn_comp() always sees a properly bounded C string.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 
 (cherry picked from commit 4bd976fd60c0e2baf00c92991d30507ece2b9075)
+[adjusted context for 2026-01-25 snapshot]
 ---
- src/dhcpv6.c | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
-
 --- a/src/dhcpv6.c
 +++ b/src/dhcpv6.c
-@@ -341,7 +341,8 @@ static void dhcpv6_send(enum dhcpv6_msg
- {
- 	// Build FQDN
- 	char fqdn_buf[256];
--	gethostname(fqdn_buf, sizeof(fqdn_buf));
-+	gethostname(fqdn_buf, sizeof(fqdn_buf) - 1);
-+	fqdn_buf[sizeof(fqdn_buf) - 1] = '\0';
- 	struct {
- 		uint16_t type;
- 		uint16_t len;
+@@ -598,7 +598,8 @@
+ 	odhcp6c_get_state(STATE_OUR_FQDN, &fqdn_len);
+ 	if(fqdn_len == 0) {
+ 		char fqdn_buf[256];
+-		gethostname(fqdn_buf, sizeof(fqdn_buf));
++		gethostname(fqdn_buf, sizeof(fqdn_buf) - 1);
++		fqdn_buf[sizeof(fqdn_buf) - 1] = '\0';
+ 		struct {
+ 			uint16_t type;
+ 			uint16_t len;

@@ -22,20 +22,16 @@ itself (and any peer/parent that shares the pgrp).
 Snapshot the pid into a local before checking it and using it, so the
 kill() target is the value we actually tested.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcp6c/pull/160
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 
 (cherry picked from commit 2521bf732b9f643ce36c5ac3b314b17c034a0f50)
 ---
- src/script.c | 5 +++--
- 1 file changed, 3 insertions(+), 2 deletions(-)
-
 --- a/src/script.c
 +++ b/src/script.c
-@@ -402,10 +402,11 @@ void script_call(const char *status, int
- 	time_t now = odhcp6c_get_milli_time() / 1000;
- 	bool running_script = false;
+@@ -432,10 +432,11 @@
+ 	if (!argv[0])
+ 		return;
  
 -	if (running) {
 +	pid_t prev = running;
