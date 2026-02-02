@@ -34,8 +34,7 @@
 
 extern struct net_device *ppd_dev;
 extern atomic_t eth1_in_br;
-struct net_device *br_dev;
-struct net_device *eth1_dev;
+
 #define do_ge2ext_fast(dev, skb)                                               \
 	(skb_hnat_is_hashed(skb) && !is_from_extge(skb) && \
 	 skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU)
@@ -338,47 +337,46 @@ static void gmac_ppe_fwd_enable(struct net_device *dev)
 		set_gmac_ppe_fwd(1, 1);
 }
 
-void ppd_dev_setting(void)
+static void ppd_dev_setting(void)
 {
+	struct net_device *br_dev;
+	struct net_device *rx_cand_dev;
+
+	atomic_set(&eth1_in_br, 0);
+
+	/* find tx ppd dev */
 	br_dev = __dev_get_by_name(&init_net, "br-lan");
-	eth1_dev = __dev_get_by_name(&init_net, "eth1");
-        hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth0");
-        atomic_set(&eth1_in_br, 0);
-                if (br_dev) {
-			struct net_device *dev;
-                        struct list_head *pos;
-                        netdev_for_each_lower_dev(br_dev, dev, pos) {
-                        if (dev->flags & IFF_UP) {
-				if (netif_carrier_ok(dev)){
-					ppd_dev = __dev_get_by_name(&init_net, dev->name);
-                    if (!strncmp(dev->name, "eth0",4))     
-						break;
-					if (!strncmp(dev->name, "eth1",4))     
-						break;
-					if (!strncmp(dev->name, "lan",3))     
-						break;
-				}
-			}
-                    }
-                }
-        br_dev = __dev_get_by_name(&init_net, "eth1");
-        if (br_dev){
-        if (br_dev->flags & IFF_UP){
-		if (netif_carrier_ok(br_dev))
-			hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth1");
-                }
+
+	if (unlikely(!br_dev))
+		goto skip_tx_dev;
+
+	struct net_device *dev;
+	struct list_head *pos;
+	netdev_for_each_lower_dev(br_dev, dev, pos) {
+		/* eth0 > eth1 > DSA lan */
+		if ((dev->flags & IFF_UP) && netif_carrier_ok(dev) &&
+			(IS_PPD(dev) || !strncmp(dev->name, "lan", 3))) {
+			ppd_dev = dev;
+			break;
+		}
 	}
-        br_dev = __dev_get_by_name(&init_net, "eth0");
-        if (br_dev){
-        if (br_dev->flags & IFF_UP){
-		if (netif_carrier_ok(br_dev))
-                hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth0");
-                }
-	}	
-	pr_info("%s : now rx dev: %s, tx dev: %s\n", 
+
+skip_tx_dev:
+	/* find rx ppd dev, eth0 > eth1 */
+    rx_cand_dev = __dev_get_by_name(&init_net, "eth0");
+    if (rx_cand_dev && (rx_cand_dev->flags & IFF_UP) && netif_carrier_ok(rx_cand_dev)) {
+		hnat_priv->g_ppdev = rx_cand_dev;
+		goto done;
+	}
+
+    rx_cand_dev = __dev_get_by_name(&init_net, "eth1");
+    if (rx_cand_dev && (rx_cand_dev->flags & IFF_UP) && netif_carrier_ok(rx_cand_dev))
+		hnat_priv->g_ppdev = rx_cand_dev;
+
+done:
+	pr_info("%s : now rx dev: %s, tx dev: %s\n",
 		__func__, hnat_priv->g_ppdev->name, ppd_dev->name);
 }
-
 
 int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 			    void *ptr)
