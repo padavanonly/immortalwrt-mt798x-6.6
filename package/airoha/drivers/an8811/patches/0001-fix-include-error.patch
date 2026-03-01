@@ -1,0 +1,14 @@
+--- a/airoha_an8811/src/mtk/air_en8811h.c	2026-03-01 15:45:30.028200489 +0800
++++ b/airoha_an8811/src/mtk/air_en8811h.c	2026-03-01 15:45:39.884185167 +0800
+@@ -17,7 +17,11 @@
+ #include <linux/firmware.h>
+ #include <linux/property.h>
+ #include <linux/wordpart.h>
++#if __has_include(<linux/unaligned.h>)
+ #include <linux/unaligned.h>
++#else
++#include <asm/unaligned.h>
++#endif
+ 
+ #define EN8811H_PHY_ID		0x03a2a411
+ 

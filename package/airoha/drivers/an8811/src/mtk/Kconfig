@@ -1,0 +1,6 @@
+
+config AIROHA_EN8811H_PHY
+	tristate "Airoha EN8811H PHY support"
+	depends on PHYLIB
+	help
+	  Enable support for Airoha EN8811H 2.5G PHY driver.
