@@ -621,14 +621,14 @@ end
             set_dat(dats, apidx, "WNMEnable", v.config.bss_transition)
 
             if is_be_mode(cfg) then
-                set_dat(dats, apidx, "PpMuMimoDlEnable", not v.config.mumimo_dl and 0 or 1)
-                set_dat(dats, apidx, "PpMuMimoUlEnable", not v.config.mumimo_ul and 0 or 1)
+                set_dat(dats, apidx, "PpMuMimoDlEnable", v.config.mumimo_dl)
+                set_dat(dats, apidx, "PpMuMimoUlEnable", v.config.mumimo_ul)
                 set_dat(dats, apidx, "PpOfdmaDlEnable", v.config.ofdma_dl)
                 set_dat(dats, apidx, "PpOfdmaUlEnable", v.config.ofdma_ul)
                 set_dat(dats, apidx, "HT_BAWinSize", 1024)
             elseif is_ax_mode(cfg) then
-                set_dat(dats, apidx, "MuMimoDlEnable", not v.config.mumimo_dl and 0 or 1)
-                set_dat(dats, apidx, "MuMimoUlEnable", not v.config.mumimo_ul and 0 or 1)
+                set_dat(dats, apidx, "MuMimoDlEnable", v.config.mumimo_dl)
+                set_dat(dats, apidx, "MuMimoUlEnable", v.config.mumimo_ul)
                 set_dat(dats, apidx, "MuOfdmaDlEnable", v.config.ofdma_dl)
                 set_dat(dats, apidx, "MuOfdmaUlEnable", v.config.ofdma_ul)
                 set_dat(dats, apidx, "HT_BAWinSize", 256)
