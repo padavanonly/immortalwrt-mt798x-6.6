@@ -25,8 +25,8 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 
 --- a/src/dhcpv6-ia.c
 +++ b/src/dhcpv6-ia.c
-@@ -769,8 +769,14 @@ static bool assign_pd(struct interface *
- 	} else if (iface->addr6_len < 1)
+@@ -346,8 +346,14 @@ static bool assign_pd(struct interface *
+ 	if (iface->addr6_len < 1)
  		return false;
  
 -	/* Try honoring the hint first */
@@ -42,7 +42,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  	if (assign->assigned_subnet_id) {
  		list_for_each_entry(c, &iface->ia_assignments, head) {
  			if (c->flags & OAF_DHCPV6_NA)
-@@ -785,7 +791,7 @@ static bool assign_pd(struct interface *
+@@ -362,7 +368,7 @@ static bool assign_pd(struct interface *
  				return true;
  			}
  
@@ -51,7 +51,7 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  		}
  	}
  
-@@ -807,7 +813,7 @@ static bool assign_pd(struct interface *
+@@ -384,7 +390,7 @@ static bool assign_pd(struct interface *
  			return true;
  		}
  

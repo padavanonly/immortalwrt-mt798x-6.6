@@ -34,25 +34,22 @@ written by dhcpv6_ia_write_statefile() in dhcpv6-ia.c, so the escape helper
 lives there and is applied to both call sites.
 
 Reported-by: puru1761 (GHSA-hhmc-92hw-535f)
-Assisted-by: Claude:claude-opus-4-8
 Link: https://github.com/openwrt/odhcpd/pull/404
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit 68f382690bfaec56d5b1f31c3c31c48bcb642e3a)
+[ported from dhcpv6_ia_write_statefile to statefiles.c in 2026-03-16 snapshot]
 ---
- src/dhcpv6-ia.c | 47 +++++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 45 insertions(+), 2 deletions(-)
-
---- a/src/dhcpv6-ia.c
-+++ b/src/dhcpv6-ia.c
-@@ -288,6 +288,45 @@ struct write_ctxt {
- 	int buf_idx;
- };
+--- a/src/statefiles.c
++++ b/src/statefiles.c
+@@ -34,6 +34,45 @@
+ 
+ static uint8_t statemd5[16];
  
 +/*
 + * Escape a client-supplied hostname so it is safe to write as a single field
 + * into the space-delimited, line-based state file: every byte that is not a
 + * bare LDH character (the RFC 1035 section 2.3.1 "preferred name syntax" set
-+ * accepted by odhcpd_valid_hostname()) is encoded as \xNN. A DHCP client
++ * accepted by odhcpd_hostname_valid()) is encoded as \xNN. A DHCP client
 + * controls its requested hostname (DHCPv4 option 12, DHCPv6 FQDN option) and,
 + * since DNS labels may carry any octet (RFC 2181 section 11), dn_expand()/the
 + * option parser copy the bytes verbatim - so without escaping a hostname could
@@ -87,41 +84,42 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 +	return dst;
 +}
 +
- static void dhcpv6_write_ia_addrhosts(struct in6_addr *addr, int prefix, _unused uint32_t pref_lt,
- 				_unused uint32_t valid_lt, void *arg)
- {
-@@ -489,6 +528,7 @@ void dhcpv6_ia_write_statefile(void)
- 						continue;
+ struct write_ctxt {
+ 	FILE *fp;
+ 	md5_ctx_t md5;
+@@ -482,6 +521,7 @@
+ 	char duidbuf[DUID_HEXSTRLEN];
  
- 					char duidbuf[264];
-+					char hostbuf[256 * 4];
+ 	if (ctxt->fp) {
++		char hostbuf[256 * 4];
+ 		odhcpd_hexlify(duidbuf, lease->duid, lease->duid_len);
  
- 					odhcpd_hexlify(duidbuf, ctxt.c->clid_data, ctxt.c->clid_len);
+ 		/* # <iface> <hexduid> <hexiaid> <hostname> <valid_until> <assigned_[host|subnet]_id> <pfx_length> [<addrs> ...] */
+@@ -489,7 +529,8 @@
+ 			"# %s %s %x %s%s %" PRId64 " %" PRIx64 " %" PRIu8,
+ 			ctxt->iface->ifname, duidbuf, ntohl(lease->iaid),
+ 			lease->hostname && !lease->hostname_valid ? "broken\\x20": "",
+-			lease->hostname ? lease->hostname : "-",
++			escape_hostname(hostbuf, sizeof(hostbuf),
++					lease->hostname ? lease->hostname : "-"),
+ 			(lease->valid_until > ctxt->now ?
+ 			 (int64_t)(lease->valid_until - ctxt->now + ctxt->wall_time) :
+ 			 (INFINITE_VALID(lease->valid_until) ? -1 : 0)),
+@@ -518,6 +559,7 @@
+ 		return;
  
-@@ -496,7 +536,8 @@ void dhcpv6_ia_write_statefile(void)
- 					ctxt.buf_idx = snprintf(ctxt.buf, ctxt.buf_len, "# %s %s %x %s%s %"PRId64" ",
- 								ctxt.iface->ifname, duidbuf, ntohl(ctxt.c->iaid),
- 								(ctxt.c->flags & OAF_BROKEN_HOSTNAME) ? "broken\\x20" : "",
--								(ctxt.c->hostname ? ctxt.c->hostname : "-"),
-+								escape_hostname(hostbuf, sizeof(hostbuf),
-+										ctxt.c->hostname ? ctxt.c->hostname : "-"),
- 								(ctxt.c->valid_until > now ?
- 									(int64_t)(ctxt.c->valid_until - now + wall_time) :
- 									(INFINITE_VALID(ctxt.c->valid_until) ? -1 : 0)));
-@@ -526,13 +567,15 @@ void dhcpv6_ia_write_statefile(void)
+ 	inet_ntop(AF_INET, &lease->ipv4, ipbuf, sizeof(ipbuf));
++	char hostbuf[256 * 4];
  
- 					char ipbuf[INET6_ADDRSTRLEN];
- 					char duidbuf[16];
-+					char hostbuf[256 * 4];
- 					odhcpd_hexlify(duidbuf, c->hwaddr, sizeof(c->hwaddr));
- 
- 					/* iface DUID iaid hostname lifetime assigned length [addrs...] */
- 					ctxt.buf_idx = snprintf(ctxt.buf, ctxt.buf_len, "# %s %s ipv4 %s%s %"PRId64" %x 32 ",
- 								ctxt.iface->ifname, duidbuf,
- 								(c->flags & OAF_BROKEN_HOSTNAME) ? "broken\\x20" : "",
--								(c->hostname ? c->hostname : "-"),
-+								escape_hostname(hostbuf, sizeof(hostbuf),
-+										c->hostname ? c->hostname : "-"),
- 								(c->valid_until > now ?
- 									(int64_t)(c->valid_until - now + wall_time) :
- 									(INFINITE_VALID(c->valid_until) ? -1 : 0)),
+ 	/* # <iface> <hexhwaddr> "ipv4" <hostname> <valid_until> <hexaddr> "32" <addrstr>"/32" */
+ 	fprintf(ctxt->fp,
+@@ -525,7 +567,8 @@
+ 		ctxt->iface->ifname,
+ 		ether_ntoa((struct ether_addr *)lease->hwaddr),
+ 		lease->hostname && !lease->hostname_valid ? "broken\\x20" : "",
+-		lease->hostname ? lease->hostname : "-",
++		escape_hostname(hostbuf, sizeof(hostbuf),
++				lease->hostname ? lease->hostname : "-"),
+ 		(lease->valid_until > ctxt->now ?
+ 		 (int64_t)(lease->valid_until - ctxt->now + ctxt->wall_time) :
+ 		 (INFINITE_VALID(lease->valid_until) ? -1 : 0)),

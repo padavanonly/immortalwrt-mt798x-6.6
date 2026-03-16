@@ -19,28 +19,24 @@ guard names the struct the function actually uses and the exact extent
 it reads, mirroring how relay_server_response() bounds on its own
 header.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcpd/pull/401
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit cc04882b3fac7643921a194ab65650274a69b2d6)
+[adjusted context for 2026-03-16 snapshot]
 ---
- src/dhcpv6.c | 8 ++++++++
- 1 file changed, 8 insertions(+)
-
 --- a/src/dhcpv6.c
 +++ b/src/dhcpv6.c
-@@ -902,6 +902,14 @@ static void relay_client_request(struct
- 	struct odhcpd_ipaddr *ip;
- 	struct sockaddr_in6 s;
- 
-+	/* A bare UDP socket can deliver a zero/short payload; the relay-reply
-+	 * path (relay_server_response) checks this but the client-side relay
-+	 * did not. relay_client_request() reads h->msg_type, plus h->hop_count
-+	 * for a RELAY_FORW, out of the relay header and forwards the rest
-+	 * verbatim, so require at least those two leading header bytes. */
+@@ -940,6 +940,13 @@
+ 		const void *data, size_t len, struct interface *iface)
+ {
+ 	const struct dhcpv6_relay_header *h = data;
++
++	/* relay_client_request() reads h->msg_type and (for RELAY_FORW)
++	 * h->hop_count and forwards the rest verbatim, so require at least
++	 * those two leading header bytes. */
 +	if (len < offsetof(struct dhcpv6_relay_header, link_address))
 +		return;
 +
- 	if (h->msg_type == DHCPV6_MSG_RELAY_REPL ||
- 	    h->msg_type == DHCPV6_MSG_RECONFIGURE ||
- 	    h->msg_type == DHCPV6_MSG_REPLY ||
+ 	/* Construct our forwarding envelope */
+ 	struct dhcpv6_relay_forward_envelope hdr = {
+ 		.msg_type = DHCPV6_MSG_RELAY_FORW,

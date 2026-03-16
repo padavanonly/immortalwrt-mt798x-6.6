@@ -17,40 +17,39 @@ Cap the RDNSS server count at 127 (1 + 2*127 == 255) and skip the DNSSL
 option entirely when it would not fit in a valid uint8 length, matching the
 existing UINT8_MAX guard on the DHCPv4 search-list path.
 
-Assisted-by: Claude:claude-opus-4-8
 Link: https://github.com/openwrt/odhcpd/pull/401
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit 60f488192d5d32023455d51e37ea9f11819e417a)
+[adjusted for 2026-03-16 snapshot]
 ---
- src/router.c | 13 ++++++++++++-
- 1 file changed, 12 insertions(+), 1 deletion(-)
-
 --- a/src/router.c
 +++ b/src/router.c
-@@ -828,6 +828,12 @@ static int send_router_advert(struct int
- 			dns_cnt = 1;
+@@ -902,6 +902,12 @@
+ 			dns_addrs6_cnt = 1;
  		}
  
 +		/* The RDNSS len field is a uint8_t counting 8-byte units, so it
 +		 * holds at most 127 addresses (1 + 2*127 == 255); drop any extra
 +		 * so the on-wire length stays consistent with the bytes sent. */
-+		if (dns_cnt > 127)
-+			dns_cnt = 127;
++		if (dns_addrs6_cnt > 127)
++			dns_addrs6_cnt = 127;
 +
- 		if (dns_cnt) {
- 			dns_sz = sizeof(*dns) + sizeof(struct in6_addr)*dns_cnt;
+ 		if (dns_addrs6_cnt) {
+ 			dns_sz = sizeof(*dns) + dns_addrs6_cnt * sizeof(*dns_addrs6);
  
-@@ -849,7 +855,12 @@ static int send_router_advert(struct int
- 			}
- 		}
+@@ -916,8 +922,13 @@
+ 	iov[IOV_RA_DNS].iov_base = dns;
+ 	iov[IOV_RA_DNS].iov_len = dns_sz;
  
--		if (search_len > 0) {
-+		/* The DNSSL len field is a uint8_t counting 8-byte units, so the
-+		 * whole option must fit in UINT8_MAX*8 bytes; skip it otherwise
-+		 * rather than emit an option whose length field does not match
-+		 * its real size. */
-+		if (search_len > 0 &&
-+		    sizeof(*search) + ((search_len + 7) & (~7)) + 8 <= UINT8_MAX * 8) {
- 			size_t search_padded = ((search_len + 7) & (~7)) + 8;
- 
- 			search_sz = sizeof(*search) + search_padded;
+-	/* DNS Search List aka DNSSL; RFC8106, §5.2 */
+-	if (iface->ra_dns && iface->dns_search_len > 0) {
++	/* DNS Search List aka DNSSL; RFC8106, §5.2
++	 * The DNSSL len field is a uint8_t counting 8-byte units, so the
++	 * whole option must fit in UINT8_MAX*8 bytes; skip it otherwise
++	 * rather than emit an option whose length field does not match
++	 * its real size. */
++	if (iface->ra_dns && iface->dns_search_len > 0 &&
++	    sizeof(*search) + ((iface->dns_search_len + 7) & ~7) <= UINT8_MAX * 8) {
+ 		search_sz = sizeof(*search) + ((iface->dns_search_len + 7) & ~7);
+ 		search = alloca(search_sz);
+ 		memset(search, 0, search_sz);

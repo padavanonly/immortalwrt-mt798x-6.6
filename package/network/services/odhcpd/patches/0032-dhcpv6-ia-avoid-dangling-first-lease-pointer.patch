@@ -25,25 +25,23 @@ Fixes: CVE-2026-53918
 Reported-by: OpenAI Security Team <OutboundDisclosures@openai.com>
 Signed-off-by: David Bauer <mail@david-bauer.net>
 (cherry picked from commit 26b122007030ebf192376aff8f98d428b25e2a93)
+[adjusted for struct dhcpv6_lease in 2026-03-16 snapshot]
 ---
- src/dhcpv6-ia.c | 12 +++++++-----
- 1 file changed, 7 insertions(+), 5 deletions(-)
-
 --- a/src/dhcpv6-ia.c
 +++ b/src/dhcpv6-ia.c
-@@ -1410,7 +1410,8 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
+@@ -967,7 +967,8 @@
+ ssize_t dhcpv6_ia_handle_IAs(uint8_t *buf, size_t buflen, struct interface *iface,
  		const struct sockaddr_in6 *addr, const void *data, const uint8_t *end)
  {
- 	struct lease *l;
--	struct dhcp_assignment *first = NULL;
+-	struct dhcpv6_lease *first = NULL;
 +	uint8_t first_key[16];
 +	bool first_key_valid = false;
  	const struct dhcpv6_client_header *hdr = data;
  	time_t now = odhcpd_time();
- 	uint16_t otype, olen, clid_len = 0;
-@@ -1581,8 +1582,8 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
- 						a->iface = iface;
- 						a->flags = (is_pd ? OAF_DHCPV6_PD : OAF_DHCPV6_NA);
+ 	uint16_t otype, olen, duid_len = 0;
+@@ -1217,8 +1218,8 @@
+ 						else
+ 							a->assigned_subnet_id = reqhint;
  
 -						if (first)
 -							memcpy(a->key, first->key, sizeof(a->key));
@@ -52,16 +50,16 @@ Signed-off-by: David Bauer <mail@david-bauer.net>
  						else
  							odhcpd_urandom(a->key, sizeof(a->key));
  
-@@ -1623,7 +1624,7 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
+@@ -1258,7 +1259,7 @@
  				/* Send NOTONLINK status for the IA */
  				status = DHCPV6_STATUS_NOTONLINK;
  				assigned = false;
 -			} else if (accept_reconf && assigned && !first &&
 +			} else if (accept_reconf && assigned && !first_key_valid &&
- 					hdr->msg_type != DHCPV6_MSG_REBIND &&
- 					buflen >= handshake_len) {
+ 				hdr->msg_type != DHCPV6_MSG_REBIND &&
+ 				buflen >= handshake_len) {
  				buf[0] = 0;
-@@ -1652,7 +1653,8 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
+@@ -1288,7 +1289,8 @@
  				buflen -= handshake_len;
  				response_len += handshake_len;
  
@@ -70,4 +68,4 @@ Signed-off-by: David Bauer <mail@david-bauer.net>
 +				first_key_valid = true;
  			}
  
- 			ia_response_len = build_ia(buf, buflen, status, ia, a, iface,
+ 			ia_response_len = build_ia(

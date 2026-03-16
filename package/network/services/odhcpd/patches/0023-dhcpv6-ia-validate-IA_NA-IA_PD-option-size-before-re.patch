@@ -18,17 +18,14 @@ and breaks lease matching).
 RFC8415 §21.4 / §21.21 fix the IA header at exactly 12 bytes plus
 sub-options, so reject anything shorter.
 
-Assisted-by: Claude:claude-opus-4-7
 Link: https://github.com/openwrt/odhcpd/pull/401
 Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 (cherry picked from commit f2275efc72a87a95f971f159babcbadc5d241d42)
+[adjusted context for DHCPV6_OPT_HDR_SIZE in 2026-03-16 snapshot]
 ---
- src/dhcpv6-ia.c | 8 ++++++++
- 1 file changed, 8 insertions(+)
-
 --- a/src/dhcpv6-ia.c
 +++ b/src/dhcpv6-ia.c
-@@ -1456,6 +1456,14 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
+@@ -1026,6 +1026,14 @@
  		if (!is_pd && !is_na)
  			continue;
  
@@ -37,9 +34,9 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 +		 * sub-options. Without this guard, a crafted option with
 +		 * olen < 12 lets us read ia->iaid/t1/t2 out of bounds (the
 +		 * iterator only enforces odata + olen <= end). */
-+		if (olen < sizeof(struct dhcpv6_ia_hdr) - 4)
++		if (olen < sizeof(struct dhcpv6_ia_hdr) - DHCPV6_OPT_HDR_SIZE)
 +			continue;
 +
- 		struct dhcpv6_ia_hdr *ia = (struct dhcpv6_ia_hdr*)&odata[-4];
+ 		struct dhcpv6_ia_hdr *ia = (struct dhcpv6_ia_hdr*)&odata[-DHCPV6_OPT_HDR_SIZE];
  		size_t ia_response_len = 0;
  		uint8_t reqlen = (is_pd) ? 62 : 128;

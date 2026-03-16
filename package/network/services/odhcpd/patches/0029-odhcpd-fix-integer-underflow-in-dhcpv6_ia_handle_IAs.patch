@@ -15,22 +15,23 @@ Reported-by: Trevor Lawrence <_SiCk@afflicted.sh>
 Signed-off-by: David Bauer <mail@david-bauer.net>
 (cherry picked from commit c6792bac3905d4bf726d914e9994f6d4b98c5b57)
 ---
- src/dhcpv6-ia.c | 5 +++++
- 1 file changed, 5 insertions(+)
+ src/dhcpv6-ia.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
 
 --- a/src/dhcpv6-ia.c
 +++ b/src/dhcpv6-ia.c
-@@ -1637,6 +1637,8 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
+@@ -1263,6 +1263,9 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
  					handshake_len += sizeof(auth);
  				}
  
 +				if (handshake_len > buflen)
 +					handshake_len = buflen;
- 
++
  				buf += handshake_len;
  				buflen -= handshake_len;
-@@ -1719,6 +1721,9 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
- 			}
+ 				response_len += handshake_len;
+@@ -1382,6 +1385,9 @@ ssize_t dhcpv6_ia_handle_IAs(uint8_t *bu
+ 			apply_lease(a, true);
  		}
  
 +		if (ia_response_len > buflen)
