@@ -57,21 +57,20 @@ jobs:
 
       - name: Generate .config for ${{ matrix.device_name }}
         run: |
+          rm -f .config
           cat > .config <<EOF
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
-          CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.config_device }}=y
+          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${{ matrix.config_device }}=y
           EOF
           make defconfig
           echo "==== Selected target ===="
-          grep "^CONFIG_TARGET_" .config || true
+          grep "^CONFIG_TARGET" .config || true
 
       - name: Check device exists
         run: |
-          echo "==== Find device definition ===="
-          grep -R "define Device/" target/linux/mediatek/image/ || true
-          echo "==== Match current device ===="
-          grep -R "${{ matrix.device_name }}" target/linux/mediatek/image/ || true
+          echo "==== Match current device in filogic.mk ===="
+          grep -R "${{ matrix.device_name }}" target/linux/mediatek/image/filogic.mk || true
 
       - name: Download source packages
         run: |
