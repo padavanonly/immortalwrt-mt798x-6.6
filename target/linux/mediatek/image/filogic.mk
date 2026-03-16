@@ -2467,4 +2467,3 @@ define Device/nradio_c8-688
 	kmod-usb-uhci kmod-usb-wdm
 endef
 TARGET_DEVICES += nradio_c8-688
-endif
