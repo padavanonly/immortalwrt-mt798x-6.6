@@ -2429,7 +2429,7 @@ ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 define Device/nradio_c5800-688
   DEVICE_VENDOR := NRadio
   DEVICE_MODEL := C5800-688
-  DEVICE_DTS := mt7981b-nradio-c5800-688
+  DEVICE_DTS := mt7981-nradio-c5800-688
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
   DEVICE_PACKAGES := \
 	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
@@ -2450,7 +2450,7 @@ TARGET_DEVICES += nradio_c5800-688
 define Device/nradio_c8-688
   DEVICE_VENDOR := NRadio
   DEVICE_MODEL := C8-688
-  DEVICE_DTS := mt7981b-nradio-c8-688
+  DEVICE_DTS := mt7981-nradio-c8-688
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
   DEVICE_PACKAGES := \
 	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
