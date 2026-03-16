@@ -2468,5 +2468,3 @@ define Device/nradio_c8-688
 endef
 TARGET_DEVICES += nradio_c8-688
 endif
-endef
-TARGET_DEVICES += wirelesstag_zx7981pd-ubootmod
