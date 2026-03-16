@@ -1,0 +1,103 @@
+/dts-v1/;
+
+#include "mt7981-nradio-c8-688-emmc.dtsi"
+
+/ {
+	model = "NRadio-C8-New688";
+
+	aliases {
+		serial0 = &uart0;
+		led-boot = &led_status;
+		led-failsafe = &led_status;
+		led-running = &led_status;
+		led-upgrade = &led_status;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	fan: pwm-fan {
+		compatible = "pwm-fan";
+		cooling-min-state = <0>;
+		cooling-max-state = <3>;
+		#cooling-cells = <2>;
+		pwms = <&pwm 0 40000 0>;
+		pinctrl-names = "default";
+		cooling-levels = <127 166 204 255>;
+	};
+
+	gpio_export {
+		compatible = "gpio-export";
+		#size-cells = <0>;
+
+		cpepower {
+			gpio-export,name = "cpe-pwr";
+			gpio-export,output = <0>;
+			gpios = <&pio 31 GPIO_ACTIVE_LOW>;
+		};
+
+		fanpower {
+			gpio-export,name = "fan-hw";
+			gpio-export,output = <1>;
+			gpios = <&pio 27 GPIO_ACTIVE_HIGH>;
+		};
+
+		fanfg {
+			gpio-export,name = "fan-fg";
+			gpio-export,output = <1>;
+			gpios = <&pio 28 GPIO_ACTIVE_HIGH>;
+		};
+
+		cpesel0 {
+			gpio-export,name = "cpe-sel0";
+			gpio-export,output = <1>;
+			gpios = <&pio 29 GPIO_ACTIVE_HIGH>;
+		};
+
+		cpesel1 {
+			gpio-export,name = "cpe-sel1";
+			gpio-export,output = <1>;
+			gpios = <&pio 30 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	gpio-leds {
+		compatible = "gpio-leds";
+
+		led_status: status {
+			label = "hc:blue:status";
+			gpios = <&pio 10 GPIO_ACTIVE_LOW>;
+		};
+
+		cmode5 {
+			label = "hc:blue:cmode5";
+			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
+		};
+
+		cmode4 {
+			label = "hc:blue:cmode4";
+			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
+		};
+
+		wifi {
+			label = "hc:blue:wifi";
+			gpios = <&pio 34 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&pio {
+	pwm0_pin: pwm0-pin-g0 {
+		mux {
+			function = "pwm";
+			groups = "pwm0_0";
+		};
+	};
+};
+
+&pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm0_pin>;
+	status = "okay";
+};
