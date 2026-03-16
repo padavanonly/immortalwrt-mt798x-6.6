@@ -55,10 +55,6 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Check build prerequisites
-        run: |
-          make prereq V=s
-
       - name: Generate .config for ${{ matrix.device_name }}
         run: |
           cat > .config <<EOF
