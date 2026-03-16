@@ -1,17 +1,23 @@
-name: Build ImmortalWrt mt798x
+name: Build ImmortalWrt mt798x devices
 
 on:
   workflow_dispatch:
   push:
     branches:
       - openwrt-24.10-6.6
-  pull_request:
-    branches:
-      - openwrt-24.10-6.6
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device_name: nradio_c5800_688
+            artifact_name: firmware-nradio-c5800-688
+          - device_name: nradio_c8_688
+            artifact_name: firmware-nradio-c8-688
 
     permissions:
       contents: read
@@ -51,10 +57,16 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Load default config
+      - name: Generate .config for ${{ matrix.device_name }}
         run: |
-          cp defconfig .config
+          cat > .config <<EOF
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_name }}=y
+          EOF
           make defconfig
+          echo "==== Selected target ===="
+          grep '^CONFIG_TARGET_' .config || true
 
       - name: Download source packages
         run: |
@@ -62,11 +74,15 @@ jobs:
 
       - name: Build firmware
         run: |
-          make -j$(nproc) V=s || make -j1 V=s
+          make -j"$(nproc)" V=s || make -j1 V=s
+
+      - name: Show output files
+        run: |
+          find bin/targets -type f | sort || true
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-mt798x-firmware
+          name: ${{ matrix.artifact_name }}
           path: |
             bin/targets/**/*
