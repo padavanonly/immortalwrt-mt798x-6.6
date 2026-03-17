@@ -1,3 +1,11 @@
+name: Build ImmortalWrt mt798x sysupgrade only
+
+on:
+  workflow_dispatch:  # 允许手动触发
+  push:
+    branches:
+      - openwrt-24.10-6.6  # 确保推送到 openwrt-24.10-6.6 分支时触发工作流
+
 jobs:
   build:
     runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
@@ -15,39 +23,37 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update  # 更新软件包缓存
+          sudo apt-get update
           sudo apt-get install -y build-essential ccache git zlib1g-dev libncurses5-dev libssl-dev libelf-dev python3-setuptools python3-dev
           sudo apt-get install -y gawk wget curl unzip
           sudo apt-get install -y git-svn subversion
           sudo apt-get install -y bison flex  # 安装必要的开发工具
 
-      # 移除现有的 `git` 版本并安装旧版本
-      - name: Remove existing git and install git 2.41
+      # 安装指定版本的 Git 2.41
+      - name: Install git 2.41
         run: |
           sudo apt-get remove git -y  # 移除当前安装的 Git 版本
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository ppa:git-core/ppa -y  # 添加 Git 的 PPA
           sudo apt-get update
-          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu22.04.1 -y  # 安装 Git 2.41 版本
+          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu22.04.1 -y  # 安装指定版本的 git
 
       - name: Prepare feeds
         run: |
-          ./scripts/feeds update -a  # 更新所有 feeds
-          ./scripts/feeds install -a  # 安装所有 feeds
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: Generate .config for ${{ matrix.device }}
         run: |
-          make defconfig  # 使用默认配置生成 .config
-          make oldconfig  # 更新配置文件，确保是最新的
+          make defconfig
+          make oldconfig
 
       - name: Build firmware
         run: |
-          make -j$(nproc) V=s  # 并行构建固件
-          # 确保生成 sysupgrade.bin 文件，如果没有生成则强制重新生成
+          make -j$(nproc) V=s
           if [ ! -f "bin/targets/${{ matrix.device }}/sysupgrade.bin" ]; then
-            make -j$(nproc) V=s  # 强制重新编译
+            make -j$(nproc) V=s
           fi
-          # 如果仍然没有生成 sysupgrade.bin，构建失败
           if [ ! -f "bin/targets/${{ matrix.device }}/sysupgrade.bin" ]; then
             echo "ERROR: sysupgrade.bin still not found, build failed."
             exit 1
@@ -55,19 +61,19 @@ jobs:
 
       - name: Find and upload sysupgrade.bin firmware
         run: |
-          SYSUPGRADE_FILE="$(find bin -type f -name '*sysupgrade.bin' | head -n 1)"  # 查找生成的 sysupgrade.bin 文件
+          SYSUPGRADE_FILE="$(find bin -type f -name '*sysupgrade.bin' | head -n 1)"
           echo "Found sysupgrade: $SYSUPGRADE_FILE"
           echo "SYSUPGRADE_FILE=$SYSUPGRADE_FILE" >> "$GITHUB_ENV"
           
       - name: Upload sysupgrade firmware
         uses: actions/upload-artifact@v4
         with:
-          name: sysupgrade-firmware-${{ matrix.device }}  # 上传固件
+          name: sysupgrade-firmware-${{ matrix.device }}
           path: ${{ env.SYSUPGRADE_FILE }}
 
       - name: Upload build logs if failed
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build_logs  # 上传构建日志
+          name: build_logs
           path: build.log
