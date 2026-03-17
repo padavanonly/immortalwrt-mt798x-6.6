@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04  # 使用 Ubuntu 24.04
+    runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
 
     strategy:
       fail-fast: false
@@ -18,11 +18,9 @@ jobs:
           - nradio_c8-688
 
     steps:
-      # Checkout the code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 安装所需的依赖
       - name: Install dependencies
         run: |
           sudo apt-get update  # 更新软件包缓存
@@ -31,28 +29,25 @@ jobs:
           sudo apt-get install -y git-svn subversion
           sudo apt-get install -y bison flex  # 安装必要的开发工具
 
-      # 降级 git 版本
+      # 安装所需版本的 Git 2.41
       - name: Install git 2.41
         run: |
           sudo apt-get remove git -y  # 移除当前安装的 Git 版本
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository ppa:git-core/ppa -y  # 添加 git 的 PPA
           sudo apt-get update
-          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu24.04.1 -y  # 安装指定版本的 git
+          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu22.04.1 -y  # 安装指定版本的 git
 
-      # 准备 feeds
       - name: Prepare feeds
         run: |
           ./scripts/feeds update -a  # 更新所有 feeds
           ./scripts/feeds install -a  # 安装所有 feeds
 
-      # 为选定的设备生成 .config 配置文件
       - name: Generate .config for ${{ matrix.device }}
         run: |
           make defconfig  # 使用默认配置生成 .config
           make oldconfig  # 更新配置文件，确保是最新的
 
-      # 构建固件
       - name: Build firmware
         run: |
           make -j$(nproc) V=s  # 并行构建固件
@@ -66,7 +61,6 @@ jobs:
             exit 1
           fi
 
-      # 查找并上传 sysupgrade.bin 固件
       - name: Find and upload sysupgrade.bin firmware
         run: |
           SYSUPGRADE_FILE="$(find bin -type f -name '*sysupgrade.bin' | head -n 1)"  # 查找生成的 sysupgrade.bin 文件
@@ -79,7 +73,6 @@ jobs:
           name: sysupgrade-firmware-${{ matrix.device }}  # 上传固件
           path: ${{ env.SYSUPGRADE_FILE }}
 
-      # 如果构建失败，上传构建日志
       - name: Upload build logs if failed
         if: failure()
         uses: actions/upload-artifact@v4
