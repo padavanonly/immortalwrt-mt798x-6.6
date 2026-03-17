@@ -20,11 +20,11 @@ jobs:
     steps:
       # Checkout the code
       - name: Checkout code
-        uses: actions/checkout@v3  # Updated to v3
+        uses: actions/checkout@v3  # Use the latest v3
 
-      # Cache OpenWrt toolchain and feeds to speed up future builds
+      # Cache OpenWrt toolchain and feeds
       - name: Cache OpenWrt toolchain and feeds
-        uses: actions/cache@v3  # Updated to v3
+        uses: actions/cache@v4  # Updated to v4
         with:
           path: |
             ~/.cache/opkg
@@ -81,7 +81,7 @@ jobs:
           echo "SYSUPGRADE_FILE=$SYSUPGRADE_FILE" >> "$GITHUB_ENV"
           
       - name: Upload sysupgrade firmware
-        uses: actions/upload-artifact@v3  # Updated to v3
+        uses: actions/upload-artifact@v4  # Use the latest v4
         with:
           name: sysupgrade-firmware-${{ matrix.device }}
           path: ${{ env.SYSUPGRADE_FILE }}
@@ -89,7 +89,7 @@ jobs:
       # Upload build logs if failed
       - name: Upload build logs if failed
         if: failure()
-        uses: actions/upload-artifact@v3  # Updated to v3
+        uses: actions/upload-artifact@v4  # Use the latest v4
         with:
           name: build_logs
           path: build.log
