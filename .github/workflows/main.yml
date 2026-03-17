@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - openwrt-24.10-6.6  # 确保触发的分支是 openwrt-24.10-6.6
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
+    runs-on: ubuntu-24.04  # 使用 Ubuntu 24.04
 
     strategy:
       fail-fast: false
@@ -58,7 +58,6 @@ jobs:
           make -j$(nproc) V=s  # 并行构建固件
           # 确保生成 sysupgrade.bin 文件，如果没有生成则强制重新生成
           if [ ! -f "bin/targets/${{ matrix.device }}/sysupgrade.bin" ]; then
-            echo "ERROR: sysupgrade.bin not found, trying to force re-generate"
             make -j$(nproc) V=s  # 强制重新编译
           fi
           # 如果仍然没有生成 sysupgrade.bin，构建失败
