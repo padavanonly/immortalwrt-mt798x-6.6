@@ -88,7 +88,7 @@ define Build/zyxel-nwa-fit-filogic
 		$@.its $@ "80 e1 ff ff ff ff ff ff ff ff"
 	PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage -f $@.its $@.new
 	@mv $@.new $@
-ende
+endef
 
 define Build/cetron-header
 	$(eval magic=$(word 1,$(1)))
@@ -2425,11 +2425,14 @@ define Device/wirelesstag_zx7981pd-ubootmod
 ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
   ARTIFACTS += initramfs-factory.ubi
   ARTIFACT/initramfs-factory.ubi := append-image-stage initramfs-recovery.itb | ubinize-kernel
+endif
+endef
+TARGET_DEVICES += wirelesstag_zx7981pd-ubootmod
 
 define Device/nradio_c5800-688
   DEVICE_VENDOR := NRadio
   DEVICE_MODEL := C5800-688
-  DEVICE_DTS := mt7981-nradio-c5800-688
+  DEVICE_DTS := mt7981b-nradio-c5800-688
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
   DEVICE_PACKAGES := \
 	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
@@ -2445,12 +2448,12 @@ define Device/nradio_c5800-688
 	kmod-usb-serial-qualcomm kmod-usb-serial-wwan \
 	kmod-usb-wdm
 endef
-TARGET_DEVICES += nradio_c5800-688
 
+TARGET_DEVICES += nradio_c5800-688
 define Device/nradio_c8-688
   DEVICE_VENDOR := NRadio
   DEVICE_MODEL := C8-688
-  DEVICE_DTS := mt7981-nradio-c8-688
+  DEVICE_DTS := mt7981b-nradio-c8-688
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
   DEVICE_PACKAGES := \
 	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
