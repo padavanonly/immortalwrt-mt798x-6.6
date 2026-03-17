@@ -1,11 +1,3 @@
-name: Build ImmortalWrt mt798x sysupgrade only
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - openwrt-24.10-6.6  # 确保触发的分支是 openwrt-24.10-6.6
-
 jobs:
   build:
     runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
@@ -29,14 +21,14 @@ jobs:
           sudo apt-get install -y git-svn subversion
           sudo apt-get install -y bison flex  # 安装必要的开发工具
 
-      # 安装所需版本的 Git 2.41
-      - name: Install git 2.41
+      # 移除现有的 `git` 版本并安装旧版本
+      - name: Remove existing git and install git 2.41
         run: |
           sudo apt-get remove git -y  # 移除当前安装的 Git 版本
           sudo apt-get install -y software-properties-common
-          sudo add-apt-repository ppa:git-core/ppa -y  # 添加 git 的 PPA
+          sudo add-apt-repository ppa:git-core/ppa -y  # 添加 Git 的 PPA
           sudo apt-get update
-          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu22.04.1 -y  # 安装指定版本的 git
+          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu22.04.1 -y  # 安装 Git 2.41 版本
 
       - name: Prepare feeds
         run: |
