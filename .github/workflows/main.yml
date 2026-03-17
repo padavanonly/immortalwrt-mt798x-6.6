@@ -1,28 +1,28 @@
 name: Build ImmortalWrt mt798x sysupgrade only
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # 允许手动触发
   push:
     branches:
-      - main  # Ensure that your main branch is named 'main', else change to the correct name
+      - main  # 仅当推送到 main 分支时触发工作流
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
 
     strategy:
-      fail-fast: false
+      fail-fast: false  # 如果某个设备构建失败，其他设备继续构建
       matrix:
         device:
           - nradio_c5800-688
-          - nradio_c8-688
+          - nradio_c8-688  # 定义要构建的设备
 
     steps:
-      # Checkout the code
+      # 检出代码
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Cache OpenWrt toolchain and feeds to speed up future builds
+      # 缓存 OpenWrt 工具链和 feeds，提升构建速度
       - name: Cache OpenWrt toolchain and feeds
         uses: actions/cache@v4
         with:
@@ -33,60 +33,59 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-${{ matrix.device }}-
 
-      # Install required dependencies
+      # 安装所需的依赖
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential ccache git zlib1g-dev libncurses5-dev libssl-dev libelf-dev python3-distutils python3-setuptools
+          sudo apt-get update  # 更新软件包缓存
+          sudo apt-get install -y build-essential ccache git zlib1g-dev libncurses5-dev libssl-dev libelf-dev python3-setuptools python3-dev
           sudo apt-get install -y gawk wget curl unzip
           sudo apt-get install -y git-svn subversion
-          sudo apt-get install -y bison flex python3 python3-dev
+          sudo apt-get install -y bison flex  # 安装必要的开发工具
 
-      # Prepare feeds
+      # 准备 feeds
       - name: Prepare feeds
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          ./scripts/feeds update -a  # 更新所有 feeds
+          ./scripts/feeds install -a  # 安装所有 feeds
 
-      # Generate .config for selected device
+      # 为选定的设备生成 .config 配置文件
       - name: Generate .config for ${{ matrix.device }}
         run: |
-          make defconfig
-          make oldconfig  # Ensure configuration is up-to-date
+          make defconfig  # 使用默认配置生成 .config
+          make oldconfig  # 更新配置文件，确保是最新的
 
-      # Build the firmware (compiling)
+      # 构建固件
       - name: Build firmware
         run: |
-          make -j$(nproc) V=s
-          # Ensure sysupgrade.bin is generated and force regeneration if necessary
+          make -j$(nproc) V=s  # 并行构建固件
+          # 确保生成 sysupgrade.bin 文件，如果没有生成则强制重新生成
           if [ ! -f "bin/targets/${{ matrix.device }}/sysupgrade.bin" ]; then
             echo "ERROR: sysupgrade.bin not found, trying to force re-generate"
-            # Force recompile to ensure sysupgrade.bin is generated
-            make -j$(nproc) V=s
+            make -j$(nproc) V=s  # 强制重新编译
           fi
-          # Exit with error if still no sysupgrade.bin found
+          # 如果仍然没有生成 sysupgrade.bin，构建失败
           if [ ! -f "bin/targets/${{ matrix.device }}/sysupgrade.bin" ]; then
             echo "ERROR: sysupgrade.bin still not found, build failed."
             exit 1
           fi
 
-      # Find and upload sysupgrade.bin file
+      # 查找并上传 sysupgrade.bin 固件
       - name: Find and upload sysupgrade.bin firmware
         run: |
-          SYSUPGRADE_FILE="$(find bin -type f -name '*sysupgrade.bin' | head -n 1)"
+          SYSUPGRADE_FILE="$(find bin -type f -name '*sysupgrade.bin' | head -n 1)"  # 查找生成的 sysupgrade.bin 文件
           echo "Found sysupgrade: $SYSUPGRADE_FILE"
           echo "SYSUPGRADE_FILE=$SYSUPGRADE_FILE" >> "$GITHUB_ENV"
           
       - name: Upload sysupgrade firmware
         uses: actions/upload-artifact@v4
         with:
-          name: sysupgrade-firmware-${{ matrix.device }}
+          name: sysupgrade-firmware-${{ matrix.device }}  # 上传固件
           path: ${{ env.SYSUPGRADE_FILE }}
 
-      # Upload build logs if failed
+      # 如果构建失败，上传构建日志
       - name: Upload build logs if failed
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build_logs
+          name: build_logs  # 上传构建日志
           path: build.log
