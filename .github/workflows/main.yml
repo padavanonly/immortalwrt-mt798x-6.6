@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache git zlib1g-dev libncurses5-dev libssl-dev libelf-dev python3-distutils
+          sudo apt-get install -y build-essential ccache git zlib1g-dev libncurses5-dev libssl-dev libelf-dev python3-distutils python3-setuptools
           sudo apt-get install -y gawk wget curl unzip
           sudo apt-get install -y git-svn subversion
           sudo apt-get install -y bison flex
