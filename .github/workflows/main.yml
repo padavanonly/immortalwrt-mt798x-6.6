@@ -1,10 +1,10 @@
 name: Build ImmortalWrt mt798x sysupgrade only
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Allows manual trigger
   push:
     branches:
-      - main
+      - main  # Trigger on push to main branch
 
 jobs:
   build:
