@@ -1,37 +1,26 @@
 name: Build ImmortalWrt mt798x sysupgrade only
 
 on:
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
   push:
     branches:
-      - main  # 仅当推送到 main 分支时触发工作流
+      - main
 
 jobs:
   build:
-    runs-on: ubuntu-24.04  # 使用 Ubuntu 24.04
+    runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
 
     strategy:
-      fail-fast: false  # 如果某个设备构建失败，其他设备继续构建
+      fail-fast: false
       matrix:
         device:
           - nradio_c5800-688
-          - nradio_c8-688  # 定义要构建的设备
+          - nradio_c8-688
 
     steps:
-      # 检出代码
+      # Checkout the code
       - name: Checkout code
         uses: actions/checkout@v3
-
-      # 缓存 OpenWrt 工具链和 feeds，提升构建速度
-      - name: Cache OpenWrt toolchain and feeds
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/opkg
-            ~/.ccache
-          key: ${{ runner.os }}-openwrt-${{ matrix.device }}-${{ hashFiles('**/feeds.conf*') }}-${{ hashFiles('**/config*') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-${{ matrix.device }}-
 
       # 安装所需的依赖
       - name: Install dependencies
@@ -41,6 +30,15 @@ jobs:
           sudo apt-get install -y gawk wget curl unzip
           sudo apt-get install -y git-svn subversion
           sudo apt-get install -y bison flex  # 安装必要的开发工具
+
+      # 降级 git 版本
+      - name: Install git 2.41
+        run: |
+          sudo apt-get remove git -y  # 移除当前安装的 Git 版本
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository ppa:git-core/ppa -y  # 添加 git 的 PPA
+          sudo apt-get update
+          sudo apt-get install git=1:2.41.0-1~ppa1~ubuntu24.04.1 -y  # 安装指定版本的 git
 
       # 准备 feeds
       - name: Prepare feeds
