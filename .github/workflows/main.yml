@@ -29,8 +29,6 @@ jobs:
           path: |
             ~/.cache/opkg
             ~/.ccache
-            /home/runner/work/immortalwrt-mt798x-6.6/immortalwrt-mt798x-6.6/staging_dir/
-            /home/runner/work/immortalwrt-mt798x-6.6/immortalwrt-mt798x-6.6/tmp/
           key: ${{ runner.os }}-openwrt-${{ matrix.device }}-${{ hashFiles('**/feeds.conf*') }}-${{ hashFiles('**/config*') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-${{ matrix.device }}-
@@ -42,7 +40,7 @@ jobs:
           sudo apt-get install -y build-essential ccache git zlib1g-dev libncurses5-dev libssl-dev libelf-dev python3-distutils python3-setuptools
           sudo apt-get install -y gawk wget curl unzip
           sudo apt-get install -y git-svn subversion
-          sudo apt-get install -y bison flex
+          sudo apt-get install -y bison flex python3 python3-dev
 
       # Prepare feeds
       - name: Prepare feeds
@@ -54,7 +52,6 @@ jobs:
       - name: Generate .config for ${{ matrix.device }}
         run: |
           make defconfig
-          make menuconfig  # Optional: Manually adjust configuration if needed
           make oldconfig  # Ensure configuration is up-to-date
 
       # Build the firmware (compiling)
