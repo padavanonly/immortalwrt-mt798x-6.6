@@ -1,4 +1,4 @@
-name: Build ImmortalWrt mt798x devices
+name: Build ImmortalWrt mt798x sysupgrade only
 
 on:
   workflow_dispatch:
@@ -16,10 +16,10 @@ jobs:
         include:
           - device_name: nradio_c5800-688
             config_device: nradio_c5800_688
-            artifact_name: firmware-nradio-c5800-688
+            artifact_name: nradio-c5800-688
           - device_name: nradio_c8-688
             config_device: nradio_c8_688
-            artifact_name: firmware-nradio-c8-688
+            artifact_name: nradio-c8-688
 
     permissions:
       contents: read
@@ -61,15 +61,15 @@ jobs:
           cat > .config <<EOF
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
-          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${{ matrix.config_device }}=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.config_device }}=y
           EOF
           make defconfig
-          echo "==== Selected target ===="
+          echo "===== .config target lines ====="
           grep "^CONFIG_TARGET" .config || true
 
       - name: Check device exists
         run: |
-          echo "==== Match current device in filogic.mk ===="
+          echo "===== filogic.mk match ====="
           grep -n "${{ matrix.device_name }}" target/linux/mediatek/image/filogic.mk || true
 
       - name: Download source packages
@@ -79,6 +79,23 @@ jobs:
       - name: Build firmware
         run: |
           make -j"$(nproc)" V=s 2>&1 | tee build.log
+
+      - name: Show all output files
+        if: always()
+        run: |
+          echo "===== bin files ====="
+          find bin -type f | sort || true
+
+      - name: Check sysupgrade.bin exists
+        if: success()
+        run: |
+          SYSUPGRADE_FILE="$(find bin -type f -name '*sysupgrade.bin' | head -n 1)"
+          if [ -z "$SYSUPGRADE_FILE" ]; then
+            echo "ERROR: no sysupgrade.bin found"
+            exit 1
+          fi
+          echo "Found sysupgrade: $SYSUPGRADE_FILE"
+          echo "SYSUPGRADE_FILE=$SYSUPGRADE_FILE" >> "$GITHUB_ENV"
 
       - name: Show last 200 lines on failure
         if: failure()
@@ -99,7 +116,7 @@ jobs:
             mkdir -p "debug/$(dirname "$f")"
             cp -f "$f" "debug/$f"
           done || true
-          find bin/targets -type f 2>/dev/null | while read f; do
+          find bin -type f 2>/dev/null | while read f; do
             mkdir -p "debug/$(dirname "$f")"
             cp -f "$f" "debug/$f"
           done || true
@@ -111,10 +128,9 @@ jobs:
           name: debug-${{ matrix.device_name }}
           path: debug/
 
-      - name: Upload firmware
+      - name: Upload sysupgrade firmware
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: |
-            bin/targets/**/*
+          name: ${{ matrix.artifact_name }}-sysupgrade
+          path: ${{ env.SYSUPGRADE_FILE }}
