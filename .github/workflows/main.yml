@@ -1,4 +1,4 @@
-name: Build ImmortalWrt mt798x nradio_c5800-688 |C8-688
+name: Build ImmortalWrt mt798x devices
 
 on:
   workflow_dispatch:
@@ -74,9 +74,9 @@ jobs:
 
       - name: Download source packages
         run: |
-          make download -j1 V=s 2>&1 | tee download.log
+          make download -j"$(nproc)" V=s 2>&1 | tee download.log
 
-         - name: Build firmware
+      - name: Build firmware
         run: |
           make -j"$(nproc)" V=s 2>&1 | tee build.log
 
