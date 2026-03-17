@@ -76,9 +76,9 @@ jobs:
         run: |
           make download -j1 V=s 2>&1 | tee download.log
 
-      - name: Build firmware
-         run: |
-         make -j"$(nproc)" V=s 2>&1 | tee build.log
+         - name: Build firmware
+        run: |
+          make -j"$(nproc)" V=s 2>&1 | tee build.log
 
       - name: Show last 200 lines on failure
         if: failure()
