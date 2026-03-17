@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # 使用 Ubuntu 22.04 LTS
+    runs-on: ubuntu-24.04  # 使用 Ubuntu 24.04
 
     strategy:
       fail-fast: false  # 如果某个设备构建失败，其他设备继续构建
