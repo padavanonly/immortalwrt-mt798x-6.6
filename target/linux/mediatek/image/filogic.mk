@@ -2448,8 +2448,8 @@ define Device/nradio_c5800-688
 	kmod-usb-serial-qualcomm kmod-usb-serial-wwan \
 	kmod-usb-wdm
 endef
-
 TARGET_DEVICES += nradio_c5800-688
+
 define Device/nradio_c8-688
   DEVICE_VENDOR := NRadio
   DEVICE_MODEL := C8-688
