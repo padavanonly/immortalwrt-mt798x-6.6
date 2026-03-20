@@ -1,4 +1,4 @@
-#include "../mt7981.dtsi"
+#include "mt7981.dtsi"
 
 / {
 	chosen {

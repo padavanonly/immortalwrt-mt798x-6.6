@@ -374,8 +374,6 @@ function mtwifi_cfg_setup(argv)
     dats.ApCliEnable = 0
     dats.ApCliSsid = ""
     dats.ApCliBssid = ""
-    dats.MACRepeaterEn = 0
-    dats.ApcliMacAddress = ""
     dats.ApCliAuthMode = ""
     dats.ApCliEncrypType = ""
     dats.ApCliWPAPSK = ""
@@ -390,8 +388,6 @@ function mtwifi_cfg_setup(argv)
             end
             dats.ApCliSsid = v.config.ssid or ""
             dats.ApCliBssid = v.config.bssid or ""
-            dats.MACRepeaterEn = (v.config.bssid and v.config.bssid ~= "") and 1 or 0
-            dats.ApcliMacAddress = v.config.macaddr or ""
             dats.ApCliAuthMode = defs.enc2dat[v.config.encryption][1]
             dats.ApCliEncrypType = defs.enc2dat[v.config.encryption][2]
             dats.ApCliWPAPSK = v.config.key or ""
@@ -505,27 +501,12 @@ function mtwifi_cfg_setup(argv)
         end
     end
 
-    for _, vif_table in ipairs({defs.vif_mac, defs.vif_acl}) do
-        for k, v in pairs(vif_table) do
-            if k == "MacAddress" then
-                for i = 1, bssid_num-1 do
-                    dats[k..tostring(i)] = v
-                end
-                if bssid_num < defs.max_mbssid then
-                    for i = bssid_num, defs.max_mbssid-1 do
-                        dats[k..tostring(i)] = ""
-                    end
-                end
-            else
-                for i = 0, bssid_num-1 do
-                    dats[k..tostring(i)] = v
-                end
-                if bssid_num < defs.max_mbssid then
-                    for i = bssid_num, defs.max_mbssid-1 do
-                        dats[k..tostring(i)] = ""
-                    end
-                end
-            end
+    for k,v in pairs(defs.vif_acl) do
+        for i = 0, defs.max_mbssid-1 do
+            dats[k..tostring(i)] = ""
+        end
+        for i = 0, bssid_num-1 do
+            dats[k..tostring(i)] = v
         end
     end
 
@@ -534,13 +515,6 @@ function mtwifi_cfg_setup(argv)
     for idx = 0,vif_num-1 do
         v = cfg.interfaces[tostring(idx)]
         if v.config.mode == "ap" then
-            if idx == 0 then
-            if v.config.macaddr and v.config.macaddr ~= "" then
-                dats.MacAddress = v.config.macaddr
-            end
-            else
-                set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or "")
-            end
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
             set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)

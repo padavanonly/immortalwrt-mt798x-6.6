@@ -17,7 +17,7 @@ define Package/mtwifi-cfg
   CATEGORY:=MTK Properties
   SUBMENU:=Applications
   TITLE:=mtwifi configure scripts for mt798x
-  DEPENDS:=+iwinfo +wifi-dats +lua-cjson +datconf-lua  
+  DEPENDS:=+iwinfo +wifi-dats +wifi-scripts +lua-cjson +datconf-lua
 endef
 
 define Build/Compile
@@ -33,6 +33,7 @@ define Package/mtwifi-cfg/install
 	$(INSTALL_BIN) ./files/mtwifi.sh $(1)/lib/wifi/
 	$(INSTALL_BIN) ./files/mtwifi-cfg/mtwifi_cfg $(1)/sbin/
 	$(INSTALL_BIN) ./files/mtwifi-cfg/inspect.lua $(1)/usr/lib/lua/
+	$(INSTALL_BIN) ./files/mtwifi-cfg/ioctl_helper.so $(1)/usr/lib/lua/
 	$(INSTALL_BIN) ./files/mtwifi-cfg/mtwifi_defs.lua $(1)/usr/lib/lua/
 	$(INSTALL_BIN) ./files/mtwifi-cfg/mtwifi_utils.lua $(1)/usr/lib/lua/
 	$(INSTALL_BIN) ./files/l1util/l1util $(1)/sbin/
