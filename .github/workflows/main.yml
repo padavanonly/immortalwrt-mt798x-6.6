@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: "Device to build"
+        description: "选择要编译的设备"
         required: true
         default: all
         type: choice
@@ -12,224 +12,222 @@ on:
           - all
           - nradio_c5800-688
           - nradio_c8-688
+
   push:
     branches:
       - openwrt-24.10-6.6
+      - mtwifi-sync-*
     paths:
       - .github/workflows/main.yml
       - target/linux/mediatek/image/filogic.mk
       - target/linux/mediatek/dts/**
-      - defconfig/**
+      - target/linux/mediatek/filogic/base-files/**
+      - package/mtk/drivers/mt_wifi/**
+      - package/mtk/drivers/wifi-profile/**
+      - package/mtk/applications/mtwifi-cfg/**
+      - package/mtk/applications/luci-app-mtwifi-cfg/**
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.device || 'push' }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  build_c5800_688:
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.device == 'all' || github.event.inputs.device == 'nradio_c5800-688' }}
+  prepare:
+    name: Prepare matrix
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set build matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ github.event.inputs.device }}" in
+              all)
+                echo 'matrix={"device":["nradio_c5800-688","nradio_c8-688"]}' >> "$GITHUB_OUTPUT"
+                ;;
+              nradio_c5800-688)
+                echo 'matrix={"device":["nradio_c5800-688"]}' >> "$GITHUB_OUTPUT"
+                ;;
+              nradio_c8-688)
+                echo 'matrix={"device":["nradio_c8-688"]}' >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "Unsupported device: ${{ github.event.inputs.device }}" >&2
+                exit 1
+                ;;
+            esac
+          else
+            echo 'matrix={"device":["nradio_c5800-688","nradio_c8-688"]}' >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.device }}
+    needs: prepare
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
     env:
-      DEVICE: nradio_c5800-688
       TARGET: mediatek
       SUBTARGET: filogic
+      DEVICE: ${{ matrix.device }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: "1"
+      CCACHE_MAXSIZE: 2G
 
     steps:
       - name: Free disk space
+        shell: bash
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
           df -h
 
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Install build dependencies
+        shell: bash
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang flex bison g++ gawk gcc-multilib gettext git \
-            libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev \
-            file wget curl ccache subversion device-tree-compiler python3 python3-pyelftools \
-            python3-ply python3-docutils libelf-dev ecj fastjar java-propose-classpath \
-            libc6-dev-i386 libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
-            libreadline-dev uglifyjs upx-ucl libyaml-dev msmtp texinfo xmlto qemu-utils \
-            genisoimage python3-yaml help2man ninja-build p7zip-full
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib gettext git rsync swig unzip \
+            zlib1g-dev file wget curl ccache subversion device-tree-compiler python3 \
+            python3-pyelftools python3-ply python3-docutils python3-setuptools libelf-dev \
+            ecj fastjar java-propose-classpath libc6-dev-i386 libglib2.0-dev libgmp3-dev \
+            libltdl-dev libmpc-dev libmpfr-dev libreadline-dev libssl-dev libncurses5-dev \
+            libncursesw5-dev uglifyjs libyaml-dev msmtp texinfo xmlto qemu-utils genisoimage \
+            help2man ninja-build p7zip-full ca-certificates squashfs-tools
+          ccache --version
+          ccache -M "${CCACHE_MAXSIZE}"
+
+      - name: Restore dl cache
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: ${{ runner.os }}-dl-${{ hashFiles('feeds.conf.default', 'include/version.mk', '.github/workflows/main.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-dl-
 
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ${{ runner.os }}-${{ env.DEVICE }}-${{ hashFiles('.github/workflows/main.yml', 'target/linux/mediatek/image/filogic.mk', 'target/linux/mediatek/dts/**') }}
+          key: ${{ runner.os }}-${{ env.DEVICE }}-ccache-${{ hashFiles('.github/workflows/main.yml', 'target/linux/mediatek/image/filogic.mk', 'target/linux/mediatek/dts/**', 'target/linux/mediatek/filogic/base-files/**', 'package/mtk/drivers/mt_wifi/**', 'package/mtk/drivers/wifi-profile/**', 'package/mtk/applications/mtwifi-cfg/**', 'package/mtk/applications/luci-app-mtwifi-cfg/**') }}
           restore-keys: |
-            ${{ runner.os }}-${{ env.DEVICE }}-
-            ${{ runner.os }}-
+            ${{ runner.os }}-${{ env.DEVICE }}-ccache-
+            ${{ runner.os }}-ccache-
 
       - name: Update and install feeds
+        shell: bash
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: Generate .config
+        shell: bash
         run: |
-          printf '%s\n' \
-            'CONFIG_TARGET_mediatek=y' \
-            'CONFIG_TARGET_mediatek_mt7981=y' \
-            'CONFIG_TARGET_MULTI_PROFILE=n' \
-            'CONFIG_TARGET_PER_DEVICE_ROOTFS=n' \
-            'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${{ env.DEVICE }}=y' \
-            > .config
+          cat > .config <<EOF
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}=y
+          CONFIG_CCACHE=y
+          EOF
+
           make defconfig
-          grep -E "CONFIG_TARGET_(mediatek|DEVICE_mediatek_filogic_DEVICE_${{ env.DEVICE }})" .config
+
+          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE" .config
 
       - name: Download sources
-        run: make download -j$(nproc)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make download -j"$(nproc)"
 
       - name: Build firmware
-        env:
-          CCACHE_DIR: ${{ github.workspace }}/.ccache
-        run: make -j$(nproc) V=s
+        shell: bash
+        run: |
+          set -o pipefail
+          ccache -z
+          make -j"$(nproc)" V=s 2>&1 | tee build.log
+          ccache -s | tee ccache.log
 
-      - name: Collect artifacts
+      - name: Collect firmware
         id: collect
         shell: bash
         run: |
           set -euo pipefail
-          firmware_dir="bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}"
-          sysupgrade_file=$(find "$firmware_dir" -maxdepth 1 -type f -name "*${{ env.DEVICE }}*sysupgrade.bin" | sort | head -n 1)
-          if [ -z "$sysupgrade_file" ]; then
-            echo "No sysupgrade firmware found for ${{ env.DEVICE }} in $firmware_dir" >&2
-            find "$firmware_dir" -maxdepth 1 -type f | sort >&2
-            exit 1
-          fi
-          echo "sysupgrade_file=$sysupgrade_file" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "$sysupgrade_file" > firmware-list.txt
+          mkdir -p dist
 
-      - name: Upload firmware
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          firmware_dir = Path(f"bin/targets/{os.environ['TARGET']}/{os.environ['SUBTARGET']}")
+          device = os.environ["DEVICE"]
+
+          candidates = sorted(firmware_dir.glob(f"*{device}*sysupgrade.bin"))
+          if not candidates:
+              print(f"No sysupgrade firmware found for {device} in {firmware_dir}")
+              for p in sorted(firmware_dir.glob("*")):
+                  print(p)
+              raise SystemExit(1)
+
+          src = candidates[0]
+          dist = Path("dist")
+          renamed = dist / f"{device}-sys.bin"
+          generic = dist / "sys.bin"
+
+          renamed.write_bytes(src.read_bytes())
+          generic.write_bytes(src.read_bytes())
+          (dist / "firmware-list.txt").write_text(str(src) + "\n", encoding="utf-8")
+          PY
+
+          sha256sum "dist/${DEVICE}-sys.bin" "dist/sys.bin" > "dist/${DEVICE}-sys.bin.sha256"
+
+          echo "renamed_file=dist/${DEVICE}-sys.bin" >> "$GITHUB_OUTPUT"
+          echo "generic_file=dist/sys.bin" >> "$GITHUB_OUTPUT"
+
+      - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ env.DEVICE }}
+          retention-days: 14
+          if-no-files-found: error
           path: |
-            ${{ steps.collect.outputs.sysupgrade_file }}
-            firmware-list.txt
+            ${{ steps.collect.outputs.renamed_file }}
+            ${{ steps.collect.outputs.generic_file }}
+            dist/firmware-list.txt
+            dist/${{ env.DEVICE }}-sys.bin.sha256
             bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*.manifest
             bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/profiles.json
-          if-no-files-found: warn
+            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/sha256sums
+            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*buildinfo
 
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ env.DEVICE }}
+          retention-days: 14
+          if-no-files-found: warn
           path: |
             .config
-            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/config.buildinfo
+            build.log
+            ccache.log
+            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*buildinfo
+            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/sha256sums
             logs/**
-            tmp/**
-          if-no-files-found: warn
-
-  build_c8_688:
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.device == 'all' || github.event.inputs.device == 'nradio_c8-688' }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-    env:
-      DEVICE: nradio_c8-688
-      TARGET: mediatek
-      SUBTARGET: filogic
-
-    steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
-          df -h
-
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang flex bison g++ gawk gcc-multilib gettext git \
-            libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev \
-            file wget curl ccache subversion device-tree-compiler python3 python3-pyelftools \
-            python3-ply python3-docutils libelf-dev ecj fastjar java-propose-classpath \
-            libc6-dev-i386 libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
-            libreadline-dev uglifyjs upx-ucl libyaml-dev msmtp texinfo xmlto qemu-utils \
-            genisoimage python3-yaml help2man ninja-build p7zip-full
-
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-${{ env.DEVICE }}-${{ hashFiles('.github/workflows/main.yml', 'target/linux/mediatek/image/filogic.mk', 'target/linux/mediatek/dts/**') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DEVICE }}-
-            ${{ runner.os }}-
-
-      - name: Update and install feeds
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Generate .config
-        run: |
-          printf '%s\n' \
-            'CONFIG_TARGET_mediatek=y' \
-            'CONFIG_TARGET_mediatek_mt7981=y' \
-            'CONFIG_TARGET_MULTI_PROFILE=n' \
-            'CONFIG_TARGET_PER_DEVICE_ROOTFS=n' \
-            'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${{ env.DEVICE }}=y' \
-            > .config
-          make defconfig
-          grep -E "CONFIG_TARGET_(mediatek|DEVICE_mediatek_filogic_DEVICE_${{ env.DEVICE }})" .config
-
-      - name: Download sources
-        run: make download -j$(nproc)
-
-      - name: Build firmware
-        env:
-          CCACHE_DIR: ${{ github.workspace }}/.ccache
-        run: make -j$(nproc) V=s
-
-      - name: Collect artifacts
-        id: collect
-        shell: bash
-        run: |
-          set -euo pipefail
-          firmware_dir="bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}"
-          sysupgrade_file=$(find "$firmware_dir" -maxdepth 1 -type f -name "*${{ env.DEVICE }}*sysupgrade.bin" | sort | head -n 1)
-          if [ -z "$sysupgrade_file" ]; then
-            echo "No sysupgrade firmware found for ${{ env.DEVICE }} in $firmware_dir" >&2
-            find "$firmware_dir" -maxdepth 1 -type f | sort >&2
-            exit 1
-          fi
-          echo "sysupgrade_file=$sysupgrade_file" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "$sysupgrade_file" > firmware-list.txt
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: firmware-${{ env.DEVICE }}
-          path: |
-            ${{ steps.collect.outputs.sysupgrade_file }}
-            firmware-list.txt
-            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*.manifest
-            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/profiles.json
-          if-no-files-found: warn
-
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs-${{ env.DEVICE }}
-          path: |
-            .config
-            bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/config.buildinfo
-            logs/**
-            tmp/**
-          if-no-files-found: warn
+            tmp/**/*.log
+            tmp/**/*.txt
