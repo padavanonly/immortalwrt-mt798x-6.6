@@ -5,7 +5,6 @@ section.anonymous = true
 section.addremove = false
 section:tab("general", translate("常规设置"))
 section:tab("advanced", translate("高级设置"))
-section:tab("ipv6", translate("IPV6设置"), translate("模组IPV6相关设置"))
 
 enable = section:taboption("general", Flag, "enable", translate("模块开关"))
 enable.rmempty = false
@@ -368,10 +367,10 @@ cmd2:close()
 if content2 ~= "" then
     --Check if the content contains "RM520"
    if string.find(content2, "RM520") then
-	   -- ipv6 tab already created above
+	   section:tab("ipv6", translate("当前OP固件不适用于RM520N模组,请刷移远固件！"), translate("当前OP固件不适用于RM520N模组,请刷移远固件！"))
    else
       if string.find(content2, "MT5700") then
-		-- ipv6 tab already created above
+		section:tab("ipv6", translate("巴龙IPV6"), translate("温馨提示：请选择你需要的IPV6执行结果后点击按钮完成设置。"))
         local ipv6mode = section:taboption("ipv6", ListValue, "ipv6mode", translate("IPV6模式选择"))
         ipv6mode:value("full", translate("打开IPV6通信"))
         ipv6mode:value("half", translate("仅限CPE开IPV6"))
@@ -421,7 +420,7 @@ if content2 ~= "" then
        --section:tab("ipv6"):addoption("note", translate("当前模组暂不支持IPV6设置"))
    end
 else
-	-- ipv6 tab already created above
+	section:tab("ipv6", translate("未检测到模组信息或不支持"), translate("当前未检测到模组信息，请不要操作以下参数。"))
 end
 
 if content2 ~= "" then
