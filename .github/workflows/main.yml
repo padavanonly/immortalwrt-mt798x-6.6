@@ -127,7 +127,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ${{ runner.os }}-${{ env.DEVICE }}-ccache-${{ hashFiles('.github/workflows/main.yml', 'target/linux/mediatek/image/filogic.mk', 'target/linux/mediatek/dts/**', 'target/linux/mediatek/filogic/base-files/**', 'package/mtk/drivers/mt_wifi/**', 'package/mtk/drivers/wifi-profile/**', 'package/mtk/applications/mtwifi-cfg/**', 'package/mtk/applications/luci-app-mtwifi-cfg/**') }}
+          key: ${{ runner.os }}-${{ env.DEVICE }}-ccache-${{ hashFiles('.github/workflows/main.yml', 'target/linux/mediatek/image/filogic.mk', 'target/linux/mediatek/dts/**', 'target/linux/mediatek/filogic/base-files/**', 'package/mtk/drivers/conninfra/**', 'package/mtk/drivers/mt_wifi/**', 'package/mtk/drivers/warp/**', 'package/mtk/drivers/wifi-profile/**', 'package/mtk/applications/mtwifi-cfg/**', 'package/mtk/applications/luci-app-mtwifi-cfg/**', 'package/mtk/applications/5g-modem/**') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEVICE }}-ccache-
             ${{ runner.os }}-ccache-
