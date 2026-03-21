@@ -26,7 +26,8 @@ mediatek_setup_interfaces()
 	routerich,ax3000-v1|\
 	umi,uax3000e|\
 	zbtlink,zbt-z8103ax)
-		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" eth1
+		ucidef_set_interface "lan" device "lan1 lan2 lan3" protocol static ipaddr "192.168.66.1" netmask "255.255.255.0"
+		ucidef_set_interface_wan eth1 dhcp
 		;;
 	acelink,ew-7886cax)
 		ucidef_set_interface_lan "eth0" "dhcp"
