@@ -2440,6 +2440,7 @@ define Device/nradio_c5800-688
 	wifi-dats wifi-profile mtwifi-cfg luci-app-mtwifi-cfg \
 	mtk-smp \
 	luci-app-c5800-688-wtmodem \
+	adb usbutils usbids \
 	python3-light luci-theme-argon uhttpd uhttpd-mod-ubus \
 	f2fsck mkf2fs \
 	kmod-usb3 kmod-usb-core kmod-usb-xhci-hcd kmod-usb-xhci-mtk \
