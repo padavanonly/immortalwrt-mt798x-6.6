@@ -1,12 +1,76 @@
 #!/bin/sh
 
-if [ -d /www/luci-static/resources/view/network ]; then
-	mv -f /usr/share/luci-app-mtwifi-cfg/wireless-mtk.js /www/luci-static/resources/view/network/wireless.js
+. /lib/functions.sh
+. /lib/functions/system.sh
+
+if [ -d /www/luci-static/resources/view/network ] && [ -f /usr/share/luci-app-mtwifi-cfg/wireless-mtk.js ]; then
+	cp -f /usr/share/luci-app-mtwifi-cfg/wireless-mtk.js /www/luci-static/resources/view/network/wireless.js
 fi
 
-# if [ -d /usr/share/luci/menu.d ]; then
-# 	mv -f /usr/share/luci-app-mtwifi-cfg/luci-mod-status.json /usr/share/luci/menu.d/luci-mod-status.json
-# fi
+if [ -d /usr/share/luci/menu.d ]; then
+	cp -f /usr/share/luci-app-mtwifi-cfg/luci-mod-status.json /usr/share/luci/menu.d/luci-mod-status.json
+fi
+
+case "$(board_name)" in
+hcmt7981-emmc|HCMT7981-emmc|hcmt7981-688-emmc|HCMT7981-688-emmc)
+	cat > /etc/config/wireless <<-'EOF'
+
+config wifi-device 'MT7981_1_1'
+	option type 'mtwifi'
+	option phy 'ra0'
+	option hwmode '11g'
+	option band '2g'
+	option dbdc_main '1'
+	option channel 'auto'
+	option txpower '100'
+	option htmode 'HE40'
+	option country 'CN'
+	option mu_beamformer '1'
+	option noscan '1'
+	option serialize '1'
+
+config wifi-iface 'default_MT7981_1_1'
+	option device 'MT7981_1_1'
+	option network 'lan'
+	option mode 'ap'
+	option ssid 'NRadio_C5800-688_2.4G'
+	option encryption 'none'
+
+config wifi-device 'MT7981_1_2'
+	option type 'mtwifi'
+	option phy 'rax0'
+	option hwmode '11a'
+	option band '5g'
+	option dbdc_main '0'
+	option channel '36'
+	option txpower '100'
+	option htmode 'HE160'
+	option country 'CN'
+	option mu_beamformer '1'
+	option noscan '0'
+	option serialize '1'
+
+config wifi-iface 'default_MT7981_1_2'
+	option device 'MT7981_1_2'
+	option network 'lan'
+	option mode 'ap'
+	option ssid 'NRadio_C5800-688_5G'
+	option encryption 'none'
+EOF
+	;;
+*)
+
+if [ ! -s /etc/config/wireless ] || ! uci -q get wireless >/dev/null; then
+	wifi detect > /etc/config/wireless
+else
+	total_ifname=$(grep -c "^[[:space:]]*option ifname[[:space:]]" /etc/config/wireless)
+	unique_ifname=$(grep "^[[:space:]]*option ifname[[:space:]]" /etc/config/wireless | awk '{print $3}' | sort -u | wc -l)
+	if [ "$total_ifname" -gt "$unique_ifname" ]; then
+		wifi detect > /etc/config/wireless
+	fi
+fi
+	;;
+esac
 
 luci_network_js="/www/luci-static/resources/network.js"
 

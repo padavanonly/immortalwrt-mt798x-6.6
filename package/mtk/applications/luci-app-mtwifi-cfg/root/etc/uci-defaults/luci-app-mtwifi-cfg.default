@@ -59,15 +59,16 @@ config wifi-iface 'default_MT7981_1_2'
 EOF
 	;;
 *)
-	if [ ! -s /etc/config/wireless ] || ! uci -q get wireless >/dev/null; then
+
+if [ ! -s /etc/config/wireless ] || ! uci -q get wireless >/dev/null; then
+	wifi detect > /etc/config/wireless
+else
+	total_ifname=$(grep -c "^[[:space:]]*option ifname[[:space:]]" /etc/config/wireless)
+	unique_ifname=$(grep "^[[:space:]]*option ifname[[:space:]]" /etc/config/wireless | awk '{print $3}' | sort -u | wc -l)
+	if [ "$total_ifname" -gt "$unique_ifname" ]; then
 		wifi detect > /etc/config/wireless
-	else
-		total_ifname=$(grep -c "^[[:space:]]*option ifname[[:space:]]" /etc/config/wireless)
-		unique_ifname=$(grep "^[[:space:]]*option ifname[[:space:]]" /etc/config/wireless | awk '{print $3}' | sort -u | wc -l)
-		if [ "$total_ifname" -gt "$unique_ifname" ]; then
-			wifi detect > /etc/config/wireless
-		fi
 	fi
+fi
 	;;
 esac
 

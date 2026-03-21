@@ -282,7 +282,33 @@ function mtwifi_cfg_iwpriv_hook(cfg)
         if (not v.config.disabled) and v.mtwifi_ifname then
             local vif = v.mtwifi_ifname
             for k, j in pairs(defs.iwpriv_ap_cfgs) do
-                __exec_iwpriv_cmd(vif, j[1], v.config[k] or j[2])
+                if k ~= "HtBw" and k ~= "VhtBw" and k ~= "HtBssCoex" then
+                    __exec_iwpriv_cmd(vif, j[1], v.config[k] or j[2])
+                end
+            end
+
+            local band = tostring(cfg.config.band or "")
+            local htmode = tostring(cfg.config.htmode or "")
+            local noscan = tostring(cfg.config.noscan or "")
+
+            if band == "5g" then
+                if htmode == "HE160" or htmode == "VHT160" then
+                    __exec_iwpriv_cmd(vif, "HtBw", "1")
+                    __exec_iwpriv_cmd(vif, "VhtBw", "2")
+                    __exec_iwpriv_cmd(vif, "HtBssCoex", "0")
+                elseif htmode == "HE80" or htmode == "VHT80" then
+                    __exec_iwpriv_cmd(vif, "HtBw", "1")
+                    __exec_iwpriv_cmd(vif, "VhtBw", "1")
+                    __exec_iwpriv_cmd(vif, "HtBssCoex", "0")
+                elseif htmode == "HE40" or htmode == "VHT40" or htmode == "HT40" then
+                    __exec_iwpriv_cmd(vif, "HtBw", "1")
+                    __exec_iwpriv_cmd(vif, "VhtBw", "0")
+                    __exec_iwpriv_cmd(vif, "HtBssCoex", noscan == "1" and "0" or "1")
+                elseif htmode == "HE20" or htmode == "VHT20" or htmode == "HT20" then
+                    __exec_iwpriv_cmd(vif, "HtBw", "0")
+                    __exec_iwpriv_cmd(vif, "VhtBw", "0")
+                    __exec_iwpriv_cmd(vif, "HtBssCoex", "0")
+                end
             end
         end
     end
