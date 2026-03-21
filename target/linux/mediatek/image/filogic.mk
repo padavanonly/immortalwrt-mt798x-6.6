@@ -2434,10 +2434,11 @@ define Device/nradio_c5800-688
   DEVICE_MODEL := C5800-688
   DEVICE_DTS := mt7981-nradio-c5800-688
   DEVICE_DTS_DIR := ../dts
-  BOARD_NAME := HCMT7981-emmc
+  BOARD_NAME := nradio_c5800-688
   DEVICE_PACKAGES := \
 	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
 	wifi-dats wifi-profile mtwifi-cfg luci-app-mtwifi-cfg \
+	mtk-smp \
 	luci-app-c5800-688-wtmodem \
 	python3-light luci-theme-argon uhttpd uhttpd-mod-ubus \
 	f2fsck mkf2fs \
