@@ -152,7 +152,10 @@ jobs:
           CONFIG_PACKAGE_wifi-profile=y
           CONFIG_PACKAGE_mtwifi-cfg=y
           CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
+          CONFIG_PACKAGE_luci-theme-argon=y
           CONFIG_PACKAGE_python3-light=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_uhttpd-mod-ubus=y
           EOF
 
           if [ "${DEVICE}" = "nradio_c5800-688" ]; then
