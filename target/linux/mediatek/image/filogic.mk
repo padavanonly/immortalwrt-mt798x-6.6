@@ -2470,6 +2470,8 @@ define Device/nradio_c8-688
   DEVICE_PACKAGES := \
 	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
 	wifi-dats wifi-profile mtwifi-cfg luci-app-mtwifi-cfg \
+	mtk-smp \
+	adb usbutils usbids \
 	python3-light luci-theme-argon uhttpd uhttpd-mod-ubus \
 	f2fsck mkf2fs \
 	kmod-usb3 kmod-usb-core kmod-usb-xhci-hcd kmod-usb-xhci-mtk \

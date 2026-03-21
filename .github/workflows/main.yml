@@ -192,6 +192,10 @@ jobs:
           CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
           CONFIG_PACKAGE_mtk-smp=y
           CONFIG_PACKAGE_adb=y
+          CONFIG_PACKAGE_libatomic=y
+          CONFIG_PACKAGE_libevdev=y
+          CONFIG_PACKAGE_libusb-1.0=y
+          CONFIG_PACKAGE_libudev-zero=y
           CONFIG_PACKAGE_usbutils=y
           CONFIG_PACKAGE_usbids=y
           CONFIG_PACKAGE_luci-theme-argon=y
@@ -208,7 +212,7 @@ jobs:
 
           make defconfig
 
-          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_adb|CONFIG_PACKAGE_usbutils|CONFIG_PACKAGE_usbids|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
+          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_adb|CONFIG_PACKAGE_libatomic|CONFIG_PACKAGE_libevdev|CONFIG_PACKAGE_libusb-1.0|CONFIG_PACKAGE_libudev-zero|CONFIG_PACKAGE_usbutils|CONFIG_PACKAGE_usbids|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
 
       - name: Download sources
         shell: bash
