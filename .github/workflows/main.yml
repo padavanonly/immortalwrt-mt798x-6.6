@@ -22,7 +22,9 @@ on:
       - target/linux/mediatek/image/filogic.mk
       - target/linux/mediatek/dts/**
       - target/linux/mediatek/filogic/base-files/**
+      - package/mtk/drivers/conninfra/**
       - package/mtk/drivers/mt_wifi/**
+      - package/mtk/drivers/warp/**
       - package/mtk/drivers/wifi-profile/**
       - package/mtk/applications/mtwifi-cfg/**
       - package/mtk/applications/luci-app-mtwifi-cfg/**
@@ -152,6 +154,7 @@ jobs:
           CONFIG_PACKAGE_wifi-profile=y
           CONFIG_PACKAGE_mtwifi-cfg=y
           CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
+          CONFIG_PACKAGE_mtk-smp=y
           CONFIG_PACKAGE_luci-theme-argon=y
           CONFIG_PACKAGE_python3-light=y
           CONFIG_PACKAGE_uhttpd=y
@@ -166,7 +169,7 @@ jobs:
 
           make defconfig
 
-          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
+          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
 
       - name: Download sources
         shell: bash

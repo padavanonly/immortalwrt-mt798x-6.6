@@ -111,6 +111,8 @@ platform_do_upgrade() {
 	zyxel,ex5601-t0-ubootmod)
 		fit_do_upgrade "$1"
 		;;
+	nradio_c5800-688|\
+	nradio,c5800-688|\
 	HCMT7981-688-emmc|\
 	HCMT7981-emmc)
 		CI_KERNPART="kernel_2nd"
@@ -250,6 +252,8 @@ platform_copy_config() {
 	glinet,gl-mt6000|\
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
+	nradio_c5800-688|\
+	nradio,c5800-688|\
 	HCMT7981-688-emmc|\
 	HCMT7981-emmc|\
 	huasifei,wh3000-emmc|\

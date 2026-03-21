@@ -5,6 +5,8 @@ board=$(board_name)
 board_config_update
 
 case $board in
+nradio,c5800-688|\
+nradio_c5800-688|\
 hcmt7981-emmc|\
 HCMT7981-emmc|\
 hcmt7981-688-emmc|\

@@ -12,6 +12,8 @@ mediatek_setup_interfaces()
 	cmcc,rax3000m*|\
 	cmcc,rax3000me|\
 	cmcc,xr30*|\
+	nradio,c5800-688|\
+	nradio_c5800-688|\
 	hcmt7981-emmc|\
 	HCMT7981-emmc|\
 	h3c,magic-nx30-pro|\
