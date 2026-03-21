@@ -26,6 +26,7 @@ on:
       - package/mtk/drivers/wifi-profile/**
       - package/mtk/applications/mtwifi-cfg/**
       - package/mtk/applications/luci-app-mtwifi-cfg/**
+      - package/mtk/applications/5g-modem/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.device || 'push' }}
@@ -143,11 +144,26 @@ jobs:
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}=y
           CONFIG_CCACHE=y
+          CONFIG_PACKAGE_kmod-conninfra=y
+          CONFIG_PACKAGE_kmod-mediatek_hnat=y
+          CONFIG_PACKAGE_kmod-mt_wifi=y
+          CONFIG_PACKAGE_kmod-warp=y
+          CONFIG_PACKAGE_wifi-dats=y
+          CONFIG_PACKAGE_wifi-profile=y
+          CONFIG_PACKAGE_mtwifi-cfg=y
+          CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
+          CONFIG_PACKAGE_python3-light=y
           EOF
+
+          if [ "${DEVICE}" = "nradio_c5800-688" ]; then
+            cat >> .config <<EOF
+          CONFIG_PACKAGE_luci-app-c5800-688-wtmodem=y
+          EOF
+          fi
 
           make defconfig
 
-          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE" .config
+          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
 
       - name: Download sources
         shell: bash
@@ -222,6 +238,7 @@ jobs:
           name: logs-${{ env.DEVICE }}
           retention-days: 14
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             .config
             build.log

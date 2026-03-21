@@ -1,0 +1,242 @@
+<%+header%>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smstrun1.3+ by:manper</title>
+    <style>
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #d32f2f;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .close-button:hover {
+            background-color: #f44336;
+        }
+        .large-button {
+            font-size: 20px;
+            text-align: center;
+            padding: 10px 20px;
+            margin-top: 0px;
+            background-color: #272727;
+            color: rgb(255, 255, 255);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .large-button:hover {
+            background-color: #d32f2f;
+        }
+        h4,
+        h3 {
+            margin: 0;
+        }
+        .hidden {
+            display: none;
+        }
+        .input-field {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 10px;
+            gap: 10px;
+        }
+        .input-field input[type="text"] {
+            padding: 17px;
+            font-size: 10px;
+            border: none;
+            border-radius: 5px;
+            flex: 1;
+            background-color: #303030;
+        }
+        .terminal {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            white-space: pre-wrap;
+            background-color: rgba(255, 0, 0, 0); 
+        }
+    </style>
+<style>
+    h5 {
+        text-align: center;
+        color: rgb(255, 136, 0);
+    }
+</style>
+
+
+</head>
+<body>
+    <div>
+        <h2 style="color: rgb(0, 0, 0);background-color: #ff8800;">巴龙短信转发 Smstrun for PPS+</h2>
+        <a href="http://www.pushplus.plus/push1.html">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;如果你还不知道如何使用请点击这里：Token申请</a>
+        <h5 >
+            运行状态检测中....
+        </h5>
+        <form id="tokenForm" onsubmit="return setToken()">
+            <div class="input-field">
+                <input type="text" name="ppsToken" placeholder="请输入PPS平台Token">
+                <input type="submit" value="设置Token并开启转发" class="large-button">
+            </div>
+        </form>
+        <br>
+        <form id="titleForm" onsubmit="return setTitle()">
+            <div class="input-field">
+                <input type="text" name="smsTitle" placeholder="请输入短信转发标题">
+                <input type="submit" value=" 设置短信转发标题值 " class="large-button">
+            </div>
+        </form>
+        <br>
+        <form id="titleForm" onsubmit="return setToken2()">
+            <div class="input-field">
+                <input type="submit" value="       关闭短信转发功能       " class="large-button">
+            </div>
+        </form>
+        <form id="titleForm" onsubmit="return redhis()">
+            <div class="input-field">
+                <input type="submit" value="     查看启动后转发记录     " class="large-button">
+            </div>
+        </form>
+        <br>
+        
+    </div>
+    <br>
+    <br>
+    <br>
+    <br>
+    <br>
+    <br>
+    <br>
+    <br>
+    <div id="terminal" class="terminal">
+        <h4>关于Smstrun:基于PPS+微信推送平台编写,作者：@zcy-Manper，返回故障请关注PPS+平台的使能状态。</h4>
+        <h4>This program is mainly used for SMS forwarding request operators on the PPS+platform. The coding was completed on 20240315 by Manper</h4>
+    </div>
+</body>
+<script>
+    function setToken() {
+        var token = document.getElementsByName("ppsToken")[0].value;
+        if (token.trim() === "") {
+            alert("内容为空，请输入PPS平台Token后点击。");
+            return false;
+        }
+        fetch('/cgi-bin/luci/admin/modem/Smstrun/set_token', {
+            method: 'POST',
+            body: 'ppsToken=' + encodeURIComponent(token),
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            addMessageToTerminal("Terminal: " + data.output);
+            alert("Terminal: " + data.output);
+        })
+        .catch(error => console.error('Error:', error));
+        return false; 
+    }
+
+    function redhis() {
+        let title = "查看历史记录"; 
+        fetch('/cgi-bin/luci/admin/modem/Smstrun/redhis', {
+            method: 'POST',
+            body: 'smsTitle=' + encodeURIComponent(title),
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.result) {
+                addMessageToTerminal("以下为终端返回的转发记录:\n " + data.output); 
+            } else {
+                alert("Error: " + data.output);
+            }
+        })
+        .catch(error => console.error('Error:', error));
+        return false; 
+    }
+
+
+    function setToken2() {
+        var token = ""
+        fetch('/cgi-bin/luci/admin/modem/Smstrun/set_token', {
+            method: 'POST',
+            body: 'ppsToken=' + encodeURIComponent(token),
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            addMessageToTerminal("Terminal: " + "已关闭短信转发功能！");
+            alert("Terminal: " + "已关闭短信转发功能！");
+        })
+        .catch(error => console.error('Error:', error));
+        return false; 
+    }
+    function setTitle() {
+        var title = document.getElementsByName("smsTitle")[0].value;
+        if (title.trim() === "") {
+            alert("内容为空，请输入转发标题后点击。");
+            return false;
+        }
+        fetch('/cgi-bin/luci/admin/modem/Smstrun/set_title', {
+            method: 'POST',
+            body: 'smsTitle=' + encodeURIComponent(title),
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            addMessageToTerminal("Terminal: " + data.output); 
+            alert("Terminal: " + data.output);
+        })
+        .catch(error => console.error('Error:', error));
+        return false; 
+    }
+
+    function addMessageToTerminal(message) {
+    var terminal = document.getElementById("terminal");
+    var currentTime = new Date().toLocaleString();
+    terminal.textContent = `${message}\n`;
+    }
+    </script>
+<script>
+    function goBack() {
+        window.history.back();
+    }
+</script>
+<style>
+    .error {
+        color: red;
+    }
+    .success1 {
+        color: rgb(30, 179, 0);
+    }
+</style>
+
+<h4></h4>
+
+<script>
+    window.addEventListener('load', function() {
+        fetch('/cgi-bin/luci/admin/modem/Smstrun/check_status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'running') {
+                var token = data.token;
+                var title = data.title;
+                var message = `YES！转发运行中，你的PPS平台Token为【${token}】，你的转发标题为【${title}】，如有问题请尝试重启CPE。`;
+                document.querySelector('h5').textContent = message;
+                document.querySelector('h5').classList.add('success1');
+            } else {
+                document.querySelector('h5').textContent = 'ERR，短信转发未运行！！！请检查设置或开启,程序无法判断TOKEN是否正确,请自行确认。';
+                document.querySelector('h5').classList.add('error');
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    });
+</script>
+<%+footer%>
+
+

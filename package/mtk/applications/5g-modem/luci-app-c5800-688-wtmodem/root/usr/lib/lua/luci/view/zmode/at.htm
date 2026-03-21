@@ -1,0 +1,133 @@
+<%+header%>
+<script type="text/javascript" src="<%=resource%>/xhr.js?v=1.4"></script>
+<script type="text/javascript">//<![CDATA[
+    function sendcmd(event) {
+        var v = document.getElementById("drop1").value;
+        var s = document.getElementById("atcmd").value;
+        var r = document.getElementById("attxt").value;
+        if (s.length == 0) {
+            document.getElementById("attxt").value = '<%:请输入AT命令!%>\r' + r;
+            return false;
+        }
+        XHR.get('<%=luci.dispatcher.build_url("admin", "modem", "send_atcmd")%>', { set: s, p: v }, function(x, rv) {
+            var pd = rv.result;
+            document.getElementById("attxt").value = pd + r;
+        });
+    }
+    function sendclean(event) {
+        document.getElementById("attxt").value = '';
+    }
+    //]]></script>
+<div class="cbi-map" id="cbi-misc">
+    <h2><a id="content" name="content"><%:AT命令工具%></a></h2>
+
+    <head>
+        <style>
+            /* 仅适用于当前页面的样式 */
+            #cbi-misc {
+                
+                background-color: #000000; 
+            }
+
+            .cbi-map {
+                background: #000000; 
+                border-radius: 10px;
+                padding: 20px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                color: #000000; 
+                display: flex;
+                flex-direction: column;
+
+            }
+
+            .cbi-section {
+                margin: 0 auto;
+                flex: 1; 
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+
+            td {
+                padding: 10px;
+                text-align: center;
+                background-color: #ffffff; /* 淡灰色背景 */
+            }
+
+            input[type="text"] {
+                width: 100%;
+                padding: 8px;
+                border-radius: 5px;
+                border: 2px solid #000;
+                background: #FFF;
+                color: #000;
+            }
+
+            textarea {
+                background: #000000;
+                color: #ffee00; 
+                width: 100%;
+                height: 100%;
+                resize: none;
+                padding: 10px;
+                border-radius: 5px;
+                border: 2px solid #ffffff; /* 金色边框 */
+            }
+            
+            .cbi-button {
+                padding: 10px 20px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-family: 'Press Start 2P', cursive; /* 像素风格字体 */
+            }
+
+            .cbi-button-apply {
+                background-color: #5cb85c;
+                color: white;
+            }
+
+            .cbi-button-reset {
+                background-color: #d9534f;
+                color: white;
+            }
+
+            h2 {
+                text-align: center;
+				background-color: #ff9d00;
+                color: #000000; 
+            }
+        </style>
+        <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    </head>
+
+    <fieldset class="cbi-section" id="cbi-term">
+        <legend><%:AT命令终端%></legend>
+        <table>
+            <tr>
+                <td><%:端口 %></td>
+                <td>
+                    <select name="atdrop" id="drop1" class="cbi-input-text">
+                        <option value="1" selected>ttyUSB1</option>
+                        <option value="2">ttyUSB2</option>
+                    </select>
+                </td>
+                <td><%:命令 %></td>
+                <td>
+                    <input maxlength="100" type="text" name="atcmdlck" id="atcmd" class="cbi-input-text" />
+                </td>
+                <td>
+                    <input type="submit" id="sendat" class="cbi-button cbi-button-apply" value="<%:发送%>" onclick="return sendcmd()" />
+                    <input type="submit" id="sendclean" class="cbi-button cbi-button-reset" value="<%:清除%>" onclick="return sendclean()" />
+                </td>
+            </tr>
+        </table>
+        <textarea readonly="readonly" name="attxt" id="attxt" rows="30" maxlength="160"></textarea>
+    </fieldset>
+</div>
+
+<%+footer%>
+
+

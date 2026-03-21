@@ -1,0 +1,180 @@
+<%+header%>
+
+<script>
+    function checkResult() {
+        var mode = document.getElementById('mode').innerHTML;
+        var operator = document.getElementById('operator').innerHTML;
+
+        if (mode !== "wait for ctrl...") {
+            if (operator === "") {
+                setTimeout(function() {
+                    reloadPage();
+                    document.getElementById('scanStatus').style.display = 'block'; // 显示扫描状态元素
+                }, 10000);
+            } else {
+                document.getElementById('scanStatus').style.display = 'none'; // 隐藏扫描状态元素
+                // Do nothing, no further action needed
+            }
+        } else {
+            document.getElementById('scanStatus').style.display = 'none'; // 隐藏扫描状态元素
+            // Do nothing, no further action needed
+        }
+    }
+
+    function reloadPage() {
+        window.location.reload();
+    }
+
+    function startScan() {
+        document.getElementById('scanStatus').innerHTML = '正在扫描中...';
+        document.getElementById('scanStatus').style.display = 'block'; // 显示扫描状态元素
+        setTimeout(function() {
+            stopScan();
+        }, 300000); // 5 minutes timeout
+    }
+
+    function stopScan() {
+        document.getElementById('scanStatus').innerHTML = '扫描超时，请点击执行扫描动作按钮进行重试。';
+        document.getElementById('scanStatus').style.display = 'none'; // 隐藏扫描状态元素
+        clearInterval(refreshInterval); // Stop refreshing the page
+    }
+
+    window.addEventListener('DOMContentLoaded', checkResult);
+</script>
+
+<style>
+    .cbi-map {
+        background-color: #f9f9f9;
+        padding: 20px;
+        margin: 20px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }
+    .cbi-map h2 {
+        color: #ffffff;
+    }
+    .cbi-map h3, .cbi-map h7 {
+        color: rgb(255, 81, 0);
+    }
+    .cbi-map table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .cbi-map th, .cbi-map td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    .cbi-map th {
+        background-color: rgb(255, 230, 0); /* 表头背景设置为橘黄色 */
+        color: rgb(87, 87, 87); /* 表头文字颜色设为黑色 */
+    }
+    .cbi-map .cbi-section-table tr:nth-child(even) {
+        background-color: rgb(244, 244, 244); /* 表格内容背景设置为粉色 */
+    }
+    .cbi-map .large-button {
+        width: 100%;
+        background-color: rgb(255, 191, 0);
+        color: rgb(31, 31, 31);
+        border: none;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+    .cbi-map .scan-status {
+        color: rgb(12, 12, 12);
+    }
+
+    @keyframes scanning {
+    0% { opacity: 1; }
+    50% { opacity: 0.2; }
+    100% { opacity: 1; }
+    }
+
+    .scanning {
+        animation: scanning 1s infinite;
+    }
+
+    .cbi-map h2 {
+    background-color: rgb(55, 55, 55);
+    }
+
+    .cbi-map table {
+    margin: 0 auto;
+    }
+
+    .cbi-map th, .cbi-map td {
+    text-align: center;
+    }
+
+    .cbi-map h3 {
+    background-color: rgb(84, 84, 84);
+    color: rgb(255, 255, 255);
+    }
+</style>
+
+<div class="cbi-map">
+    <h2>当前模组可能无法扫描基站，请等待后续的更新。
+
+    </h2>
+    <h6>
+              使用说明:请勿在开机立刻进行此操作，进入此页面后点击“执行扫描动作”按钮，程序会自动开始执行扫描并刷新出数据。注意：扫描期间模块灯会熄灭，扫描完一次间隔一分钟后点击按钮才会重新扫。
+    </h6>
+    <br>
+    <div style="display: flex; justify-content: space-around;">
+        <form id="switchForm" method="post" action="<%= luci.dispatcher.build_url('admin', 'modem', 'cellscan', 'switch2') %>">
+            <input type="hidden" name="confirm" value="yes">
+            <input type="submit" value="执行扫描动作" class="large-button" onclick="return confirm('你确定吗？'); startScan();">
+        </form>
+        <div style="width: 10px;"></div>
+        <button onclick="reloadPage();" class="large-button">手动刷新扫描数据</button>
+    </div>
+    <p id="scanStatus" class="scan-status scanning">正在扫描基站中...</p>
+    <br>
+    <h3>Base Station List</h3>
+    <p>
+        <table id="results-table" class="cbi-section-table">
+            <tr>
+                <th>网络制式</th>
+                <th>运营商ISP</th>
+                <th>频段 Band</th>
+                <th>频点 EARFCN</th>
+                <th>物理小区标识 PCI </th>
+                <th>信号强度RSRP</th>
+                <th>接收质量 RSRQ</th>
+            </tr>
+            <% 
+            local controller = require("luci.controller.cellscan")
+            local results = controller.parse_results() or {}
+            if #results > 0 then
+                for _, result in ipairs(results) do
+            %>
+            <tr>
+                <td id="mode"><%= result.mode %></td>
+                <td id="operator"><%= result.operator %></td>
+                <td><%= result.band %></td>
+                <td><%= result.earfcn %></td>
+                <td><%= result.pci %></td>
+                <td><%= result.rsrp %></td>
+                <td><%= result.rsrq %></td>
+            </tr>
+            <% end
+            else
+            %>
+            <tr>
+                <td id="mode">scaning...</td>
+                <td id="operator"></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+            <% end %>
+        </table>
+    </p>
+    <p id="scanStatus" class="scan-status"></p>
+</div>
+<%+footer%>
+

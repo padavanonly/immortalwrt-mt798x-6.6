@@ -1,0 +1,552 @@
+<%+header%>
+<style>
+    /* 表头和内容居中对齐，针对第二列 */
+    table th:nth-child(2),
+    table td:nth-child(2) {
+        text-align: left;
+        width: 100%; /* 第二列宽度占满剩余空间 */
+        height: 100%;
+        color: rgb(0, 0, 0);
+        font-size: 11px; /* 调整字体大小 */
+        background-color: rgb(255, 255, 255); /* 设置背景颜色为橙色 */
+    }
+        /* 表头和内容居中对齐，针对第二列 */
+    table th:nth-child(3),
+    table td:nth-child(3) {
+        text-align: left;
+        width: 100%; /* 第二列宽度占满剩余空间 */
+        height: 100%;
+        color: rgb(0, 0, 0);
+        font-size: 10px; /* 调整字体大小 */
+        white-space: nowrap; /* 防止换行 */
+        background-color: rgb(255, 255, 255); /* 设置背景颜色为橙色 */
+    }
+    table th:nth-child(1),
+    table td:nth-child(1) {
+        text-align: center;
+        width: 10%;
+        color: rgb(0, 0, 0);
+        font-size: 10px; /* 调整字体大小 */
+        font-family: 'Microsoft YaHei', sans-serif; /* 设置字体为微软雅黑 */
+        white-space: nowrap; /* 防止换行 */
+        background-color: rgb(164, 215, 255); /* 设置背景颜色为橙色 */
+        border-radius: 0; /* 默认不设置圆角 */
+    }
+    
+    table tr:first-child th:nth-child(1),
+    table tr:first-child td:nth-child(1) {
+        border-radius: 8px 0 0 0; /* 只在左上角设置圆角 */
+    }
+
+    /* 设置最后一行第一列单元格的左下角向上圆角 */
+    table tr:last-child th:nth-child(1),
+    table tr:last-child td:nth-child(1) {
+        border-radius: 0 0 0 8px; /* 只在左下角设置圆角 */
+    }
+    /* 设置第一行第一列单元格的左上角向下圆角 */
+    table tr:first-child th:nth-child(3),
+    table tr:first-child td:nth-child(3) {
+        border-radius: 0 8px 0 0; /* 只在左上角设置圆角 */
+    }
+
+    /* 设置最后一行第一列单元格的左下角向上圆角 */
+    table tr:last-child th:nth-child(3),
+    table tr:last-child td:nth-child(3) {
+        border-radius: 0 0 8px 0; /* 只在左下角设置圆角 */
+    }
+    /* 信号指示器样式 */
+    .signal-indicator {
+        display: inline-block;
+        margin-left: 10px;
+        vertical-align: middle;
+        position: relative;
+        width: 65px;
+        height: 20px;
+    }
+    .signal-bar {
+        display: inline-block;
+        width: 8px;
+        background-color: grey;
+        border-radius: 2px;
+        position: absolute;
+        bottom: 0;
+    }
+    .signal-bar-1 { height: 25%; left: 0; }
+    .signal-bar-2 { height: 40%; left: 12px; }
+    .signal-bar-3 { height: 60%; left: 24px; }
+    .signal-bar-4 { height: 80%; left: 36px; }
+    .signal-bar-5 { height: 100%; left: 48px; }
+    /* 信号的颜色，动态设定 */
+    .signal-strong { background-color: #00ff00; }
+    .signal-medium { background-color: #ffff00; }
+    .signal-weak { background-color: #ff0000; }
+    /* 能量条和信号指示器的容器 */
+    .energy-bar-container {
+        display: flex;
+        align-items: center;
+    }
+    .energy-bar {
+        width: 100%;
+        height: 20px;
+        background-color: rgb(238, 238, 238);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .energy-bar-fill {
+        height: 100%;
+        transition: width 0.5s ease-in-out;
+    }
+    .energy-bar-text {
+        font-size: 10px;
+        font-weight: bold;
+        margin-left: 5px;
+    }
+    .energy-bar-fill {
+        position: relative;
+    }
+    .energy-bar-text {
+        position: absolute;
+        top: 0;
+        right: 5px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+    }
+    g {color: #808080; font-size: 75%; vertical-align: super;}
+    .energy-bar {
+        width: 100%;
+        height: 20px;
+        background-color: rgb(238, 238, 238);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .energy-bar-fill {
+        height: 100%;
+        transition: width 0.5s ease-in-out;
+    }
+    .energy-bar-text {
+        font-size: 10px;
+        font-weight: bold;
+        margin-left: 5px;
+    }
+    .energy-bar-fill {
+        position: relative;
+    }
+    .energy-bar-text {
+        position: absolute;
+        top: 0;
+        right: 5px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+    }
+    .temperature-bar {
+        width: 100%;
+        height: 20px;
+        background-color: #eee;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .temperature-bar-fill {
+        height: 100%;
+        transition: width 0.5s ease-in-out;
+    }
+    .temperature-bar-text {
+        font-size: 10px;
+        font-weight: bold;
+        margin-left: 5px;
+    }
+    .temperature-bar-fill {
+        position: relative;
+    }
+    .temperature-bar-text {
+        position: absolute;
+        top: 0;
+        right: 5px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+    }
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 20px;
+        color: #333;
+        z-index: 1000;
+        display: none;
+    }
+    /* 单元格内部样式 */
+    table td, table th {
+        padding: 10px;
+        background-color: transparent;
+        position: relative; /* 为分割线的绝对定位做准备 */
+    }
+    table td {
+        position: relative; /* 确保绝对定位的分割线相对于单元格定位 */
+    }
+    /* 模块厂家艺术字样式 */
+    #modem {
+        color: rgb(182, 116, 1);
+        font-weight: bold;
+        text-shadow: 1px 0px 0px black;
+    }
+    /* 信号和接收指示条样式 */
+    .signal-bar {
+        display: inline-block;
+        width: 8px;
+        border-radius: 2px;
+        position: absolute;
+        bottom: 0;
+    }
+    /* 指示条样式 */
+    .indicator-bar {
+        height: 20px;
+        background-color: rgb(238, 238, 238);
+        border-radius: 10px;
+        width: 100%;
+        overflow: hidden;
+    }
+    .indicator-fill {
+        height: 100%;
+        transition: width 0.5s ease-in-out;
+        position: relative; /* 使文本绝对定位相对于填充部分 */
+    }
+    .indicator-text {
+        position: absolute; /* 绝对定位 */
+        right: 5px; /* 右侧边距 */
+        top: 0; /* 顶部对齐 */
+        height: 100%;
+        display: flex;
+        align-items: center; /* 垂直居中 */
+        justify-content: flex-end; /* 右侧对齐 */
+        color: rgb(0, 0, 0); /* 文字颜色 */
+    }
+    .hidden {
+        display: none; /* 隐藏内容的样式 */
+    }
+    .loading {
+        font-style: italic;
+        color: #999;
+    }
+</style>
+<script type="text/javascript">//<![CDATA[
+    function createRSSIIndicator(value) {
+        var indicator = document.createElement('div');
+        indicator.className = 'indicator-bar';
+
+        var fill = document.createElement('div');
+        fill.className = 'indicator-fill';
+        fill.style.width = ((value + 120) / 107) * 100 + '%'; // 计算比例
+
+        var description = '';
+        if (value > -55) {
+            fill.style.backgroundColor = '#00ff00'; // 绿色
+            description = '优秀';
+        } else if (value > -75) {
+            fill.style.backgroundColor = '#ffff00'; // 黄色
+            description = '一般';
+        } else if (value > -100) {
+            fill.style.backgroundColor = '#ff0000'; // 红色
+            description = '较差';
+        }
+
+        var text = document.createElement('span');
+        text.className = 'indicator-text';
+        text.innerHTML = description + ' (' + value + ' dBm)';
+        fill.appendChild(text);
+        indicator.appendChild(fill);
+        return indicator;
+    }
+
+    function createRSCPIndicator(value) {
+        var indicator = document.createElement('div');
+        indicator.className = 'indicator-bar';
+
+        var fill = document.createElement('div');
+        fill.className = 'indicator-fill';
+        fill.style.width = ((-value - 44) / 96) * 100 + '%'; // 计算比例
+
+        var description = '';
+        if (value > -70) {
+            fill.style.backgroundColor = '#00ff00'; // 绿色
+            description = '强';
+        } else if (value > -100) {
+            fill.style.backgroundColor = '#ffff00'; // 黄色
+            description = '中';
+        } else if (value > -140) {
+            fill.style.backgroundColor = '#ff0000'; // 红色
+            description = '弱';
+        }
+
+        var text = document.createElement('span');
+        text.className = 'indicator-text';
+        text.innerHTML = description + ' (' + value + ' dBm)';
+        fill.appendChild(text);
+        indicator.appendChild(fill);
+        return indicator;
+    }
+    function updateElement(id, value) {
+        var element = document.getElementById(id);
+        if (value === undefined || value === null || value === "") {
+            element.innerHTML = '<div class="loading">🔄 Getting CPE return value...</div>';
+        } else {
+            element.innerHTML = value;
+        }
+    }
+    document.addEventListener("DOMContentLoaded", function() {
+        // 隐藏所有内容
+        document.querySelectorAll('.data-cell').forEach(function(el) {
+            el.classList.add('hidden');
+        });
+        // 显示加载状态
+        document.querySelectorAll('.loading-cell').forEach(function(el) {
+                el.innerHTML = '<div class="loading">🔄 加载中...</div>';
+        });   
+        XHR.poll(30, '<%=luci.dispatcher.build_url("admin", "modem", "get_csq")%>', null,
+            function(x, rv) {
+                updateElement('modem', rv.modem);
+                updateElement('conntype', rv.conntype);
+                updateElement('firmware', rv.firmware);
+                updateElement('date', rv.date);
+                updateElement('simsel', rv.simsel);
+                updateElement('cops', rv.cops);
+                updateElement('imei', rv.imei);
+                updateElement('imsi', rv.imsi);
+                updateElement('iccid', rv.iccid);
+                updateElement('mode', rv.mode);
+                updateElement('rssi', rv.rssi);
+                updateElement('rsrq', rv.rsrq);
+                updateElement('rscp', rv.rscp);
+                updateElement('sinr', rv.sinr);
+                updateElement('mcc', rv.mcc);
+                updateElement('lac', rv.lac);
+                updateElement('cid', rv.cid);
+                updateElement('band', rv.band);
+                updateElement('rfcn', rv.rfcn);
+                updateElement('pci', rv.pci);
+                updateElement('apn', rv.apn);
+                updateElement('down', rv.down);
+                updateElement('up', rv.up);
+                updateElement('stsss', rv.stsss);
+                updateElement('qci', rv.qci);
+                updateElement('zbjh', rv.zbjh);
+                updateElement('r2cc', rv.r2cc);
+                updateElement('r3cc', rv.r3cc);
+                updateElement('cell1', rv.cell1);
+                updateElement('cell2', rv.cell2);
+                updateElement('cell3', rv.cell3);
+                updateElement('cell4', rv.cell4);
+                updateElement('cell5', rv.cell5);
+                var phoneElement = document.getElementById('phone');
+                var phone = rv.phone || "未检测到卡号...";
+                var isHidden = false;
+                if (phone.length === 14) {
+                    var newPhone = phone;
+                    phoneElement.innerHTML = "**** **** **** ****";
+                    phoneElement.addEventListener('dblclick', function() {
+                        if (isHidden) {
+                            phoneElement.innerHTML = "**** **** **** ****";
+                            isHidden = false;
+                        } else {
+                            phoneElement.innerHTML = newPhone;
+                            isHidden = true;
+                        }
+                    });
+                } else {
+                    phoneElement.innerHTML = phone;
+                }
+                var perElement = document.getElementById('per');
+                var perValue = parseFloat(rv.per);
+                if (isNaN(perValue)) {
+                    perElement.innerHTML = '<div class="loading">🔄 Getting CPE return value...</div>';
+                } else {
+                    // 创建能量条和信号指示器容器
+                    var energyBarContainer = document.createElement('div');
+                    energyBarContainer.className = 'energy-bar-container';
+                    // 创建能量条
+                    var energyBar = document.createElement('div');
+                    energyBar.className = 'energy-bar';
+                    var energyBarFill = document.createElement('div');
+                    energyBarFill.className = 'energy-bar-fill';
+                    energyBarFill.style.width = (perValue / 100) * 100 + '%';
+                    if (perValue >= 70) {
+                        energyBarFill.style.backgroundColor = '#00ff00';
+                    } else if (perValue < 70 && perValue >= 40) {
+                        energyBarFill.style.backgroundColor = '#ffff00';
+                    } else {
+                        energyBarFill.style.backgroundColor = '#ff0000';
+                    }
+                    var energyBarText = document.createElement('span');
+                    energyBarText.className = 'energy-bar-text';
+                    energyBarText.innerHTML = perValue + '%';
+                    energyBarFill.appendChild(energyBarText);
+                    energyBar.appendChild(energyBarFill);
+                    // 创建信号蜂窝指示器
+                    var signalIndicator = document.createElement('div');
+                    signalIndicator.className = 'signal-indicator';
+                    // 动态添加信号柱
+                    for (var i = 1; i <= 5; i++) {
+                        var signalBar = document.createElement('div');
+                        signalBar.className = 'signal-bar signal-bar-' + i;
+                        if (i <= Math.ceil(perValue / 20)) {
+                            // 根据信号强度调整颜色
+                            if (perValue >= 70) {
+                                signalBar.classList.add('signal-strong');
+                            } else if (perValue < 70 && perValue >= 40) {
+                                signalBar.classList.add('signal-medium');
+                            } else {
+                                signalBar.classList.add('signal-weak');
+                            }
+                        }
+                        signalIndicator.appendChild(signalBar);
+                    }
+                    // 将能量条和信号指示器加入容器
+                    energyBarContainer.appendChild(energyBar);
+                    energyBarContainer.appendChild(signalIndicator);
+                    // 将容器放入页面
+                    perElement.innerHTML = '';
+                    perElement.appendChild(energyBarContainer);
+                }
+                var temperElement = document.getElementById('temper');
+                var temperValue = parseFloat(rv.temper);
+                if (isNaN(temperValue)) {
+                    temperElement.innerHTML = '<div class="loading">🔄 Getting CPE return value...</div>';
+                } else {
+                    var temperatureBar = document.createElement('div');
+                    temperatureBar.className = 'temperature-bar';
+                    var temperatureBarFill = document.createElement('div');
+                    temperatureBarFill.className = 'temperature-bar-fill';
+                    temperatureBarFill.style.width = (temperValue / 100) * 100 + '%'; 
+                    if (temperValue >= 75) {
+                        temperatureBarFill.style.backgroundColor = '#ff0000'; 
+                    } else if (temperValue < 75 && temperValue >= 50) {
+                        temperatureBarFill.style.backgroundColor = '#ffff00'; 
+                    } else {
+                        temperatureBarFill.style.backgroundColor = '#00ff00'; 
+                    }
+                    var temperatureBarText = document.createElement('span');
+                    temperatureBarText.className = 'temperature-bar-text';
+                    temperatureBarText.innerHTML = temperValue + '°C';
+                    temperatureBarFill.appendChild(temperatureBarText);
+                    temperatureBar.appendChild(temperatureBarFill);
+                    temperElement.innerHTML = '';
+                    temperElement.appendChild(temperatureBar);
+                }
+                // 处理模块厂家
+                var modemElement = document.getElementById('modem');
+                modemElement.innerHTML = rv.modem; // 确保设置内容为橙色、加粗等
+                var rssiValue = parseFloat(rv.rssi);
+                var rssiElement = document.getElementById('rssi');
+                rssiElement.innerHTML = '';  // 清空内容
+                var rssiIndicator = createRSSIIndicator(rssiValue);
+                rssiElement.appendChild(rssiIndicator);
+                var rscpValue = parseFloat(rv.rscp);
+                var rscpElement = document.getElementById('rscp');
+                rscpElement.innerHTML = '';  // 清空内容
+                var rscpIndicator = createRSCPIndicator(rscpValue);
+                rscpElement.appendChild(rscpIndicator);
+                document.querySelectorAll('.hidden').forEach(function(el) {
+                    el.classList.remove('hidden'); // 移除隐藏类
+                });
+            }
+       );
+    });
+//]]></script>
+<div id="loadingOverlay" class="loading-overlay">
+    <div>🔄 加载中...请刷新页面！</div>
+</div>
+<div class="cbi-map" id="cbi-modem">
+    <h2 style="background-color: rgb(255, 98, 0); color: rgb(255, 255, 255);"><a id="content" name="content" style="text-decoration: none; color: inherit;"> 鼎桥通信MT-5700M-CN-巴龙芯</a></h2>
+    <fieldset class="cbi-section" id="cbi-mod">
+        <legend><%:综合信息%></legend>
+        <table width="100%" cellspacing="10">
+            <tr><td width="23%"><%:后台拉取状态 %></td><td id="stsss">🔄正在读取中,如遇空白请刷新...</td><td></td></tr>
+            <tr>
+                <td width="23%"><%:模块厂家 %></td>
+                <td id="modem"></td>
+                <td id="modem"></td>
+            </tr>
+            <tr><td width="23%"><%:模块版本 %></td><td id="conntype"></td><td></td></tr>
+            <tr><td width="23%"><%:固件版本 %></td><td id="firmware"></td><td></td></tr>
+            <tr><td width="23%"><%:设备温度 %></td><td id="temper"></td><td></td></tr>
+            <tr><td width="23%"><%:Script-Time标识: %></td><td id="date"></td><td></td></tr>
+        </table>
+    </fieldset>
+    <fieldset class="cbi-section" id="cbi-msinfo">
+        <legend><%:通信模块/SIM卡信息%></legend>
+        <table width="100%" cellspacing="10">
+            <tr><td width="23%"><%:卡槽位置 %></td><td id="simsel"></td><td></td></tr>
+            <tr><td width="23%"><%:运营商 %></td><td id="cops"></td><td></td></tr>
+            <tr><td width="23%"><%:IMEI信息 %></td><td id="imei"></td><td></td></tr>
+            <tr><td width="23%"><%:IMSI信息 %></td><td id="imsi"></td><td></td></tr>
+            <tr><td width="23%"><%:ICC ID号 %></td><td id="iccid"></td><td></td></tr>
+            <tr><td width="23%"><%:SIM卡--Number %></td><td id="phone"></td><td></td></tr>
+        </table>
+    </fieldset>
+    <fieldset class="cbi-section" id="cbi-sig">
+        <legend><%:信号状态%></legend>
+        <table width="100%" cellspacing="10">
+            <tr><td width="23%"><%:网络类型%></td><td id="mode"></td><td></td></tr>
+            <tr><td width="23%"><%:信号质量%></td><td id="per"></td><td></td></tr>
+            <tr>
+                <td width="23%"><%:信号强度--RSSI %></td>
+                <td id="rssi"></td>
+                <td id="rssiIndicator"></td>
+            </tr>
+            <tr>
+                <td width="23%"><%:接收功率--RSCP %></td>
+                <td id="rscp"></td>
+                <td id="rscpIndicator"></td>
+            </tr>
+            <tr><td width="23%"><%:接收质量--RSRQ %></td><td id="rsrq"></td><td></td></tr>
+            <tr><td width="23%"><%:信噪比值--SINR %></td><td id="sinr"></td><td></td></tr>
+        </table>
+    </fieldset>
+    <fieldset class="cbi-section" id="cbi-sig">
+        <legend><%:基站信息%></legend>
+        <table width="100%" cellspacing="10">
+            <tr><td width="23%"><%:载波聚合标识ICC %></td><td id="zbjh"></td><td></td></tr>
+            <tr><td width="23%"><%:2CC %></td><td id="r2cc"></td><td></td></tr>
+            <tr><td width="23%"><%:3CC %></td><td id="r3cc"></td><td></td></tr>
+            <tr><td width="23%"><%:MCC/MNC %></td><td id="mcc"></td><td></td></tr>
+            <tr><td width="23%"><%:位置ID LAC %></td><td id="lac"></td><td></td></tr>
+            <tr><td width="23%"><%:小区ID CellID %></td><td id="cid"></td><td></td></tr>
+        </table>
+    </fieldset>
+    <fieldset class="cbi-section" id="cbi-sig">
+        <legend><%:基站信息2%></legend>
+        <table width="100%" cellspacing="10">
+            <tr><td width="23%"><%:频段Band %></td><td id="band"></td><td></td></tr>
+            <tr><td width="23%"><%:QCI(自动/4G) %></td><td id="qci"></td><td></td></tr>
+            <tr><td width="23%"><%:频点EARFCN %></td><td id="rfcn"></td><td></td></tr>
+            <tr><td width="23%"><%:接入点 APN %></td><td id="apn"></td><td></td></tr>
+            <tr><td width="23%"><%:签约下载率 %></td><td id="down"></td><td></td></tr>
+            <tr><td width="23%"><%:签约上传率 %></td><td id="up"></td><td></td></tr>
+            <tr><td width="23%"><%:物理小区标识PCI %></td><td id="pci"></td><td></td></tr>
+        </table>
+    </fieldset>
+    <fieldset class="cbi-section" id="cbi-sig">
+        <legend><%:相邻小区%></legend>
+        <table width="100%" cellspacing="10">
+            <tr><td width="23%"><%:邻近小区1信息： %></td><td id="cell1"></td><td></td></tr>
+            <tr><td width="23%"><%:邻近小区2信息： %></td><td id="cell2"></td><td></td></tr>
+            <tr><td width="23%"><%:邻近小区3信息： %></td><td id="cell3"></td><td></td></tr>
+            <tr><td width="23%"><%:邻近小区4信息： %></td><td id="cell4"></td><td></td></tr>
+            <tr><td width="23%"><%:邻近小区5信息： %></td><td id="cell5"></td><td></td></tr>
+        </table>
+    </fieldset>
+</div>
+<%+footer%>
+
+
+

@@ -1,0 +1,3 @@
+/usr/lib/lua/luci/view/Smstrun/settings.htm
+/usr/lib/lua/luci/controller/Smstrun.lua
+/usr/lib/lua/luci/model/cbi/Smstrun.lua
