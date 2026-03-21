@@ -17,8 +17,7 @@ define Package/$(PKG_NAME)
   SUBMENU:=3. Applications
   TITLE:=LuCI support for C5800-688 WTModem
   DEFAULT:=y
-  DEPENDS:=+luci-compat +python3-light
-  PKGARCH:=all
+  DEPENDS:=+luci-compat +python3-light +libc +libgcc
 endef
 
 define Package/$(PKG_NAME)/conffiles
@@ -32,14 +31,14 @@ endef
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
-	$(CP) ./root/. $(PKG_BUILD_DIR)/
 endef
 
 define Build/Compile
 endef
 
 define Package/$(PKG_NAME)/install
-	$(CP) $(PKG_BUILD_DIR)/. $(1)/
+	$(CP) ./root/. $(1)/
+	rm -f $(1)/usr/share/modem/mopdu
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
