@@ -286,9 +286,10 @@ define KernelPackage/mt_wifi
   DEPENDS:=+wifi-dats
   DEPENDS+=+kmod-conninfra
   DEPENDS+=+kmod-mediatek_hnat
-  FILES:=$(PKG_BUILD_DIR)/mt_wifi_ap/mt_wifi.ko
+  FILES:=$(PKG_BUILD_DIR)/mt_wifi_ap/mt_wifi.ko \
+	$(PKG_BUILD_DIR)/mt_wifi/embedded/plug_in/warp_proxy/mtk_warp_proxy.ko
   DEPENDS+=+kmod-warp
-  AUTOLOAD:=$(call AutoProbe,mt_wifi)
+  AUTOLOAD:=$(call AutoProbe,mt_wifi mtk_warp_proxy)
   SUBMENU:=Drivers
   MENU:=1
 endef
@@ -311,8 +312,10 @@ Hooks/Prepare/Post := FIXUP_NEW_MCU_FW_API
 define Build/Compile
 	@echo "Using prebuilt mt_wifi modules"
 	$(INSTALL_DIR) $(PKG_BUILD_DIR)/mt_wifi_ap
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/mt_wifi/embedded/plug_in/warp_proxy
 	: > $(PKG_BUILD_DIR)/Module.symvers
 	$(CP) ./files/mt7981-ko/mt_wifi.ko $(PKG_BUILD_DIR)/mt_wifi_ap/mt_wifi.ko
+	$(CP) ./files/mt7981-ko/mtk_warp_proxy.ko $(PKG_BUILD_DIR)/mt_wifi/embedded/plug_in/warp_proxy/mtk_warp_proxy.ko
 endef
 
 define KernelPackage/mt_wifi/install

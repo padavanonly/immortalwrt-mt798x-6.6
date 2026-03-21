@@ -2091,7 +2091,7 @@ $(eval $(call KernelPackage,amazon-ena))
 define KernelPackage/mediatek_hnat
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Mediatek HNAT module
-  AUTOLOAD:=$(call AutoLoad,20,mtkhnat)
+  AUTOLOAD:=$(call AutoLoad,20,mtkhnat ppe_cnt=2)
   DEPENDS:=@TARGET_mediatek +kmod-nf-conntrack +wireless-tools +@KERNEL_WIRELESS_EXT
   KCONFIG:= \
 	CONFIG_BRIDGE_NETFILTER=y \
