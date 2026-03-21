@@ -138,13 +138,49 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Patch libffi feed for runner build
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('feeds/packages/libs/libffi/Makefile')
+          text = path.read_text()
+          old = "\n".join([
+              "\t$(CP) \\",
+              "\t\t$(PKG_BUILD_DIR)/$(GNU_TARGET_NAME)*/fficonfig.h \\",
+              "\t\t$(1)/usr/include/",
+              "",
+          ])
+          new = "\n".join([
+              "\tconf_h=''; \\",
+              "\tfor p in \\",
+              "\t\t$(PKG_BUILD_DIR)/$(GNU_TARGET_NAME)*/fficonfig.h \\",
+              "\t\t$(PKG_BUILD_DIR)/*/fficonfig.h \\",
+              "\t\t$(PKG_BUILD_DIR)/fficonfig.h; do \\",
+              "\t\tcase \"$$p\" in \\",
+              "\t\t\t*msvc_build*) continue ;; \\",
+              "\t\tesac; \\",
+              "\t\tif [ -f \"$$p\" ]; then \\",
+              "\t\t\tconf_h=\"$$p\"; \\",
+              "\t\t\tbreak; \\",
+              "\t\tfi; \\",
+              "\tdone; \\",
+              "\t[ -n \"$$conf_h\" ] && $(CP) \"$$conf_h\" $(1)/usr/include/",
+              "",
+          ])
+          if old not in text:
+              raise SystemExit('libffi Makefile patch context not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Generate .config
         shell: bash
         run: |
           cat > .config <<EOF
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
-          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}=y
           CONFIG_CCACHE=y
           CONFIG_PACKAGE_kmod-conninfra=y
           CONFIG_PACKAGE_kmod-mediatek_hnat=y
@@ -169,7 +205,7 @@ jobs:
 
           make defconfig
 
-          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
+          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
 
       - name: Download sources
         shell: bash
