@@ -39,7 +39,7 @@ Signed-off-by: Phil Elwell <phil@raspberrypi.org>
  	if (phydev->mdio.dev.of_node) {
  		u32 reg;
  		int len;
-@@ -3139,22 +3155,6 @@ static int lan78xx_open(struct net_devic
+@@ -3143,22 +3159,6 @@ static int lan78xx_open(struct net_devic
  
  	netif_dbg(dev, ifup, dev->net, "phy initialised successfully");
  

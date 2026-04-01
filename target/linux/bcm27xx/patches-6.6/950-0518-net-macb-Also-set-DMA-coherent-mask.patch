@@ -118,7 +118,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  
  /* Bitfields in PBUFRXCUT */
  #define GEM_ENCUTTHRU_OFFSET	31 /* Enable RX partial store and forward */
-@@ -807,6 +824,7 @@
+@@ -812,6 +829,7 @@
  	})
  
  #define MACB_READ_NSR(bp)	macb_readl(bp, NSR)
@@ -126,7 +126,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  
  /* struct macb_dma_desc - Hardware DMA descriptor
   * @addr: DMA address of data buffer
-@@ -1222,6 +1240,7 @@ struct macb_queue {
+@@ -1227,6 +1245,7 @@ struct macb_queue {
  	dma_addr_t		tx_ring_dma;
  	struct work_struct	tx_error_task;
  	bool			txubr_pending;
@@ -134,7 +134,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	struct napi_struct	napi_tx;
  
  	dma_addr_t		rx_ring_dma;
-@@ -1287,9 +1306,15 @@ struct macb {
+@@ -1294,9 +1313,15 @@ struct macb {
  
  	u32			caps;
  	unsigned int		dma_burst_length;
@@ -152,8 +152,8 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	unsigned int		max_tx_length;
 --- a/drivers/net/ethernet/cadence/macb_main.c
 +++ b/drivers/net/ethernet/cadence/macb_main.c
-@@ -40,6 +40,9 @@
- #include <linux/firmware/xlnx-zynqmp.h>
+@@ -41,6 +41,9 @@
+ #include <linux/gcd.h>
  #include "macb.h"
  
 +static unsigned int txdelay = 35;
@@ -162,7 +162,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  /* This structure is only used for MACB on SiFive FU540 devices */
  struct sifive_fu540_macb_mgmt {
  	void __iomem *reg;
-@@ -334,7 +337,7 @@ static int macb_mdio_wait_for_idle(struc
+@@ -335,7 +338,7 @@ static int macb_mdio_wait_for_idle(struc
  	u32 val;
  
  	return readx_poll_timeout(MACB_READ_NSR, bp, val, val & MACB_BIT(IDLE),
@@ -171,7 +171,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  }
  
  static int macb_mdio_read_c22(struct mii_bus *bus, int mii_id, int regnum)
-@@ -493,6 +496,19 @@ mdio_pm_exit:
+@@ -494,6 +497,19 @@ mdio_pm_exit:
  	return status;
  }
  
@@ -191,7 +191,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  static void macb_init_buffers(struct macb *bp)
  {
  	struct macb_queue *queue;
-@@ -974,6 +990,7 @@ static int macb_mii_init(struct macb *bp
+@@ -1066,6 +1082,7 @@ static int macb_mii_init(struct macb *bp
  	bp->mii_bus->write = &macb_mdio_write_c22;
  	bp->mii_bus->read_c45 = &macb_mdio_read_c45;
  	bp->mii_bus->write_c45 = &macb_mdio_write_c45;
@@ -199,7 +199,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	snprintf(bp->mii_bus->id, MII_BUS_ID_SIZE, "%s-%x",
  		 bp->pdev->name, bp->pdev->id);
  	bp->mii_bus->priv = bp;
-@@ -1639,6 +1656,11 @@ static int macb_rx(struct macb_queue *qu
+@@ -1731,6 +1748,11 @@ static int macb_rx(struct macb_queue *qu
  
  		macb_init_rx_ring(queue);
  		queue_writel(queue, RBQP, queue->rx_ring_dma);
@@ -211,7 +211,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  
  		macb_writel(bp, NCR, ctrl | MACB_BIT(RE));
  
-@@ -1941,8 +1963,9 @@ static irqreturn_t macb_interrupt(int ir
+@@ -2033,8 +2055,9 @@ static irqreturn_t macb_interrupt(int ir
  				queue_writel(queue, ISR, MACB_BIT(TCOMP) |
  							 MACB_BIT(TXUBR));
  
@@ -222,7 +222,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  				wmb(); // ensure softirq can see update
  			}
  
-@@ -2398,6 +2421,11 @@ static netdev_tx_t macb_start_xmit(struc
+@@ -2490,6 +2513,11 @@ static netdev_tx_t macb_start_xmit(struc
  	skb_tx_timestamp(skb);
  
  	spin_lock(&bp->lock);
@@ -234,7 +234,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	macb_writel(bp, NCR, macb_readl(bp, NCR) | MACB_BIT(TSTART));
  	spin_unlock(&bp->lock);
  
-@@ -2772,6 +2800,37 @@ static void macb_configure_dma(struct ma
+@@ -2901,6 +2929,37 @@ static void macb_configure_dma(struct ma
  	}
  }
  
@@ -272,7 +272,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  static void macb_init_hw(struct macb *bp)
  {
  	u32 config;
-@@ -2800,6 +2859,11 @@ static void macb_init_hw(struct macb *bp
+@@ -2929,6 +2988,11 @@ static void macb_init_hw(struct macb *bp
  	if (bp->caps & MACB_CAPS_JUMBO)
  		bp->rx_frm_len_mask = MACB_RX_JFRMLEN_MASK;
  
@@ -284,7 +284,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	macb_configure_dma(bp);
  
  	/* Enable RX partial store and forward and set watermark */
-@@ -3167,6 +3231,52 @@ static void gem_get_ethtool_strings(stru
+@@ -3296,6 +3360,52 @@ static void gem_get_ethtool_strings(stru
  	}
  }
  
@@ -337,7 +337,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  static struct net_device_stats *macb_get_stats(struct net_device *dev)
  {
  	struct macb *bp = netdev_priv(dev);
-@@ -3761,6 +3871,8 @@ static const struct ethtool_ops macb_eth
+@@ -3893,6 +4003,8 @@ static const struct ethtool_ops macb_eth
  };
  
  static const struct ethtool_ops gem_ethtool_ops = {
@@ -346,7 +346,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	.get_regs_len		= macb_get_regs_len,
  	.get_regs		= macb_get_regs,
  	.get_wol		= macb_get_wol,
-@@ -3770,6 +3882,8 @@ static const struct ethtool_ops gem_etht
+@@ -3902,6 +4014,8 @@ static const struct ethtool_ops gem_etht
  	.get_ethtool_stats	= gem_get_ethtool_stats,
  	.get_strings		= gem_get_ethtool_strings,
  	.get_sset_count		= gem_get_sset_count,
@@ -355,7 +355,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	.get_link_ksettings     = macb_get_link_ksettings,
  	.set_link_ksettings     = macb_set_link_ksettings,
  	.get_ringparam		= macb_get_ringparam,
-@@ -5066,6 +5180,11 @@ static int macb_probe(struct platform_de
+@@ -5198,6 +5312,11 @@ static int macb_probe(struct platform_de
  			}
  		}
  	}
@@ -367,7 +367,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	spin_lock_init(&bp->lock);
  	spin_lock_init(&bp->stats_lock);
  
-@@ -5126,6 +5245,21 @@ static int macb_probe(struct platform_de
+@@ -5258,6 +5377,21 @@ static int macb_probe(struct platform_de
  	else
  		bp->phy_interface = interface;
  
@@ -389,7 +389,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  	/* IP specific init */
  	err = init(pdev);
  	if (err)
-@@ -5202,6 +5336,19 @@ static int macb_remove(struct platform_d
+@@ -5334,6 +5468,19 @@ static int macb_remove(struct platform_d
  	return 0;
  }
  
@@ -409,7 +409,7 @@ Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
  static int __maybe_unused macb_suspend(struct device *dev)
  {
  	struct net_device *netdev = dev_get_drvdata(dev);
-@@ -5416,6 +5563,7 @@ static const struct dev_pm_ops macb_pm_o
+@@ -5580,6 +5727,7 @@ static const struct dev_pm_ops macb_pm_o
  static struct platform_driver macb_driver = {
  	.probe		= macb_probe,
  	.remove		= macb_remove,

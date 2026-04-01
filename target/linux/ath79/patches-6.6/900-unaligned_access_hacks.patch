@@ -259,7 +259,7 @@ SVN-Revision: 35130
  #include <linux/uaccess.h>
  #include <linux/ipv6.h>
  #include <linux/icmpv6.h>
-@@ -891,10 +892,10 @@ static void tcp_v6_send_response(const s
+@@ -892,10 +893,10 @@ static void tcp_v6_send_response(const s
  	topt = (__be32 *)(t1 + 1);
  
  	if (tsecr) {
@@ -867,7 +867,7 @@ SVN-Revision: 35130
  	    iph->daddr == iph2->daddr && iph->saddr == iph2->saddr)
  		return segs;
  
-@@ -267,7 +267,7 @@ struct sk_buff *tcp_gro_lookup(struct li
+@@ -268,7 +268,7 @@ struct sk_buff *tcp_gro_lookup(struct li
  			continue;
  
  		th2 = tcp_hdr(p);
@@ -876,7 +876,7 @@ SVN-Revision: 35130
  			NAPI_GRO_CB(p)->same_flow = 0;
  			continue;
  		}
-@@ -333,8 +333,8 @@ struct sk_buff *tcp_gro_receive(struct l
+@@ -334,8 +334,8 @@ struct sk_buff *tcp_gro_receive(struct l
  		  ~(TCP_FLAG_CWR | TCP_FLAG_FIN | TCP_FLAG_PSH));
  	flush |= (__force int)(th->ack_seq ^ th2->ack_seq);
  	for (i = sizeof(*th); i < thlen; i += 4)
