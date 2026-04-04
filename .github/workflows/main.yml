@@ -249,7 +249,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p artifact
 
           python3 - <<'PY'
           import os
@@ -257,28 +257,48 @@ jobs:
 
           firmware_dir = Path(f"bin/targets/{os.environ['TARGET']}/{os.environ['SUBTARGET']}")
           device = os.environ["DEVICE"]
+          image_suffixes = (
+              ".bin",
+              ".img",
+              ".img.gz",
+              ".itb",
+              ".tar",
+          )
 
-          candidates = sorted(firmware_dir.glob(f"*{device}*sysupgrade.bin"))
-          if not candidates:
-              print(f"No sysupgrade firmware found for {device} in {firmware_dir}")
+          image_files = sorted(
+              p for p in firmware_dir.iterdir()
+              if p.is_file()
+              and device in p.name
+              and p.name.endswith(image_suffixes)
+              and not p.name.endswith((".sha256", ".manifest"))
+          )
+          if not image_files:
+              print(f"No firmware images found for {device} in {firmware_dir}")
               for p in sorted(firmware_dir.glob("*")):
                   print(p)
               raise SystemExit(1)
 
-          src = candidates[0]
-          dist = Path("dist")
-          renamed = dist / f"{device}-sys.bin"
-          generic = dist / "sys.bin"
+          sysupgrade = next((p for p in image_files if "sysupgrade" in p.name), image_files[0])
+          artifact = Path("artifact")
+          lines = []
 
-          renamed.write_bytes(src.read_bytes())
-          generic.write_bytes(src.read_bytes())
-          (dist / "firmware-list.txt").write_text(str(src) + "\n", encoding="utf-8")
+          for src in image_files:
+              dst = artifact / src.name
+              dst.write_bytes(src.read_bytes())
+              lines.append(str(src))
+
+          renamed = artifact / f"{device}-sysupgrade.bin"
+          generic = artifact / "sysupgrade.bin"
+          renamed.write_bytes(sysupgrade.read_bytes())
+          generic.write_bytes(sysupgrade.read_bytes())
+          lines.extend([str(sysupgrade), str(sysupgrade)])
+          (artifact / "firmware-list.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
 
-          sha256sum "dist/${DEVICE}-sys.bin" "dist/sys.bin" > "dist/${DEVICE}-sys.bin.sha256"
+          sha256sum artifact/* > "artifact/${DEVICE}-sha256sums.txt"
 
-          echo "renamed_file=dist/${DEVICE}-sys.bin" >> "$GITHUB_OUTPUT"
-          echo "generic_file=dist/sys.bin" >> "$GITHUB_OUTPUT"
+          echo "renamed_file=artifact/${DEVICE}-sysupgrade.bin" >> "$GITHUB_OUTPUT"
+          echo "generic_file=artifact/sysupgrade.bin" >> "$GITHUB_OUTPUT"
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
@@ -287,10 +307,15 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: |
-            ${{ steps.collect.outputs.renamed_file }}
-            ${{ steps.collect.outputs.generic_file }}
-            dist/firmware-list.txt
-            dist/${{ env.DEVICE }}-sys.bin.sha256
+            artifact/*
+
+      - name: Upload metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadata-${{ env.DEVICE }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
             bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*.manifest
             bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/profiles.json
             bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/sha256sums
