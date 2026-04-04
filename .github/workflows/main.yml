@@ -244,6 +244,48 @@ jobs:
           make -j"$(nproc)" V=s 2>&1 | tee build.log
           ccache -s | tee ccache.log
 
+      - name: Sanity check firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          firmware_dir="bin/targets/${TARGET}/${SUBTARGET}"
+          image="$(find "$firmware_dir" -maxdepth 1 -type f -name "*${DEVICE}*sysupgrade.bin" | head -n1)"
+
+          if [ -z "$image" ]; then
+            echo "No sysupgrade image found for ${DEVICE}" >&2
+            find "$firmware_dir" -maxdepth 1 -type f -printf '%f\n' | sort
+            exit 1
+          fi
+
+          workdir="$(mktemp -d)"
+          tar -xf "$image" -C "$workdir"
+
+          if [ ! -f "$workdir/root" ]; then
+            echo "Extracted sysupgrade tar is missing root squashfs image" >&2
+            find "$workdir" -maxdepth 1 -type f -printf '%f\n' | sort
+            exit 1
+          fi
+
+          unsquashfs -d "$workdir/rootfs" "$workdir/root" >/dev/null
+
+          startwapp_refs="$(grep -Rsn 'startwapp\.sh' "$workdir/rootfs" 2>/dev/null || true)"
+          if [ -n "$startwapp_refs" ] && ! find "$workdir/rootfs" -type f -name 'startwapp.sh' | grep -q .; then
+            echo "startwapp.sh is referenced in rootfs but missing:" >&2
+            echo "$startwapp_refs" >&2
+            exit 1
+          fi
+
+          image_bytes="$(stat -c%s "$image")"
+          {
+            echo "### Firmware Sanity"
+            echo "- Device: ${DEVICE}"
+            echo "- Image: $(basename "$image")"
+            echo "- Size: ${image_bytes} bytes"
+            if grep -Rqs "encryption='none'" "$workdir/rootfs/etc/config" "$workdir/rootfs/etc/uci-defaults" 2>/dev/null; then
+              echo "- Warning: open wireless defaults detected in rootfs"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Collect firmware
         id: collect
         shell: bash
