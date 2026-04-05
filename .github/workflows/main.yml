@@ -84,7 +84,7 @@ jobs:
       DEVICE: ${{ matrix.device }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_COMPRESS: "1"
-      CCACHE_MAXSIZE: 2G
+      CCACHE_MAXSIZE: 8G
 
     steps:
       - name: Free disk space
@@ -116,19 +116,23 @@ jobs:
           ccache -M "${CCACHE_MAXSIZE}"
 
       - name: Restore dl cache
-        uses: actions/cache@v4
+        id: restore-dl-cache
+        uses: actions/cache/restore@v4
         with:
           path: dl
-          key: ${{ runner.os }}-dl-${{ hashFiles('feeds.conf.default', 'include/version.mk', '.github/workflows/main.yml') }}
+          key: ${{ runner.os }}-dl-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            ${{ runner.os }}-dl-${{ github.ref_name }}-
             ${{ runner.os }}-dl-
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        id: restore-ccache
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ${{ runner.os }}-${{ env.DEVICE }}-ccache-${{ hashFiles('.github/workflows/main.yml', 'target/linux/mediatek/image/filogic.mk', 'target/linux/mediatek/dts/**', 'target/linux/mediatek/filogic/base-files/**', 'package/mtk/drivers/conninfra/**', 'package/mtk/drivers/mt_wifi/**', 'package/mtk/drivers/warp/**', 'package/mtk/drivers/wifi-profile/**', 'package/mtk/applications/mtwifi-cfg/**', 'package/mtk/applications/luci-app-mtwifi-cfg/**', 'package/mtk/applications/5g-modem/**') }}
+          key: ${{ runner.os }}-${{ env.DEVICE }}-ccache-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            ${{ runner.os }}-${{ env.DEVICE }}-ccache-${{ github.ref_name }}-
             ${{ runner.os }}-${{ env.DEVICE }}-ccache-
             ${{ runner.os }}-ccache-
 
@@ -183,6 +187,8 @@ jobs:
           CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}=y
           CONFIG_CCACHE=y
           CONFIG_PACKAGE_kmod-conninfra=y
+          CONFIG_MTK_CONNINFRA_APSOC=y
+          CONFIG_MTK_CONNINFRA_APSOC_MT7981=y
           CONFIG_PACKAGE_kmod-mediatek_hnat=y
           CONFIG_PACKAGE_kmod-mt_wifi=y
           CONFIG_PACKAGE_kmod-warp=y
@@ -212,7 +218,7 @@ jobs:
 
           make defconfig
 
-          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_adb|CONFIG_PACKAGE_libatomic|CONFIG_PACKAGE_libevdev|CONFIG_PACKAGE_libusb-1.0|CONFIG_PACKAGE_libudev-zero|CONFIG_PACKAGE_usbutils|CONFIG_PACKAGE_usbids|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
+          grep -E "CONFIG_TARGET_mediatek|CONFIG_TARGET_mediatek_filogic|CONFIG_TARGET_mediatek_filogic_DEVICE_${DEVICE}|CONFIG_CCACHE|CONFIG_MTK_CONNINFRA_APSOC|CONFIG_MTK_CONNINFRA_APSOC_MT7981|CONFIG_PACKAGE_kmod-mediatek_hnat|CONFIG_PACKAGE_kmod-mt_wifi|CONFIG_PACKAGE_mtwifi-cfg|CONFIG_PACKAGE_luci-app-mtwifi-cfg|CONFIG_PACKAGE_mtk-smp|CONFIG_PACKAGE_adb|CONFIG_PACKAGE_libatomic|CONFIG_PACKAGE_libevdev|CONFIG_PACKAGE_libusb-1.0|CONFIG_PACKAGE_libudev-zero|CONFIG_PACKAGE_usbutils|CONFIG_PACKAGE_usbids|CONFIG_PACKAGE_luci-app-c5800-688-wtmodem" .config
 
       - name: Download sources
         shell: bash
@@ -305,3 +311,17 @@ jobs:
             logs/**
             tmp/**/*.log
             tmp/**/*.txt
+
+      - name: Save dl cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: dl
+          key: ${{ steps.restore-dl-cache.outputs.cache-primary-key }}
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ${{ steps.restore-ccache.outputs.cache-primary-key }}
