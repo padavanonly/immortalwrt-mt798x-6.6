@@ -220,6 +220,14 @@ jobs:
           set -euxo pipefail
           make download -j"$(nproc)"
 
+      - name: Bootstrap host build tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make tools/ninja/compile -j1 V=s
+          [ -x staging_dir/host/bin/ninja ]
+          staging_dir/host/bin/ninja --version
+
       - name: Build firmware
         shell: bash
         run: |
@@ -285,7 +293,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ env.DEVICE }}
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: warn
           include-hidden-files: true
           path: |
