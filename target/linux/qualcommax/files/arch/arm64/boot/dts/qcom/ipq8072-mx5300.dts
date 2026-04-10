@@ -28,15 +28,12 @@
 		led-running = &led_system_blue;
 		led-failsafe = &led_system_red;
 		led-upgrade = &led_system_green;
+		label-mac-device = &dp2;
 	};
 
 	chosen {
 		stdout-path = "serial0:115200n8";
 		bootargs-append = " root=/dev/ubiblock0_0 rootfstype=squashfs ro";
-	};
-
-	aliases {
-		label-mac-device = &dp2;
 	};
 
 	keys {
