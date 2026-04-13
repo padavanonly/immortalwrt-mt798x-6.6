@@ -1954,6 +1954,18 @@ define Device/routerich_ax3000-v1
 endef
 TARGET_DEVICES += routerich_ax3000-v1
 
+define Device/ruijie_rg-x60
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := RG-X60
+  DEVICE_DTS := mt7986a-ruijie-rg-x60
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  SUPPORTED_DEVICES += X60
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware kmod-phy-airoha-en8811h
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += ruijie_rg-x60
+
 define Device/ruijie_rg-x60-pro
   DEVICE_VENDOR := Ruijie
   DEVICE_MODEL := RG-X60 Pro
