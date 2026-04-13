@@ -1,0 +1,31 @@
+From ab6549a99c7cc96eb4639aabe7066b898d9c1407 Mon Sep 17 00:00:00 2001
+From: Hauke Mehrtens <hauke@hauke-m.de>
+Date: Mon, 13 Apr 2026 10:28:48 +0200
+Subject: [PATCH] file: avoid sending uninitialized stack memory for broken
+ symlinks
+
+When readlink() fails (returns -1), tbuf is left uninitialized.
+The unconditional blobmsg_add_string() call that followed would
+include whatever happened to be on the stack in the RPC reply,
+leaking kernel/stack memory to callers.
+
+Only add the "name" field to the response when readlink() succeeds.
+
+Assisted-by: Claude:claude-sonnet-4-6
+Link: https://github.com/openwrt/rpcd/pull/34
+Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
+
+diff --git a/file.c b/file.c
+index eeb0713..fd4925c 100644
+--- a/file.c
++++ b/file.c
+@@ -579,8 +579,8 @@ rpc_file_list(struct ubus_context *ctx, struct ubus_object *obj,
+ 				tlen = readlink(entrypath, tbuf, sizeof(tbuf) - 1);
+ 				if (tlen >= 0) {
+ 					tbuf[tlen] = '\0';
++					blobmsg_add_string(&buf, "name", tbuf);
+ 				}
+-				blobmsg_add_string(&buf, "name", tbuf);
+ 
+ 				struct stat target;
+ 				if (!stat(entrypath, &target)) {
