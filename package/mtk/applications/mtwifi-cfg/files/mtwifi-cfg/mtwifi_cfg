@@ -211,16 +211,6 @@ function __apcli_auto_connect(ifname)
     __exec_iwpriv_cmd(ifname, "ApCliAutoConnect", "3")
 end
 
-function run_wapp_hook()
-    local startwapp = "/sbin/startwapp.sh"
-
-    if utils.exists(startwapp) then
-        os.execute(startwapp)
-    else
-        nixio.syslog("info", "mtwifi-cfg: skip wapp hook, " .. startwapp .. " not found")
-    end
-end
-
 function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
     nixio.syslog("info", "mtwifi-cfg: start "..devname)
     local dev = l1dat.devname_ridx[devname]
@@ -419,26 +409,26 @@ function mtwifi_cfg_setup(argv)
     local WirelessMode
 
     if cfg.config.band == "2g" then
-    WirelessMode = 9  -- PHY_11BGN_MIXED
-    if is_ax_mode(cfg) then
-        WirelessMode = 16  -- PHY_11AX_24G
-    elseif is_be_mode(cfg) then
-        WirelessMode = 22 -- PHY_11BE_24G
+        WirelessMode = 9  -- PHY_11BGN_MIXED
+        if is_ax_mode(cfg) then
+            WirelessMode = 16  -- PHY_11AX_24G
+        elseif is_be_mode(cfg) then
+            WirelessMode = 22 -- PHY_11BE_24G
+        end
+    elseif cfg.config.band == "5g" then
+        WirelessMode = 15 -- PHY_11VHT_N_MIXED
+        if is_ax_mode(cfg) then
+            WirelessMode = 17 -- PHY_11AX_5G
+        elseif is_be_mode(cfg) then
+            WirelessMode = 23 -- PHY_11BE_5G
+        end
+    elseif cfg.config.band == "6g" then
+        if is_ax_mode(cfg) then
+            WirelessMode = 18 -- PHY_11AX_6G
+        elseif is_be_mode(cfg) then
+            WirelessMode = 24 -- PHY_11BE_6G
+        end
     end
-elseif cfg.config.band == "5g" then
-    WirelessMode = 15 -- PHY_11VHT_N_MIXED
-    if is_ax_mode(cfg) then
-        WirelessMode = 17 -- PHY_11AX_5G
-    elseif is_be_mode(cfg) then
-        WirelessMode = 23 -- PHY_11BE_5G
-    end
-elseif cfg.config.band == "6g" then
-    if is_ax_mode(cfg) then
-        WirelessMode = 18 -- PHY_11AX_6G
-    elseif is_be_mode(cfg) then
-        WirelessMode = 24 -- PHY_11BE_6G
-    end
-end
 
 
     if not WirelessMode then
@@ -494,7 +484,7 @@ end
             dats.ApCliSsid = v.config.ssid or ""
             dats.ApCliBssid = v.config.bssid or ""
             dats.MACRepeaterEn = (v.config.bssid and v.config.bssid ~= "") and 1 or 0
-            dats.ApcliMacAddress = v.config.macaddr or ""
+            dats.ApcliMacAddress = v.config.macaddr or (dats.MacAddress_Default or "")
             dats.ApCliAuthMode = defs.enc2dat[v.config.encryption][1]
             dats.ApCliEncrypType = defs.enc2dat[v.config.encryption][2]
             dats.ApCliWPAPSK = v.config.key or ""
@@ -603,22 +593,20 @@ end
     for idx = 0,vif_num-1 do
         v = cfg.interfaces[string.format("%d", idx)]
         if v.config.mode == "ap" then
-            if idx == 0 then
-            if v.config.macaddr and v.config.macaddr ~= "" then
-                dats.MacAddress = v.config.macaddr
-            end
-            else
-                set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or "")
-            end
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
             set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
-	    set_dat(dats, apidx, "MldGroup", v.config.mlo)
-	    if not v.config.mlo then
-                    set_dat(dats, apidx, "MldGroup", "0")
+            set_dat(dats, apidx, "MldGroup", v.config.mlo)
+            if not v.config.mlo then
+                set_dat(dats, apidx, "MldGroup", "0")
+                if idx == 0 then
+                    dats.MacAddress = v.config.macaddr or (dats.MacAddress_Default or "")
+                else
+                    set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or (dats.MacAddress_Default or ""))
+                end
             else
-                    set_dat(dats, apidx, "MldGroup", "1")
+                set_dat(dats, apidx, "MldGroup", "1")
             end
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
             set_dat(dats, apidx, "RRMEnable", v.config.ieee80211k)
