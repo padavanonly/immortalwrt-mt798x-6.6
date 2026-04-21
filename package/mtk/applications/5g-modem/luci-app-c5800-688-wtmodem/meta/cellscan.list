@@ -1,0 +1,8 @@
+/usr/lib/lua/luci/view/cellscan/cellscan_mt5700m.htm
+/usr/share/modem/keyPairCellScan_mt5700.sh
+/usr/lib/lua/luci/view/cellscan/cellscan_row.htm
+/usr/lib/lua/luci/model/cbi/cellscan.lua
+/usr/share/modem/keyPairCellScan.sh
+/usr/lib/lua/luci/view/cellscan/cellscan_null.htm
+/usr/lib/lua/luci/view/cellscan/cellscan.htm
+/usr/lib/lua/luci/controller/cellscan.lua

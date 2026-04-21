@@ -1,0 +1,14 @@
+{
+	"kernel": "5.4.255",
+	"hostname": "NRadio-C5800-688",
+	"system": "ARMv8 Processor rev 4",
+	"model": "NRadio-C5800-688",
+	"board_name": "HCMT7981-emmc",
+	"release": {
+		"distribution": "ImmortalWrt",
+		"version": "21.02-SNAPSHOT",
+		"revision": "r0-3fa9687",
+		"target": "mediatek/mt7981",
+		"description": "ImmortalWrt 21.02-SNAPSHOT r0-3fa9687"
+	}
+}

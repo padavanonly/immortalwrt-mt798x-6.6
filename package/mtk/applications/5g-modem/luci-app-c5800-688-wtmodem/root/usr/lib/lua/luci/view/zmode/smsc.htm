@@ -1,0 +1,197 @@
+<%+header%>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <H2>巴龙模组短信管理工具</H2>
+    <H4>温馨提示：短信收取需要打开模组设定-常规设置-短信开关</H4>
+    <style>
+
+        h2 {
+            margin-bottom: 20px;
+            color: #f2ff00;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+            background: #3e3e3e;
+            text-align: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            border-radius: 15px; /* 表格圆角 */
+            overflow: hidden; /* 防止表格内容溢出 */
+        }
+
+        th, td {
+            padding: 10px;
+            border: 1px solid #ccc
+            
+        }
+
+        td:nth-child(3) { /* 针对第三列的特定样式 */
+            word-wrap: break-word; /* 允许单词断行 */
+            text-align: left;
+        }
+
+        td:nth-child(1) { /* 针对第三列的特定样式 */
+            word-wrap: break-word; /* 允许单词断行 */
+            text-align: center
+            
+            
+        }
+
+        td:nth-child(2) { /* 针对第三列的特定样式 */
+            word-wrap: break-word; /* 允许单词断行 */
+            text-align: center;
+        }
+
+        td:nth-child(4) { /* 针对第三列的特定样式 */
+            word-wrap: break-word; /* 允许单词断行 */
+            text-align: center;
+        }
+
+        th {
+            background-color: #4d4d4d;
+            color: white;
+            
+        }
+
+        .button {
+            background: #4d4d4d;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            width: 49%;
+        }
+
+        .button-2 {
+            background: #4d4d4d;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            width: 49%;
+        }
+
+        .button:hover {
+            background: #357ab7;
+        }
+
+        .button-2:hover {
+            background: #357ab7;
+        }
+
+        .delete-button {
+            background: #d9534f;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .delete-button:hover {
+            background: #c9302c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button class="button" onclick="sendcmd()">刷新短信</button>
+        <button class="button-2" onclick="confirmDelete()">删除所有短信</button>
+        <table id="messages">
+            <thead>
+                <tr>
+                    <th>发件人</th>
+                    <th>发件时间</th>
+                    <th>内容</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+
+    <script type="text/javascript">
+        function sendcmd() {
+            var s = 'at+cmgl=4'; 
+            var v = '1'; 
+            XHR.get('<%=luci.dispatcher.build_url("admin", "modem", "smscs")%>', { set: s, p: v }, function(x, rv) {
+                var pd = rv.smsc;
+                displayMessages(pd);
+            });
+        }
+
+        function confirmDelete() {
+            var userConfirmed2 = confirm("你确定要删除所有短信吗？此操作无法撤销。");
+            if (userConfirmed2) {
+                deleteallMessage()
+            } 
+        }
+
+        function deleteMessage(index) {
+            var command = 'AT+CMGD=' + index;
+            var port = '1'; 
+            XHR.get('<%=luci.dispatcher.build_url("admin", "modem", "smscs")%>', { set: command, p: port }, function(x, rv) {
+                sendcmd();
+            });
+        }
+
+        function deleteallMessage() {
+            var command = 'AT+CMGD=0,4'
+            var port = '1'; 
+            XHR.get('<%=luci.dispatcher.build_url("admin", "modem", "smscs")%>', { set: command, p: port }, function(x, rv) {
+                sendcmd();
+                alert('用户已删除所有短信！');
+            });
+        }
+
+        function displayMessages(smsData) {
+            var messagesContainer = document.getElementById("messages").getElementsByTagName('tbody')[0];
+            messagesContainer.innerHTML = ''; // 清空之前的短信
+            var messages = smsData.split('------------------------------------------------------\n');
+            messages.forEach(function(message, index) {
+                if (message.trim() !== '') {
+                    var lines = message.split('\n');
+                    var sender = lines[2].split(':')[1];
+                    var time = lines[3].split(':')[1];
+                    var content = lines.slice(4).join('\n');
+                    var row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${sender}</td>
+                        <td>${time}</td>
+                        <td>${content}</td>
+                        <td><button class="delete-button" data-index="${index}">删除</button></td>
+                    `;
+                    messagesContainer.appendChild(row);
+                }
+            });
+
+            var deleteButtons = document.querySelectorAll('.delete-button');
+                deleteButtons.forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        var index = this.getAttribute('data-index');
+                        var userConfirmed = confirm('您确定要删除第 ' + index + ' 条短信吗？');
+                        if (userConfirmed) {
+                            deleteMessage(index);
+                        } 
+                    });
+                });
+        }
+
+        window.onload = function() {
+            sendcmd();
+        };
+    </script>
+</body>
+<%+footer%>
+

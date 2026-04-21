@@ -1,0 +1,25 @@
+#!/bin/sh
+
+. /lib/functions/system.sh
+
+case "$(board_name)" in
+hcmt7981-emmc|HCMT7981-emmc|hcmt7981-688-emmc|HCMT7981-688-emmc)
+	changed=0
+
+	if [ "$(uci -q get wireless.MT7981_1_1.phy)" = "rax0" ]; then
+		uci -q set wireless.MT7981_1_1.phy='ra0'
+		changed=1
+	fi
+
+	if [ "$(uci -q get wireless.MT7981_1_2.phy)" = "ra0" ]; then
+		uci -q set wireless.MT7981_1_2.phy='rax0'
+		changed=1
+	fi
+
+	if [ "$changed" = "1" ]; then
+		uci -q commit wireless
+	fi
+	;;
+esac
+
+exit 0

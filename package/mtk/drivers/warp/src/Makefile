@@ -95,7 +95,6 @@ OBJS+= mcu/warp_fwdl.o
 OBJS+= mcu/warp_woif.o
 OBJS+= mcu/warp_wo.o
 OBJS+= mcu/warp_woctrl.o
-OBJS+= warp_bm_v2.o
 ifeq ($(CONFIG_WARP_CHIPSET), mt7988)
 OBJS+= $(REG_DIR)/reg_v3/warp_mt7988.o
 endif

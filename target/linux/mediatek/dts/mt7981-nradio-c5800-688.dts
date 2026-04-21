@@ -1,0 +1,116 @@
+/dts-v1/;
+
+#include <dt-bindings/input/input.h>
+
+#include "mt7981-nradio-c5800-688-emmc.dtsi"
+
+/ {
+	model = "NRadio-C5800-688";
+
+	aliases {
+		serial0 = &uart0;
+		led-boot = &led_status;
+		led-failsafe = &led_status;
+		led-running = &led_status;
+		led-upgrade = &led_status;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	gpio_export {
+		compatible = "gpio-export";
+		#size-cells = <0>;
+
+		cpepower {
+			gpio-export,name = "cpe-pwr";
+			gpio-export,output = <0>;
+			gpios = <&pio 31 GPIO_ACTIVE_LOW>;
+		};
+
+		cpepower2 {
+			gpio-export,name = "cpe1-pwr";
+			gpio-export,output = <0>;
+			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
+		};
+
+		cpesel0 {
+			gpio-export,name = "cpe-sel0";
+			gpio-export,output = <0>;
+			gpios = <&pio 29 GPIO_ACTIVE_HIGH>;
+		};
+
+		cpesel1 {
+			gpio-export,name = "cpe-sel1";
+			gpio-export,output = <1>;
+			gpios = <&pio 7 GPIO_ACTIVE_HIGH>;
+		};
+
+		cpesel2 {
+			gpio-export,name = "cpe-sel2";
+			gpio-export,output = <1>;
+			gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
+		};
+
+		cpesel3 {
+			gpio-export,name = "cpe-sel3";
+			gpio-export,output = <1>;
+			gpios = <&pio 30 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	gpio-leds {
+		compatible = "gpio-leds";
+
+		sig1 {
+			label = "hc:blue:sig1";
+			gpios = <&pio 27 GPIO_ACTIVE_LOW>;
+		};
+
+		sig2 {
+			label = "hc:blue:sig2";
+			gpios = <&pio 5 GPIO_ACTIVE_LOW>;
+		};
+
+		sig3 {
+			label = "hc:blue:sig3";
+			gpios = <&pio 6 GPIO_ACTIVE_HIGH>;
+		};
+
+		int_led {
+			label = "hc:blue:int";
+			gpios = <&pio 9 GPIO_ACTIVE_HIGH>;
+		};
+
+		led_status: status {
+			label = "hc:blue:status";
+			gpios = <&pio 10 GPIO_ACTIVE_LOW>;
+		};
+
+		cmode5 {
+			label = "hc:blue:cmode5";
+			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
+		};
+
+		cmode4 {
+			label = "hc:blue:cmode4";
+			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
+		};
+
+		wifi {
+			label = "hc:blue:wifi";
+			gpios = <&pio 13 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&gkeys {
+	/delete-node/ wps;
+
+	reset {
+		label = "reset";
+		linux,code = <KEY_RESTART>;
+		gpios = <&pio 1 GPIO_ACTIVE_LOW>;
+	};
+};

@@ -1,0 +1,3 @@
+luci-app-Smstrun5700 - 1.5.0-1
+luci-app-WTModem - 1.3
+luci-app-cellscan - 1.01-2

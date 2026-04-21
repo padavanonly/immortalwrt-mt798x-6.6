@@ -1,0 +1,9 @@
+modem.@ndis[0]=ndis
+modem.@ndis[0].enable='1'
+modem.@ndis[0].simsel='0'
+modem.@ndis[0].smode='0'
+modem.@ndis[0].bandlist_lte='0'
+modem.@ndis[0].bandlist_nr='0'
+modem.@ndis[0].pingen='0'
+modem.@ndis[0].pingaddr='119.29.29.29'
+modem.@ndis[0].count='5'

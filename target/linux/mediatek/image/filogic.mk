@@ -2501,3 +2501,66 @@ ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 endif
 endef
 TARGET_DEVICES += wirelesstag_zx7981pd-ubootmod
+
+define Device/nradio_c5800-688
+  DEVICE_VENDOR := NRadio
+  DEVICE_MODEL := C5800-688
+  DEVICE_DTS := mt7981-nradio-c5800-688
+  DEVICE_DTS_DIR := ../dts
+  BOARD_NAME := nradio_c5800-688
+  DEVICE_PACKAGES := \
+	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
+	wifi-dats wifi-profile mtwifi-cfg luci-app-mtwifi-cfg \
+	mtk-smp \
+	luci-app-c5800-688-wtmodem \
+	adb usbutils usbids \
+	python3-light luci-theme-argon uhttpd uhttpd-mod-ubus \
+	f2fsck mkf2fs \
+	kmod-usb3 kmod-usb-core kmod-usb-xhci-hcd kmod-usb-xhci-mtk \
+	kmod-usb-acm kmod-usb-ehci kmod-usb-ohci kmod-usb-uhci \
+	kmod-usb-storage kmod-usb-net kmod-usb-net-cdc-ether \
+	kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm \
+	kmod-usb-net-huawei-cdc-ncm kmod-usb-net-qmi-wwan \
+	kmod-usb-net-qmi-wwan-fibocom kmod-usb-net-qmi-wwan-quectel \
+	kmod-usb-net-rndis kmod-usb-net-sierrawireless \
+	kmod-usb-serial kmod-usb-serial-option \
+	kmod-usb-serial-qualcomm kmod-usb-serial-wwan \
+	kmod-usb-wdm kmod-mhi-bus kmod-mhi-pci-generic \
+	kmod-mhi-net kmod-mhi-wwan-ctrl kmod-mhi-wwan-mbim
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += nradio_c5800-688
+
+define Device/nradio_c8-688
+  DEVICE_VENDOR := NRadio
+  DEVICE_MODEL := C8-688
+  DEVICE_DTS := mt7981-nradio-c8-688
+  DEVICE_DTS_DIR := ../dts
+  BOARD_NAME := HCMT7981-688-emmc
+  DEVICE_PACKAGES := \
+	kmod-conninfra kmod-mediatek_hnat kmod-mt_wifi kmod-warp \
+	wifi-dats wifi-profile mtwifi-cfg luci-app-mtwifi-cfg \
+	mtk-smp \
+	adb usbutils usbids \
+	python3-light luci-theme-argon uhttpd uhttpd-mod-ubus \
+	f2fsck mkf2fs \
+	kmod-usb3 kmod-usb-core kmod-usb-xhci-hcd kmod-usb-xhci-mtk \
+	kmod-usb-acm kmod-usb-ehci kmod-usb-ohci kmod-usb-uhci \
+	kmod-usb-storage kmod-usb-net kmod-usb-net-cdc-ether \
+	kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm \
+	kmod-usb-net-huawei-cdc-ncm kmod-usb-net-qmi-wwan \
+	kmod-usb-net-qmi-wwan-fibocom kmod-usb-net-qmi-wwan-quectel \
+	kmod-usb-net-rndis kmod-usb-net-sierrawireless \
+	kmod-usb-serial kmod-usb-serial-option \
+	kmod-usb-serial-qualcomm kmod-usb-serial-wwan \
+	kmod-usb-wdm kmod-mhi-bus kmod-mhi-pci-generic \
+	kmod-mhi-net kmod-mhi-wwan-ctrl kmod-mhi-wwan-mbim
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += nradio_c8-688

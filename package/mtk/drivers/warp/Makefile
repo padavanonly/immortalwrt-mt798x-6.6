@@ -54,11 +54,16 @@ endif
 USE_BIN_DIR:=$(MTK_WIFI_DIR)/warp_driver/bin
 
 define Build/Compile
-	$(MAKE) -C "$(LINUX_DIR)" V=1 \
-		$(KERNEL_MAKE_FLAGS) \
-		M="$(PKG_BUILD_DIR)" \
-		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)=$(CONFIG_$(c)))) \
-		modules
+	if [ "$$(CONFIG_WARP_CHIPSET)" = "mt7981" ]; then \
+		$(INSTALL_DIR) $(PKG_BUILD_DIR); \
+		$(CP) ./files/mt7981-ko/mtk_warp.ko $(PKG_BUILD_DIR)/mtk_warp.ko; \
+	else \
+		$(MAKE) -C "$(LINUX_DIR)" V=1 \
+			$(KERNEL_MAKE_FLAGS) \
+			M="$(PKG_BUILD_DIR)" \
+			$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)=$(CONFIG_$(c)))) \
+			modules; \
+	fi
 endef
 
 TARGET_CFLAGS += \

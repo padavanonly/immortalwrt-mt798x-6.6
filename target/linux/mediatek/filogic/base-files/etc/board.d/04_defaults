@@ -5,6 +5,66 @@ board=$(board_name)
 board_config_update
 
 case $board in
+nradio,c5800-688|\
+nradio_c5800-688|\
+hcmt7981-emmc|\
+HCMT7981-emmc|\
+hcmt7981-688-emmc|\
+HCMT7981-688-emmc)
+	uci -q batch <<-'EOF_INNER'
+		set network.lan='interface'
+		set network.lan.device='br-lan'
+		set network.lan.proto='static'
+		set network.lan.ipaddr='192.168.66.1'
+		set network.lan.netmask='255.255.255.0'
+		delete network.lan.ifname
+
+		delete network.@device[0]
+		add network device
+		set network.@device[-1].name='br-lan'
+		set network.@device[-1].type='bridge'
+		add_list network.@device[-1].ports='lan1'
+		add_list network.@device[-1].ports='lan2'
+		add_list network.@device[-1].ports='lan3'
+
+		set network.wan='interface'
+		set network.wan.proto='dhcp'
+		set network.wan.device='eth1'
+		set network.wan6='interface'
+		set network.wan6.proto='dhcpv6'
+		set network.wan6.device='eth1'
+		delete network.wan1
+		delete network.wan1v6
+
+		set network.BLUE4WAN='interface'
+		set network.BLUE4WAN.proto='dhcp'
+		set network.BLUE4WAN.device='BLUE4'
+		set network.BLUE4WANV6='interface'
+		set network.BLUE4WANV6.proto='dhcpv6'
+		set network.BLUE4WANV6.device='BLUE4'
+	EOF_INNER
+	uci commit network
+
+	if [ -f /usr/lib/lua/luci/controller/modem.lua ] && [ -d /usr/share/luci/menu.d ]; then
+		cat > /usr/share/luci/menu.d/luci-app-WTModem-compat.json <<-'EOF_MODEM'
+		{
+		  "admin/modem": {
+		    "title": "内置蜂窝",
+		    "order": 25,
+		    "action": {
+		      "type": "alias",
+		      "path": "admin/modem/modem"
+		    },
+		    "depends": {
+		      "fs": {
+		        "/usr/lib/lua/luci/controller/modem.lua": "file"
+		      }
+		    }
+		  }
+		}
+		EOF_MODEM
+	fi
+	;;
 openwrt,one)
 	ucidef_set_wireless_mac_count 2g 7
 	ucidef_set_wireless_mac_count 5g 7

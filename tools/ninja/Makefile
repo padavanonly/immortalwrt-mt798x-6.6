@@ -10,12 +10,14 @@ PKG_HASH:=821bdff48a3f683bc4bb3b6f0b5fe7b2d647cf65d52aeb63328c91a6c6df285a
 
 include $(INCLUDE_DIR)/host-build.mk
 
+NINJA_BOOTSTRAP:=$(if $(wildcard $(STAGING_DIR_HOST)/bin/ninja),,--bootstrap)
+
 define Host/Configure
 	cd $(HOST_BUILD_DIR) && \
 		$(HOST_MAKE_VARS) \
 		CXX="$(HOSTCXX_NOCACHE)" \
 		$(STAGING_DIR_HOST)/bin/$(PYTHON) configure.py \
-			$(if $(shell $(STAGING_DIR_HOST)/bin/ninja --version),,--bootstrap) \
+			$(NINJA_BOOTSTRAP) \
 			--no-rebuild \
 			--verbose
 	-$(Host/Install)
