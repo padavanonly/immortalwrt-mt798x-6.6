@@ -11,9 +11,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=$(PROJECT_GIT)/project/iwinfo.git
-PKG_SOURCE_DATE:=2024-10-20
-PKG_SOURCE_VERSION:=b94f066e3f5839b8509483cdd8f4f582a45fa233
-PKG_MIRROR_HASH:=ee0bce167707fe78f68a951b7ee1e0e61a92cae281e0e24eb709857ae849777e
+PKG_SOURCE_DATE:=2025-11-07
+PKG_SOURCE_VERSION:=5f4c213fc59f1a82d9f0140642d668ae2969531b
+PKG_MIRROR_HASH:=363e245821d9bc6ffe2cf20f4b51670f1f91928df22a2ffe73a06767f737fb6d
 PKG_MAINTAINER:=Jo-Philipp Wich <jo@mein.io>
 PKG_LICENSE:=GPL-2.0
 
@@ -33,7 +33,7 @@ define Package/libiwinfo
 endef
 
 define Package/libiwinfo/description
-  Wireless information library with simplified API for nl80211
+  Wireless information library with simplified API for nl80211, mtk
   and wext driver interfaces.
 endef
 
