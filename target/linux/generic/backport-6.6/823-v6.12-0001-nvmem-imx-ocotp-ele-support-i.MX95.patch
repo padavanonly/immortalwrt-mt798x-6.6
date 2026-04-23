@@ -40,7 +40,7 @@ Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
  	}
  
  	memcpy(val, ((u8 *)p) + skipbytes, bytes);
-@@ -182,8 +186,30 @@ static const struct ocotp_devtype_data i
+@@ -183,8 +187,30 @@ static const struct ocotp_devtype_data i
  	},
  };
  

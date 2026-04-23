@@ -39,7 +39,7 @@ This reverts commit 231ac951fabae2aaed8b2c00b4a097107be49c8c.
  
 -	tlb_vpn_size = tlbsize * sizeof(*tlb_vpns);
 -	tlb_vpns = (use_slab ?
--		    kmalloc(tlb_vpn_size, GFP_KERNEL) :
+-		    kmalloc(tlb_vpn_size, GFP_ATOMIC) :
 -		    memblock_alloc_raw(tlb_vpn_size, sizeof(*tlb_vpns)));
 -	if (WARN_ON(!tlb_vpns))
 -		return; /* Pray local_flush_tlb_all() is good enough. */

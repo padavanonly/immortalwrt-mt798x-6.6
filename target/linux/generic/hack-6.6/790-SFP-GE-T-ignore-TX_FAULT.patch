@@ -26,7 +26,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
-@@ -525,6 +525,9 @@ static const struct sfp_quirk sfp_quirks
+@@ -530,6 +530,9 @@ static const struct sfp_quirk sfp_quirks
  	SFP_QUIRK("HUAWEI", "MA5671A", sfp_quirk_2500basex,
  		  sfp_fixup_ignore_tx_fault_and_los),
  
