@@ -57,18 +57,25 @@
 
 --- a/include/iwinfo.h
 +++ b/include/iwinfo.h
-@@ -429,6 +429,8 @@
+@@ -243,6 +243,7 @@ struct iwinfo_rate_entry {
+ 	uint8_t nss;
+ 	uint8_t mhz_hi;
+ 	uint8_t eht_gi;
++	uint8_t eht_dcm;
+ };
+ 
+ struct iwinfo_assoclist_entry {
+@@ -437,6 +438,7 @@ extern const struct iwinfo_ops wext_ops;
  extern const struct iwinfo_ops madwifi_ops;
  extern const struct iwinfo_ops nl80211_ops;
  extern const struct iwinfo_ops wl_ops;
 +extern const struct iwinfo_ops mtk_ops;
-+
  
  #include "iwinfo/utils.h"
-
+ 
 --- a/iwinfo_lib.c
 +++ b/iwinfo_lib.c
-@@ -401,6 +401,9 @@
+@@ -409,6 +409,9 @@ static const struct iwinfo_ops *backends
  #ifdef USE_WEXT
  	&wext_ops,
  #endif
@@ -78,24 +85,43 @@
  };
  
  const char * iwinfo_type(const char *ifname)
-
 --- a/include/iwinfo/lua.h
 +++ b/include/iwinfo/lua.h
-@@ -41,6 +41,10 @@
+@@ -41,6 +41,9 @@
  #define IWINFO_NL80211_META	"iwinfo.nl80211"
  #endif
  
 +#ifdef USE_MTK
 +#define IWINFO_MTK_META	"iwinfo.mtk"
 +#endif
-+
  
  #define LUA_REG(type,op) \
  	{ #op, iwinfo_L_##type##_##op }
-
+--- a/iwinfo_cli.c
++++ b/iwinfo_cli.c
+@@ -337,6 +337,9 @@ static char * format_assocrate(struct
+ 
+ 			p += snprintf(p, l, ", EHT-GI %d", r->eht_gi);
+ 			l = sizeof(buf) - (p - buf);
++
++			p += snprintf(p, l, ", EHT-DCM %d", r->eht_dcm);
++			l = sizeof(buf) - (p - buf);
+ 		}
+ 	}
+ 
 --- a/iwinfo_lua.c
 +++ b/iwinfo_lua.c
-@@ -788,6 +788,35 @@
+@@ -315,6 +315,9 @@ static void set_rateinfo(lua_State
+ 		if (r->is_eht) {
+ 			lua_pushnumber(L, r->eht_gi);
+ 			lua_setfield(L, -2, rx ? "rx_eht_gi" : "tx_eht_gi");
++
++			lua_pushnumber(L, r->eht_dcm);
++			lua_setfield(L, -2, rx ? "rx_eht_dcm" : "tx_eht_dcm");
+ 		}
+ 
+ 		if (r->is_vht) {
+@@ -788,6 +791,35 @@
  LUA_WRAP_STRUCT_OP(nl80211,hardware_id)
  #endif
  
@@ -131,7 +157,7 @@
  /* Wext */
  #ifdef USE_WEXT
  LUA_WRAP_INT_OP(wext,channel)
-@@ -917,6 +946,38 @@
+@@ -917,6 +949,38 @@
  };
  #endif
  
@@ -170,7 +196,7 @@
  /* Wext table */
  #ifdef USE_WEXT
  static const luaL_reg R_wext[] = {
-@@ -988,6 +1049,15 @@
+@@ -988,6 +1052,15 @@
  	lua_setfield(L, -2, "nl80211");
  #endif
  
@@ -227,7 +253,7 @@
 +		}
 +	}
 +	lseek(fd, 0, SEEK_SET);
-+ close(fd); return 0;
++	close(fd); return 0;
  	bc = mmap(NULL, len, PROT_READ, MAP_PRIVATE|MAP_LOCKED, fd, 0);
  
  	if ((void *)bc != MAP_FAILED)
