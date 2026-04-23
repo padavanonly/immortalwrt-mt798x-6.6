@@ -314,39 +314,70 @@ static void fill_rate_info(HTTRANSMIT_SETTING HTSetting, struct iwinfo_rate_entr
 	unsigned int mcs, unsigned int nss)
 {
 	unsigned long DataRate = 0;
+	uint8_t mode = HTSetting.field.MODE;
+	uint8_t bw = HTSetting.field.BW;
+	uint8_t short_gi = HTSetting.field.ShortGI;
+	uint8_t dcm = !(HTSetting.field.MCS & 0x10);
 
-	if (HTSetting.field.MODE >= MODE_HTMIX && HTSetting.field.MODE < MODE_HE)
+	re->is_eht = 0;
+	re->is_he = 0;
+	re->is_vht = 0;
+	re->is_ht = 0;
+
+	if (mode >= MODE_HTMIX && mode <= MODE_VHT)
 	{
-		if (HTSetting.field.ShortGI)
+		if (short_gi)
 			re->is_short_gi = 1;
 	}
 
-	if (HTSetting.field.MODE >= MODE_HTMIX && HTSetting.field.MODE <= MODE_HTGREENFIELD)
-		re->is_ht = 1;
-	else if (HTSetting.field.MODE == MODE_VHT)
+	if (mode >= MODE_HE && mode < MODE_UNKNOWN) {
+		if (mode == MODE_EHT || mode == MODE_EHT_ER_SU || mode == MODE_EHT_TB || mode == MODE_EHT_MU) {
+			re->is_eht = 1;
+			re->eht_gi = short_gi;
+			re->eht_dcm = dcm;
+		} else {
+			re->is_he = 1;
+			re->he_gi = short_gi;
+			re->he_dcm = dcm;
+		}
+	} else if (mode == MODE_VHT) {
 		re->is_vht = 1;
-	else if (HTSetting.field.MODE >= MODE_HE)
-		re->is_he = 1;
+	} else if (mode >= MODE_HTMIX && mode <= MODE_HTGREENFIELD) {
+		re->is_ht = 1;
+	}
 
-	if (HTSetting.field.MODE >= MODE_HE)
-		re->he_gi = HTSetting.field.ShortGI;
-
-	if (HTSetting.field.BW == BW_20)
-		re->mhz = 20;
-	else if (HTSetting.field.BW == BW_40)
-		re->mhz = 40;
-	else if (HTSetting.field.BW == BW_80)
-		re->mhz = 80;
-	else if (HTSetting.field.BW == BW_160)
-		re->mhz = 160;
+	switch (bw) {
+		case BW_20:
+			re->mhz = 20;
+			break;
+		case BW_40:
+			re->mhz = 40;
+			break;
+		case BW_80:
+			re->mhz = 80;
+			break;
+		case BW_160:
+			re->mhz = 160;
+			break;
+		case BW_320:
+			re->mhz_hi = 320 / 256, re->mhz = 320 % 256;
+			break;
+		default:
+			re->mhz = 20;
+			break;
+	}
 
 	re->is_40mhz = (re->mhz == 40);
 
-	if (HTSetting.field.MODE >= MODE_HE) {
-		get_rate_he((mcs & 0xf), HTSetting.field.BW, nss, 0, &DataRate);
-		if (HTSetting.field.ShortGI == 1)
+	if (mode >= MODE_HE && mode < MODE_UNKNOWN) {
+		if (mode == MODE_EHT || mode == MODE_EHT_ER_SU || mode == MODE_EHT_TB || mode == MODE_EHT_MU) {
+			get_rate_eht((mcs & 0xf), bw, nss, dcm, &DataRate);
+		} else {
+			get_rate_he((mcs & 0xf), bw, nss, dcm, &DataRate);
+		}
+		if (short_gi == 1)
 			DataRate = (DataRate * 967) >> 10;
-		else if (HTSetting.field.ShortGI == 2)
+		else if (short_gi == 2)
 			DataRate = (DataRate * 870) >> 10;
 	} else {
 		getRate(HTSetting, &DataRate);
@@ -360,14 +391,14 @@ static void mtk_parse_rateinfo(RT_802_11_MAC_ENTRY *pe,
 	HTTRANSMIT_SETTING TxRate;
 	HTTRANSMIT_SETTING RxRate;
 
-	unsigned int mcs = 0;
-	unsigned int nss = 0;
+	unsigned int mcs = 0, mcs_r = 0;
+	unsigned int nss = 0, nss_r = 0;
 
-	unsigned int mcs_r = 0;
-	unsigned int nss_r = 0;
+	memset(rx_rate, 0, sizeof(struct iwinfo_rate_entry));
+	memset(tx_rate, 0, sizeof(struct iwinfo_rate_entry));
 
 	TxRate.word = pe->TxRate.word;
-	RxRate.word = pe->LastRxRate;
+	RxRate.word = pe->LastRxRate.word;
 
 	mcs = TxRate.field.MCS;
 	mcs_r = RxRate.field.MCS;
@@ -382,7 +413,9 @@ static void mtk_parse_rateinfo(RT_802_11_MAC_ENTRY *pe,
 	}
 	tx_rate->mcs = mcs;
 
-	if (RxRate.field.MODE >= MODE_VHT) {
+	if (RxRate.field.MODE == MODE_UNKNOWN) {
+		mcs_r = mcs_r;
+	} else if (RxRate.field.MODE >= MODE_VHT) {
 		nss_r = (((mcs_r & (0x3 << 4)) >> 4) + 1) / (RxRate.field.STBC + 1);
 		mcs_r = mcs_r & 0xF;
 		rx_rate->nss = nss_r;
@@ -437,7 +470,12 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
 		e->signal = pe->AvgRssi0;
 		e->signal_avg = pe->AvgRssi0;
 		e->noise = pe->AvgRssi0 - pe->AvgSnr;
+		e->inactive = pe->InactiveTime;
 		e->connected_time = pe->ConnectedTime;
+		e->rx_packets = pe->RxPackets;
+		e->tx_packets = pe->TxPackets;
+		e->rx_bytes = pe->RxBytes;
+		e->tx_bytes = pe->TxBytes;
 		mtk_parse_rateinfo(pe, &e->rx_rate, &e->tx_rate);
 
 		*len += sizeof(struct iwinfo_assoclist_entry);
@@ -938,16 +976,16 @@ static int mtk_get_htmode(const char *dev, int *buf)
 
 		if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0)
 		{
-			 if (WMODE_CAP_BE(wmode)) {
-                                switch (bw) {
-                                        case BW_20: *buf = IWINFO_HTMODE_EHT20; break;
-                                        case BW_40: *buf = IWINFO_HTMODE_EHT40; break;
-                                        case BW_80: *buf = IWINFO_HTMODE_EHT80; break;
-                                        case BW_8080: *buf = IWINFO_HTMODE_EHT80_80; break;
-                                        case BW_160: *buf = IWINFO_HTMODE_EHT160; break;
-                                }
-                        }
-                        else if (WMODE_CAP_AX(wmode)) {
+			if (WMODE_CAP_BE(wmode)) {
+				switch (bw) {
+					case BW_20: *buf = IWINFO_HTMODE_EHT20; break;
+					case BW_40: *buf = IWINFO_HTMODE_EHT40; break;
+					case BW_80: *buf = IWINFO_HTMODE_EHT80; break;
+					case BW_8080: *buf = IWINFO_HTMODE_EHT80_80; break;
+					case BW_160: *buf = IWINFO_HTMODE_EHT160; break;
+					case BW_320: *buf = IWINFO_HTMODE_EHT320; break;
+				}
+			} else if (WMODE_CAP_AX(wmode)) {
 				switch (bw) {
 					case BW_20: *buf = IWINFO_HTMODE_HE20; break;
 					case BW_40: *buf = IWINFO_HTMODE_HE40; break;
@@ -1137,10 +1175,10 @@ static int mtk_get_hardware_id_from_l1profile(struct iwinfo_hardware_id *id)
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
 	} else if (!strcmp(buf, "MT7990")) {
-                id->vendor_id = 0x14c3;
-                id->device_id = 0x7990;
-                id->subsystem_vendor_id = id->vendor_id;
-                id->subsystem_device_id = id->device_id;
+		id->vendor_id = 0x14c3;
+		id->device_id = 0x7990;
+		id->subsystem_vendor_id = id->vendor_id;
+		id->subsystem_device_id = id->device_id;
 	} else {
 		return -1;
 	}

@@ -9,14 +9,16 @@
 #define UINT8	unsigned char
 #define UINT16	unsigned short
 #define UINT32	unsigned int
+#define UINT64	unsigned long long
 #define INT32	int
+#define INT64	long long
 #define INT 	int
 
 typedef union _HTTRANSMIT_SETTING_FIX {
 	struct {
 		unsigned short MCS:6;
 		unsigned short ldpc:1;
-		unsigned short BW:2;
+		unsigned short BW:4;
 		unsigned short ShortGI:2;
 		unsigned short STBC:1;
 		unsigned short eTxBF:1;
@@ -39,11 +41,16 @@ typedef struct _RT_802_11_MAC_ENTRY_FIX {
 	unsigned char           AvgSnr;
 	unsigned int            ConnectedTime;
 	HTTRANSMIT_SETTING      TxRate;
-	unsigned int            LastRxRate;
+	HTTRANSMIT_SETTING      LastRxRate;
 	short                   StreamSnr[3];
 	short                   SoundingRespSnr[3];
-	unsigned int			EncryMode;
-	unsigned int			AuthMode;
+	unsigned int            InactiveTime;
+	unsigned int            EncryMode;
+	unsigned int            AuthMode;
+	unsigned int            TxPackets; //TxPackets.QuadPart
+	unsigned int            RxPackets; //RxPackets.QuadPart
+	unsigned long long      TxBytes;
+	unsigned long long      RxBytes;
 } RT_802_11_MAC_ENTRY;
 
 #define MAX_NUMBER_OF_MAC               544
@@ -87,12 +94,20 @@ struct channel_list_basic {
 #define MODE_HTGREENFIELD 3
 #define MODE_VHT 4
 #define MODE_HE 5
-#define MODE_HE_5G 6
-#define MODE_HE_24G 7
+#define MODE_EHT 6
+
 #define MODE_HE_SU	8
+#define MODE_HE_24G 7
 #define MODE_HE_EXT_SU	9
 #define MODE_HE_TRIG	10
 #define MODE_HE_MU	11
+#define MODE_EHT_ER_SU	13
+#define MODE_EHT_TB	14
+#define MODE_EHT_MU	15
+#define MODE_UNKNOWN 255
+
+#define MODE_HE_SU_REMAPPING  5
+#define MODE_HE_EXTSU_REMAPPING  6
 
 #define TMI_TX_RATE_OFDM_6M     11
 #define TMI_TX_RATE_OFDM_9M     15
@@ -120,6 +135,7 @@ enum oid_bw {
 	BAND_WIDTH_10,
 	BAND_WIDTH_5,
 	BAND_WIDTH_8080,
+	BAND_WIDTH_320,
 	BAND_WIDTH_BOTH,
 	BAND_WIDTH_25,
 	BAND_WIDTH_20_242TONE,
@@ -135,6 +151,7 @@ enum oid_bw {
 #define BW_8080		BAND_WIDTH_8080
 #define BW_25		BAND_WIDTH_25
 #define BW_20_242TONE	BAND_WIDTH_20_242TONE
+#define BW_320		BAND_WIDTH_320
 #define BW_NUM		BAND_WIDTH_NUM
 
 enum WIFI_MODE {
@@ -148,9 +165,13 @@ enum WIFI_MODE {
 	WMODE_AX_24G = 1 << 6,
 	WMODE_AX_5G = 1 << 7,
 	WMODE_AX_6G = 1 << 8,
-        WMODE_BE_24G = 1 << 9,
-        WMODE_BE_5G = 1 << 10,
-        WMODE_BE_6G = 1 << 11,
+	WMODE_BE_24G = 1 << 9,
+	WMODE_BE_5G = 1 << 10,
+	WMODE_BE_6G = 1 << 11,
+	/*
+	 * total types of supported wireless mode,
+	 * add this value once yow add new type
+	 */
 	WMODE_COMP = 12,
 };
 
@@ -165,8 +186,6 @@ enum MTK_CH_BAND {
 	MTK_CH_BAND_5G = 1,
 	MTK_CH_BAND_6G = 2,
 };
-
-#define MAX_NUM_OF_CHANNELS		59
 
 struct __attribute__ ((packed)) chnList {
 	unsigned char channel;
