@@ -1944,6 +1944,17 @@ define Device/ruijie_rg-x60-new
 endef
 TARGET_DEVICES += ruijie_rg-x60-new
 
+define Device/ruijie_rg-x60-new-expand
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := RG-X60 New (Expand)
+  DEVICE_DTS := mt7986a-ruijie-rg-x60-new-expand
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += ruijie_rg-x60-new-expand
+
 define Device/ruijie_rg-x60-new-stock
   DEVICE_VENDOR := Ruijie
   DEVICE_MODEL := RG-X60 New (Stock)
