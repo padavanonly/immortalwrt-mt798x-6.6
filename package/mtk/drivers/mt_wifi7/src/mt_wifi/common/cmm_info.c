@@ -53,52 +53,52 @@ INT MCSMappingRateTable[] = {
 	90, 180, 270, 360, 540, 720, 810, 900, /* BW 40, 400ns GI, MCS 0~23 */
 
 	/*for 11ac:20 Mhz 800ns GI*/
-	6,  13, 19, 26,  39,  52,  58,  65,  78,  90,     /*1ss mcs 0~8*/
-	13, 26, 39, 52,  78,  104, 117, 130, 156, 180,     /*2ss mcs 0~8*/
-	19, 39, 58, 78,  117, 156, 175, 195, 234, 260,   /*3ss mcs 0~9*/
-	26, 52, 78, 104, 156, 208, 234, 260, 312, 360,     /*4ss mcs 0~8*/
+	6,  13, 19, 26,  39,  52,  58,  65,  78,  90,  97,  100,     /*1ss mcs 0~11*/
+	13, 26, 39, 52,  78,  104, 117, 130, 156, 180, 195, 217,     /*2ss mcs 0~11*/
+	19, 39, 58, 78,  117, 156, 175, 195, 234, 260, 292, 325,     /*3ss mcs 0~11*/
+	26, 52, 78, 104, 156, 208, 234, 260, 312, 360, 390, 433,     /*4ss mcs 0~11*/
 
 	/*for 11ac:40 Mhz 800ns GI*/
-	13,	27,	40,	54,	 81,  108, 121, 135, 162, 180,   /*1ss mcs 0~9*/
-	27,	54,	81,	108, 162, 216, 243, 270, 324, 360,   /*2ss mcs 0~9*/
-	40,	81,	121, 162, 243, 324, 364, 405, 486, 540,  /*3ss mcs 0~9*/
-	54,	108, 162, 216, 324, 432, 486, 540, 648, 720, /*4ss mcs 0~9*/
+	13,	27,	40,	54,	 81,  108, 121, 135, 162, 180, 202, 225,  /*1ss mcs 0~11*/
+	27,	54,	81,	108, 162, 216, 243, 270, 324, 360, 405,  450,  /*2ss mcs 0~11*/
+	40,	81,	121, 162, 243, 324, 364, 405, 486, 540,  607,   675,  /*3ss mcs 0~11*/
+	54,	108, 162, 216, 324, 432, 486, 540, 648, 720,  810,  900,  /*4ss mcs 0~11*/
 
 	/*for 11ac:80 Mhz 800ns GI*/
-	29,	58,	87,	117, 175, 234, 263, 292, 351, 390,   /*1ss mcs 0~9*/
-	58,	117, 175, 243, 351, 468, 526, 585, 702, 780, /*2ss mcs 0~9*/
-	87,	175, 263, 351, 526, 702, 0,	877, 1053, 1170, /*3ss mcs 0~9*/
-	117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560, /*4ss mcs 0~9*/
+	29,	58,	87,	117, 175, 234, 263, 292, 351, 390,  439,  487, /*1ss mcs 0~11*/
+	58,	117, 175, 243, 351, 468, 526, 585, 702, 780,  877,  975,  /*2ss mcs 0~11*/
+	87,	175, 263, 351, 526, 702, 0,	877, 1053, 1170,  1316,  1462,  /*3ss mcs 0~11*/
+	117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560,  1755,  1950,  /*4ss mcs 0~11*/
 
 	/*for 11ac:160 Mhz 800ns GI*/
-	58,	117, 175, 234, 351, 468, 526, 585, 702, 780, /*1ss mcs 0~9*/
-	117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560, /*2ss mcs 0~9*/
-	175, 351, 526, 702, 1053, 1404, 1579, 1755, 2160, 0, /*3ss mcs 0~8*/
-	234, 468, 702, 936, 1404, 1872, 2106, 2340, 2808, 3120, /*4ss mcs 0~9*/
+	58,	117, 175, 234, 351, 468, 526, 585, 702, 780,  877,  975,  /*1ss mcs 0~11*/
+	117, 234, 351, 468, 702, 936, 1053, 1170, 1404, 1560,  1755,  1959,  /*2ss mcs 0~11*/
+	175, 351, 526, 702, 1053, 1404, 1579, 1755, 2106, 2340, 2632,  2925,  /*3ss mcs 0~11*/
+	234, 468, 702, 936, 1404, 1872, 2106, 2340, 2808, 3120,  3510,  3900,  /*4ss mcs 0~11*/
 
 	/*for 11ac:20 Mhz 400ns GI*/
-	7,	14,	21,	28,  43,  57,   65,	 72,  86,  100,    /*1ss mcs 0~8*/
-	14,	28,	43,	57,	 86,  115,  130, 144, 173, 200,    /*2ss mcs 0~8*/
-	21,	43,	65,	86,	 130, 173,  195, 216, 260, 288,  /*3ss mcs 0~9*/
-	28,	57,	86,	115, 173, 231,  260, 288, 346, 400,    /*4ss mcs 0~8*/
+	7,	14,	21,	28,  43,  57,   65,	 72,  86,  96,  108, 120,  /*1ss mcs 0~11*/
+	14,	28,	43,	57,	 86,  115,  130, 144, 173, 192,  217,  241,/*2ss mcs 0~11*/
+	21,	43,	65,	86,	 130, 173,  195, 216, 260, 288,  325,  361,/*3ss mcs 0~11*/
+	28,	57,	86,	115, 173, 231,  260, 288, 346, 385,  433,  481,    /*4ss mcs 0~11*/
 
 	/*for 11ac:40 Mhz 400ns GI*/
-	15,	30,	45,	60,	 90,  120,  135, 150, 180, 200,  /*1ss mcs 0~9*/
-	30,	60,	90,	120, 180, 240,  270, 300, 360, 400,  /*2ss mcs 0~9*/
-	45,	90,	135, 180, 270, 360,  405, 450, 540, 600, /*3ss mcs 0~9*/
-	60,	120, 180, 240, 360, 480,  540, 600, 720, 800, /*4ss mcs 0~9*/
+	15,	30,	45,	60,	 90,  120,  135, 150, 180, 200,  225,  250,/*1ss mcs 0~11*/
+	30,	60,	90,	120, 180, 240,  270, 300, 360, 400,  450,  500,  /*2ss mcs 0~11*/
+	45,	90,	135, 180, 270, 360,  405, 450, 540, 600,  675,  750,  /*3ss mcs 0~11*/
+	60,	120, 180, 240, 360, 480,  540, 600, 720, 800,  900,  1000,  /*4ss mcs 0~11*/
 
 	/*for 11ac:80 Mhz 400ns GI*/
-	32,	65,	97,	130, 195, 260,  292, 325, 390, 433,  /*1ss mcs 0~9*/
-	65,	130, 195, 260, 390, 520,  585, 650, 780, 866, /*2ss mcs 0~9*/
-	97,	195, 292, 390, 585, 780,  0,	 975, 1170, 1300, /*3ss mcs 0~9*/
-	130, 260, 390, 520, 780, 1040,	1170, 1300, 1560, 1733, /*4ss mcs 0~9*/
+	32,	65,	97,	130, 195, 260,  292, 325, 390, 433,  487,  542,  /*1ss mcs 0~11*/
+	65,	130, 195, 260, 390, 520,  585, 650, 780, 866,  975,  1063,  /*2ss mcs 0~11*/
+	97,	195, 292, 390, 585, 780,  0,	 975, 1170, 1300,  1462,  1625,  /*3ss mcs 0~11*/
+	130, 260, 390, 520, 780, 1040,	1170, 1300, 1560, 1733,  1950,  2167,  /*4ss mcs 0~11*/
 
 	/*for 11ac:160 Mhz 400ns GI*/
-	65,	130, 195, 260, 390, 520,  585, 650, 780, 866, /*1ss mcs 0~9*/
-	130, 260, 390, 520, 780, 1040,	1170, 1300, 1560, 1733, /*2ss mcs 0~9*/
-	195, 390, 585, 780, 1170, 1560,	1755, 1950, 2340, 0, /*3ss mcs 0~8*/
-	260, 520, 780, 1040, 1560, 2080,	2340, 2600, 3120, 3466, /*4ss mcs 0~9*/
+	65,	130, 195, 260, 390, 520,  585, 650, 780, 866,  975,  1083,  /*1ss mcs 0~11*/
+	130, 260, 390, 520, 780, 1040,	1170, 1300, 1560, 1733,  1950,  2167,  /*2ss mcs 0~11*/
+	195, 390, 585, 780, 1170, 1560,	1755, 1950, 2340, 2600,  2925,  3250,   /*3ss mcs 0~11*/
+	260, 520, 780, 1040, 1560, 2080,  2340, 2600, 3120, 3466, 3900, 4333,/*4ss mcs 0~11*/
 
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 	20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37
@@ -106,19 +106,41 @@ INT MCSMappingRateTable[] = {
 
 #ifdef DOT11_EHT_BE
 #define MAX_NUM_EHT_BANDWIDTHS 5
-#define MAX_NUM_EHT_SPATIAL_STREAMS 16
-#define MAX_NUM_EHT_MCS_ENTRIES 14
-UINT16 eht_mcs_phyrate_mapping_table[MAX_NUM_EHT_BANDWIDTHS][MAX_NUM_EHT_MCS_ENTRIES] = {
-	/*20 Mhz 1SS*/
-	{8, 17, 25, 34, 51, 68, 77, 86, 103, 114, 129, 143, 154, 172},
-	/*40 Mhz 1 SS */
-	{17, 34, 51, 68, 103, 137, 154, 172, 206, 229, 258, 286, 309, 344},
-	/*80 Mhz 1 SS */
-	{36, 72, 108, 144, 216, 288, 324, 360, 432, 480, 540, 600, 648, 720},
-	/*160 Mhz 1 SS */
-	{72, 144, 216, 288, 432, 576, 648, 720, 864, 960, 1080, 1201, 1297, 1441},
-	/*320 Mhz 1 SS */
-	{144, 288, 432, 576, 864, 1152, 1297, 1441, 1729, 1921, 2161, 2401, 2594, 2882}
+#define MAX_NUM_EHT_SPATIAL_STREAMS 4
+#define MAX_NUM_EHT_MCS_ENTRIES 16
+UINT16 eht_mcs_phyrate_mapping_table[MAX_NUM_EHT_BANDWIDTHS]
+									[MAX_NUM_EHT_SPATIAL_STREAMS]
+									[MAX_NUM_EHT_MCS_ENTRIES] = {
+	{	/* 20 Mhz */
+		{8,  17,  25,  34,  51,  68,  77,  86, 103, 114, 129, 143, 154, 172, 0,  4}, /*1SS*/
+		{17, 34,  51,  68, 103, 137, 154, 172, 206, 229, 258, 286, 309, 344, 0,  8}, /*2SS*/
+		{25, 51,  77, 103, 154, 206, 232, 258, 309, 344, 387, 430, 464, 516, 0, 12}, /*3SS*/
+		{34, 68, 103, 137, 206, 275, 306, 344, 412, 458, 516, 573, 619, 688, 0, 17}  /*4SS*/
+	},
+	{	/*40 Mhz */
+		{17,  34,  51,  68, 103, 137, 154, 172, 206, 229,  258,  286,  309,  344,  0,  8},
+		{34,  68, 103, 137, 206, 275, 309, 344, 412, 458,  516,  573,  619,  688,  0, 17},
+		{51, 103, 154, 206, 309, 412, 464, 516, 619, 688,  774,  860,  929, 1032,  0, 25},
+		{68, 137, 206, 275, 412, 550, 619, 688, 825, 917, 1032, 1147, 1238, 1376,  0, 34}
+	},
+	{	/* 80 Mhz */
+		{ 36,  72, 108, 144, 216,  288,  324,  360,  432,  480,  540,  600,  648,  720, 144, 18},
+		{ 72, 144, 216, 288, 432,  576,  648,  720,  864,  960, 1080, 1201, 1297, 1441, 288, 36},
+		{108, 216, 324, 432, 648,  864,  972, 1080, 1297, 1441, 1621, 1801, 1945, 2161, 432, 54},
+		{144, 288, 432, 576, 864, 1152, 1297, 1441, 1729, 1921, 2161, 2402, 2594, 2882, 576, 72}
+	},
+	{	/* 160 Mhz */
+		{ 72, 144, 216,  288,  432,  576,  648,  720,  864,  960, 1080, 1201, 1297, 1441,  288,  36},
+		{144, 288, 432,  576,  864, 1152, 1297, 1441, 1729, 1921, 2161, 2402, 2594, 2882,  576,  72},
+		{216, 432, 648,  864, 1297, 1729, 1945, 2161, 2594, 2882, 3242, 3602, 3891, 4323,  864, 108},
+		{288, 576, 864, 1152, 1729, 2305, 2594, 2882, 3458, 3843, 4323, 4803, 5188, 5764, 1152, 144}
+	},
+	{	/* 320 Mhz */
+		{144,  288,  432,  576,  864, 1152, 1297, 1441, 1729, 1921, 2161, 2401,  2594,  2882,  576,   72},
+		{288,  576,  864, 1152, 1729, 2305, 2594, 2882, 3458, 3843, 4323, 4803,  5188,  5764,  1152, 144},
+		{432,  864, 1297, 1729, 2594, 3458, 3891, 4323, 5188, 5764, 6485, 7205,  7782,  8647,  1729, 216},
+		{576, 1152, 1729, 2305, 3458, 4611, 5188, 5764, 6917, 7686, 8647, 9607, 10376, 11529,  2305, 288}
+	}
 };
 #endif /* DOT11_EHT_BE */
 
@@ -7462,6 +7484,52 @@ ERROR:
 }
 #endif
 
+union _HTTRANSMIT_SETTING_FIX {
+	struct {
+		UINT32 MCS:6;
+		UINT32 ldpc:1;
+		UINT32 BW:4;
+		UINT32 ShortGI:2;
+		UINT32 STBC:1;
+		UINT32 eTxBF:1;
+		UINT32 iTxBF:1;
+		UINT32 MODE:4;
+		UINT32 Nss:4;
+		UINT32 padding:8;
+	} field;
+	UINT32 word;
+};
+
+typedef struct _RT_802_11_MAC_ENTRY_FIX {
+	UCHAR ApIdx;
+	UCHAR Addr[MAC_ADDR_LEN];
+	UINT16 Aid;
+	UCHAR Psm;		/* 0:PWR_ACTIVE, 1:PWR_SAVE */
+	UCHAR MimoPs;		/* 0:MMPS_STATIC, 1:MMPS_DYNAMIC, 3:MMPS_Enabled */
+	CHAR AvgRssi0;
+	CHAR AvgRssi1;
+	CHAR AvgRssi2;
+	CHAR AvgRssi3;
+	UINT8 AvgSnr;
+	UINT32 ConnectedTime;
+	union _HTTRANSMIT_SETTING_FIX TxRate;
+	union _HTTRANSMIT_SETTING_FIX LastRxRate;
+	SHORT StreamSnr[3];				/* BF SNR from RXWI. Units=0.25 dB. 22 dB offset removed */
+	SHORT SoundingRespSnr[3];			/* SNR from Sounding Response. Units=0.25 dB. 22 dB offset removed */
+	UINT32 InactiveTime;
+	UINT32 EncryMode;
+	UINT32 AuthMode;
+	UINT32 TxPackets;  //TxPackets.QuadPart
+	UINT32 RxPackets;  //RxPackets.QuadPart
+	UINT64 TxBytes;
+	UINT64 RxBytes;
+} RT_802_11_MAC_ENTRY_FIX, *PRT_802_11_MAC_ENTRY_FIX;
+
+typedef struct _RT_802_11_MAC_TABLE_FIX {
+	ULONG Num;
+	RT_802_11_MAC_ENTRY_FIX Entry[544];
+} RT_802_11_MAC_TABLE_FIX, *PRT_802_11_MAC_TABLE_FIX;
+
 USHORT RTMPGetLastTxRate(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 {
 	union _HTTRANSMIT_SETTING lastTxRate;
@@ -7486,6 +7554,159 @@ USHORT RTMPGetLastTxRate(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 	lastTxRate.word = pEntry->HTPhyMode.word;
 #endif /* RACTRL_FW_OFFLOAD_SUPPORT */
 	return lastTxRate.word;
+}
+
+UINT32 RTMPGetLastTxRate_FIX(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
+{
+	union _HTTRANSMIT_SETTING_FIX lastTxRate;
+#ifdef RACTRL_FW_OFFLOAD_SUPPORT
+	EXT_EVENT_TX_STATISTIC_RESULT_T rTxStatResult;
+#endif
+	os_zero_mem(&lastTxRate, sizeof(union _HTTRANSMIT_SETTING_FIX));
+
+#ifdef RACTRL_FW_OFFLOAD_SUPPORT
+	os_zero_mem(&rTxStatResult, sizeof(EXT_EVENT_TX_STATISTIC_RESULT_T));
+	MtCmdGetTxStatistic(pAd, GET_TX_STAT_ENTRY_TX_RATE, 0/*Don't Care*/, pEntry->wcid, &rTxStatResult);
+	lastTxRate.field.MODE = rTxStatResult.rEntryTxRate.MODE;
+	/* bw from txrx info should be transfer to oid*/
+	lastTxRate.field.BW = (rTxStatResult.rEntryTxRate.BW < 4) ? rTxStatResult.rEntryTxRate.BW : BW_320;
+	lastTxRate.field.ldpc = rTxStatResult.rEntryTxRate.ldpc ? 1 : 0;
+	if (lastTxRate.field.MODE >= MODE_HE)
+		lastTxRate.field.ShortGI = rTxStatResult.rEntryTxRate.ShortGI;
+	else
+		lastTxRate.field.ShortGI = (rTxStatResult.rEntryTxRate.ShortGI == 1) ? 1 : 0;
+	lastTxRate.field.STBC = rTxStatResult.rEntryTxRate.STBC;
+
+	if (lastTxRate.field.MODE >= MODE_VHT)
+		lastTxRate.field.MCS = (((rTxStatResult.rEntryTxRate.VhtNss - 1) & 0x3) << 4) + rTxStatResult.rEntryTxRate.MCS;
+	else if (lastTxRate.field.MODE == MODE_OFDM)
+		lastTxRate.field.MCS = getLegacyOFDMMCSIndex(rTxStatResult.rEntryTxRate.MCS) & 0x0000003F;
+	else
+		lastTxRate.field.MCS = rTxStatResult.rEntryTxRate.MCS;
+
+#else
+	lastTxRate.word = pEntry->HTPhyMode.word;
+#endif /* RACTRL_FW_OFFLOAD_SUPPORT */
+	return lastTxRate.word;
+}
+
+UINT32 RTMPGetLastRxRate(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
+{
+	union _HTTRANSMIT_SETTING_FIX lastRxRate;
+	UCHAR ucBand = HcGetBandByWdev(pEntry->wdev);
+#ifdef RACTRL_FW_OFFLOAD_SUPPORT
+	EXT_EVENT_PHY_STATE_RX_RATE rRxStatResult;
+#endif
+	os_zero_mem(&lastRxRate, sizeof(union _HTTRANSMIT_SETTING_FIX));
+ 
+#ifdef RACTRL_FW_OFFLOAD_SUPPORT
+	os_zero_mem(&rRxStatResult, sizeof(EXT_EVENT_PHY_STATE_RX_RATE));
+	MtCmdPhyGetRxRate(pAd, CMD_PHY_STATE_CONTENTION_RX_PHYRATE, ucBand, pEntry->wcid, (UINT32 *)&rRxStatResult);
+	lastRxRate.field.MODE = rRxStatResult.u1RxMode;
+	/* bw from txrx info should be transfer to oid*/
+	lastRxRate.field.BW = (rRxStatResult.u1BW < 4) ? rRxStatResult.u1BW : BW_320;
+	lastRxRate.field.ldpc = rRxStatResult.u1Coding;
+	if (lastRxRate.field.MODE >= MODE_HE)
+		lastRxRate.field.ShortGI = rRxStatResult.u1Gi;
+	else
+		lastRxRate.field.ShortGI = (rRxStatResult.u1Gi == 1) ? 1 : 0;
+	lastRxRate.field.STBC = rRxStatResult.u1Stbc;
+
+	if (rRxStatResult.u1RxMode == MODE_UNKNOWN)
+		lastRxRate.field.MCS = rRxStatResult.u1RxRate;
+	else if (lastRxRate.field.MODE >= MODE_VHT)
+		lastRxRate.field.MCS = ((rRxStatResult.u1RxNsts & 0x3) << 4) + rRxStatResult.u1RxRate;
+	else if (lastRxRate.field.MODE == MODE_OFDM)
+		lastRxRate.field.MCS = getLegacyOFDMMCSIndex(rRxStatResult.u1RxRate & 0xF);
+	else
+		lastRxRate.field.MCS = rRxStatResult.u1RxRate;
+#else
+	lastRxRate.word = pEntry->LastRxRate;
+#endif /* RACTRL_FW_OFFLOAD_SUPPORT */
+	return lastRxRate.word;
+}
+
+VOID RTMPIoctlGetMacTableStaInfo(
+	IN PRTMP_ADAPTER pAd,
+	IN RTMP_IOCTL_INPUT_STRUCT *wrq)
+{
+	UINT8 u1Snr = 0;
+	INT i, rssi_len;
+	BOOLEAN need_send = FALSE;
+	RT_802_11_MAC_TABLE_FIX *pMacTab = NULL;
+	PRT_802_11_MAC_ENTRY_FIX pDst;
+	PMAC_TABLE_ENTRY pEntry;
+	CHAR rssi[4] = {-127, -127, -127, -127};
+	/* allocate memory */
+	os_alloc_mem(NULL, (UCHAR **)&pMacTab, sizeof(RT_802_11_MAC_TABLE_FIX)); 
+
+	if (pMacTab == NULL) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "Allocate memory fail!!!\n");
+		return;
+	}
+
+	NdisZeroMemory(pMacTab, sizeof(RT_802_11_MAC_TABLE_FIX));
+
+	rssi_len = MCS_NSS_CAP(pAd)->max_path[MAX_PATH_RX];
+	if (rssi_len > (int)(sizeof(rssi) / sizeof(rssi[0])))
+		rssi_len = sizeof(rssi) / sizeof(rssi[0]);
+
+	for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
+		//pEntry = &(pAd->MacTab->Content[i]);
+		pEntry = entry_get(pAd, i);
+
+		if (pEntry->wdev != NULL && pEntry->wdev->if_dev != NULL) {
+			/* As per new GUI design ifname with index as ra0/ra1/rai0/rai1/... (may not work with older GUI)*/
+			if (!strcmp(wrq->ifr_ifrn.ifrn_name, pEntry->wdev->if_dev->name))
+				need_send = TRUE;
+			else
+				need_send = FALSE;
+		}
+
+		if (((IS_ENTRY_CLIENT(pEntry) || IS_ENTRY_PEER_AP(pEntry) || IS_ENTRY_REPEATER(pEntry))
+			&& (pEntry->Sst == SST_ASSOC) && (need_send == TRUE)) ||
+			(IS_ENTRY_WDS(pEntry) && (need_send == TRUE))) {
+			pDst = &pMacTab->Entry[pMacTab->Num];
+			pDst->ApIdx = pEntry->func_tb_idx;
+			COPY_MAC_ADDR(pDst->Addr, &pEntry->Addr);
+			pDst->Aid = (USHORT)pEntry->Aid;
+			pDst->Psm = pEntry->PsMode;
+#ifdef DOT11_N_SUPPORT
+			pDst->MimoPs = pEntry->MmpsMode;
+#endif /* DOT11_N_SUPPORT */
+			/* Fill in RSSI per entry*/
+			rtmp_get_rssi(pAd, pEntry->wcid, rssi, rssi_len);
+			pDst->AvgRssi0 = rssi[0];
+			pDst->AvgRssi1 = rssi[1];
+			pDst->AvgRssi2 = rssi[2];
+			pDst->AvgRssi3 = rssi[3];
+			/* Fill in SNR per entry*/
+			UniCmdPerStaGetSNR(pAd, pEntry->wcid, &u1Snr);
+			pDst->AvgSnr = u1Snr;
+			/* the connected time per entry*/
+			pDst->ConnectedTime = pEntry->StaConnectTime;
+			pDst->TxRate.word = RTMPGetLastTxRate_FIX(pAd, pEntry);
+			pDst->LastRxRate.word = RTMPGetLastRxRate(pAd, pEntry);
+			pDst->EncryMode = pEntry->SecConfig.PairwiseCipher;
+			pDst->AuthMode = pEntry->SecConfig.AKMMap;
+			pDst->TxBytes = (UINT64)pEntry->TxBytes;
+			pDst->RxBytes = (UINT64)pEntry->RxBytes;
+			pDst->TxPackets = (UINT32)pEntry->TxPackets.QuadPart;
+			pDst->RxPackets = (UINT32)pEntry->RxPackets.QuadPart;
+			pDst->InactiveTime = (UINT32)(pEntry->StaIdleTimeout - pEntry->NoDataIdleCount); /* unit: ms */
+			pMacTab->Num += 1;
+			/* Add to avoid Array cross board */
+			if (pMacTab->Num >= 544)
+				break;
+		}
+	}
+
+	wrq->u.data.length = sizeof(RT_802_11_MAC_TABLE_FIX);
+
+	if (copy_to_user(wrq->u.data.pointer, pMacTab, wrq->u.data.length))
+		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO, "copy_to_user() fail\n");
+
+	os_free_mem(pMacTab);
 }
 
 INT Set_DynamicAGG_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
@@ -8020,7 +8241,8 @@ INT	Set_HtMcs_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 #ifdef CONFIG_STA_SUPPORT
 	BOOLEAN bAutoRate = FALSE;
 #endif /* CONFIG_STA_SUPPORT */
-	UCHAR HtMcs = MCS_AUTO, Mcs_tmp, ValidMcs = 15;
+	UCHAR Mcs_tmp, ValidMcs = 15;
+	USHORT HtMcs = MCS_AUTO;
 #ifdef DOT11_VHT_AC
 	RTMP_STRING *mcs_str, *ss_str;
 	UCHAR ss = 0, mcs = 0;
@@ -8048,7 +8270,7 @@ INT	Set_HtMcs_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 			ss = os_str_tol(ss_str, 0, 10);
 
 			if ((ss <= wlan_operate_get_tx_stream(wdev)) && (mcs <= 7))
-				HtMcs = ((ss - 1) << 4) | mcs;
+				HtMcs = (((ss - 1) & 0x3) << 4) | mcs;
 			else {
 				HtMcs = MCS_AUTO;
 				ss = 0;
@@ -11885,18 +12107,21 @@ static INT dump_mac_table(RTMP_ADAPTER *pAd, UINT32 ent_type, BOOLEAN bReptCli)
 			LastRxRate.field.ShortGI = rRxStatResult.u1Gi ? 1 : 0;
 			LastRxRate.field.STBC = rRxStatResult.u1Stbc;
 
-			if (LastRxRate.field.MODE >= MODE_VHT)
-				LastRxRate.field.MCS = ((rRxStatResult.u1RxNsts & 0x3) << 4) + rRxStatResult.u1RxRate;
-			else if (LastRxRate.field.MODE == MODE_OFDM)
-				LastRxRate.field.MCS = getLegacyOFDMMCSIndex(rRxStatResult.u1RxRate & 0xF);
-			else
-				LastRxRate.field.MCS = rRxStatResult.u1RxRate;
-
 			phy_mode_r = rRxStatResult.u1RxMode;
 			rate_r = rRxStatResult.u1RxRate & 0x3F;
 			bw_r = rRxStatResult.u1BW;
 			sgi_r = rRxStatResult.u1Gi;
 			stbc_r = rRxStatResult.u1Stbc;
+
+			if (phy_mode_r == MODE_UNKNOWN) {
+				bw_r = 0xFF;
+				LastRxRate.field.MCS = rRxStatResult.u1RxRate;
+			} else if (LastRxRate.field.MODE >= MODE_VHT)
+				LastRxRate.field.MCS = ((rRxStatResult.u1RxNsts & 0x3) << 4) + rRxStatResult.u1RxRate;
+			else if (LastRxRate.field.MODE == MODE_OFDM)
+				LastRxRate.field.MCS = getLegacyOFDMMCSIndex(rRxStatResult.u1RxRate & 0xF);
+			else
+				LastRxRate.field.MCS = rRxStatResult.u1RxRate;
 
 			ret = snprintf(tmp_str, temp_str_len, "%s/%s", get_phymode_str(phy_mode), get_phymode_str(phy_mode_r));
 			if (os_snprintf_error(temp_str_len, ret)) {
@@ -11925,6 +12150,12 @@ static INT dump_mac_table(RTMP_ADAPTER *pAd, UINT32 ent_type, BOOLEAN bReptCli)
 				}
 			}
 
+		if (phy_mode_r == MODE_UNKNOWN) {
+			left_buf_size = temp_str_len - strlen(tmp_str);
+			ret = snprintf(tmp_str + strlen(tmp_str), left_buf_size, "NA");
+			if (os_snprintf_error(left_buf_size, ret))
+				MTWF_PRINT("%s: final_name snprintf error!\n", __func__);
+		} else
 #ifdef DOT11_VHT_AC
 
 			if (phy_mode_r >= MODE_VHT) {
@@ -12029,7 +12260,7 @@ static INT dump_mac_table(RTMP_ADAPTER *pAd, UINT32 ent_type, BOOLEAN bReptCli)
 				getRate(LastTxRate, &DataRate);
 			}
 
-			if (phy_mode_r >= MODE_HE) {
+			if (phy_mode_r >= MODE_HE && phy_mode_r < MODE_UNKNOWN) {
 #ifdef DOT11_EHT_BE
 				if ((phy_mode_r == MODE_EHT) || (phy_mode_r == MODE_EHT_ER_SU) || (phy_mode_r == MODE_EHT_TB) || (phy_mode_r == MODE_EHT_MU))
 					get_rate_eht((rate_r & 0xf), bw_r, nss_r, 0, &DataRate_r);
@@ -14956,24 +15187,22 @@ void  getRate(union _HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate)
 		Antenna = (HTSetting.field.MCS >> 4) + 1;
 
 		if (HTSetting.field.BW == BW_20) {
-			rate_index = 112 + ((Antenna - 1) * 10) +
-						 ((UCHAR)HTSetting.field.ShortGI * 160) +
+			rate_index = 112 + ((Antenna - 1) * 12) +
+						 ((UCHAR)HTSetting.field.ShortGI * 192) +
 						 ((UCHAR)MCS);
 		} else if (HTSetting.field.BW == BW_40) {
-			rate_index = 152 + ((Antenna - 1) * 10) +
-						 ((UCHAR)HTSetting.field.ShortGI * 160) +
+			rate_index = 160 + ((Antenna - 1) * 12) +
+						 ((UCHAR)HTSetting.field.ShortGI * 192) +
 						 ((UCHAR)MCS);
 		} else if (HTSetting.field.BW == BW_80) {
-			rate_index = 192 + ((Antenna - 1) * 10) +
-						 ((UCHAR)HTSetting.field.ShortGI * 160) +
+			rate_index = 208 + ((Antenna - 1) * 12) +
+						 ((UCHAR)HTSetting.field.ShortGI * 192) +
 						 ((UCHAR)MCS);
 		} else if (HTSetting.field.BW == BW_160) {
-			rate_index = 232 + ((Antenna - 1) * 10) +
-						 ((UCHAR)HTSetting.field.ShortGI * 160) +
+			rate_index = 256 + ((Antenna - 1) * 12) +
+						 ((UCHAR)HTSetting.field.ShortGI * 192) +
 						 ((UCHAR)MCS);
 		}
-		if (MCS > MCS_9)
-			rate_index = rate_index - 2;
 	} else {
 #endif /* DOT11_VHT_AC */
 		if (HTSetting.field.MODE >= MODE_HTMIX) {
@@ -15006,9 +15235,6 @@ void  getRate(union _HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate)
 		value = (MCSMappingRateTable[rate_index] * 5) / 10;
 	else
 		value =  MCSMappingRateTable[rate_index];
-
-	if (MCS > MCS_9)
-		value = (value * 10) / 8;
 
 	if (HTSetting.field.MODE >= MODE_HTMIX && HTSetting.field.MODE < MODE_VHT)
 		value *= Antenna;
@@ -15054,7 +15280,6 @@ void  get_rate_he(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate
 
 #ifdef DOT11_EHT_BE
 void  get_rate_eht(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate)
-
 {
 	ULONG value = 0;
 
@@ -15073,13 +15298,20 @@ void  get_rate_eht(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rat
 	if (bw >= MAX_NUM_EHT_BANDWIDTHS)
 		bw = MAX_NUM_EHT_BANDWIDTHS - 1;
 
-	value = eht_mcs_phyrate_mapping_table[bw][mcs];
+	nss--;
 
-	*last_tx_rate = (ULONG)(value * nss);
+	value = eht_mcs_phyrate_mapping_table[bw][nss][mcs];
+	/*EHT-MCS15 is always DCM (EHT-MCS14 only support 6G), others are similar to HE*/
+	if (mcs <= 13 && dcm && value)
+		value = value / 2 ;
+
+	*last_tx_rate = value;
 
 	MTWF_DBG(NULL, DBG_CAT_HW, CATHW_PHY, DBG_LVL_INFO,
 				"BW: %d MCS: %d Antenna num: %d  Rate = %llu\n",
-				bw, mcs, nss, *last_tx_rate);
+				bw, mcs, nss+1, value);
+
+	return;
 }
 
 #endif
@@ -23059,187 +23291,6 @@ INT show_mld_info(PRTMP_ADAPTER pAd, char *arg)
 	return TRUE;
 }
 #endif /* DOT11_EHT_BE */
-//mtk patch:based on rssi to adjust the tx rate when in low t-put. hongchen
-UINT32 RTMPGetLastTxRateTW(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
-{
-    union _HTTRANSMIT_SETTING lastTxRate;
-    union _EHTTRANSMIT_SETTING lastTxRateEH;
-    //UCHAR max_mode,max_bw , max_mcs,max_nss ,max_sgi,min_mode ,min_bw ,min_mcs,min_nss,min_sgi;
-    UCHAR phy_mode,bw,mcs,nss,sgi,rate;
-    CHAR avgRssi;
-    
-#ifdef RACTRL_FW_OFFLOAD_SUPPORT
-    EXT_EVENT_TX_STATISTIC_RESULT_T rTxStatResult;
-    MtCmdGetTxStatistic(pAd, GET_TX_STAT_ENTRY_TX_RATE, 0/*Don't Care*/, pEntry->wcid, &rTxStatResult);
-    if (rTxStatResult.rEntryTxRate.MODE >= MODE_HE)
-    {
-        lastTxRateEH.field.MODE = rTxStatResult.rEntryTxRate.MODE;
-        lastTxRateEH.field.BW = rTxStatResult.rEntryTxRate.BW;
-        lastTxRateEH.field.ldpc = rTxStatResult.rEntryTxRate.ldpc ? 1 : 0;
-        lastTxRateEH.field.ShortGI = rTxStatResult.rEntryTxRate.ShortGI;
-        lastTxRateEH.field.STBC = rTxStatResult.rEntryTxRate.STBC;
-        lastTxRateEH.field.MCS = (((rTxStatResult.rEntryTxRate.VhtNss - 1) & 0x3) << 4) + rTxStatResult.rEntryTxRate.MCS;	
-    }
-    else
-    {
-        lastTxRate.field.MODE = rTxStatResult.rEntryTxRate.MODE;
-        lastTxRate.field.BW = rTxStatResult.rEntryTxRate.BW;
-        lastTxRate.field.ldpc = rTxStatResult.rEntryTxRate.ldpc ? 1 : 0;
-        lastTxRate.field.ShortGI = (rTxStatResult.rEntryTxRate.ShortGI == 1) ? 1 : 0;
-        lastTxRate.field.STBC = rTxStatResult.rEntryTxRate.STBC;
-
-        if (lastTxRate.field.MODE >= MODE_VHT)
-            lastTxRate.field.MCS = (((rTxStatResult.rEntryTxRate.VhtNss - 1) & 0x3) << 4) + rTxStatResult.rEntryTxRate.MCS;
-        else if (lastTxRate.field.MODE == MODE_OFDM)
-            lastTxRate.field.MCS = getLegacyOFDMMCSIndex(rTxStatResult.rEntryTxRate.MCS) & 0x0000003F;
-        else
-            lastTxRate.field.MCS = rTxStatResult.rEntryTxRate.MCS;
-    }
-
-#else
-    lastTxRate.word = pEntry->HTPhyMode.word;
-#endif /* RACTRL_FW_OFFLOAD_SUPPORT */
-
-#if 1	//mtk patch 20201211
-    avgRssi = RTMPAvgRssi(pAd, &pEntry->RssiSample);
-    if (pEntry->AvgTxBytes < 500 && rTxStatResult.rEntryTxRate.MODE < MODE_HE) {  //Low T-Put 500Bps
-        phy_mode = pEntry->MaxHTPhyMode.field.MODE;
-        bw = pEntry->MaxHTPhyMode.field.BW;
-        nss = ((pEntry->MaxHTPhyMode.field.MCS & (0x3 << 4)) >> 4) + 1;
-        sgi = pEntry->MaxHTPhyMode.field.ShortGI;
-        mcs =  pEntry->MaxHTPhyMode.field.MCS;
-
-        if (avgRssi > -65) {
-            rate = mcs;
-        } else if (avgRssi > -67) {
-            rate = (mcs - 1 > 0) ? mcs - 1 : 0;
-        } else if (avgRssi > -69) {
-            rate = (mcs - 2 > 0) ? mcs - 2 : 0;
-        } else if (avgRssi > -71) {
-            rate = (mcs - 3 > 0) ? mcs - 3 : 0;
-        } else if (avgRssi > -73) {
-            rate = (mcs - 4 > 0) ? mcs - 4 : 0;
-        } else if (avgRssi > -75) {
-            rate = (mcs - 5 > 0) ? mcs - 5 : 0;
-        } else if (avgRssi > -77) {
-            rate = (mcs - 6 > 0) ? mcs - 6 : 0;
-        } else if (avgRssi > -79) {
-            rate = (mcs - 7 > 0) ? mcs - 7 : 0;
-        } else if (avgRssi > -81) {
-            rate = (mcs - 8 > 0) ? mcs - 8 : 0;
-        } else if (avgRssi > -83) {
-            rate = (mcs - 9 > 0) ? mcs - 9 : 0;
-        } else if (avgRssi > -85) {
-            rate = (mcs - 10 > 0) ? mcs - 10 : 0;
-        } else if (avgRssi > -87) {
-            rate = (mcs - 11 > 0) ? mcs - 11 : 0;
-        } else {
-            phy_mode = pEntry->MinHTPhyMode.field.MODE;
-            bw = pEntry->MinHTPhyMode.field.BW;
-            rate = 0;
-            sgi = pEntry->MinHTPhyMode.field.ShortGI;
-        }
-        lastTxRate.field.BW = bw;
-        lastTxRate.field.MODE = phy_mode;
-        lastTxRate.field.MCS = rate;
-        lastTxRate.field.ShortGI = sgi;        
-        //MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF,("min_mode MODE [%d] max_mode[%d]\n", ((lastTxRate >> 15) & 0x7), LastTxRate.field.MODE));
-    }   
-#endif
-    if (rTxStatResult.rEntryTxRate.MODE >= MODE_HE)
-    {
-        lastTxRate.word = lastTxRateEH.word;	 	
-    }
-    return lastTxRate.word;
-
-}
-
-VOID RTMPIoctlGetMacTableStaInfo(
-    IN PRTMP_ADAPTER pAd,
-    IN RTMP_IOCTL_INPUT_STRUCT *wrq)
-{
-	UINT8 u1Snr = 0;
-    INT i;
-    BOOLEAN need_send = FALSE;
-    RT_802_11_MAC_TABLE *pMacTab = NULL;
-    PRT_802_11_MAC_ENTRY pDst;
-    MAC_TABLE_ENTRY *pEntry;
-    /* allocate memory */
-    os_alloc_mem(NULL, (UCHAR **)&pMacTab, sizeof(RT_802_11_MAC_TABLE)); 
-
-    if (pMacTab == NULL) {
-        MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "Allocate memory fail!!!\n");
-        return;
-    }
-
-    NdisZeroMemory(pMacTab, sizeof(RT_802_11_MAC_TABLE));
-
-    for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
-        pEntry = &(pAd->MacTab->Content[i]);
-
-        if (pEntry->wdev != NULL && pEntry->wdev->if_dev != NULL) {
-            /* As per new GUI design ifname with index as ra0/ra1/rai0/rai1/... (may not work with older GUI)*/
-            if (!strcmp(wrq->ifr_ifrn.ifrn_name, pEntry->wdev->if_dev->name))
-                need_send = TRUE;
-            else
-                need_send = FALSE;
-        }
-	if ((IS_ENTRY_CLIENT(pEntry) || IS_ENTRY_PEER_AP(pEntry))
-			&& (pEntry->Sst == SST_ASSOC)
-			&& (need_send == TRUE)) {
-            pDst = &pMacTab->Entry[pMacTab->Num];
-            pDst->ApIdx = pEntry->func_tb_idx;
-            COPY_MAC_ADDR(pDst->Addr, &pEntry->Addr);
-            pDst->Aid = (UCHAR)pEntry->Aid;
-            pDst->Psm = pEntry->PsMode;
-#ifdef DOT11_N_SUPPORT
-            pDst->MimoPs = pEntry->MmpsMode;
-#endif /* DOT11_N_SUPPORT */
-            /* Fill in RSSI per entry*/
-            pDst->AvgRssi0 = pEntry->RssiSample.AvgRssi[0];
-            pDst->AvgRssi1 = pEntry->RssiSample.AvgRssi[1];
-            pDst->AvgRssi2 = pEntry->RssiSample.AvgRssi[2];
-            pDst->AvgRssi3 = pEntry->RssiSample.AvgRssi[3];
-			/* Fill in SNR per entry*/
-			UniCmdPerStaGetSNR(pAd, pEntry->wcid, &u1Snr);
-			pDst->AvgSnr = u1Snr;
-            /* the connected time per entry*/
-            pDst->ConnectedTime = pEntry->StaConnectTime;
-            pDst->TxRate.word = RTMPGetLastTxRateTW(pAd, pEntry);
-            pDst->EncryMode = pEntry->SecConfig.PairwiseCipher;
-			pDst->AuthMode = pEntry->SecConfig.AKMMap;
-	    pMacTab->Num += 1;
-            /* Add to avoid Array cross board */
-           	if (pMacTab->Num >= 544)
-                break;
-
-            //hongchen+ 20201205,add rx_rate
-            if(pEntry->wdev != NULL)
-            {
-#if defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7990) || defined(MT7992)
-                UINT32 rx_rate = 0;
-                UCHAR ucBand = HcGetBandByWdev(pEntry->wdev);
-                ShowLastRxPhyRate(pAd, ucBand, pEntry->wcid, &rx_rate);
-                pDst->LastRxRate = rx_rate;
-            
-                MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, 
-                "ucBand=0x%x,pDst->LastRxRate =0x%x,rx_rate=0x%x\n",ucBand,pDst->LastRxRate,rx_rate);
-    
-#endif
-            }
-            else
-                pDst->LastRxRate = pEntry->LastRxRate;
-        }
-    }
-
-    wrq->u.data.length = sizeof(RT_802_11_MAC_TABLE);
-
-    if (copy_to_user(wrq->u.data.pointer, pMacTab, wrq->u.data.length))
-        MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "copy_to_user() fail\n");
-
-    if (pMacTab != NULL)
-        os_free_mem(pMacTab);
-}
 
 #ifdef RT_CFG80211_SUPPORT
 INT mtk_cfg80211_set_txpower(RTMP_ADAPTER *pAd, UCHAR TxPower)
