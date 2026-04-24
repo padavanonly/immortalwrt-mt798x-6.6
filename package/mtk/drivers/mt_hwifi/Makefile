@@ -334,6 +334,10 @@ ifeq ($(CONFIG_MTK_HWIFI_SW_AMSDU),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_SW_AMSDU=y
 endif
 
+ifeq ($(CONFIG_MTK_HWIFI_FW_HDR_SUPPORT),y)
+	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_FW_HDR_SUPPORT=y
+endif
+
 ifeq ($(CONFIG_MTK_HWIFI_RX_PROCESS_WORKQUEUE),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_RX_PROCESS_WORKQUEUE=y
 endif
@@ -440,6 +444,11 @@ endif
 endif
 
 ifeq ($(CONFIG_MTK_HWIFI_MT7990),y)
+ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE19000),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE19000)/* $(1)/lib/firmware/
+else ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE14000),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE14000)/* $(1)/lib/firmware/
+endif
 ifeq ($(CONFIG_MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/ccn34/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/ccn34/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
@@ -482,6 +491,9 @@ endif
 endif
 
 ifeq ($(CONFIG_MTK_HWIFI_MT7992),y)
+ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE7200),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE7200)/* $(1)/lib/firmware/
+else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7992_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7992_PHY_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin
@@ -492,6 +504,7 @@ ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
 endif
+endif
 
 ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_1_1_casan.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
@@ -501,6 +514,9 @@ ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
 endif
 
 ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE5040")
+ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE5040),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE5040)/* $(1)/lib/firmware/
+else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_WACPU_RAM_CODE_2_1.bin $(1)/lib/firmware/WIFI_MT7992_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PHY_RAM_CODE_2_1.bin $(1)/lib/firmware/WIFI_MT7992_PHY_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PATCH_MCU_2_1_hdr.bin $(1)/lib/firmware/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin
@@ -510,6 +526,7 @@ ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_idx_2_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_2_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
+endif
 endif
 
 ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
@@ -568,12 +585,22 @@ endif
 endif
 
 ifeq ($(CONFIG_MTK_HWIFI_MT7993),y)
+ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE3600),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE3600)/* $(1)/lib/firmware/
+else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1_TESTMODE.bin
+endif
+ifneq ($(wildcard $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_idxlog.bin),)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_idxlog.bin $(1)/lib/firmware/WIFI_RAM_CODE_idxlog.bin
+endif
 ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_MT7993_PATCH_MCU_1_1_hdr_casan.bin $(1)/lib/firmware/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_casan.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
+endif
+ifeq ($(CONFIG_MTK_WIFI7_FIPS_140_3_SELF_TEST),y)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_fips.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
 endif
 endif
 

@@ -49,6 +49,121 @@ config MTK_HWIFI_FW_HDR_SUPPORT
 	depends on PACKAGE_kmod-mt_hwifi
 	default n
 
+config MTK_HWIFI_FW_BE3600
+	bool "BE3600 custom firmware support"
+	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+	default n
+
+if MTK_HWIFI_FW_BE3600
+choice
+	prompt "BE3600 firmware version"
+	default MTK_HWIFI_FW_BE3600_20251226
+
+	config MTK_HWIFI_FW_BE3600_20251226
+	bool "BE3600-20251226"
+
+	config MTK_HWIFI_FW_BE3600_20260311
+	bool "BE3600-20260311"
+endchoice
+endif
+
+config MTK_HWIFI_FW_BE5040
+	bool "BE5040 custom firmware support"
+	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+	default n
+
+if MTK_HWIFI_FW_BE5040
+choice
+	prompt "BE5040 firmware version"
+	default MTK_HWIFI_FW_BE5040_20250423
+
+	config MTK_HWIFI_FW_BE5040_20250423
+	bool "BE5040-20250423"
+
+	config MTK_HWIFI_FW_BE5040_20251225
+	bool "BE5040-20251225"
+
+	config MTK_HWIFI_FW_BE5040_20260310
+	bool "BE5040-20260310"
+endchoice
+endif
+
+config MTK_HWIFI_FW_BE7200
+	bool "BE7200 custom firmware support"
+	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+	default n
+
+if MTK_HWIFI_FW_BE7200
+choice
+	prompt "BE7200 firmware version"
+	default MTK_HWIFI_FW_BE7200_20260310
+
+	config MTK_HWIFI_FW_BE7200_20260310
+	bool "BE7200-20260310"
+endchoice
+endif
+
+config MTK_HWIFI_FW_BE14000
+	bool "BE14000 custom firmware support"
+	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+	default n
+
+if MTK_HWIFI_FW_BE14000
+choice
+	prompt "BE14000 firmware version"
+	default MTK_HWIFI_FW_BE14000_20251226
+
+	config MTK_HWIFI_FW_BE14000_20251226
+	bool "BE14000-20251226"
+
+	config MTK_HWIFI_FW_BE14000_20260311
+	bool "BE14000-20260311"
+endchoice
+endif
+
+config MTK_HWIFI_FW_BE19000
+	bool "BE19000 custom firmware support"
+	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+	default n
+
+if MTK_HWIFI_FW_BE19000
+choice
+	prompt "BE19000 firmware version"
+	default MTK_HWIFI_FW_BE19000_20251226
+
+	config MTK_HWIFI_FW_BE19000_20251226
+	bool "BE19000-20251226"
+
+	config MTK_HWIFI_FW_BE19000_20260311
+	bool "BE19000-20260311"
+endchoice
+endif
+
+config MTK_HWIFI_FW_PATH_BE3600
+	string
+	default "BE3600-20251226" if MTK_HWIFI_FW_BE3600_20251226
+	default "BE3600-20260311" if MTK_HWIFI_FW_BE3600_20260311
+
+config MTK_HWIFI_FW_PATH_BE5040
+	string
+	default "BE5040-20250423" if MTK_HWIFI_FW_BE5040_20250423
+	default "BE5040-20251225" if MTK_HWIFI_FW_BE5040_20251225
+	default "BE5040-20260310" if MTK_HWIFI_FW_BE5040_20260310
+
+config MTK_HWIFI_FW_PATH_BE7200
+	string
+	default "BE7200-20260310" if MTK_HWIFI_FW_BE7200_20260310
+
+config MTK_HWIFI_FW_PATH_BE14000
+	string
+	default "BE14000-20251226" if MTK_HWIFI_FW_BE14000_20251226
+	default "BE14000-20260311" if MTK_HWIFI_FW_BE14000_20260311
+
+config MTK_HWIFI_FW_PATH_BE19000
+	string
+	default "BE19000-20251226" if MTK_HWIFI_FW_BE19000_20251226
+	default "BE19000-20260311" if MTK_HWIFI_FW_BE19000_20260311
+
 menu "HWIFI Chips Support"
 	config MTK_HWIFI_MT7915
 		bool "mt7915"
