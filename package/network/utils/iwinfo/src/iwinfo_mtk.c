@@ -317,7 +317,7 @@ static void fill_rate_info(HTTRANSMIT_SETTING HTSetting, struct iwinfo_rate_entr
 	uint8_t mode = HTSetting.field.MODE;
 	uint8_t bw = HTSetting.field.BW;
 	uint8_t short_gi = HTSetting.field.ShortGI;
-	uint8_t dcm = !(HTSetting.field.MCS & 0x10);
+	uint8_t dcm = HTSetting.field.MCS & 0x10 ? 1 : 0;
 
 	re->is_eht = 0;
 	re->is_he = 0;
@@ -371,9 +371,9 @@ static void fill_rate_info(HTTRANSMIT_SETTING HTSetting, struct iwinfo_rate_entr
 
 	if (mode >= MODE_HE && mode < MODE_UNKNOWN) {
 		if (mode == MODE_EHT || mode == MODE_EHT_ER_SU || mode == MODE_EHT_TB || mode == MODE_EHT_MU) {
-			get_rate_eht((mcs & 0xf), bw, nss, dcm, &DataRate);
+			get_rate_eht((mcs & 0xf), bw, nss, 0, &DataRate);
 		} else {
-			get_rate_he((mcs & 0xf), bw, nss, dcm, &DataRate);
+			get_rate_he((mcs & 0xf), bw, nss, 0, &DataRate);
 		}
 		if (short_gi == 1)
 			DataRate = (DataRate * 967) >> 10;
