@@ -7,3 +7,5 @@ E2pAccessMode=1
 TestModeEn=0
 WHNAT=1
 MloV1=0
+EDCCARegion=0
+RED_Enable=1

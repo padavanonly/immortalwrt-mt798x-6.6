@@ -5,3 +5,7 @@ BN1_profile_path=/etc/wireless/mediatek/mt7992.b1.dat
 E2pAccessMode=2
 TestModeEn=0
 WHNAT=1
+EDCCARegion=0
+RED_Enable=1
+RxEnhanceEn=1
+MloSyncTx=1
