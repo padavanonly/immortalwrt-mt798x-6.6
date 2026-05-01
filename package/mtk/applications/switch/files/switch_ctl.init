@@ -9,7 +9,7 @@ service_triggers() {
 
 start_service() {
     logger -t "switch_ctl" "restart mt753x all ports"
-    source "/usr/sbin/switch_ctl.sh"
+    . "/usr/sbin/switch_ctl.sh"
     sw_poweroff_ports "0 1 2 3 4"
     sleep 2
     sw_poweron_ports "0 1 2 3 4"
