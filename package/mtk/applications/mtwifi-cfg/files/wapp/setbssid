@@ -1,7 +1,11 @@
-ra0_7981_channel="$(uci get wireless.MT7981_1_1.channel)"
-ra0_7986_channel="$(uci get wireless.MT7986_1_1.channel)"
-rax0_7981_channel="$(uci get wireless.MT7981_1_2.channel)"
-rax0_7986_channel="$(uci get wireless.MT7986_1_2.channel)"
+ra0_7981_channel="$(uci -q get wireless.MT7981_1_1.channel 2>/dev/null)"
+ra0_7986_channel="$(uci -q get wireless.MT7986_1_1.channel 2>/dev/null)"
+rax0_7981_channel="$(uci -q get wireless.MT7981_1_2.channel 2>/dev/null)"
+rax0_7986_channel="$(uci -q get wireless.MT7986_1_2.channel 2>/dev/null)"
+ra0_7981_channel="${ra0_7981_channel:-0}"
+ra0_7986_channel="${ra0_7986_channel:-0}"
+rax0_7981_channel="${rax0_7981_channel:-0}"
+rax0_7986_channel="${rax0_7986_channel:-0}"
 if [ "$ra0_7981_channel" -gt "0" ];then 
     wappctrl ra0 mbo nebor_op_ch $ra0_7981_channel
 fi

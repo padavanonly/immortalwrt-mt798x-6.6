@@ -6,54 +6,64 @@ ctrlr_al_mac=$br0_mac
 agent_al_mac=$br0_mac
 ra0=0
 rax0=0
+
+uci_get_default() {
+    local value
+    value="$(uci -q get "$1" 2>/dev/null)"
+    if [ -n "$value" ]; then
+        printf '%s' "$value"
+    else
+        printf '%s' "$2"
+    fi
+}
+
 sed -i "s/map_controller_alid=.*/map_controller_alid=${ctrlr_al_mac}/g" /etc/map/1905d.cfg
 sed -i "s/map_agent_alid=.*/map_agent_alid=${agent_al_mac}/g" /etc/map/1905d.cfg
 
-    ra0_7981="$(uci get wireless.MT7981_1_1.bandsteering)"
-    ra0_7986="$(uci get wireless.MT7986_1_1.bandsteering)"
+    ra0_7981="$(uci_get_default wireless.MT7981_1_1.bandsteering 0)"
+    ra0_7986="$(uci_get_default wireless.MT7986_1_1.bandsteering 0)"
     if [ "$ra0_7981" -eq "1" ] || [ "$ra0_7986" -eq "1" ]; then
     ra0=1
     rax0=1
     fi
     
-    ra0_7981="$(uci get wireless.MT7981_1_1.ieee80211r)"
-    ra0_7986="$(uci get wireless.MT7986_1_1.ieee80211r)"
+    ra0_7981="$(uci_get_default wireless.MT7981_1_1.ieee80211r 0)"
+    ra0_7986="$(uci_get_default wireless.MT7986_1_1.ieee80211r 0)"
     if [ "$ra0_7981" -eq "1" ] || [ "$ra0_7986" -eq "1" ]; then
     ra0=1
     fi
     
-    ra0_7981="$(uci get  wireless.default_MT7981_1_2.steeringthresold)"
-    ra0_7986="$(uci get  wireless.default_MT7981_1_2.steeringthresold)"
+    ra0_7981="$(uci_get_default wireless.default_MT7981_1_2.steeringthresold 0)"
+    ra0_7986="$(uci_get_default wireless.default_MT7986_1_2.steeringthresold 0)"
     if [ "$ra0_7981" -lt "0" ] || [ "$ra0_7986" -lt "0" ]; then
     ra0=1
     fi
         
-    ra0_7981="$(uci get wireless.default_MT7981_1_1.disabled)"
-    ra0_7986="$(uci get wireless.default_MT7986_1_1.disabled)"
+    ra0_7981="$(uci_get_default wireless.default_MT7981_1_1.disabled 0)"
+    ra0_7986="$(uci_get_default wireless.default_MT7986_1_1.disabled 0)"
     if [ "$ra0_7981" -eq "1" ] || [ "$ra0_7986" -eq "1" ]; then
     ra0=0
     rax0=0
     fi
     
-    rax0_7981="$(uci get wireless.MT7981_1_2.ieee80211r)"
-    rax0_7986="$(uci get wireless.MT7986_1_2.ieee80211r)"
+    rax0_7981="$(uci_get_default wireless.MT7981_1_2.ieee80211r 0)"
+    rax0_7986="$(uci_get_default wireless.MT7986_1_2.ieee80211r 0)"
     if [ "$rax0_7981" -eq "1" ] || [ "$rax0_7986" -eq "1" ]; then
     rax0=1
     fi
    
-    rax0_7981="$(uci get  wireless.default_MT7981_1_2.steeringthresold)"
-    rax0_7986="$(uci get  wireless.default_MT7986_1_2.steeringthresold)"
+    rax0_7981="$(uci_get_default wireless.default_MT7981_1_2.steeringthresold 0)"
+    rax0_7986="$(uci_get_default wireless.default_MT7986_1_2.steeringthresold 0)"
     if [ "$rax0_7981" -lt "0" ] || [ "$rax0_7986" -lt "0" ]; then
     rax0=1
     fi
     
-    rax0_7981="$(uci get wireless.default_MT7981_1_2.disabled)"
-    rax0_7986="$(uci get wireless.default_MT7986_1_2.disabled)"
+    rax0_7981="$(uci_get_default wireless.default_MT7981_1_2.disabled 0)"
+    rax0_7986="$(uci_get_default wireless.default_MT7986_1_2.disabled 0)"
     if [ "$rax0_7981" -eq "1" ] || [ "$rax0_7986" -eq "1" ]; then
     rax0=0
     fi
      
-
     if [ "$rax0" -eq "1" ] && [ "$ra0" -eq "1" ]  ; then
     wapp -d1 -v2 -cra0 -crax0 > /dev/null&
     elif [ "$ra0" -eq "1" ] && [ "$rax0" -eq "0" ] ; then
@@ -76,30 +86,24 @@ iwpriv rax0 set mapEnable=2
 bs20 &
 wappctrl rax0 mbo reset_default
 wappctrl ra0  mbo reset_default
-rax0_7981="$(uci get wireless.default_MT7981_1_2.steeringbssid)"
-rax0_7986="$(uci get wireless.default_MT7986_1_2.steeringbssid)"
-if [ $rax0_7981 ]; then
+rax0_7981="$(uci -q get wireless.default_MT7981_1_2.steeringbssid 2>/dev/null)"
+rax0_7986="$(uci -q get wireless.default_MT7986_1_2.steeringbssid 2>/dev/null)"
+if [ -n "$rax0_7981" ]; then
 	bash setbssid rax0 "$rax0_7981"
 fi
 
-if [ $rax0_7986 ]; then
+if [ -n "$rax0_7986" ]; then
 	bash setbssid rax0 "$rax0_7986"
 fi
 
-ra0_7981="$(uci get wireless.default_MT7981_1_1.steeringbssid)"
-bash setbssid ra0 "$ra0_7981"
-ra0_7986="$(uci get wireless.default_MT7986_1_1.steeringbssid)"
-if [ $ra0_7981 ]; then
+ra0_7981="$(uci -q get wireless.default_MT7981_1_1.steeringbssid 2>/dev/null)"
+ra0_7986="$(uci -q get wireless.default_MT7986_1_1.steeringbssid 2>/dev/null)"
+if [ -n "$ra0_7981" ]; then
 	bash setbssid ra0 "$ra0_7981"
 fi
 
-if [ $ra0_7986 ]; then
+if [ -n "$ra0_7986" ]; then
 	bash setbssid ra0 "$ra0_7986"
 fi
 
 fi
-
-
-
-
-
