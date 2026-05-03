@@ -1,11 +1,34 @@
 #!/bin/sh
+
+LOG_TAG="wapp-steering"
+
+log_i() {
+	logger -t "$LOG_TAG" "INFO: $*"
+}
+
+log_e() {
+	logger -t "$LOG_TAG" "ERROR: $*"
+}
+
+sta_mac="$2"
+if [ -z "$sta_mac" ]; then
+	log_e "missing station mac, args='$*'"
+	exit 1
+fi
+
+log_i "request steering iface=$1 sta=$sta_mac"
+
 case "$1" in
 	"rax0")
-		wappctrl rax0 mbo steer_sta $2
-		return 0
+		wappctrl rax0 mbo steer_sta "$sta_mac"
+		rc=$?
+		[ "$rc" -eq 0 ] && log_i "steer success iface=rax0 sta=$sta_mac" || log_e "steer failed rc=$rc iface=rax0 sta=$sta_mac"
+		exit "$rc"
 	;;
 	*)
-		wappctrl ra0 mbo steer_sta $2
-		return 0
+		wappctrl ra0 mbo steer_sta "$sta_mac"
+		rc=$?
+		[ "$rc" -eq 0 ] && log_i "steer success iface=ra0 sta=$sta_mac" || log_e "steer failed rc=$rc iface=ra0 sta=$sta_mac"
+		exit "$rc"
 	;;
 esac

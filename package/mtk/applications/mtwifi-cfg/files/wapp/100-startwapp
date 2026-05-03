@@ -1,3 +1,14 @@
 #!/bin/sh
 
-startwapp.sh
+logger -t wapp-hotplug "INFO: hotplug trigger action=${ACTION:-unknown} interface=${INTERFACE:-unknown}, invoke /sbin/startwapp.sh"
+
+/sbin/startwapp.sh
+rc=$?
+
+if [ "$rc" -eq 0 ]; then
+	logger -t wapp-hotplug "INFO: /sbin/startwapp.sh exit=$rc"
+else
+	logger -t wapp-hotplug "ERROR: /sbin/startwapp.sh exit=$rc"
+fi
+
+exit "$rc"

@@ -1,3 +1,37 @@
+#!/bin/sh
+
+LOG_TAG="wapp-setbssid"
+
+log_i() {
+    logger -t "$LOG_TAG" "INFO: $*"
+}
+
+log_e() {
+    logger -t "$LOG_TAG" "ERROR: $*"
+}
+
+run_cmd() {
+    log_i "exec: $*"
+    "$@"
+    local rc=$?
+    if [ "$rc" -eq 0 ]; then
+        log_i "ok($rc): $*"
+    else
+        log_e "fail($rc): $*"
+    fi
+    return "$rc"
+}
+
+iface="$1"
+bssid="$2"
+
+if [ -z "$iface" ] || [ -z "$bssid" ]; then
+    log_e "invalid args: iface='$iface' bssid='$bssid'"
+    exit 1
+fi
+
+log_i "start setbssid iface=$iface bssid=$bssid"
+
 ra0_7981_channel="$(uci -q get wireless.MT7981_1_1.channel 2>/dev/null)"
 ra0_7986_channel="$(uci -q get wireless.MT7986_1_1.channel 2>/dev/null)"
 rax0_7981_channel="$(uci -q get wireless.MT7981_1_2.channel 2>/dev/null)"
@@ -6,24 +40,31 @@ ra0_7981_channel="${ra0_7981_channel:-0}"
 ra0_7986_channel="${ra0_7986_channel:-0}"
 rax0_7981_channel="${rax0_7981_channel:-0}"
 rax0_7986_channel="${rax0_7986_channel:-0}"
+
+log_i "channels: ra0_7981=$ra0_7981_channel ra0_7986=$ra0_7986_channel rax0_7981=$rax0_7981_channel rax0_7986=$rax0_7986_channel"
+
 if [ "$ra0_7981_channel" -gt "0" ];then 
-    wappctrl ra0 mbo nebor_op_ch $ra0_7981_channel
+    run_cmd wappctrl ra0 mbo nebor_op_ch "$ra0_7981_channel"
 fi
 if [ "$ra0_7986_channel" -gt "0" ];then 
-    wappctrl ra0 mbo nebor_op_ch $ra0_7986_channel
+    run_cmd wappctrl ra0 mbo nebor_op_ch "$ra0_7986_channel"
 fi
 if [ "$rax0_7981_channel" -gt "0" ];then 
-    wappctrl rax0 mbo nebor_op_ch $rax0_7981_channel
+    run_cmd wappctrl rax0 mbo nebor_op_ch "$rax0_7981_channel"
 fi
 if [ "$rax0_7986_channel" -gt "0" ];then
-    wappctrl rax0 mbo nebor_op_ch $rax0_7986_channel
+    run_cmd wappctrl rax0 mbo nebor_op_ch "$rax0_7986_channel"
 fi
-bssid=$2
-array=(${bssid//\/ })
-for var in ${array[@]}
-        do
-        echo $var
-        wappctrl $1 mbo nebor_bssid $var
-        wappctrl $1 mbo add_test_nr $var
-        done
+
+OLD_IFS="$IFS"
+IFS='/'
+for var in $bssid; do
+    [ -n "$var" ] || continue
+    log_i "apply neighbor bssid=$var on iface=$iface"
+    run_cmd wappctrl "$iface" mbo nebor_bssid "$var"
+    run_cmd wappctrl "$iface" mbo add_test_nr "$var"
+done
+IFS="$OLD_IFS"
+
+log_i "setbssid done"
 
