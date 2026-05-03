@@ -1,6 +1,5 @@
 killall bs20
 killall wapp
-sleep 2
 br0_mac=$(cat /sys/class/net/br-lan/address)
 ctrlr_al_mac=$br0_mac
 agent_al_mac=$br0_mac
@@ -16,6 +15,19 @@ uci_get_default() {
         printf '%s' "$2"
     fi
 }
+
+wapp_enabled=0
+for dev in $(uci -q show wireless | sed -n 's/^wireless\.\([^.]*\)=wifi-device$/\1/p'); do
+    [ "$(uci_get_default wireless.${dev}.type "")" = "mtwifi" ] || continue
+    if [ "$(uci_get_default wireless.${dev}.wapp 0)" -eq "1" ]; then
+        wapp_enabled=1
+        break
+    fi
+done
+
+[ "$wapp_enabled" -eq "1" ] || exit 0
+
+sleep 2
 
 sed -i "s/map_controller_alid=.*/map_controller_alid=${ctrlr_al_mac}/g" /etc/map/1905d.cfg
 sed -i "s/map_agent_alid=.*/map_agent_alid=${agent_al_mac}/g" /etc/map/1905d.cfg

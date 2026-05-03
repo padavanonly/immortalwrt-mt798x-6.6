@@ -181,6 +181,16 @@ function __apcli_auto_connect(ifname)
     __exec_iwpriv_cmd(ifname, "ApCliAutoConnect", "3")
 end
 
+function run_wapp_hook()
+    local startwapp = "/sbin/startwapp.sh"
+
+    if utils.exists(startwapp) then
+        os.execute(startwapp)
+    else
+        nixio.syslog("info", "mtwifi-cfg: skip wapp hook, " .. startwapp .. " not found")
+    end
+end
+
 function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
     nixio.syslog("info", "mtwifi-cfg: start "..devname)
     local dev = l1dat.devname_ridx[devname]

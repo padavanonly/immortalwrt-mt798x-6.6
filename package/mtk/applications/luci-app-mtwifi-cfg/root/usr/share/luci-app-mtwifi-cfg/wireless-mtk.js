@@ -1021,6 +1021,9 @@ return view.extend({
 
 					if (is_dbdc_main)
 					{
+						o = ss.taboption('advanced', form.Flag, 'wapp', _('Enable WAPP'), _('WAPP related services (wapp/bs20)'));
+						o.default = o.disabled;
+
 						o = ss.taboption('advanced', form.Flag, 'whnat', _('Wireless HWNAT'));
  						o.default = o.enabled;
  						
