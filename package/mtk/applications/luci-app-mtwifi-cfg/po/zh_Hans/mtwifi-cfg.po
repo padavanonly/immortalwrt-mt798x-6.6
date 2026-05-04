@@ -49,9 +49,6 @@ msgstr "无线硬件加速"
 msgid "Band Steering"
 msgstr "引导已连接的强信号双频2.4G设备至5G频段"
 
-msgid "Enable WAPP"
-msgstr "启用 WAPP"
-
 msgid "WAPP related services (wapp/bs20)"
 msgstr "WAPP 相关服务（wapp/bs20）"
 
