@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+&chosen {
+	bootargs = "root=/dev/fit0 rootwait";
+	rootdisk = <&ubi_rootdisk>;
+};
+
+&partitions {
+	partition@680000 {
+		compatible = "linux,ubi";
+		label = "ubi";
+		reg = <0x680000 0x7980000>;
+
+		volumes {
+			ubi_rootdisk: ubi-volume-fit {
+				volname = "fit";
+			};
+
+			ubi_ubootenv: ubi-volume-ubootenv {
+				volname = "ubootenv";
+			};
+
+			ubi_ubootenv2: ubi-volume-ubootenv2 {
+				volname = "ubootenv2";
+			};
+		};
+	};
+};
+
+&ubi_ubootenv {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool";
+	};
+};
+
+&ubi_ubootenv2 {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool";
+	};
+};

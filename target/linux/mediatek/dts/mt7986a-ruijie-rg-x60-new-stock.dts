@@ -1,22 +1,10 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 
 /dts-v1/;
-#include "mt7986a-ruijie-rg-x60-new-common.dtsi"
+#include "mt7986a-ruijie-rg-x60-new.dtsi"
+#include "mt7986a-ruijie-ubi-stock.dtsi"
 
 / {
 	compatible = "ruijie,rg-x60-new-stock", "mediatek,mt7986a";
 	model = "Ruijie RG-X60 New (stock layout)";
-};
-
-&partitions {
-	partition@680000 {
-		label = "ubi";
-		reg = <0x680000 0x3f00000>;
-	};
-};
-
-&spi_nand {
-	mediatek,nmbm;
-	mediatek,bmt-max-ratio = <1>;
-	mediatek,bmt-max-reserved-blocks = <64>;
 };
