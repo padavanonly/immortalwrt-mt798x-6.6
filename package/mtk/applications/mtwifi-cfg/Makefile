@@ -8,7 +8,7 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=mtwifi-cfg
 PKG_LICENSE:=GPL-2.0+
 PKG_VERSION:=1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -39,6 +39,22 @@ define Package/mtwifi-cfg/install
 	$(LN) l1util $(1)/sbin/l1dat
 	$(INSTALL_BIN) ./files/l1util/l1dat_parser.lua $(1)/usr/lib/lua/
 	$(INSTALL_DATA) ./files/hotplug/10-mtwifi-detect $(1)/etc/hotplug.d/net/
+
+
+	$(CP) ./files/wapp/libcrypto.so.1.1 $(1)/usr/lib
+    $(CP) ./files/wapp/libssl.so.1.1 $(1)/usr/lib
+    $(INSTALL_BIN) ./files/wapp/bs20 $(1)/sbin/
+    $(INSTALL_BIN) ./files/wapp/setbssid $(1)/sbin/
+    $(INSTALL_BIN) ./files/wapp/startwapp.sh $(1)/sbin/
+    $(INSTALL_BIN) ./files/wapp/steeringsta $(1)/sbin/
+    $(INSTALL_BIN) ./files/wapp/wapp $(1)/sbin/
+    $(INSTALL_BIN) ./files/wapp/wappctrl $(1)/sbin/
+    $(INSTALL_BIN) ./files/wapp/mapd_cfg $(1)/sbin/
+
+    $(INSTALL_DIR) $(1)/etc/map
+    $(CP) ./files/wapp/1905d.cfg $(1)/etc/map/
+    $(CP) ./files/wapp/wapp_ap.conf $(1)/etc/
+    $(CP) ./files/wapp/wapp_ap_ra0.conf $(1)/etc/
 endef
 
 $(eval $(call BuildPackage,mtwifi-cfg))
