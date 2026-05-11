@@ -289,7 +289,7 @@ PKG_KCONFIG:= \
 	ICVERR_RESET_RRO \
 	NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT \
 	MLD_GROUP_RESTORE \
-	MTK_WIFI7_UNIFIED_COUNTRY_CONFIG_SUPPORT
+	UNIFIED_COUNTRY_CONFIG_SUPPORT
 
 PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)))
 
@@ -309,6 +309,7 @@ define KernelPackage/mt_wifi7
 ifeq ($(CONFIG_MTK_CONNINFRA_APSOC),y)
   DEPENDS+=+kmod-conninfra
 endif
+
 ifneq ($(CONFIG_MTK_WIFI7_FAST_NAT_SUPPORT), )
 ifneq ($(CONFIG_MTK_WIFI7_WHNAT_SUPPORT), )
   DEPENDS+=+kmod-mediatek_hnat
@@ -476,6 +477,20 @@ ifeq ($(CONFIG_MTK_WIFI7_SEL_DUAL_BAND_SUPPORT),y)
 endif
 ifeq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT),y)
 	$(INSTALL_DIR) $(1)/etc/wireless/
+	if [ "$$(CONFIG_first_card_name)" = "MT7990" -o "$$(CONFIG_second_card_name)" = "MT7990" ] ; then \
+		$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7990/* $(1)/etc/wireless/mediatek/; \
+		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE13000_255" ] ; then \
+			$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7990/mt7990.b1.5g.dat $(1)/etc/wireless/mediatek/mt7990.b1.dat; \
+			$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7990/mt7990.b2.5g.dat $(1)/etc/wireless/mediatek/mt7990.b2.dat; \
+		fi; \
+		if [ "$$(CONFIG_MTK_WIFI7_2ADIE_TRIBAND)" = "y" ] ; then \
+			sed -i 's/DfsZeroWait=0/DfsZeroWait=1/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+			sed -i 's/DfsDedicatedZeroWait=1/DfsDedicatedZeroWait=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+			sed -i 's/DfsZeroWaitDefault=1/DfsZeroWaitDefault=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+			sed -i '/DfsZeroWaitDefault/a\DfsNopExpireSetChPolicy=0' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+		fi; \
+	fi
+
 	# Example combination mt7622 + Kite.
 	if [ "$$(CONFIG_first_card_name)" = "MT7992" -o "$$(CONFIG_second_card_name)" = "MT7992" ] ; then \
 		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/profiles/mt7992/* $(1)/etc/wireless/mediatek/; \
@@ -487,6 +502,14 @@ ifeq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT),y)
 			sed -i "s/mt7992.1_1.dat/mt7992.1_2.dat/" $(1)/etc/wireless/l1profile_2.dat; \
 			sed -i "s/EEPROM_offset="0x0"/EEPROM_offset="0x2000"/" $(1)/etc/wireless/l1profile_2.dat; \
 			cp $(1)/etc/wireless/l1profile.dat $(1)/etc/wireless/l1profile_1.dat ; \
+		fi; \
+	fi
+
+	# griffin
+	if [ "$$(CONFIG_first_card_name)" = "MT7993" -o "$$(CONFIG_second_card_name)" = "MT7993" ] ; then \
+		$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/griffin/* $(1)/etc/wireless/mediatek/; \
+		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE3600_26" ] ; then \
+			sed -i "s/mt7993.b1.dat/mt7993.b2.dat/" $(1)/etc/wireless/mediatek/mt7993.1.dat ; \
 		fi; \
 	fi
 endif

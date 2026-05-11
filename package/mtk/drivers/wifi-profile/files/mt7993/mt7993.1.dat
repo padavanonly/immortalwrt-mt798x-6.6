@@ -1,0 +1,12 @@
+#The word of "Default" must not be removed
+Default
+BN0_profile_path=/etc/wireless/mediatek/mt7993.b0.dat
+BN1_profile_path=/etc/wireless/mediatek/mt7993.b1.dat
+PciL1ss=1
+LpOption=2:1
+TpoEn=1
+E2pAccessMode=2
+TestModeEn=0
+WHNAT=1
+EDCCARegion=0
+RED_Enable=1
