@@ -468,6 +468,8 @@ function mtwifi_cfg_setup(argv)
     dats.ApCliSsid = ""
     dats.ApCliBssid = ""
     dats.MACRepeaterEn = 0
+    dats.ApcliMloDisable = 1
+    dats.ApcliMldAddr = ""
     dats.ApcliMacAddress = ""
     dats.ApCliAuthMode = ""
     dats.ApCliEncrypType = ""
@@ -481,10 +483,17 @@ function mtwifi_cfg_setup(argv)
             if not v.config.disabled then
                 dats.ApCliEnable = 1
             end
+
+            if not v.config.mlo then
+                dats.ApcliMloDisable = 1
+                dats.ApcliMacAddress = v.config.macaddr
+            else
+                dats.ApcliMloDisable = 0
+                dats.ApcliMldAddr = v.config.macaddr
+            end
             dats.ApCliSsid = v.config.ssid or ""
             dats.ApCliBssid = v.config.bssid or ""
             dats.MACRepeaterEn = (v.config.bssid and v.config.bssid ~= "") and 1 or 0
-            dats.ApcliMacAddress = v.config.macaddr or (dats.MacAddress_Default or "")
             dats.ApCliAuthMode = defs.enc2dat[v.config.encryption][1]
             dats.ApCliEncrypType = defs.enc2dat[v.config.encryption][2]
             dats.ApCliWPAPSK = v.config.key or ""
@@ -593,21 +602,24 @@ function mtwifi_cfg_setup(argv)
     for idx = 0,vif_num-1 do
         v = cfg.interfaces[string.format("%d", idx)]
         if v.config.mode == "ap" then
+            local mac = v.config.macaddr
+            local mlo = v.config.mlo
+
+            set_dat(dats, apidx, "MldGroup", mlo or 0)
+            if mlo then
+                set_idx_dat(dats, apidx-1, "MldAddr", mac or "")
+            else
+                if idx == 0 then
+                    dats.MacAddress = mac or dats.MacAddress_Default
+                else
+                    set_idx_dat(dats, apidx, "MacAddress", mac or "")
+                end
+            end
+
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
             set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
             set_dat(dats, apidx, "NoForwarding", 0)
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
-            set_dat(dats, apidx, "MldGroup", v.config.mlo)
-            if not v.config.mlo then
-                set_dat(dats, apidx, "MldGroup", "0")
-                if idx == 0 then
-                    dats.MacAddress = v.config.macaddr or (dats.MacAddress_Default or "")
-                else
-                    set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or (dats.MacAddress_Default or ""))
-                end
-            else
-                set_dat(dats, apidx, "MldGroup", "1")
-            end
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
             set_dat(dats, apidx, "RRMEnable", v.config.ieee80211k)
             set_dat(dats, apidx, "RekeyInterval", v.config.wpa_group_rekey)

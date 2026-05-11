@@ -40,6 +40,7 @@ mtwifi_defs.vif_cfgs = {
     ["RekeyMethod"] = "DISABLE",
     ["session_timeout_interval"] = "0",
     ["Wapiifname"] = "",
+    ["MldGroup"] = "0",
     ["HideSSID"] = "0",
     ["WirelessMode"] = "",
     ["NoForwarding"] = "0",
@@ -85,7 +86,7 @@ mtwifi_defs.vif_cfgs_idx = {
 
 mtwifi_defs.vif_mac = {
     ["MacAddress"] = "",
-    -- ["MldAddr"] = "",
+    ["MldAddr"] = "",
 }
 
 mtwifi_defs.vif_acl = {
