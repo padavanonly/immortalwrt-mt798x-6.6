@@ -906,7 +906,42 @@ INT	RT_CfgSetMacAddress(RTMP_ADAPTER *pAd, RTMP_STRING *arg, UCHAR idx, INT opmo
 	/* Mac address acceptable format 01:02:03:04:05:06 length 17 */
 	mac_len = strlen(arg);
 
-	if (mac_len != 17) {
+	if (strcmp(arg, "random") == 0) {
+		if (opmode == OPMODE_AP) {
+			if (idx == 0) {
+				pAd->bLocalAdminMAC = FALSE;
+				pAd->bRandomMac[0] = TRUE;
+			}
+#ifdef MT_MAC
+#ifdef MBSS_SUPPORT
+			else {
+				pAd->bLocalAdminExtendMBssMAC = FALSE;
+				pAd->bRandomMac[idx] = TRUE;
+			}
+#endif /* MBSS_SUPPORT */
+
+#ifdef CONFIG_APSTA_MIXED_SUPPORT
+		} else if (opmode == OPMODE_STA) {
+#ifdef APCLI_RANDOM_MAC_SUPPORT
+			pAd->StaCfg[idx].apcli_random_mac_support = TRUE;
+#endif /* APCLI_RANDOM_MAC_SUPPORT */
+#endif /* CONFIG_APSTA_MIXED_SUPPORT */
+#endif /* MT_MAC */
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_HW, CATHW_MAC, DBG_LVL_ERROR,
+					" idx(%d) non-supported opmode(%d) for random MAC\n", 
+					idx, opmode);
+			return FALSE;
+		}
+
+		return TRUE;
+	}
+
+	if (mac_len == 0) {
+		MTWF_DBG(pAd, DBG_CAT_HW, CATHW_MAC, DBG_LVL_WARN,
+			"Use random MAC address built into the chip.\n");
+		return TRUE;
+	} else if (mac_len != 17) {
 		MTWF_DBG(pAd, DBG_CAT_HW, CATHW_MAC, DBG_LVL_ERROR,
 			"invalid length (%d)\n", mac_len);
 		return FALSE;
@@ -925,6 +960,7 @@ INT	RT_CfgSetMacAddress(RTMP_ADAPTER *pAd, RTMP_STRING *arg, UCHAR idx, INT opmo
 			}
 
 			pAd->bLocalAdminMAC = TRUE;
+			pAd->bRandomMac[0] = FALSE;
 		}
 
 #ifdef MT_MAC
@@ -937,6 +973,7 @@ INT	RT_CfgSetMacAddress(RTMP_ADAPTER *pAd, RTMP_STRING *arg, UCHAR idx, INT opmo
 
 			/* TODO: Carter, is the below code still has its meaning? */
 			pAd->bLocalAdminExtendMBssMAC = TRUE;
+			pAd->bRandomMac[idx] = FALSE;
 		}
 #endif /* MBSS_SUPPORT */
 
@@ -946,11 +983,15 @@ INT	RT_CfgSetMacAddress(RTMP_ADAPTER *pAd, RTMP_STRING *arg, UCHAR idx, INT opmo
 			AtoH(arg, &pAd->ApcliAddr[idx][i], 1);
 			arg = arg + 3;
 		}
+#ifdef APCLI_RANDOM_MAC_SUPPORT
+		pAd->StaCfg[idx].apcli_random_mac_support = FALSE;
+#endif /* APCLI_RANDOM_MAC_SUPPORT */
 #endif /* CONFIG_APSTA_MIXED_SUPPORT */
 #endif /* MT_MAC */
 	} else {
 		MTWF_DBG(pAd, DBG_CAT_HW, CATHW_MAC, DBG_LVL_ERROR,
 				 " idx(%d) non-supported opmode(%d)\n", idx, opmode);
+		return FALSE;
 	}
 
 	return TRUE;

@@ -5185,11 +5185,24 @@ NDIS_STATUS	RTMPSetProfileParameters(
 				if (RTMPGetKeyParameter(tok_str, tmpbuf, 25, pBuffer, TRUE)) {
 					retval = RT_CfgSetMacAddress(pAd, tmpbuf, i, OPMODE_AP);
 
-					if (retval)
-						MTWF_DBG(pAd,
-							DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
-							"MacAddress%d = "MACSTR"\n",
-							i, MAC2STR(pAd->ExtendMBssAddr[i]));
+					if (retval) {
+						if (strcmp(tmpbuf, "random") == 0) {
+							MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+								"Set random MAC for Ap[%d]\n", i);
+						} else {
+							if (i == 0) {
+								MTWF_DBG(pAd,
+									DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+									"MacAddress = "MACSTR"\n",
+									MAC2STR(pAd->CurrentAddress));
+							} else {
+								MTWF_DBG(pAd,
+									DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+									"MacAddress%d = "MACSTR"\n",
+									i, MAC2STR(pAd->ExtendMBssAddr[i-1]));
+							}
+						}
+					}
 				}
 			}
 
@@ -5199,18 +5212,30 @@ NDIS_STATUS	RTMPSetProfileParameters(
 			if (RTMPGetKeyParameter("ApcliMacAddress", tmpbuf, 25, pBuffer, TRUE)) {
 				retval = RT_CfgSetMacAddress(pAd, tmpbuf, 0, OPMODE_STA);
 
-				if (retval)
-					MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
-						"ApcliMacAddress = "MACSTR"\n",
-						MAC2STR(pAd->ApcliAddr[0]));
+				if (retval) {
+					if (strcmp(tmpbuf, "random") == 0) {
+						MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+							"Set random MAC for ApCli0\n");
+					} else {
+						MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+							"ApcliMacAddress = "MACSTR"\n",
+							MAC2STR(pAd->ApcliAddr[0]));
+					}
+				}
 			}
 			if (RTMPGetKeyParameter("ApcliMacAddress1", tmpbuf, 25, pBuffer, TRUE)) {
 				retval = RT_CfgSetMacAddress(pAd, tmpbuf, 1, OPMODE_STA);
 
-				if (retval)
-					MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
-						"ApcliMacAddress1 = "MACSTR"\n",
-						MAC2STR(pAd->ApcliAddr[1]));
+				if (retval) {
+					if (strcmp(tmpbuf, "random") == 0) {
+						MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+							"Set random MAC for ApCli1\n");
+					} else {
+						MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+							"ApcliMacAddress1 = "MACSTR"\n",
+							MAC2STR(pAd->ApcliAddr[1]));
+					}
+				}
 			}
 #endif /* CONFIG_APSTA_MIXED_SUPPORT */
 

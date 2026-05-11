@@ -6961,7 +6961,8 @@ struct _RTMP_ADAPTER {
 	BOOLEAN bLocalAdminMAC;	/* Use user changed MAC */
 	UCHAR PermanentAddress[MAC_ADDR_LEN];	/* Factory default MAC address */
 	UCHAR CurrentAddress[MAC_ADDR_LEN];	/* User changed MAC address */
-	BOOLEAN bRandomMac;	/*use random mac address*/
+	//BOOLEAN bRandomMac;	/*use random mac address*/
+	BOOLEAN bRandomMac[MAX_BEACON_NUM];	/*MBSS Use user random mac address*/
 
 #ifdef DOT11V_MBSSID_SUPPORT
 	BOOLEAN b11vExtraIe; /* Add more IEs in NT-BSS */

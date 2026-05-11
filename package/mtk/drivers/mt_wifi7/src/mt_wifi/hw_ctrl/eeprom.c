@@ -598,7 +598,8 @@ INT NICReadEEPROMParameters(
 			"Use the MAC address what is assigned from Moudle Parameter.\n");
 	} else {
 		COPY_MAC_ADDR(pAd->CurrentAddress, pAd->PermanentAddress);
-		if (pAd->bRandomMac) {
+		//if (pAd->bRandomMac) {
+		if (pAd->bRandomMac[0]) {
 			MTWF_DBG(pAd, DBG_CAT_HW, CATHW_EEPROM, DBG_LVL_WARN,
 			"\n\n\n\n\n\033[1;31m[Wanrning] you are using random MAC!!!\033[0m\n"
 			"\033[1;31m[Wanrning]please update the MAC before use the board!!!!!!!\033[0m\n\n\n\n\n");

@@ -424,9 +424,12 @@ static NDIS_STATUS rtmp_ee_flash_init(PRTMP_ADAPTER pAd, PUCHAR start)
 	UCHAR  zero_mac[MAC_ADDR_LEN]  = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 	UCHAR  band_H[] = {0x0, 0x8, 0xc};
 	UINT8 bandIdx = hc_get_hw_band_idx(pAd);
+	UINT8 i;
 
 	cap->ee_inited = 1;
-	pAd->bRandomMac = 0;
+	//pAd->bRandomMac = 0;
+	for (i = 0; i < MAX_BEACON_NUM; i++)
+		pAd->bRandomMac[i] = FALSE;
 
 	if (validFlashEepromID(pAd) == FALSE) {
 		if (rtmp_ee_flash_reset(pAd, start) != NDIS_STATUS_SUCCESS) {
@@ -460,7 +463,23 @@ static NDIS_STATUS rtmp_ee_flash_init(PRTMP_ADAPTER pAd, PUCHAR start)
 			if (!NdisEqualMemory(zeroMac, pAd->CurrentAddress, MAC_ADDR_LEN))
 				Addr[2] = *(UINT16 *)&pAd->CurrentAddress[4];
 			*(UINT16 *)(&ph_dev->EEPROMImage[addrT_offset[bandIdx]]) = le2cpu16(Addr[2]);
-			pAd->bRandomMac = 1;
+
+			if (!NdisEqualMemory(zeroMac, pAd->CurrentAddress, MAC_ADDR_LEN))
+				pAd->bRandomMac[0] = FALSE;
+			else
+				pAd->bRandomMac[0] = TRUE;
+
+			//pAd->bRandomMac = 1;
+			for (i = 1; i < MAX_BEACON_NUM; i++)
+				pAd->bRandomMac[i] = TRUE;
+
+			pAd->PermanentAddress[0] = (UCHAR)(Addr[0] & 0xff);
+			pAd->PermanentAddress[1] = (UCHAR)(Addr[0] >> 8);
+			pAd->PermanentAddress[2] = (UCHAR)(Addr[1] & 0xff);
+			pAd->PermanentAddress[3] = (UCHAR)(Addr[1] >> 8);
+			pAd->PermanentAddress[4] = (UCHAR)(Addr[2] & 0xff);
+			pAd->PermanentAddress[5] = (UCHAR)(Addr[2] >> 8);
+
 			MTWF_DBG(pAd, DBG_CAT_FW, CATFW_EFUSE, DBG_LVL_ERROR,
 				"The EEPROM in Flash is wrong, use default\n");
 		}
