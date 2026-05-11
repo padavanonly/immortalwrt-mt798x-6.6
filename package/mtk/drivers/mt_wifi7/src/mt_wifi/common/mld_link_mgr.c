@@ -31,6 +31,7 @@ int sta_mld_link_mgr_reg_dev(struct wifi_dev *wdev)
 {
 	struct mld_link_entry *link = NULL;
 	struct mld_dev *mld = &mld_device;
+	PSTA_ADMIN_CONFIG psta_cfg = NULL;
 	int i = 0;
 
 	for (i = 0; i < MLD_LINK_MAX; i++) {
@@ -54,10 +55,29 @@ int sta_mld_link_mgr_reg_dev(struct wifi_dev *wdev)
 
 	link->wdev = wdev;
 	link->used = 1;
-
+	psta_cfg = GetStaCfgByWdev((RTMP_ADAPTER *)wdev->sys_handle, wdev);
 	if (mld->valid_link_num == 0) {
-		mld->master_link = link;
-		os_move_mem(mld->mld_addr, wdev->if_addr, MAC_ADDR_LEN);
+		if (psta_cfg && psta_cfg->pf_mld_addr_en) {
+			os_move_mem(mld->mld_addr, psta_cfg->pf_mld_addr, MAC_ADDR_LEN);
+			MTWF_DBG(NULL, DBG_CAT_MLO, CATMLO_BMGR, DBG_LVL_NOTICE,
+			"(%s)[%d]: mld_dev: 0x%p, wdev(%d)(%pM): use the cfg mld mac(%pM)\n",
+			__func__, __LINE__, mld, wdev->func_idx, wdev->if_addr, psta_cfg->pf_mld_addr);
+		} else {
+			mld->master_link = link;
+			os_move_mem(mld->mld_addr, wdev->if_addr, MAC_ADDR_LEN);
+			MTWF_DBG(NULL, DBG_CAT_MLO, CATMLO_BMGR, DBG_LVL_NOTICE,
+			"(%s)[%d]: mld_dev: 0x%p, wdev(%d)(%pM): use the link addr as mld mac(%pM)\n",
+			__func__, __LINE__, mld, wdev->func_idx, wdev->if_addr, wdev->if_addr);
+		}
+	} else {
+		if (psta_cfg && psta_cfg->pf_mld_addr_en) {
+			if (os_cmp_mem(mld->mld_addr, psta_cfg->pf_mld_addr, MAC_ADDR_LEN) != 0) {
+				MTWF_DBG(NULL, DBG_CAT_MLO, CATMLO_BMGR, DBG_LVL_WARN,
+				"(%s)[%d]: mld_dev: 0x%p, wdev(%d)(%pM) cfg mld addr(%pM) != mld mac(%pM)\n",
+				__func__, __LINE__,  mld, wdev->func_idx,
+				wdev->if_addr, psta_cfg->pf_mld_addr, mld->mld_addr);
+			}
+		}
 	}
 	mld->valid_link_num++;
 	wdev->mld_dev = mld;

@@ -167,6 +167,7 @@ void WNM_ReadParametersFromFile(
 
 #ifdef CONFIG_STA_SUPPORT
 #ifdef DOT11_EHT_BE
+void reset_sta_eth_mld_cfg_addr(PRTMP_ADAPTER pAd);
 void read_sta_eht_config_from_file(
 	IN PRTMP_ADAPTER pAd,
 	IN char *tmpbuf,

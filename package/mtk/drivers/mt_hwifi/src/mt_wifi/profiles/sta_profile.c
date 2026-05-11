@@ -26,6 +26,21 @@
 
 #ifdef CONFIG_STA_SUPPORT
 #ifdef DOT11_EHT_BE
+
+
+void reset_sta_eth_mld_cfg_addr(PRTMP_ADAPTER pAd)
+{
+	u32 idx = 0;
+	PSTA_ADMIN_CONFIG psta_cfg = NULL;
+
+	/*clear the mld cfg infos*/
+	for (idx = 0; idx < pAd->MaxMSTANum; idx++) {
+		psta_cfg = &pAd->StaCfg[idx];
+		psta_cfg->pf_mld_addr_en = FALSE;
+		os_zero_mem(psta_cfg->pf_mld_addr, MAC_ADDR_LEN);
+	}
+}
+
 void read_sta_eht_config_from_file(
 	IN PRTMP_ADAPTER pAd,
 	IN char *tmpbuf,
@@ -354,6 +369,38 @@ void read_sta_eht_config_from_file(
 				}
 				MTWF_PRINT("I/F STA (%s%d) ==> ApcliMloDisable = %d\n",
 					INF_MBSSID_DEV_NAME, idx, wdev->apcli_mlo_diable);
+			}
+		}
+	}
+
+	/* ApcliMldAddr */
+	reset_sta_eth_mld_cfg_addr(pAd);
+	if (RTMPGetKeyParameter("ApcliMldAddr", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+		for (idx = 0, macptr = rstrtok(tmpbuf, ";");
+			(macptr && idx < pAd->MaxMSTANum);
+			macptr = rstrtok(NULL, ";"), idx++) {
+			int i = 0, mac_len = 0;
+			u8 tmp_addr[MAC_ADDR_LEN] = {0};
+			PSTA_ADMIN_CONFIG psta_cfg = &pAd->StaCfg[idx];
+
+			/*init value*/
+			os_zero_mem(psta_cfg->pf_mld_addr, MAC_ADDR_LEN);
+			psta_cfg->pf_mld_addr_en = FALSE;
+
+			MTWF_DBG(pAd, DBG_CAT_MLO, CATMLO_CFG, DBG_LVL_ERROR, "macptr[%d]:(%s)\n", idx, macptr);
+			/* Mac address acceptable format 01:02:03:04:05:06 (len=17)*/
+			mac_len = strlen(macptr);
+			if (mac_len != 17)
+				MTWF_DBG(pAd, DBG_CAT_MLO, CATMLO_CFG, DBG_LVL_ERROR, "invalid length (%d)\n", mac_len);
+			else if (strcmp(macptr, "00:00:00:00:00:00") == 0)
+				MTWF_DBG(pAd, DBG_CAT_MLO, CATMLO_CFG, DBG_LVL_ERROR,
+				"invalid mac setting: 00:00:00:00:00:00\n");
+			else {
+				for (i = 0; i < MAC_ADDR_LEN; i++)
+					AtoH((tmpbuf + (i*3)), &tmp_addr[i], 1);
+				COPY_MAC_ADDR(psta_cfg->pf_mld_addr, tmp_addr);
+				psta_cfg->pf_mld_addr_en = TRUE;
+				MTWF_DBG(pAd, DBG_CAT_MLO, CATMLO_CFG, DBG_LVL_ERROR, "mac val:("MACSTR")\n", MAC2STR(psta_cfg->pf_mld_addr));
 			}
 		}
 	}

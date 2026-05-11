@@ -4175,6 +4175,8 @@ struct PRECFG_CTRL PreCfgCtrl;
 #ifdef DOT11_EHT_BE
 	struct  pp_black_list pp_bl[MAX_PP_BLACK_LIST_LEN];
 	BOOLEAN pp_bl_valid;
+	BOOLEAN pf_mld_addr_en;/*dat config enable*/
+	unsigned char pf_mld_addr[MAC_ADDR_LEN];/*dat config mld mac addr*/
 #endif
 #ifdef APCLI_RANDOM_MAC_SUPPORT
 	BOOLEAN apcli_random_mac_support;
