@@ -1346,7 +1346,8 @@ return view.extend({
 					var macaddr = uci.get('wireless', radioNet.getName(), 'macaddr');
 					o = ss.taboption('advanced', form.Value, 'macaddr', _('MAC address'), _('Override default MAC address - the range of usable addresses might be limited by the driver'));
 					o.value('', _('driver default (%s)').format(!macaddr ? radioNet.getActiveBSSID() : _('no override')));
-					o.datatype = "or(macaddr)";
+					o.value('random', _('randomly generated'));
+					o.datatype = "or('random',macaddr)";
 					o.depends('mode', 'ap');
 					o.depends('mode', 'sta');
 
