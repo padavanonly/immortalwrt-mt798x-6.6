@@ -1344,11 +1344,14 @@ return view.extend({
 					o = ss.taboption('advanced', form.Flag, 'isolate', _('Isolate Clients'), _('Prevents client-to-client communication'));
 					o.depends('mode', 'ap');
 
+					var is_mlo = uci.get('wireless', radioNet.getName(), 'mlo') == '1';
 					var macaddr = uci.get('wireless', radioNet.getName(), 'macaddr');
 					o = ss.taboption('advanced', form.Value, 'macaddr', _('MAC address'), _('Override default MAC address - the range of usable addresses might be limited by the driver'));
 					o.value('', _('driver default (%s)').format(!macaddr ? radioNet.getActiveBSSID() : _('no override')));
-					o.value('random', _('randomly generated'));
-					o.datatype = "or('random',macaddr)";
+					if (!is_mlo) {
+						o.value('random', _('randomly generated'));
+					}
+					o.datatype = (!is_mlo) ? "or('random',macaddr)" : "macaddr";
 					o.depends('mode', 'ap');
 					o.depends('mode', 'sta');
 
