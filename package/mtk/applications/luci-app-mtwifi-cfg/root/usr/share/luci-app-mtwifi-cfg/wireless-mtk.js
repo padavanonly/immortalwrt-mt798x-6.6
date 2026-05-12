@@ -1334,6 +1334,7 @@ return view.extend({
 
 					o = ss.taboption('general', form.Flag, 'mlo', _('Enable MLO'));
 					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
 					o.default = o.disabled;
 
 					o = ss.taboption('general', form.Flag, 'wmm', _('WMM Mode'));
