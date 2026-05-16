@@ -84,6 +84,10 @@ config MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED
 	bool "MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED"
 	default n
 
+config MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
+	bool "MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED"
+	default n
+
 comment "Curves - unselect old or less-used curves to reduce binary size"
 
 config MBEDTLS_ECP_DP_SECP192R1_ENABLED
@@ -140,11 +144,6 @@ config MBEDTLS_ECP_DP_CURVE448_ENABLED
 
 comment "Build Options - unselect features to reduce binary size"
 
-config MBEDTLS_AESCE_C
-	bool "MBEDTLS_AESCE_C"
-	default y
-	depends on aarch64 && !TARGET_bcm27xx_bcm2710 && !TARGET_bcm27xx_bcm2711
-
 config MBEDTLS_CIPHER_MODE_OFB
 	bool "MBEDTLS_CIPHER_MODE_OFB"
 	default n
@@ -156,11 +155,6 @@ config MBEDTLS_CIPHER_MODE_XTS
 config MBEDTLS_DEBUG_C
 	bool "MBEDTLS_DEBUG_C"
 	default n
-
-config MBEDTLS_HAVE_SSE2
-	bool "MBEDTLS_HAVE_SSE2"
-	default y
-	depends on TARGET_x86_generic || TARGET_x86_64
 
 config MBEDTLS_HKDF_C
 	bool "MBEDTLS_HKDF_C"
@@ -195,16 +189,6 @@ config MBEDTLS_PSA_CRYPTO_CLIENT
 config MBEDTLS_DEPRECATED_WARNING
 	bool "MBEDTLS_DEPRECATED_WARNING"
 	default n
-
-config MBEDTLS_SHA256_USE_ARMV8_A_CRYPTO_IF_PRESENT
-	bool "MBEDTLS_SHA256_USE_ARMV8_A_CRYPTO_IF_PRESENT"
-	default y
-	depends on aarch64 && !TARGET_bcm27xx_bcm2710 && !TARGET_bcm27xx_bcm2711
-
-config MBEDTLS_SHA512_USE_A64_CRYPTO_IF_PRESENT
-	bool "MBEDTLS_SHA512_USE_A64_CRYPTO_IF_PRESENT"
-	default y
-	depends on aarch64 && !TARGET_bcm27xx_bcm2710 && !TARGET_bcm27xx_bcm2711
 
 config MBEDTLS_SSL_PROTO_TLS1_2
 	bool "MBEDTLS_SSL_PROTO_TLS1_2"
