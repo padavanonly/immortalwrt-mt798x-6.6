@@ -80,7 +80,7 @@
 		i2c-bus = <&i2c1>;
 		los-gpios = <&pio 82 GPIO_ACTIVE_HIGH>;
 		mod-def0-gpios = <&pio 80 GPIO_ACTIVE_LOW>;
-		tx-disable-gpios = <&pio 83 GPIO_ACTIVE_LOW>;
+		tx-disable-gpios = <&pio 83 GPIO_ACTIVE_HIGH>;
 		maximum-power-milliwatt = <3000>;
 	};
 
