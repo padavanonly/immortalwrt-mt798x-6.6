@@ -4,8 +4,6 @@ Subject: [PATCH] net-phy-add-mxl862xx-built-in-phy-support
  drivers/net/phy/mxl-gpy.c | 72 ++++++++++++++++++++++++++++++++++++---
  1 file changed, 67 insertions(+), 5 deletions(-)
 
-diff --git a/drivers/net/phy/mxl-gpy.c b/drivers/net/phy/mxl-gpy.c
-index 5c7cf0a..df3b6ad 100644
 --- a/drivers/net/phy/mxl-gpy.c
 +++ b/drivers/net/phy/mxl-gpy.c
 @@ -19,6 +19,7 @@
@@ -24,7 +22,7 @@ index 5c7cf0a..df3b6ad 100644
  
  #define PHY_CTL1		0x13
  #define PHY_CTL1_MDICD		BIT(3)
-@@ -200,6 +202,29 @@ static int gpy_hwmon_read(struct device *dev,
+@@ -200,6 +202,29 @@
  	return 0;
  }
  
@@ -54,7 +52,7 @@ index 5c7cf0a..df3b6ad 100644
  static umode_t gpy_hwmon_is_visible(const void *data,
  				    enum hwmon_sensor_types type,
  				    u32 attr, int channel)
-@@ -217,14 +242,25 @@ static const struct hwmon_ops gpy_hwmon_hwmon_ops = {
+@@ -217,14 +242,25 @@
  	.read		= gpy_hwmon_read,
  };
  
@@ -80,7 +78,7 @@ index 5c7cf0a..df3b6ad 100644
  	struct device *hwmon_dev;
  	char *hwmon_name;
  
-@@ -232,11 +268,13 @@ static int gpy_hwmon_register(struct phy_device *phydev)
+@@ -232,11 +268,13 @@
  	if (IS_ERR(hwmon_name))
  		return PTR_ERR(hwmon_name);
  
@@ -98,16 +96,7 @@ index 5c7cf0a..df3b6ad 100644
  	return PTR_ERR_OR_ZERO(hwmon_dev);
  }
  #else
-@@ -579,7 +617,7 @@ static int gpy_update_interface(struct phy_device *phydev)
- 	/* Interface mode is fixed for USXGMII and integrated PHY */
- 	if (phydev->interface == PHY_INTERFACE_MODE_USXGMII ||
- 	    phydev->interface == PHY_INTERFACE_MODE_INTERNAL)
--		return -EINVAL;
-+		return 0;
- 
- 	/* Automatically switch SERDES interface between SGMII and 2500-BaseX
- 	 * according to speed. Disable ANEG in 2500-BaseX mode.
-@@ -1306,6 +1344,29 @@ static struct phy_driver gpy_drivers[] = {
+@@ -1306,6 +1344,29 @@
  		.get_wol	= gpy_get_wol,
  		.set_loopback	= gpy_loopback,
  	},
@@ -137,7 +126,7 @@ index 5c7cf0a..df3b6ad 100644
  };
  module_phy_driver(gpy_drivers);
  
-@@ -1322,6 +1383,7 @@ static struct mdio_device_id __maybe_unused gpy_tbl[] = {
+@@ -1322,6 +1383,7 @@
  	{PHY_ID_MATCH_MODEL(PHY_ID_GPY241B)},
  	{PHY_ID_MATCH_MODEL(PHY_ID_GPY241BM)},
  	{PHY_ID_MATCH_MODEL(PHY_ID_GPY245B)},
@@ -145,6 +134,3 @@ index 5c7cf0a..df3b6ad 100644
  	{ }
  };
  MODULE_DEVICE_TABLE(mdio, gpy_tbl);
--- 
-2.45.2
-

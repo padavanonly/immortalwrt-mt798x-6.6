@@ -1125,7 +1125,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  	MAX_BPF_LINK_TYPE,
  };
  
-@@ -1661,6 +1664,13 @@ union bpf_attr {
+@@ -1662,6 +1665,13 @@ union bpf_attr {
  				__u32		flags;
  				__u32		pid;
  			} uprobe_multi;
@@ -1139,7 +1139,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  		};
  	} link_create;
  
-@@ -6584,6 +6594,10 @@ struct bpf_link_info {
+@@ -6587,6 +6597,10 @@ struct bpf_link_info {
  			__u32 ifindex;
  			__u32 attach_type;
  		} tcx;
@@ -1185,10 +1185,10 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  /* include statistics in the dump */
 --- a/kernel/bpf/syscall.c
 +++ b/kernel/bpf/syscall.c
-@@ -35,8 +35,9 @@
- #include <linux/rcupdate_trace.h>
+@@ -36,8 +36,9 @@
  #include <linux/memcontrol.h>
  #include <linux/trace_events.h>
+ #include <linux/cookie.h>
 -#include <net/netfilter/nf_bpf_link.h>
  
 +#include <net/netfilter/nf_bpf_link.h>
@@ -1196,7 +1196,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  #include <net/tcx.h>
  
  #define IS_FD_ARRAY(map) ((map)->map_type == BPF_MAP_TYPE_PERF_EVENT_ARRAY || \
-@@ -3828,6 +3829,8 @@ attach_type_to_prog_type(enum bpf_attach
+@@ -3837,6 +3838,8 @@ attach_type_to_prog_type(enum bpf_attach
  		return BPF_PROG_TYPE_LSM;
  	case BPF_TCX_INGRESS:
  	case BPF_TCX_EGRESS:
@@ -1205,7 +1205,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  		return BPF_PROG_TYPE_SCHED_CLS;
  	default:
  		return BPF_PROG_TYPE_UNSPEC;
-@@ -3884,7 +3887,9 @@ static int bpf_prog_attach_check_attach_
+@@ -3893,7 +3896,9 @@ static int bpf_prog_attach_check_attach_
  		return 0;
  	case BPF_PROG_TYPE_SCHED_CLS:
  		if (attach_type != BPF_TCX_INGRESS &&
@@ -1216,7 +1216,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  			return -EINVAL;
  		return 0;
  	default:
-@@ -3967,7 +3972,11 @@ static int bpf_prog_attach(const union b
+@@ -3977,7 +3982,11 @@ static int bpf_prog_attach(const union b
  			ret = cgroup_bpf_prog_attach(attr, ptype, prog);
  		break;
  	case BPF_PROG_TYPE_SCHED_CLS:
@@ -1229,7 +1229,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  		break;
  	default:
  		ret = -EINVAL;
-@@ -4028,7 +4037,11 @@ static int bpf_prog_detach(const union b
+@@ -4038,7 +4047,11 @@ static int bpf_prog_detach(const union b
  		ret = cgroup_bpf_prog_detach(attr, ptype);
  		break;
  	case BPF_PROG_TYPE_SCHED_CLS:
@@ -1242,7 +1242,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  		break;
  	default:
  		ret = -EINVAL;
-@@ -4090,6 +4103,9 @@ static int bpf_prog_query(const union bp
+@@ -4100,6 +4113,9 @@ static int bpf_prog_query(const union bp
  	case BPF_TCX_INGRESS:
  	case BPF_TCX_EGRESS:
  		return tcx_prog_query(attr, uattr);
@@ -1252,7 +1252,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  	default:
  		return -EINVAL;
  	}
-@@ -5071,7 +5087,11 @@ static int link_create(union bpf_attr *a
+@@ -5081,7 +5097,11 @@ static int link_create(union bpf_attr *a
  		ret = bpf_xdp_link_attach(attr, prog);
  		break;
  	case BPF_PROG_TYPE_SCHED_CLS:
@@ -1284,7 +1284,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  	MAX_BPF_LINK_TYPE,
  };
  
-@@ -1661,6 +1664,13 @@ union bpf_attr {
+@@ -1662,6 +1665,13 @@ union bpf_attr {
  				__u32		flags;
  				__u32		pid;
  			} uprobe_multi;
@@ -1298,7 +1298,7 @@ Signed-off-by: Martin KaFai Lau <martin.lau@kernel.org>
  		};
  	} link_create;
  
-@@ -6587,6 +6597,10 @@ struct bpf_link_info {
+@@ -6590,6 +6600,10 @@ struct bpf_link_info {
  			__u32 ifindex;
  			__u32 attach_type;
  		} tcx;
