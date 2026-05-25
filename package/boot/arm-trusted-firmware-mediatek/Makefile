@@ -376,7 +376,7 @@ endef
 define Trusted-Firmware-A/mt7988-nor-ddr3
   NAME:=MediaTek MT7988 (SPI-NOR, DDR3)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -384,7 +384,7 @@ endef
 define Trusted-Firmware-A/mt7988-emmc-ddr3
   NAME:=MediaTek MT7988 (eMMC, DDR3)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -392,7 +392,7 @@ endef
 define Trusted-Firmware-A/mt7988-sdmmc-ddr3
   NAME:=MediaTek MT7988 (SD card, DDR3)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -400,7 +400,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-ddr3
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI, DDR3)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -408,7 +408,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ddr3
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, DDR3)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -416,7 +416,7 @@ endef
 define Trusted-Firmware-A/mt7988-nor-ddr4
   NAME:=MediaTek MT7988 (SPI-NOR, DDR4)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -424,7 +424,7 @@ endef
 define Trusted-Firmware-A/mt7988-emmc-ddr4
   NAME:=MediaTek MT7988 (eMMC, DDR4)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -432,7 +432,7 @@ endef
 define Trusted-Firmware-A/mt7988-sdmmc-ddr4
   NAME:=MediaTek MT7988 (SD card, DDR4)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -440,7 +440,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-ddr4
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI, DDR4)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -448,7 +448,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ddr4
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -456,18 +456,18 @@ endef
 define Trusted-Firmware-A/mt7988-ram-comb
   NAME:=MediaTek MT7988 (RAM)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic_a73
 endef
 
 define Trusted-Firmware-A/mt7988-nor-comb
   NAME:=MediaTek MT7988 (SPI-NOR)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -475,7 +475,7 @@ endef
 define Trusted-Firmware-A/mt7988-emmc-comb
   NAME:=MediaTek MT7988 (eMMC)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -483,7 +483,7 @@ endef
 define Trusted-Firmware-A/mt7988-sdmmc-comb
   NAME:=MediaTek MT7988 (SD card)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -491,7 +491,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -499,7 +499,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-ubi-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI, UBI)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
   USE_UBI:=1
@@ -508,7 +508,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -516,7 +516,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ubi-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, UBI)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   PLAT:=mt7988
   DRAM_USE_COMB:=1
   USE_UBI:=1

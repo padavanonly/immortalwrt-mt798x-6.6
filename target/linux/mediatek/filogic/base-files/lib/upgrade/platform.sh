@@ -66,8 +66,7 @@ platform_do_upgrade() {
 	local board=$(board_name)
 
 	case "$board" in
-	mediatek,mt7981-rfb|\
-	mediatek,mt7988a-rfb)
+	mediatek,mt7981-rfb)
 		[ -e /dev/dm-0 ] && dmsetup remove_all
 		[ -e /dev/fit0 ] && fitblk /dev/fit0
 		[ -e /dev/fitrw ] && fitblk /dev/fitrw
@@ -93,8 +92,6 @@ platform_do_upgrade() {
 	abt,asr3000|\
 	bananapi,bpi-r3|\
 	bananapi,bpi-r3-mini|\
-	bananapi,bpi-r4|\
-	bananapi,bpi-r4-poe|\
 	cmcc,a10-ubootmod|\
 	cmcc,rax3000m|\
 	gatonetworks,gdsp|\
@@ -102,7 +99,6 @@ platform_do_upgrade() {
 	jcg,q30-pro|\
 	jdcloud,re-cp-03|\
 	mediatek,mt7981-rfb|\
-	mediatek,mt7988a-rfb|\
 	mercusys,mr90x-v1-ubi|\
 	netis,nx31|\
 	nokia,ea0326gmp|\
@@ -114,8 +110,6 @@ platform_do_upgrade() {
 	tplink,tl-xdr6086|\
 	tplink,tl-xdr6088|\
 	tplink,tl-xtr8488|\
-	tplink,tl-7dr7230-rev1.0-sp2|\
-	tplink,tl-7dr7299-v1|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,redmi-router-ax6000-ubootmod|\
 	xiaomi,mi-router-wr30u-ubootmod|\
@@ -125,7 +119,6 @@ platform_do_upgrade() {
 	acer,predator-w6|\
 	acer,predator-w6d|\
 	acer,vero-w6m|\
-	arcadyan,mozart|\
 	glinet,gl-mt2500|\
 	glinet,gl-mt6000|\
 	glinet,gl-x3000|\
@@ -136,10 +129,7 @@ platform_do_upgrade() {
 	smartrg,sdg-8612|\
 	smartrg,sdg-8614|\
 	smartrg,sdg-8622|\
-	smartrg,sdg-8632|\
-	smartrg,sdg-8733|\
-	smartrg,sdg-8733a|\
-	smartrg,sdg-8734)
+	smartrg,sdg-8632)
 		CI_KERNPART="kernel"
 		CI_ROOTPART="rootfs"
 		emmc_do_upgrade "$1"
@@ -214,14 +204,9 @@ platform_check_image() {
 
 	case "$board" in
 	mediatek,mt7981-rfb|\
-	mediatek,mt7988a-rfb|\
 	bananapi,bpi-r3|\
 	bananapi,bpi-r3-mini|\
-	bananapi,bpi-r4|\
-	bananapi,bpi-r4-poe|\
 	hiveton,h5000m|\
-	tplink,tl-7dr7230-rev1.0-sp2|\
-	tplink,tl-7dr7299-v1|\
 	cmcc,rax3000m)
 		magic="$(dd if="$1" bs=1 skip=257 count=5 2>/dev/null)"
 
@@ -245,11 +230,8 @@ platform_check_image() {
 platform_copy_config() {
 	case "$(board_name)" in
 	mediatek,mt7981-rfb|\
-	mediatek,mt7988a-rfb|\
 	bananapi,bpi-r3|\
 	bananapi,bpi-r3-mini|\
-	bananapi,bpi-r4|\
-	bananapi,bpi-r4-poe|\
 	cmcc,rax3000m)
 		if [ "$CI_METHOD" = "emmc" ]; then
 			emmc_copy_config
@@ -258,7 +240,6 @@ platform_copy_config() {
 	acer,predator-w6|\
 	acer,predator-w6d|\
 	acer,vero-w6m|\
-	arcadyan,mozart|\
 	glinet,gl-mt2500|\
 	glinet,gl-mt6000|\
 	glinet,gl-x3000|\
@@ -271,9 +252,6 @@ platform_copy_config() {
 	smartrg,sdg-8614|\
 	smartrg,sdg-8622|\
 	smartrg,sdg-8632|\
-	smartrg,sdg-8733|\
-	smartrg,sdg-8733a|\
-	smartrg,sdg-8734|\
 	ubnt,unifi-6-plus)
 		emmc_copy_config
 		;;

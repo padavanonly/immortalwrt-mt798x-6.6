@@ -12,6 +12,7 @@ loadaddr-$(CONFIG_TARGET_mediatek_mt7622) := 0x44000000
 loadaddr-$(CONFIG_TARGET_mediatek_mt7623) := 0x80008000
 loadaddr-$(CONFIG_TARGET_mediatek_mt7629) := 0x40008000
 loadaddr-$(CONFIG_TARGET_mediatek_filogic) := 0x48000000
+loadaddr-$(CONFIG_TARGET_mediatek_filogic_a73) := 0x48000000
 
 # default all platform image(fit) build
 define Device/Default
@@ -112,4 +113,3 @@ define Build/secure-boot-initramfs
 endef
 
 $(eval $(call BuildImage))
-

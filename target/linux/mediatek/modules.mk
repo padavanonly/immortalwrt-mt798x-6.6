@@ -29,7 +29,7 @@ $(eval $(call KernelPackage,btmtkuart))
 
 define KernelPackage/iio-mt6577-auxadc
   TITLE:=Mediatek AUXADC driver
-  DEPENDS:=@(TARGET_mediatek_mt7622||TARGET_mediatek_filogic)
+  DEPENDS:=@(TARGET_mediatek_mt7622||TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_MEDIATEK_MT6577_AUXADC
   FILES:= \
 	$(LINUX_DIR)/drivers/iio/adc/mt6577_auxadc.ko

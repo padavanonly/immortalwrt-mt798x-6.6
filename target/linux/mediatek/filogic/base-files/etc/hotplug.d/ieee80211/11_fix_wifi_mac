@@ -54,13 +54,6 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
 		;;
-	bananapi,bpi-r4|\
-	bananapi,bpi-r4-poe)
-		addr=$(cat /sys/class/net/eth0/address)
-		[ "$PHYNBR" = "0" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "2" ] && macaddr_add $addr 4 > /sys${DEVPATH}/macaddress
-		;;
 	cetron,ct3003)
 		addr=$(mtd_get_mac_binary "art" 0)
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 1 > /sys${DEVPATH}/macaddress
@@ -165,9 +158,6 @@ case "$board" in
 		;;
 	tplink,tl-xtr8488)
 		[ "$PHYNBR" = "1" ] && get_mac_label > /sys${DEVPATH}/macaddress
-		;;
-	tplink,tl-7dr7230-rev1.0-sp2)
-		[ "$PHYNBR" = "1" ] && mtd_get_mac_binary factory 0xa > /sys${DEVPATH}/macaddress
 		;;
 	ubnt,unifi-6-plus)
 		addr=$(mtd_get_mac_binary EEPROM 0x6)
