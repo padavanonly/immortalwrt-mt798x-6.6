@@ -1933,6 +1933,66 @@ define Device/yvr_x6
 endef
 TARGET_DEVICES += yvr_x6
 
+define Device/ruijie_ew-6000gx-pro
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := EW-6000GX Pro
+  DEVICE_DTS := mt7986a-ruijie-ew-6000gx-pro
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += ruijie_ew-6000gx-pro
+
+define Device/ruijie_ew-6000gx-pro-expand
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := EW-6000GX Pro (Expand)
+  DEVICE_DTS := mt7986a-ruijie-ew-6000gx-pro-expand
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += ruijie_ew-6000gx-pro-expand
+
+define Device/ruijie_ew-6000gx-pro-stock
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := EW-6000GX Pro (Stock)
+  DEVICE_DTS := mt7986a-ruijie-ew-6000gx-pro-stock
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += ruijie_ew-6000gx-pro-stock
+
+define Device/ruijie_ew-6000gx-pro-ubootmod
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := EW-6000GX Pro
+  DEVICE_VARIANT := (OpenWrt U-Boot layout)
+  DEVICE_DTS := mt7986a-ruijie-ew-6000gx-pro-ubootmod
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
+         kmod-phy-airoha-en8811h
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  KERNEL_IN_UBI := 1
+  UBOOTENV_IN_UBI := 1
+  IMAGES := sysupgrade.itb
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | append-metadata
+  ARTIFACTS := preloader.bin bl31-uboot.fip
+  ARTIFACT/preloader.bin := mt7986-bl2 spim-nand-ddr3
+  ARTIFACT/bl31-uboot.fip := mt7986-bl31-uboot ruijie_ew-6000gx-pro
+endef
+TARGET_DEVICES += ruijie_ew-6000gx-pro-ubootmod
+
 define Device/ruijie_rg-x60-new
   DEVICE_VENDOR := Ruijie
   DEVICE_MODEL := RG-X60 New
@@ -1943,6 +2003,17 @@ define Device/ruijie_rg-x60-new
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += ruijie_rg-x60-new
+
+define Device/ruijie_rg-x60-new-expand
+  DEVICE_VENDOR := Ruijie
+  DEVICE_MODEL := RG-X60 New (Expand)
+  DEVICE_DTS := mt7986a-ruijie-rg-x60-new-expand
+  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += ruijie_rg-x60-new-expand
 
 define Device/ruijie_rg-x60-new-stock
   DEVICE_VENDOR := Ruijie

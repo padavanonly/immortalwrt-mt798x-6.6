@@ -20,6 +20,7 @@ mediatek_setup_interfaces()
 	nokia,ea0326gmp|\
 	mercusys,mr80x-v3|\
 	routerich,ax3000-v1|\
+	ruijie,rg-x60-new*|\
 	umi,uax3000e|\
 	zbtlink,zbt-z8103ax|\
 	zbtlink,zbt-z8103ax-c*)
@@ -72,7 +73,8 @@ mediatek_setup_interfaces()
 	mediatek,mt7981-rfb|\
 	netcore,n60|\
 	netcore,n60-pro|\
-	ruijie,rg-x60*|\
+	ruijie,ew-6000gx-pro*|\
+	ruijie,rg-x60-pro*|\
 	unielec,u7981-01*|\
 	zbtlink,zbt-z8102ax|\
 	zyxel,ex5601-t0-stock|\
@@ -240,6 +242,7 @@ mediatek_setup_macs()
 		wan_mac=$(macaddr_add "$lan_mac" 1)
 		label_mac=$wan_mac
 		;;
+	ruijie,ew-6000gx-pro*|\
 	ruijie,rg-x60*)
 		label_mac=$(mtd_get_mac_ascii product_info ethaddr)
 		wan_mac=$label_mac

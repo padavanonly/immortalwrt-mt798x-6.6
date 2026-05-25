@@ -1,5 +1,5 @@
 --- /dev/null
-+++ b/configs/mt7986_ruijie_rg-x60-new_defconfig
++++ b/configs/mt7986_ruijie_ew-6000gx-pro_defconfig
 @@ -0,0 +1,130 @@
 +CONFIG_ARM=y
 +CONFIG_SYS_HAS_NONCACHED_MEMORY=y
@@ -8,7 +8,7 @@
 +CONFIG_TEXT_BASE=0x41e00000
 +CONFIG_SYS_MALLOC_F_LEN=0x4000
 +CONFIG_NR_DRAM_BANKS=1
-+CONFIG_DEFAULT_DEVICE_TREE="mt7986a-ruijie-rg-x60-new"
++CONFIG_DEFAULT_DEVICE_TREE="mt7986a-ruijie-ew-6000gx-pro"
 +CONFIG_OF_LIBFDT_OVERLAY=y
 +CONFIG_TARGET_MT7986=y
 +CONFIG_PRE_CON_BUF_ADDR=0x4007EF00
@@ -22,7 +22,7 @@
 +CONFIG_BOOTDELAY=30
 +CONFIG_AUTOBOOT_KEYED=y
 +CONFIG_AUTOBOOT_MENU_SHOW=y
-+CONFIG_DEFAULT_FDT_FILE="mediatek/mt7986a-ruijie-rg-x60-new.dtb"
++CONFIG_DEFAULT_FDT_FILE="mediatek/mt7986a-ruijie-ew-6000gx-pro.dtb"
 +CONFIG_LOGLEVEL=7
 +CONFIG_PRE_CONSOLE_BUFFER=y
 +CONFIG_LOG=y
@@ -75,7 +75,7 @@
 +CONFIG_ENV_UBI_VOLUME_REDUND="ubootenv2"
 +CONFIG_SYS_RELOC_GD_ENV_ADDR=y
 +CONFIG_USE_DEFAULT_ENV_FILE=y
-+CONFIG_DEFAULT_ENV_FILE="ruijie_rg-x60-new_env"
++CONFIG_DEFAULT_ENV_FILE="ruijie_ew-6000gx-pro_env"
 +CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG=y
 +CONFIG_VERSION_VARIABLE=y
 +CONFIG_NET_RANDOM_ETHADDR=y
@@ -132,7 +132,7 @@
 +CONFIG_HEXDUMP=y
 +CONFIG_LMB_MAX_REGIONS=64
 --- /dev/null
-+++ b/arch/arm/dts/mt7986a-ruijie-rg-x60-new.dts
++++ b/arch/arm/dts/mt7986a-ruijie-ew-6000gx-pro.dts
 @@ -0,0 +1,196 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
@@ -147,7 +147,7 @@
 +/ {
 +	#address-cells = <1>;
 +	#size-cells = <1>;
-+	model = "ruijie RG-X60 New ubootmod";
++	model = "ruijie ew-6000gx-pro ubootmod";
 +	compatible = "mediatek,mt7986", "mediatek,mt7986-rfb";
 +
 +	chosen {
@@ -331,7 +331,7 @@
 +	status = "disabled";
 +};
 --- /dev/null
-+++ b/ruijie_rg-x60-new_env
++++ b/ruijie_ew-6000gx-pro_env
 @@ -0,0 +1,57 @@
 +ipaddr=192.168.1.1
 +serverip=192.168.1.254
@@ -340,10 +340,10 @@
 +bootcmd=if pstore check ; then run boot_recovery ; else run boot_ubi ; fi
 +bootconf=config-1
 +bootdelay=0
-+bootfile=immortalwrt-mediatek-filogic-ruijie_rg-x60-new-ubootmod-initramfs-recovery.itb
-+bootfile_bl2=immortalwrt-mediatek-filogic-ruijie_rg-x60-new-ubootmod-preloader.bin
-+bootfile_fip=immortalwrt-mediatek-filogic-ruijie_rg-x60-new-ubootmod-bl31-uboot.fip
-+bootfile_upg=immortalwrt-mediatek-filogic-ruijie_rg-x60-new-ubootmod-squashfs-sysupgrade.itb
++bootfile=immortalwrt-mediatek-filogic-ruijie_ew-6000gx-pro-ubootmod-initramfs-recovery.itb
++bootfile_bl2=immortalwrt-mediatek-filogic-ruijie_ew-6000gx-pro-ubootmod-preloader.bin
++bootfile_fip=immortalwrt-mediatek-filogic-ruijie_ew-6000gx-pro-ubootmod-bl31-uboot.fip
++bootfile_upg=immortalwrt-mediatek-filogic-ruijie_ew-6000gx-pro-ubootmod-squashfs-sysupgrade.itb
 +bootled_pwr=green:status
 +bootled_rec=red:status
 +bootmenu_confirm_return=askenv - Press ENTER to return to menu ; bootmenu 60

@@ -171,6 +171,7 @@ generate_network() {
 			case "$1" in
 				lan)
 					case "$board" in
+						ruijie,ew-6000gx-pro*|\
 						ruijie,rg-x60*)
 							ipad=${ipaddr:-"192.168.110.1"}
 						;;

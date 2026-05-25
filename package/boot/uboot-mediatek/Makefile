@@ -845,6 +845,18 @@ define U-Boot/mt7986_netcore_n60-pro
   DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr4
 endef
 
+define U-Boot/mt7986_ruijie_ew-6000gx-pro
+  NAME:=Ruijie EW-6000GX Pro
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=ruijie_ew-6000gx-pro-ubootmod
+  UBOOT_CONFIG:=mt7986_ruijie_ew-6000gx-pro
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7986
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr3
+endef
+
 define U-Boot/mt7986_ruijie_rg-x60-new
   NAME:=Ruijie RG-X60 New
   BUILD_SUBTARGET:=filogic
@@ -1143,6 +1155,7 @@ UBOOT_TARGETS := \
 	mt7986_mercusys_mr90x-v1 \
 	mt7986_netcore_n60 \
 	mt7986_netcore_n60-pro \
+  mt7986_ruijie_ew-6000gx-pro \
   mt7986_ruijie_rg-x60-new \
 	mt7986_tplink_tl-xdr4288 \
 	mt7986_tplink_tl-xdr6086 \

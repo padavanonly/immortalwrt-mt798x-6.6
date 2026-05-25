@@ -49,6 +49,7 @@ netis,nx32u|\
 nokia,ea0326gmp|\
 qihoo,360t7|\
 routerich,ax3000-ubootmod|\
+ruijie,ew-6000gx-pro-ubootmod|\
 ruijie,rg-x60-new-ubootmod|\
 tplink,tl-xdr4288|\
 tplink,tl-xdr6086|\
@@ -102,7 +103,11 @@ sn,r1)
 		;;
 	esac
 	;;
+ruijie,ew-6000gx-pro|\
+ruijie,ew-6000gx-pro-expand|\
+ruijie,ew-6000gx-pro-stock|\
 ruijie,rg-x60-new|\
+ruijie,rg-x60-new-expand|\
 ruijie,rg-x60-new-stock|\
 ruijie,rg-x60-pro|\
 ruijie,rg-x60-pro-107m)

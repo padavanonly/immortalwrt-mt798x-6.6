@@ -738,6 +738,7 @@ setup_model()
 	bananapi,bpi-r3-mini* |\
 	netcore,n60* |\
 	glinet,gl-mt6000|\
+	ruijie,ew-6000gx-pro* |\
 	ruijie,rg-x60* |\
 	jdcloud,re-cp-03 |\
 	tplink,tl-xdr608* |\
