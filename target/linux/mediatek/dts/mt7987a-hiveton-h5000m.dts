@@ -40,55 +40,41 @@
 		};
 	};
 
-	/* use pwm0 as led: share with fan/pwm_rgb */
-	pwm_led {
-		pinctrl-names = "default";
-		pinctrl-0 = <&pwm_pins>;
-		status = "okay";
+	leds {
+		compatible = "gpio-leds";
 
-		led {
-			pwms = <&pwm 0 50000 0>;
-			max-brightness = <255>;
-			active-low;
-			linux,default-trigger = "default-on";
+		led-sys1 {
+			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_POWER;
 		};
-	};
 
-	/* use pwm0/1/2 as multicolor LED: share with fan/pwm_led */
-	pwm_rgb {
-		pinctrl-names = "default";
-		pinctrl-0 = <&pwm_rgb_pins>;
-		status = "disabled";
-
-		multi-led {
-			color = <LED_COLOR_ID_RGB>;
-			function = LED_FUNCTION_INDICATOR;
-			max-brightness = <255>;
-
-			led-red {
-				pwms = <&pwm 0 50000>;
-				color = <LED_COLOR_ID_RED>;
-			};
-
-			led-green {
-				pwms = <&pwm 1 50000>;
-				color = <LED_COLOR_ID_GREEN>;
-			};
-
-			led-blue {
-				pwms = <&pwm 2 50000>;
-				color = <LED_COLOR_ID_BLUE>;
-			};
+		led-sys2 {
+			gpios = <&pio 3 GPIO_ACTIVE_LOW>;
+			color = <LED_COLOR_ID_YELLOW>;
+			function = LED_FUNCTION_POWER;
 		};
 	};
 };
 
 &fan {
 	pinctrl-names = "default";
-        pinctrl-0 = <&pwm_fan_pins>;
+	pinctrl-0 = <&pwm_fan_pins>;
 	compatible = "pwm-fan";
 	#cooling-cells = <2>;
 	cooling-levels = <0 10 20 30 40 50 60 70 80 90 100 110 120 130 140 150 160 170 180 190 200 210 220 240 255>;
 	pwms = <&pwm 1 50000 0>;
 	status = "okay";
+};
+
+&phy15 {
+	leds {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		i2p5gbe_led0: i2p5gbe-led0@0 {
+			reg = <0>;
+			function = LED_FUNCTION_LAN;
+		};
+	};
 };

@@ -455,9 +455,23 @@ define Device/hiveton-h5000m
   DEVICE_VENDOR := Hiveton
   DEVICE_MODEL := H5000M
   DEVICE_DTS := mt7987a-hiveton-h5000m
-  DEVICE_DTS_DIR := $(DTS_DIR)/
+  DEVICE_DTS_DIR := ../dts
   KERNEL_LOADADDR := 0x40080000
-  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-sfp blkid
+  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-sfp blkid \
+	kmod-crypto-hw-safexcel kmod-gpio-button-hotplug kmod-leds-gpio \
+	kmod-phy-aquantia kmod-hwmon-pwmfan kmod-mediatek_hnat \
+	kmod-usb3 kmod-usb-storage kmod-usb-storage-uas kmod-usb-storage-extras \
+	automount block-mount e2fsprogs f2fsck mkf2fs \
+	wireless-regdb \
+	luci-light luci-app-Airpifanctrl luci-app-mtwifi-cfg luci-i18n-mtwifi-cfg-zh-cn mtwifi-cfg \
+	luci-app-eqos-mtk luci-i18n-eqos-mtk-zh-cn luci-app-turboacc-mtk luci-i18n-turboacc-mtk-zh-cn \
+	kmod-warp kmod-mt_wifi_cmn kmod-mt_wifi7 kmod-mt_hwifi \
+	kmod-mtk_pci kmod-mtk_wed kmod-connac_if kmod-mt7992 kmod-mt799a \
+	luci-app-modem luci-i18n-modem-zh-cn sms-tool quectel-CM-5G \
+	kmod-usb-acm kmod-usb-net kmod-usb-net-cdc-ether kmod-usb-net-cdc-mbim \
+	kmod-usb-net-cdc-ncm kmod-usb-net-qmi-wwan kmod-usb-net-rndis \
+	kmod-usb-serial kmod-usb-serial-option kmod-usb-serial-qualcomm \
+	kmod-usb-serial-wwan kmod-usb-wdm
   SUPPORTED_DEVICES += hiveton,h5000m
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
