@@ -1,0 +1,683 @@
+diff --git a/mt_wifi/ap/ap_cfg.c b/mt_wifi/ap/ap_cfg.c
+index 18ce9e28d7..fc692554f6 100644
+--- a/mt_wifi/ap/ap_cfg.c
++++ b/mt_wifi/ap/ap_cfg.c
+@@ -9319,10 +9319,11 @@ INT RTMPAPQueryInformation(
+ 		PMAC_TABLE_ENTRY pEntry = NULL;
+ 		p_rrm_command_t p_rrm_command = NULL;
+ 		BSS_STRUCT *pMbss = NULL;
+-		PUINT8 p_cap = NULL;
+-		UINT16 TotalLen = 0;
++		PUINT8 p_cap = NULL;
++		UINT16 TotalLen = 0;
++		UINT i;
+ 
+-		if (!VALID_MBSS(pAd, apidx))
++		if (!VALID_MBSS(pAd, apidx))
+ 			return -EFAULT;
+ 
+ 		pMbss = &pAd->ApCfg.MBSSID[apidx];
+@@ -9373,10 +9374,14 @@ INT RTMPAPQueryInformation(
+ 		}
+ 		/*check for btm capablility*/
+ 		p_cap = (UINT8 *)(p_rrm_query_data+MAC_ADDR_LEN);
+-		memset(p_cap, 0, 8);
++		for (i = 0; i < 8; i++)
++			p_cap[i] = 0;
+ 
+ 		if (p_rrm_command->command_id == OID_802_11_RRM_CMD_QUERY_CAP) {
+-			memcpy(p_cap, (PUCHAR)&(pEntry->RrmEnCap), sizeof(pEntry->RrmEnCap));
++			UCHAR *rrm_cap = (UCHAR *)&pEntry->RrmEnCap;
++
++			for (i = 0; i < sizeof(pEntry->RrmEnCap); i++)
++				p_cap[i] = rrm_cap[i];
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM,  DBG_LVL_ERROR,
+ 				"RT_QUERY_WNM_CAPABILITY: only check rrm cap now\n");
+@@ -25758,7 +25763,7 @@ INT Send_WNM_Notify_Req(
+ 		}
+ 
+ 		NdisZeroMemory(WNMNotifyPeerEntry, sizeof(*WNMNotifyPeerEntry));
+-		WNMNotifyPeerEntry->CurrentState = WNM_NOTIFY_REQ;
++		WNMNotifyPeerEntry->CurrentState = WAIT_WNM_NOTIFY_REQ;
+ 		WNMNotifyPeerEntry->ControlIndex = APIndex;
+ 		NdisMoveMemory(WNMNotifyPeerEntry->PeerMACAddr, PeerMACAddr, MAC_ADDR_LEN);
+ 		WNMNotifyPeerEntry->DialogToken = 1;
+@@ -29848,4 +29853,3 @@ INT Show_StationKeepAlive(
+ 
+ 	return TRUE;
+ }
+-
+diff --git a/mt_wifi/ap/ap_data.c b/mt_wifi/ap/ap_data.c
+index eeea3b8481..67ad5cce6b 100644
+--- a/mt_wifi/ap/ap_data.c
++++ b/mt_wifi/ap/ap_data.c
+@@ -1165,7 +1165,8 @@ static inline VOID ap_build_802_11_header(RTMP_ADAPTER *pAd, struct _TX_BLK *pTx
+ 				COPY_MAC_ADDR(wifi_hdr->Addr2, pAd->CurrentAddress); /* from AP1 */
+ 			}
+ 			COPY_MAC_ADDR(wifi_hdr->Addr3, pTxBlk->pSrcBufHeader);	/* DA */
+-			COPY_MAC_ADDR(wifi_hdr->Octet, pTxBlk->pSrcBufHeader + MAC_ADDR_LEN);/* ADDR4 = SA */
++			COPY_MAC_ADDR((UCHAR *)wifi_hdr + offsetof(HEADER_802_11, Octet),
++				pTxBlk->pSrcBufHeader + MAC_ADDR_LEN);/* ADDR4 = SA */
+ 			pTxBlk->MpduHeaderLen += MAC_ADDR_LEN;
+ 			pTxBlk->wifi_hdr_len += MAC_ADDR_LEN;
+ 		} else
+@@ -1209,7 +1210,8 @@ static inline VOID ap_build_802_11_header(RTMP_ADAPTER *pAd, struct _TX_BLK *pTx
+ 				}
+ 				COPY_MAC_ADDR(wifi_hdr->Addr2, pAd->CurrentAddress);						/* from AP1 */
+ 				COPY_MAC_ADDR(wifi_hdr->Addr3, pTxBlk->pSrcBufHeader);					/* DA */
+-				COPY_MAC_ADDR(&wifi_hdr->Octet[0], pTxBlk->pSrcBufHeader + MAC_ADDR_LEN);/* ADDR4 = SA */
++				COPY_MAC_ADDR((UCHAR *)wifi_hdr + offsetof(HEADER_802_11, Octet),
++					pTxBlk->pSrcBufHeader + MAC_ADDR_LEN);/* ADDR4 = SA */
+ 				pTxBlk->MpduHeaderLen += MAC_ADDR_LEN;
+ 				pTxBlk->wifi_hdr_len += MAC_ADDR_LEN;
+ 			} else
+diff --git a/mt_wifi/ate/wlan_service/glue/osal/include/sys_adaption.h b/mt_wifi/ate/wlan_service/glue/osal/include/sys_adaption.h
+index a74119ab9f..8e63120a3b 100644
+--- a/mt_wifi/ate/wlan_service/glue/osal/include/sys_adaption.h
++++ b/mt_wifi/ate/wlan_service/glue/osal/include/sys_adaption.h
+@@ -83,6 +83,8 @@ typedef struct serv_os_task {
+ 	struct task_struct *kthread_task;
+ 	wait_queue_head_t kthread_q;
+ 	boolean kthread_running;
++	s_int32 (*kthread_fn)(u_long);
++	u_long kthread_arg;
+ } SERV_OS_TASK;
+ typedef s_int32(*SERV_OS_TASK_CALLBACK) (u_long);
+ 
+diff --git a/mt_wifi/ate/wlan_service/glue/osal/logan/sys_adaption_logan.c b/mt_wifi/ate/wlan_service/glue/osal/logan/sys_adaption_logan.c
+index 3424f1e1a4..260e4a24da 100644
+--- a/mt_wifi/ate/wlan_service/glue/osal/logan/sys_adaption_logan.c
++++ b/mt_wifi/ate/wlan_service/glue/osal/logan/sys_adaption_logan.c
+@@ -92,6 +92,13 @@ static inline s_int32 _sys_ad_kill_os_task(struct serv_os_task *task)
+ 	return ret;
+ }
+ 
++static int _sys_ad_task_thread(void *data)
++{
++	struct serv_os_task *task = data;
++
++	return task->kthread_fn(task->kthread_arg);
++}
++
+ static inline s_int32 _sys_ad_attach_os_task(
+ 	IN struct serv_os_task *task, IN SERV_OS_TASK_CALLBACK fn,
+ 	IN u_long arg)
+@@ -108,7 +115,9 @@ static inline s_int32 _sys_ad_attach_os_task(
+ 		goto done;
+ 	}
+ 
+-	task->kthread_task = kthread_run((cast_fn) fn, (void *)arg,
++	task->kthread_fn = fn;
++	task->kthread_arg = arg;
++	task->kthread_task = kthread_run(_sys_ad_task_thread, task,
+ 					task->task_name);
+ 
+ 	if (IS_ERR(task->kthread_task)) {
+diff --git a/mt_wifi/chip/mcu/cmm_fw_uni_cmd.c b/mt_wifi/chip/mcu/cmm_fw_uni_cmd.c
+index ce1234805d..a0ea522545 100644
+--- a/mt_wifi/chip/mcu/cmm_fw_uni_cmd.c
++++ b/mt_wifi/chip/mcu/cmm_fw_uni_cmd.c
+@@ -11085,7 +11085,8 @@ INT32 UniCmdSetRadarThresParam(
+ 
+ 	u4ComCmdSize = sizeof(UniCmdRDD);
+ 	os_zero_mem(&cmd_radar_thres_update, sizeof(struct RDM_RDR_THRES_UPDATE_T));
+-	NdisCopyMemory(&cmd_radar_thres_update.tag, p_radar_threshold, sizeof(CMD_RDM_RADAR_THRESHOLD_UPDATE_T));
++	NdisCopyMemory((UCHAR *)&cmd_radar_thres_update + offsetof(struct RDM_RDR_THRES_UPDATE_T, tag),
++		p_radar_threshold, sizeof(CMD_RDM_RADAR_THRESHOLD_UPDATE_T));
+ 	cmd_radar_thres_update.tag = ENUM_RDM_RADAR_THRESHOLD_UPDATE;
+ #ifdef CFG_BIG_ENDIAN
+ 	cmd_radar_thres_update.tag
+@@ -14668,7 +14669,8 @@ static INT32 UniCmdSetFixedRate(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg, VOID
+ 		} while (0);
+ 	}
+ 
+-	memcpy(&(prRaSetFixedRate->aucBuffer[0]), &RaFixedRateV1, sizeof(struct _UNI_CMD_RA_SET_FIXED_RATE_V1));
++	memcpy((UCHAR *)prRaSetFixedRate + offsetof(struct _UNI_CMD_RA_SET_FIXED_RATE_T, aucBuffer),
++		&RaFixedRateV1, sizeof(struct _UNI_CMD_RA_SET_FIXED_RATE_V1));
+ 
+ 	if (fgStatus == FALSE)
+ 		Ret = NDIS_STATUS_FAILURE;
+@@ -14740,7 +14742,8 @@ static INT32 UniCmdSetFixedRateUl(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg, VO
+ #ifdef CFG_BIG_ENDIAN
+ 			RaFixedRateUlV1.u2WlanIdx = cpu2le16(RaFixedRateUlV1.u2WlanIdx);
+ #endif
+-			memcpy(&(prRaSetFixedRateUl->aucBuffer[0]), &RaFixedRateUlV1, sizeof(struct _UNI_CMD_RA_SET_FIXED_RATE_UL_TRIG_V1));
++			memcpy((UCHAR *)prRaSetFixedRateUl + offsetof(struct _UNI_CMD_RA_SET_FIXED_RATE_UL_TRIG_T, aucBuffer),
++				&RaFixedRateUlV1, sizeof(struct _UNI_CMD_RA_SET_FIXED_RATE_UL_TRIG_V1));
+ 
+ 			RTMP_SEM_EVENT_UP(&pAd->AutoRateLock);
+ 		} while (0);
+diff --git a/mt_wifi/common/bss_mngr/bss_mngr_element.c b/mt_wifi/common/bss_mngr/bss_mngr_element.c
+index 8988b89a5f..8e78091fd7 100644
+--- a/mt_wifi/common/bss_mngr/bss_mngr_element.c
++++ b/mt_wifi/common/bss_mngr/bss_mngr_element.c
+@@ -532,7 +532,7 @@ u8 *build_rnr_ie(struct bmgr_entry *repting_entry, struct bmgr_entry *repted_ent
+ 	if (eid) {
+ 		/* EID per-reported bss */
+ 		eid->Eid = EID_REDUCED_NEIGHBOR_REPORT;
+-		pos = &eid->Octet[0];
++		pos = (u8 *)eid + offsetof(EID_STRUCT, Octet);
+ 
+ 		/* NAP Info: TBTT Information Header */
+ 		SET_DOT11_RNR_TBTT_INFO_HDR_TYPE(tbtt_info_hdr, 0);
+diff --git a/mt_wifi/common/cmm_info.c b/mt_wifi/common/cmm_info.c
+index 6d9afdafcf..7695a922f3 100644
+--- a/mt_wifi/common/cmm_info.c
++++ b/mt_wifi/common/cmm_info.c
+@@ -13777,7 +13777,7 @@ INT show_sysinfo_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+ 
+ 			if (wdev->if_dev) {
+ 				UINT idx, q_num;
+-				UCHAR *mac_str = RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev);
++				const UCHAR *mac_str = RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev);
+ 
+ 				MTWF_PRINT("\t\tOS NetDev status(%s[%d]-"MACSTR"):\n",
+ 						  RtmpOsGetNetDevName(wdev->if_dev),
+diff --git a/mt_wifi/common/mgmt/mgmt_entrytb.c b/mt_wifi/common/mgmt/mgmt_entrytb.c
+index 85dddac75b..fe56d2aee8 100644
+--- a/mt_wifi/common/mgmt/mgmt_entrytb.c
++++ b/mt_wifi/common/mgmt/mgmt_entrytb.c
+@@ -912,7 +912,8 @@ INT MacTableResetEntry(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, BOOLEAN clean
+ #endif /* CONFIG_LINUX_CRYPTO */
+ #endif /* SW_CONNECT_SUPPORT */
+ 
+-	NdisZeroMemory(&pEntry->EntryType, sizeof(MAC_TABLE_ENTRY)-sizeof(STA_TR_ENTRY));
++	NdisZeroMemory((UCHAR *)pEntry + offsetof(MAC_TABLE_ENTRY, EntryType),
++		sizeof(MAC_TABLE_ENTRY) - offsetof(MAC_TABLE_ENTRY, EntryType));
+ 
+ 	if (clean == TRUE) {
+ 		pEntry->MaxSupportedRate = RATE_11;
+diff --git a/mt_wifi/common/qos.c b/mt_wifi/common/qos.c
+index 7921c60eec..a81075da1f 100644
+--- a/mt_wifi/common/qos.c
++++ b/mt_wifi/common/qos.c
+@@ -562,10 +562,13 @@ INT QoS_send_action_frame(PRTMP_ADAPTER pAd, struct wifi_dev *wdev, struct actio
+ 			multi_ie = (UCHAR *)&frm->frm[5];
+ 
+ 		if (multi_ie != NULL) {
++			UINT8 i;
++
+ 			wlan_operate_get_mld_addr(wdev, mld_addr);
+-			memcpy(&GET_ACT_FRAME_MLD_ADDR(multi_ie), mld_addr, MAC_ADDR_LEN);
++			for (i = 0; i < MAC_ADDR_LEN; i++)
++				multi_ie[6 + i] = mld_addr[i];
+ 			if (pEntry)
+-				memcpy(&GET_ACT_FRAME_LINK_ID(multi_ie), &pEntry->mlo.link_info.link_id, 1);
++				GET_ACT_FRAME_LINK_ID(multi_ie) = pEntry->mlo.link_info.link_id;
+ 		}
+ 		hex_dump_always("EPCS Frame", frm->frm, frm->frm_len);
+ 	}
+@@ -623,7 +626,7 @@ INT receive_qos_action_frame(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+ 	event = (struct wapp_event *)buf;
+ 	event->ifindex = RtmpOsGetNetIfIndex(wdev->if_dev);
+ 	event->event_id = WAPP_QOS_ACTION_FRAME_EVENT;
+-	req_data = (struct wapp_qos_action_frame *)&(event->data.qos_frm);
++	req_data = (struct wapp_qos_action_frame *)&event->data;
+ 
+ 	NdisCopyMemory(req_data->src, peer_mac_addr, 6);
+ 	req_data->frm_len = frm_len;
+@@ -657,7 +660,7 @@ static void indicate_mscs_classifier_parameter(RTMP_ADAPTER *pAd, struct wifi_de
+ 	event = (struct wapp_event *)buf;
+ 	event->ifindex = RtmpOsGetNetIfIndex(wdev->if_dev);
+ 	event->event_id = WAPP_MSCS_CLASSIFIER_PARAM_EVENT;
+-	req_data = (struct classifier_parameter *)&(event->data.qos_frm);
++	req_data = (struct classifier_parameter *)&event->data;
+ 
+ 	NdisCopyMemory(req_data, classifier_parameter_report, sizeof(*req_data));
+ 
+@@ -1172,7 +1175,7 @@ void indicate_vendor_spec_tclas_elment(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+ 	event = (struct wapp_event *)buf;
+ 	event->ifindex = RtmpOsGetNetIfIndex(wdev->if_dev);
+ 	event->event_id = WAPP_VEND_SPEC_UP_TUPLE_EVENT;
+-	req_data = (struct wapp_vend_spec_classifier_para_report *)&(event->data.qos_frm);
++	req_data = (struct wapp_vend_spec_classifier_para_report *)&event->data;
+ 	NdisCopyMemory(req_data, vend_spec_classifier_para_report, sizeof(*req_data));
+ 	wapp_send_wapp_qry_rsp(pAd, event);
+ 	os_free_mem(buf);
+diff --git a/mt_wifi/common/security/cmm_wpa.c b/mt_wifi/common/security/cmm_wpa.c
+index 83b939cdc9..9a0a60fd43 100644
+--- a/mt_wifi/common/security/cmm_wpa.c
++++ b/mt_wifi/common/security/cmm_wpa.c
+@@ -27,6 +27,11 @@
+ */
+ #include "rt_config.h"
+ 
++static inline UCHAR *eapol_key_mic_data(PEAPOL_PACKET pkt)
++{
++	return (UCHAR *)pkt + offsetof(EAPOL_PACKET, KeyDesc.KeyMicAndData);
++}
++
+ /* --------------------EddySEC Start---------------- */
+ 
+ UCHAR SES_OUI[] = {0x00, 0x90, 0x4c};
+@@ -4241,9 +4246,9 @@ VOID WPAConstructEapolMsg(
+ #endif /* OCE_FILS_SUPPORT */
+ 	{
+ 		if (IS_AKM_SHA384(pSecPairwise->AKMMap) || (pSecPairwise->key_deri_alg == SEC_KEY_DERI_SHA384))
+-			NdisZeroMemory(pMsg->KeyDesc.KeyMicAndData, LEN_KEY_DESC_MIC_SHA384);
++			NdisZeroMemory(eapol_key_mic_data(pMsg), LEN_KEY_DESC_MIC_SHA384);
+ 		else
+-			NdisZeroMemory(pMsg->KeyDesc.KeyMicAndData, LEN_KEY_DESC_MIC);
++			NdisZeroMemory(eapol_key_mic_data(pMsg), LEN_KEY_DESC_MIC);
+ 	}
+ 	WPAConstructEapolKeyData(pEntry,
+ 							 MsgType,
+@@ -5237,7 +5242,7 @@ VOID WPABuildPairMsg1(
+ 		hex_dump("PMKID", pSecConfig->pmkid, LEN_PMKID);
+ 		hex_dump("PMK", pSecConfig->pmk_cache, pmk_len);
+ 
+-		key_data_len_ptr = pEapolFrame->KeyDesc.KeyMicAndData + mic_len;
++		key_data_len_ptr = eapol_key_mic_data(pEapolFrame) + mic_len;
+ 		key_data_ptr = key_data_len_ptr + CONV_ARRARY_TO_UINT16(key_data_len_ptr) + 2;
+ 		/* Fill in value for KDE */
+ 		key_data_ptr[0] = 0xDD;
+@@ -5270,7 +5275,7 @@ VOID WPABuildPairMsg1(
+ 			pmk_len = LEN_PMK_SHA384;
+ 		}
+ 
+-		key_data_len_ptr = pEapolFrame->KeyDesc.KeyMicAndData + mic_len;
++		key_data_len_ptr = eapol_key_mic_data(pEapolFrame) + mic_len;
+ 		key_data_ptr = key_data_len_ptr + CONV_ARRARY_TO_UINT16(key_data_len_ptr) + 2;
+ 
+ 		key_data_ptr[0] = 0xDD;
+diff --git a/mt_wifi/common/security/wpa3/bn_lib.c b/mt_wifi/common/security/wpa3/bn_lib.c
+index b1e7a8666f..fd2934c0a4 100644
+--- a/mt_wifi/common/security/wpa3/bn_lib.c
++++ b/mt_wifi/common/security/wpa3/bn_lib.c
+@@ -315,15 +315,15 @@ static BN_ULONG *bn_expand_internal(const BIGNUM *b, int words)
+ 		case 3:
+ 			A[2] = B[2];
+ 
+-		/* fall thru */
++			fallthrough;
+ 		case 2:
+ 			A[1] = B[1];
+ 
+-		/* fall thru */
++			fallthrough;
+ 		case 1:
+ 			A[0] = B[0];
+ 
+-		/* fall thru */
++			fallthrough;
+ 		case 0:
+ 			/* Without the "case 0" some old optimizers got this wrong. */
+ 			;
+@@ -432,15 +432,15 @@ BIGNUM *BN_copy(BIGNUM *a, const BIGNUM *b)
+ 	case 3:
+ 		A[2] = B[2];
+ 
+-	/* fall thru */
++		fallthrough;
+ 	case 2:
+ 		A[1] = B[1];
+ 
+-	/* fall thru */
++		fallthrough;
+ 	case 1:
+ 		A[0] = B[0];
+ 
+-	/* fall thru */
++		fallthrough;
+ 	case 0:
+ 		;
+ 	}
+@@ -955,33 +955,42 @@ void BN_consttime_swap(BN_ULONG condition, BIGNUM *a, BIGNUM *b, int nwords)
+ 		for (i = 10; i < nwords; i++)
+ 			BN_CONSTTIME_SWAP(i);
+ 
+-	/* Fallthrough */
++		fallthrough;
+ 	case 10:
+-		BN_CONSTTIME_SWAP(9);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(9);
++		fallthrough;
+ 
+ 	case 9:
+-		BN_CONSTTIME_SWAP(8);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(8);
++		fallthrough;
+ 
+ 	case 8:
+-		BN_CONSTTIME_SWAP(7);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(7);
++		fallthrough;
+ 
+ 	case 7:
+-		BN_CONSTTIME_SWAP(6);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(6);
++		fallthrough;
+ 
+ 	case 6:
+-		BN_CONSTTIME_SWAP(5);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(5);
++		fallthrough;
+ 
+ 	case 5:
+-		BN_CONSTTIME_SWAP(4);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(4);
++		fallthrough;
+ 
+ 	case 4:
+-		BN_CONSTTIME_SWAP(3);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(3);
++		fallthrough;
+ 
+ 	case 3:
+-		BN_CONSTTIME_SWAP(2);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(2);
++		fallthrough;
+ 
+ 	case 2:
+-		BN_CONSTTIME_SWAP(1);   /* Fallthrough */
++		BN_CONSTTIME_SWAP(1);
++		fallthrough;
+ 
+ 	case 1:
+ 		BN_CONSTTIME_SWAP(0);
+diff --git a/mt_wifi/feature/hs_r2/gas.c b/mt_wifi/feature/hs_r2/gas.c
+index 24040b40d9..4d7d49d342 100644
+--- a/mt_wifi/feature/hs_r2/gas.c
++++ b/mt_wifi/feature/hs_r2/gas.c
+@@ -335,7 +335,7 @@ VOID SendGASRsp(
+ 		FrameLen += 2;
+ 		GASFrame->u.GAS_INIT_RSP.GASComebackDelay = Event->u.GAS_RSP_DATA.GASComebackDelay;
+ 		FrameLen += 2;
+-		Pos = GASFrame->u.GAS_INIT_RSP.Variable;
++		Pos = (UCHAR *)GASFrame + offsetof(GAS_FRAME, u.GAS_INIT_RSP.Variable);
+ 		*Pos++ = IE_ADVERTISEMENT_PROTO;
+ 		*Pos++ = 2; /* Length field */
+ 		*Pos++ = 0; /* Query response info field */
+@@ -372,7 +372,7 @@ VOID SendGASRsp(
+ 		FrameLen += 2;
+ 		GASFrame->u.GAS_INIT_RSP.GASComebackDelay = Event->u.GAS_RSP_MORE_DATA.GASComebackDelay;
+ 		FrameLen += 2;
+-		Pos = GASFrame->u.GAS_INIT_RSP.Variable;
++		Pos = (UCHAR *)GASFrame + offsetof(GAS_FRAME, u.GAS_INIT_RSP.Variable);
+ 		*Pos++ = IE_ADVERTISEMENT_PROTO;
+ 		*Pos++ = 2; /* Length field */
+ 		*Pos++ = 0; /* Query response info field */
+@@ -820,7 +820,7 @@ static VOID SendGASCBRsp(
+ 		FrameLen += 1;
+ 		GASFrame->u.GAS_CB_RSP.GASComebackDelay = 0;
+ 		FrameLen += 2;
+-		Pos = GASFrame->u.GAS_CB_RSP.Variable;
++		Pos = (UCHAR *)GASFrame + offsetof(GAS_FRAME, u.GAS_CB_RSP.Variable);
+ 		*Pos++ = IE_ADVERTISEMENT_PROTO;
+ 		*Pos++ = 2; /* Length field */
+ 		*Pos++ = 0; /* Query response info field */
+@@ -871,7 +871,7 @@ static VOID SendGASCBRsp(
+ 		FrameLen += 1;
+ 		GASFrame->u.GAS_CB_RSP.GASComebackDelay = 0;
+ 		FrameLen += 2;
+-		Pos = GASFrame->u.GAS_CB_RSP.Variable;
++		Pos = (UCHAR *)GASFrame + offsetof(GAS_FRAME, u.GAS_CB_RSP.Variable);
+ 		*Pos++ = IE_ADVERTISEMENT_PROTO;
+ 		*Pos++ = 2; /* Length field */
+ 		*Pos++ = 0; /* Query response info field */
+diff --git a/mt_wifi/feature/hs_r2/wnm.c b/mt_wifi/feature/hs_r2/wnm.c
+index fb17a57659..fd61a0fdf0 100644
+--- a/mt_wifi/feature/hs_r2/wnm.c
++++ b/mt_wifi/feature/hs_r2/wnm.c
+@@ -279,11 +279,15 @@ void wext_send_proxy_arp_event(PNET_DEV net_dev,
+ 		memcpy(arp_entry->target_mac_addr, target_mac_addr, 6);
+ 
+ 		if (ip_type == IPV4) {
+-			memcpy(arp_entry->ip_addr, source_ip_addr, 4);
+-			memcpy(arp_entry->ip_addr + 4, target_ip_addr, 4);
++			UCHAR *ip_addr = (UCHAR *)arp_entry + offsetof(struct proxy_arp_entry, ip_addr);
++
++			memcpy(ip_addr, source_ip_addr, 4);
++			memcpy(ip_addr + 4, target_ip_addr, 4);
+ 		} else if (ip_type == IPV6) {
+-			memcpy(arp_entry->ip_addr, source_ip_addr, 16);
+-			memcpy(arp_entry->ip_addr + 16, target_ip_addr, 16);
++			UCHAR *ip_addr = (UCHAR *)arp_entry + offsetof(struct proxy_arp_entry, ip_addr);
++
++			memcpy(ip_addr, source_ip_addr, 16);
++			memcpy(ip_addr + 16, target_ip_addr, 16);
+ 		} else
+ 			printk("error not such ip type packet\n");
+ 
+@@ -2995,11 +2999,11 @@ void build_btm_rsp(IN PRTMP_ADAPTER pAd,
+ 	btm_rsp_len += 1;
+ 
+ 	if (target_bssid) {
+-		COPY_MAC_ADDR(frame->u.btm_rsp.variable, target_bssid);
++		COPY_MAC_ADDR((UCHAR *)frame + offsetof(struct btm_payload, u.btm_rsp.variable), target_bssid);
+ 		pos += MAC_ADDR_LEN;
+ 		btm_rsp_len += MAC_ADDR_LEN;
+ 	} else {
+-		COPY_MAC_ADDR(frame->u.btm_rsp.variable, "\0\0\0\0\0\0");
++		COPY_MAC_ADDR((UCHAR *)frame + offsetof(struct btm_payload, u.btm_rsp.variable), "\0\0\0\0\0\0");
+ 		pos += MAC_ADDR_LEN;
+ 		btm_rsp_len += MAC_ADDR_LEN;
+ 	}
+@@ -4111,8 +4115,8 @@ static VOID SendWNMNotifyReq(
+ 		WNMFrame->u.WNM_NOTIFY_REQ.Variable[4] = 0x9a;
+ 		WNMFrame->u.WNM_NOTIFY_REQ.Variable[5] = 0x01;
+ 		if ((VarLen+1) >= 3)
+-			NdisMoveMemory(&WNMFrame->u.WNM_NOTIFY_REQ.Variable[6], Event->u.WNM_NOTIFY_REQ_DATA.WNMNotifyReq,
+-						   3);
++			NdisMoveMemory((UCHAR *)WNMFrame + offsetof(WNM_FRAME, u.WNM_NOTIFY_REQ.Variable) + 6,
++						   Event->u.WNM_NOTIFY_REQ_DATA.WNMNotifyReq, 3);
+ 		else
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
+ 				"Not have enough buffer size for WNMFrame->u.WNM_NOTIFY_REQ.Variable!\n");
+diff --git a/mt_wifi/feature/mbo/mbo.c b/mt_wifi/feature/mbo/mbo.c
+index b7f1887bc5..c15d4e8aa8 100644
+--- a/mt_wifi/feature/mbo/mbo.c
++++ b/mt_wifi/feature/mbo/mbo.c
+@@ -538,7 +538,8 @@ static VOID WextMboSendNeighborReportToDaemonEvent(
+ 		neighbor_list_data = (struct neighbor_list_data *)buf;
+ 		neighbor_list_data->ifindex = RtmpOsGetNetIfIndex(net_dev);
+ 		neighbor_list_data->neighbor_list_len	= report_buf_len;
+-		memcpy(neighbor_list_data->neighbor_list_req, NeighborRepList, report_buf_len);
++		memcpy((UCHAR *)neighbor_list_data + offsetof(struct neighbor_list_data, neighbor_list_req),
++			NeighborRepList, report_buf_len);
+ 		RtmpOSWrielessEventSend(net_dev, RT_WLAN_EVENT_CUSTOM,
+ 						OID_NEIGHBOR_REPORT, NULL, (PUCHAR)buf, buflen);
+ #endif
+diff --git a/mt_wifi/feature/rrm/rrm_tlv.c b/mt_wifi/feature/rrm/rrm_tlv.c
+index 6706bffea8..c18db7e163 100644
+--- a/mt_wifi/feature/rrm/rrm_tlv.c
++++ b/mt_wifi/feature/rrm/rrm_tlv.c
+@@ -883,7 +883,7 @@ INT rrm_send_beacon_req_param(
+ 	Event->measuretype = BCN_MEASURE_REQ;
+ 	RTMPMoveMemory(Event->stamac, pBcnReq->peer_address, MAC_ADDR_LEN);
+ 	Event->DataLen = BcnReqLen;
+-	NdisMoveMemory(Event->Data, pBcnReq, BcnReqLen);
++	NdisMoveMemory((UCHAR *)Event + offsetof(BCN_EVENT_DATA, Data), pBcnReq, BcnReqLen);
+ 
+ 	if (MlmeEnqueue(pAd, BCN_STATE_MACHINE, BCN_REQ, Len, pBuf, 0) == FALSE) {
+ 		NStatus = NDIS_STATUS_FAILURE;
+diff --git a/mt_wifi/hw_ctrl/hdev_ctrl.c b/mt_wifi/hw_ctrl/hdev_ctrl.c
+index 3bfa47c502..9fcc86c86f 100644
+--- a/mt_wifi/hw_ctrl/hdev_ctrl.c
++++ b/mt_wifi/hw_ctrl/hdev_ctrl.c
+@@ -1799,7 +1799,7 @@ UINT32 hc_get_asic_cap(void *hdev_ctrl)
+ /*
+ *
+ */
+-VOID hc_set_mac_cap(void *hdev_ctrl, UINT32 caps)
++VOID hc_set_mac_cap(void *hdev_ctrl, enum MAC_CAP caps)
+ {
+ 	struct hdev_ctrl *ctrl = hdev_ctrl;
+ 	struct _RTMP_ADAPTER *ad = hc_get_hdev_privdata(ctrl);
+@@ -1811,7 +1811,7 @@ VOID hc_set_mac_cap(void *hdev_ctrl, UINT32 caps)
+ /*
+ *
+ */
+-VOID hc_set_phy_cap(void *hdev_ctrl, UINT32 caps)
++VOID hc_set_phy_cap(void *hdev_ctrl, enum PHY_CAP caps)
+ {
+ 	struct hdev_ctrl *ctrl = hdev_ctrl;
+ 	struct _RTMP_ADAPTER *ad = hc_get_hdev_privdata(ctrl);
+diff --git a/mt_wifi/include/ap/ap_mbss.h b/mt_wifi/include/ap/ap_mbss.h
+index aa9644fceb..c90133f9be 100644
+--- a/mt_wifi/include/ap/ap_mbss.h
++++ b/mt_wifi/include/ap/ap_mbss.h
+@@ -50,5 +50,5 @@ BOOLEAN MBSS_Reconfig_Is_Idle(RTMP_ADAPTER *pAd, BSS_STRUCT *pMbss);
+ VOID MBSS_Reconfig_State_transition(RTMP_ADAPTER *pAd, BSS_STRUCT *pMbss, enum bss_reconfig_state next_state, UINT timeout);
+ INT MBSS_Reconfig_flow_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+ INT MBSS_Reconfig_flow_info(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+-VOID MBSS_Reconfig_SM(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UINT32 reconfig_state);
++VOID MBSS_Reconfig_SM(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, enum bss_reconfig_state reconfig_state);
+ NTSTATUS MBSS_Reconfig_SM_Handler(RTMP_ADAPTER *pAd, PCmdQElmt CMDQelmt);
+diff --git a/mt_wifi/include/rtmp_os.h b/mt_wifi/include/rtmp_os.h
+index fcfbe7bdb6..989e180188 100644
+--- a/mt_wifi/include/rtmp_os.h
++++ b/mt_wifi/include/rtmp_os.h
+@@ -119,6 +119,8 @@ typedef struct _RTMP_OS_TASK_ {
+ 	struct task_struct *kthread_task;
+ 	wait_queue_head_t kthread_q;
+ 	BOOLEAN kthread_running;
++	INT (*kthread_fn)(ULONG);
++	ULONG kthread_arg;
+ #endif
+ } OS_TASK;
+ 
+diff --git a/mt_wifi/os/linux/ap_ioctl.c b/mt_wifi/os/linux/ap_ioctl.c
+index ec63a93cb3..a057d6f745 100644
+--- a/mt_wifi/os/linux/ap_ioctl.c
++++ b/mt_wifi/os/linux/ap_ioctl.c
+@@ -892,12 +892,13 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
+                                 wrqin->u.data.length = sizeof(struct iw_range);
+                                  if (copy_to_user(wrqin->u.data.pointer, &range, sizeof(struct iw_range)))
+                                         Status = RTMP_IO_EFAULT;
+-                        } else {
+-                                Status = RTMP_IO_E2BIG;
+-                        }
++				} else {
++					Status = RTMP_IO_E2BIG;
++				}
+ 			break;
+-		}
+-	case SIOCGIWRETRY:	/*get retry limits and lifetime */
++			}
++			break;
++		case SIOCGIWRETRY:	/*get retry limits and lifetime */
+ 	case SIOCSIWRETRY:	/*set retry limits and lifetime */
+ 		Status = RTMP_IO_EOPNOTSUPP;
+ 		break;
+diff --git a/mt_wifi/os/linux/rt_linux.c b/mt_wifi/os/linux/rt_linux.c
+index 727a58390d..c3973bbb78 100644
+--- a/mt_wifi/os/linux/rt_linux.c
++++ b/mt_wifi/os/linux/rt_linux.c
+@@ -1056,6 +1056,13 @@ static inline void __RtmpOSTaskCustomize(OS_TASK *pTask)
+ #endif
+ }
+ 
++static int RtmpOSTaskThread(void *data)
++{
++	OS_TASK *pTask = data;
++
++	return pTask->kthread_fn(pTask->kthread_arg);
++}
++
+ 
+ static inline NDIS_STATUS __RtmpOSTaskAttach(
+ 	IN OS_TASK *pTask,
+@@ -1079,7 +1086,9 @@ static inline NDIS_STATUS __RtmpOSTaskAttach(
+ 	}
+ 
+ RETRY:
+-	pTask->kthread_task = kthread_run((cast_fn)fn, (void *)arg,
++	pTask->kthread_fn = fn;
++	pTask->kthread_arg = arg;
++	pTask->kthread_task = kthread_run(RtmpOSTaskThread, pTask,
+ 									  pTask->taskName);
+ 
+ 	if (IS_ERR(pTask->kthread_task)) {
+diff --git a/mt_wifi/os/linux/sta_ioctl.c b/mt_wifi/os/linux/sta_ioctl.c
+index 1d9e9c60bc..85805b3b22 100644
+--- a/mt_wifi/os/linux/sta_ioctl.c
++++ b/mt_wifi/os/linux/sta_ioctl.c
+@@ -2727,7 +2727,7 @@ static const iw_handler rt_handler[] = {
+ 	(iw_handler) rt_ioctl_giwpriv,		/* SIOCSIWPRIV  for Android */
+ 	(iw_handler) NULL /* kernel code */,    /* SIOCGIWPRIV   */
+ 	(iw_handler) NULL /* not used */,		/* SIOCSIWSTATS  */
+-	(iw_handler) rt28xx_get_wireless_stats /* kernel code */,    /* SIOCGIWSTATS  */
++	(iw_handler) NULL /* kernel code */,    /* SIOCGIWSTATS  */
+ 	(iw_handler) NULL,		                /* SIOCSIWSPY    */
+ 	(iw_handler) NULL,		                /* SIOCGIWSPY    */
+ 	(iw_handler) NULL,				        /* SIOCSIWTHRSPY */
+diff --git a/mt_wifi/profiles/cmm_profile.c b/mt_wifi/profiles/cmm_profile.c
+index 2d301c69d4..f33f0b6998 100644
+--- a/mt_wifi/profiles/cmm_profile.c
++++ b/mt_wifi/profiles/cmm_profile.c
+@@ -6173,7 +6173,7 @@ NDIS_STATUS	RTMPSetProfileParameters(
+ 					if (i >= pAd->ApCfg.BssidNum)
+ 						break;
+ 
+-						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = FALSE;
++					pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = FALSE;
+ 
+ 					MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
+ 						"I/F(ra%d) NoForwarding=%ld\n", i,
+@@ -9302,4 +9302,3 @@ NDIS_STATUS load_physical_device_profile(void *ph_dev_obj)
+ }
+ 
+ #endif /* !CONFIG_PROFILE_OFF */
+-
+diff --git a/mt_wifi/sta/sta_cfg.c b/mt_wifi/sta/sta_cfg.c
+index db9bad7013..2e39f95d9b 100644
+--- a/mt_wifi/sta/sta_cfg.c
++++ b/mt_wifi/sta/sta_cfg.c
+@@ -3925,13 +3925,16 @@ INT RTMPQueryInformation(
+ 
+ 			if (ScanTab->BssEntry[i].VarIELen == 0) {
+ 				pBss->IELength = sizeof(NDIS_802_11_FIXED_IEs);
+-				NdisMoveMemory(pBss->IEs, &ScanTab->BssEntry[i].FixIEs, sizeof(NDIS_802_11_FIXED_IEs));
++				NdisMoveMemory((UCHAR *)pBss + offsetof(NDIS_WLAN_BSSID_EX, IEs),
++								&ScanTab->BssEntry[i].FixIEs, sizeof(NDIS_802_11_FIXED_IEs));
+ 				pPtr = pPtr + sizeof(NDIS_WLAN_BSSID_EX) - 1 + sizeof(NDIS_802_11_FIXED_IEs);
+ 			} else {
+ 				pBss->IELength = (ULONG)(sizeof(NDIS_802_11_FIXED_IEs) + ScanTab->BssEntry[i].VarIELen);
+ 				pPtr = pPtr + sizeof(NDIS_WLAN_BSSID_EX) - 1 + sizeof(NDIS_802_11_FIXED_IEs);
+-				NdisMoveMemory(pBss->IEs, &ScanTab->BssEntry[i].FixIEs, sizeof(NDIS_802_11_FIXED_IEs));
+-				NdisMoveMemory(pBss->IEs + sizeof(NDIS_802_11_FIXED_IEs), ScanTab->BssEntry[i].VarIEs, ScanTab->BssEntry[i].VarIELen);
++				NdisMoveMemory((UCHAR *)pBss + offsetof(NDIS_WLAN_BSSID_EX, IEs),
++								&ScanTab->BssEntry[i].FixIEs, sizeof(NDIS_802_11_FIXED_IEs));
++				NdisMoveMemory((UCHAR *)pBss + offsetof(NDIS_WLAN_BSSID_EX, IEs) + sizeof(NDIS_802_11_FIXED_IEs),
++								ScanTab->BssEntry[i].VarIEs, ScanTab->BssEntry[i].VarIELen);
+ 				pPtr += ScanTab->BssEntry[i].VarIELen;
+ 			}
+ 
+@@ -4151,9 +4154,18 @@ INT RTMPQueryInformation(
+ 				for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
+ 					entry = entry_get(pAd, i);
+ 					if (IS_ENTRY_CLIENT(entry) && (entry->Sst == SST_ASSOC)) {
+-						NdisMoveMemory(&pMacTab->Entry[pMacTab->Num],
+-							&entry->TxBFCounters,
+-							sizeof(RT_COUNTER_TXBF));
++						RT_COUNTER_TXBF *txbf_entry = (RT_COUNTER_TXBF *)((UCHAR *)pMacTab +
++							offsetof(RT_802_11_TXBF_TABLE, Entry));
++
++						txbf_entry[pMacTab->Num].TxSuccessCount = entry->TxBFCounters.TxSuccessCount;
++						txbf_entry[pMacTab->Num].TxRetryCount = entry->TxBFCounters.TxRetryCount;
++						txbf_entry[pMacTab->Num].TxFailCount = entry->TxBFCounters.TxFailCount;
++						txbf_entry[pMacTab->Num].ETxSuccessCount = entry->TxBFCounters.ETxSuccessCount;
++						txbf_entry[pMacTab->Num].ETxRetryCount = entry->TxBFCounters.ETxRetryCount;
++						txbf_entry[pMacTab->Num].ETxFailCount = entry->TxBFCounters.ETxFailCount;
++						txbf_entry[pMacTab->Num].ITxSuccessCount = entry->TxBFCounters.ITxSuccessCount;
++						txbf_entry[pMacTab->Num].ITxRetryCount = entry->TxBFCounters.ITxRetryCount;
++						txbf_entry[pMacTab->Num].ITxFailCount = entry->TxBFCounters.ITxFailCount;
+ 						pMacTab->Num++;
+ 					}
+ 				}
+diff --git a/mt_wifi/sta/wpa.c b/mt_wifi/sta/wpa.c
+index 7868a27ffb..e20c9872ba 100644
+--- a/mt_wifi/sta/wpa.c
++++ b/mt_wifi/sta/wpa.c
+@@ -221,7 +221,8 @@ VOID WpaMicFailureReportFrame(
+ 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_KEY, DBG_LVL_DEBUG, "-----\n");
+ 	}
+ 
+-	NdisMoveMemory(pPacket->KeyDesc.KeyMicAndData, Mic, LEN_KEY_DESC_MIC);
++	NdisMoveMemory((UCHAR *)pPacket + offsetof(EAPOL_PACKET, KeyDesc.KeyMicAndData),
++		Mic, LEN_KEY_DESC_MIC);
+ 	/* copy frame to Tx ring and send MIC failure report frame to authenticator */
+ 	RTMPToWirelessSta(pAd, pEntry,
+ 					  Header802_3, LENGTH_802_3,
