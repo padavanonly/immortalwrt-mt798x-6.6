@@ -1,0 +1,13 @@
+--- a/wlan_hwifi/mcu/mcu_wm.c
++++ b/wlan_hwifi/mcu/mcu_wm.c
+@@ -637,8 +637,8 @@ mcu_wm_restart_uni_cmd(struct mtk_hw_dev
+ 	tag.length = sizeof(tag);
+ 	tag.power_mode = 1;
+ 
+-	memset(req, 0, sizeof(size));
+-	memcpy(req->buf, &tag, sizeof(tag));
++	memset(req, 0, size);
++	memcpy((u8 *)req + sizeof(*req), &tag, sizeof(tag));
+ 
+ 	/* this is normal ram code cmd not fwdl cmd */
+ 	memset(&mcu_txblk, 0, sizeof(struct mtk_mcu_txblk));

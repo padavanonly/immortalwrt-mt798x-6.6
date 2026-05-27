@@ -1,0 +1,216 @@
+
+. /lib/functions.sh
+. /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
+
+check_mt7531_p5() {
+    local compatible_path="$1"
+    local port5_path="$2"
+    local expected_compatible="$3"
+    local expected_port5="$4"
+
+	if [ ! -f "$compatible_path" ] || [ ! -f "$port5_path" ]; then
+		return
+	fi
+
+    local compatible=$(cat "$compatible_path")
+    local port5=$(cat "$port5_path")
+
+    # Check if the compatible string and port5 are as expected
+    if [ "$compatible" = "$expected_compatible" ] && [ "$port5" = "$expected_port5" ]; then
+        echo "mt7531_p5_exist"
+    else
+        echo "mt7531_p5_not_exist"
+    fi
+}
+
+mediatek_check_mt7531_P5() {
+    local gsw_result=$(check_mt7531_p5 "/proc/device-tree/gsw@0/compatible" \
+                                      "/proc/device-tree/gsw@0/port@5/compatible" \
+                                      "mediatek,mt753x" \
+                                      "mediatek,mt753x-port")
+
+    local dsa_result=$(check_mt7531_p5 "/proc/device-tree/soc_netsys/ethernet@15100000/mdio-bus/switch@31/compatible" \
+                                      "/proc/device-tree/soc_netsys/ethernet@15100000/mdio-bus/switch@31/ports/port@5/label" \
+                                      "mediatek,mt7531" \
+                                      "lan5")
+
+    if [ "$gsw_result" = "mt7531_p5_exist" ] || [ "$dsa_result" = "mt7531_p5_exist" ]; then
+        echo "p5_exist"
+    else
+        echo "p5_not_exist"
+    fi
+}
+
+mediatek_get_switch_type()
+{
+    # Base paths to the compatible and status properties
+    local dsa_base_path="/proc/device-tree/soc_netsys/ethernet@15100000/mdio-bus/*/"
+    local mt7531_dsa_base_path="/proc/device-tree/soc/switch*/"
+    local gsw_base_path="/proc/device-tree/gsw*/"
+
+    local dts_is_dsa=0
+    local dts_is_gsw=0
+
+    # Function to check compatible and status files
+    check_compatible_status() {
+        local dir=$1
+        local compatible_file="${dir}compatible"
+        local status_file="${dir}status"
+        local compatible=""
+        local status="disabled"
+
+        if [ -f "$compatible_file" ]; then
+            compatible=$(strings "$compatible_file" | head -1)
+        fi
+
+        if [ -f "$status_file" ]; then
+            status=$(tr -d '\0' < "$status_file")
+        fi
+
+        echo "$compatible" "$status"
+    }
+
+    # Iterate over each compatible property for external dsa switch
+    for dir in $dsa_base_path; do
+        if [ -d "$dir" ]; then
+            read compatible status < <(check_compatible_status "$dir")
+
+            if [ "$compatible" = "airoha,an8855-mfd" ] && [ "$status" = "okay" ]; then
+                dts_is_dsa=1
+            fi
+
+            if [ "$compatible" = "mediatek,mt7531" ] && [ "$status" = "okay" ]; then
+                dts_is_dsa=1
+            fi
+        fi
+    done
+
+    # Iterate over each compatible property for built-in mt7531-dsa
+    for dir in $mt7531_dsa_base_path; do
+        if [ -d "$dir" ]; then
+            read compatible status < <(check_compatible_status "$dir")
+
+            if [ "$compatible" = "mediatek,mt7988-switch" ] && [ "$status" = "okay" ]; then
+                dts_is_dsa=1
+            fi
+        fi
+    done
+
+    # Iterate over each compatible property for an8855-gsw and mt7531-gsw
+    for dir in $gsw_base_path; do
+        if [ -d "$dir" ]; then
+            read compatible status < <(check_compatible_status "$dir")
+
+            case $compatible in
+                airoha,an8855|\
+				mediatek,mt753x)
+                    if [ "$status" = "okay" ]; then
+                        dts_is_gsw=1
+                    fi
+                    ;;
+            esac
+        fi
+    done
+
+	# Sanity check for both dsa and gsw is true, always configure it to dsa
+    if [ "$dts_is_gsw" -gt 0 ] && [ "$dts_is_dsa" -eq 0 ]; then
+        echo "sw_is_gsw"
+    else
+        echo "sw_is_dsa"
+    fi
+}
+
+mediatek_setup_interfaces()
+{
+	local board="$1"
+
+	case $board in
+	arcadyan,mozart)
+		ucidef_set_interfaces_lan_wan "lan0 eth1" eth2
+		;;
+	tplink,tl-7dr7299-v1)
+		ucidef_add_switch "switch0" \
+			"1:lan" "2:lan" "3:lan" "4:lan" "5:lan" "0u@eth2"
+		ucidef_set_interfaces_lan_wan "lan1 lan2 eth2" "eth1"
+		;;
+	tplink,tl-7dr7230-rev1.0-sp2)
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" eth2
+		;;
+	bananapi,bpi-r4|\
+	bananapi,bpi-r4-poe)
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 eth1 eth2" "wan"
+		;;
+	smartrg,sdg-8733a)
+		ucidef_set_interfaces_lan_wan lan wan
+		;;
+	mediatek,mt7988a-mxl86252-rfb*)
+		ucidef_set_interfaces_lan_wan "mxl_lan0 mxl_lan1 mxl_lan2 mxl_lan3 lan2 lan3" eth1
+		;;
+	mediatek,mt7988*)
+		local sys_switch=$(mediatek_get_switch_type)
+		local sys_mt7531_p5=$(mediatek_check_mt7531_P5)
+		if [ "$sys_switch" = "sw_is_dsa" ]; then
+			if [ "$sys_mt7531_p5" = "p5_exist" ]; then
+				ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 lan5 eth2" eth1
+			else
+				ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 eth2" eth1
+			fi
+		else
+			ucidef_set_interfaces_lan_wan "eth0 eth2" eth1
+			if [ "$sys_mt7531_p5" = "p5_exist" ]; then
+				ucidef_add_switch "switch0" \
+					"0:lan" "1:lan" "2:lan" "3:lan" "5:lan" "6u@eth0"
+			else
+				ucidef_add_switch "switch0" \
+					"0:lan" "1:lan" "2:lan" "3:lan" "6u@eth0"
+			fi
+		fi
+		;;
+	*)
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" wan
+		;;
+	esac
+}
+
+mediatek_setup_macs()
+{
+	local board="$1"
+	local lan_mac=""
+	local wan_mac=""
+	local label_mac=""
+
+	case $board in
+	bananapi,bpi-r4|\
+	bananapi,bpi-r4-poe|\
+	bananapi,bpi-r4-pro)
+		wan_mac=$(macaddr_add $(cat /sys/class/net/eth0/address) 1)
+		;;
+	mediatek,mt7988*)
+		lan_mac=$(mtd_get_mac_binary "Factory" "0xFFFF4")
+		wan_mac=$(mtd_get_mac_binary "Factory" "0xFFFFA")
+		;;
+	tplink,tl-7dr7299-v1)
+		label_mac=$(get_mac_label)
+		local b0dat="$(l1dat if2dat ra0)"
+		local b1dat="$(l1dat if2dat rai0)"
+
+		local b0mac="$(macaddr_add $label_mac 0)"
+		echo "MacAddress_Default=$b0mac" >> ${b0dat}
+		local b1mac="$(macaddr_add $label_mac 2)"
+		echo "MacAddress_Default=$b1mac" >> ${b1dat}
+		;;
+esac
+
+	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" $lan_mac
+	[ -n "$wan_mac" ] && ucidef_set_interface_macaddr "wan" $wan_mac
+	[ -n "$label_mac" ] && ucidef_set_label_macaddr $label_mac
+}
+
+board_config_update
+board=$(board_name)
+mediatek_setup_interfaces $board
+mediatek_setup_macs $board
+board_config_flush
+
+exit 0

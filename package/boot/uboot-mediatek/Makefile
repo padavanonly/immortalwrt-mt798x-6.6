@@ -824,7 +824,7 @@ endef
 
 define U-Boot/mt7988_arcadyan_mozart
   NAME:=Arcadyan Mozart
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=arcadyan_mozart
   UBOOT_CONFIG:=mt7988a_arcadyan_mozart
   UBOOT_IMAGE:=u-boot.fip
@@ -836,7 +836,7 @@ endef
 
 define U-Boot/mt7988_bananapi_bpi-r4-emmc
   NAME:=BananaPi BPi-R4
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=bananapi_bpi-r4
   UBOOT_CONFIG:=mt7988a_bananapi_bpi-r4-emmc
   UBOOT_IMAGE:=u-boot.fip
@@ -848,7 +848,7 @@ endef
 
 define U-Boot/mt7988_bananapi_bpi-r4-sdmmc
   NAME:=BananaPi BPi-R4
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=bananapi_bpi-r4
   UBOOT_CONFIG:=mt7988a_bananapi_bpi-r4-sdmmc
   UBOOT_IMAGE:=u-boot.fip
@@ -860,7 +860,7 @@ endef
 
 define U-Boot/mt7988_bananapi_bpi-r4-snand
   NAME:=BananaPi BPi-R4
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=bananapi_bpi-r4
   UBOOT_CONFIG:=mt7988a_bananapi_bpi-r4-snand
   UBOOT_IMAGE:=u-boot.fip
@@ -872,7 +872,7 @@ endef
 
 define U-Boot/mt7988_bananapi_bpi-r4-poe-emmc
   NAME:=BananaPi BPi-R4 2.5GE
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=bananapi_bpi-r4-poe
   UBOOT_CONFIG:=mt7988a_bananapi_bpi-r4-poe-emmc
   UBOOT_IMAGE:=u-boot.fip
@@ -884,7 +884,7 @@ endef
 
 define U-Boot/mt7988_bananapi_bpi-r4-poe-sdmmc
   NAME:=BananaPi BPi-R4 2.5GE
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=bananapi_bpi-r4-poe
   UBOOT_CONFIG:=mt7988a_bananapi_bpi-r4-poe-sdmmc
   UBOOT_IMAGE:=u-boot.fip
@@ -896,7 +896,7 @@ endef
 
 define U-Boot/mt7988_bananapi_bpi-r4-poe-snand
   NAME:=BananaPi BPi-R4 2.5GE
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=bananapi_bpi-r4-poe
   UBOOT_CONFIG:=mt7988a_bananapi_bpi-r4-poe-snand
   UBOOT_IMAGE:=u-boot.fip
@@ -908,7 +908,7 @@ endef
 
 define U-Boot/mt7988_tplink_tl-7dr7230-rev1.0-sp2
   NAME:=TP-Link TL-7DR7230-Rev1.0 sp2
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=tplink_tl-7dr7230-rev1.0-sp2
   UBOOT_CONFIG:=mt7988d_tplink_tl-7dr7230-rev1.0-sp2
   UBOOT_IMAGE:=u-boot.fip
@@ -920,7 +920,7 @@ endef
 
 define U-Boot/mt7988_rfb-spim-nand
   NAME:=MT7988 Reference Board
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=mediatek_mt7988a-rfb
   UBOOT_CONFIG:=mt7988_rfb
   UBOOT_IMAGE:=u-boot.fip
@@ -932,7 +932,7 @@ endef
 
 define U-Boot/mt7988_rfb-snand
   NAME:=MT7988 Reference Board
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=mediatek_mt7988a-rfb
   UBOOT_CONFIG:=mt7988_rfb
   UBOOT_IMAGE:=u-boot.fip
@@ -944,7 +944,7 @@ endef
 
 define U-Boot/mt7988_rfb-nor
   NAME:=MT7988 Reference Board
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=mediatek_mt7988a-rfb
   UBOOT_CONFIG:=mt7988_rfb
   UBOOT_IMAGE:=u-boot.fip
@@ -957,7 +957,7 @@ endef
 
 define U-Boot/mt7988_rfb-emmc
   NAME:=MT7988 Reference Board
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=mediatek_mt7988a-rfb
   UBOOT_CONFIG:=mt7988_rfb
   UBOOT_IMAGE:=u-boot.fip
@@ -969,7 +969,7 @@ endef
 
 define U-Boot/mt7988_rfb-sd
   NAME:=MT7988 Reference Board
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET:=filogic_a73
   BUILD_DEVICES:=mediatek_mt7988a-rfb
   UBOOT_CONFIG:=mt7988_sd_rfb
   UBOOT_IMAGE:=u-boot.fip

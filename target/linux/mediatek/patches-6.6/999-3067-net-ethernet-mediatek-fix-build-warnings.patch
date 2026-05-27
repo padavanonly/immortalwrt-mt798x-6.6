@@ -1,0 +1,92 @@
+From: sKy <sKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mediatek: fix build warnings
+
+Fix two warnings reported by GCC and FORTIFY in the MediaTek Ethernet
+driver stack.
+
+The QDMA PPPQ debug output iterated over 64 queues even though the
+mtk_qdma_shaper arrays are sized by MTK_QDMA_NUM_QUEUES, which is 16 on
+this target.  Limit the loop to the actual array size to avoid undefined
+behavior.
+
+The HNAT hook intentionally copies the foe_entry payload starting after
+bfib1 and writes bfib1 last to avoid exposing a BIND entry before the rest
+of the entry is ready.  Use an object-base plus offsetof helper for that
+copy so FORTIFY can see that the access is bounded by the whole struct
+foe_entry rather than by the ipv6_sip0 field.
+
+The RBUS Wi-Fi utility copies a constant pinctrl state name into a local
+buffer.  Use strscpy() with the destination buffer size so the compiler
+does not warn about using the source string size as the strncpy() bound.
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+@@ -69,7 +69,7 @@ static int qdma_pppq_show(struct seq_fil
+ 
+ 	seq_puts(m, "Usage of the QDMA PPPQ for the HW path:\n");
+-	for (i = 0; i < 64; i++)
++	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++)
+ 		seq_printf(m, "qdma_txq%d:	%5d Mbps %8d refcnt\n",
+ 			   i, eth->qdma_shaper.speed[i],
+ 			   atomic_read(&eth->qdma_shaper.refcnt[i]));
+	seq_printf(m, "qdma_thres:	%5d Mbps\n", eth->qdma_shaper.threshold);
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -25,6 +25,7 @@
+ #include <net/udp.h>
+ #include <net/netfilter/nf_conntrack.h>
+ #include <net/netfilter/nf_conntrack_acct.h>
++#include <linux/stddef.h>
+ 
+ #include "nf_hnat_mtk.h"
+ #include "hnat.h"
+@@ -1529,6 +1530,15 @@ static struct ethhdr *get_ipv6_ipip_ethh
+ 	return eth;
+ }
+ 
++static void hnat_copy_foe_info(struct foe_entry *dst,
++			       const struct foe_entry *src)
++{
++	size_t offset = offsetof(struct foe_entry, ipv6_hnapt.ipv6_sip0);
++
++	memcpy((u8 *)dst + offset, (const u8 *)src + offset,
++	       sizeof(*dst) - offset);
++}
++
+ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 				     const struct net_device *dev,
+ 				     struct foe_entry *foe,
+@@ -2209,8 +2219,7 @@ static unsigned int skb_to_hnat_info(str
+ 	/* Before entry enter BIND state, write other fields first,
+ 	 * prevent racing with hardware accesses.
+ 	 */
+-	memcpy(&(foe->ipv6_hnapt.ipv6_sip0), &(entry.ipv6_hnapt.ipv6_sip0),
+-		       sizeof(struct foe_entry) - sizeof(entry.bfib1));
++	hnat_copy_foe_info(foe, &entry);
+ 	/* We must ensure all info has been updated before set to hw */
+ 	wmb();
+ 	/* After other fields have been written, write info1 to BIND the entry */
+@@ -2490,8 +2499,7 @@ mtk_sw_nat_hook_tx(struct sk_buff *skb,
+ 	/* Before entry enter BIND state, write other fields first,
+          * prevent racing with hardware accesses.
+          */
+-	memcpy(&(hw_entry->ipv6_hnapt.ipv6_sip0), &(entry.ipv6_hnapt.ipv6_sip0),
+-		       sizeof(struct foe_entry) - sizeof(entry.bfib1));
++	hnat_copy_foe_info(hw_entry, &entry);
+         /* We must ensure all info has been updated before set to hw */
+         wmb();
+         /* After other fields have been writtefn, write info1 to BIND the entry */
+diff --git a/drivers/net/wireless/wifi_utility/pci_mediatek_rbus.c b/drivers/net/wireless/wifi_utility/pci_mediatek_rbus.c
+--- a/drivers/net/wireless/wifi_utility/pci_mediatek_rbus.c
++++ b/drivers/net/wireless/wifi_utility/pci_mediatek_rbus.c
+@@ -150,7 +150,7 @@ rbus_pa_lan_config(struct platform_devic
+ 		return ret;
+ 	}
+ 
+-	strncpy(state, "state_epa", sizeof("state_epa"));
++	strscpy(state, "state_epa", sizeof(state));
+ 
+ 	s = pinctrl_lookup_state(p, state);
+ 

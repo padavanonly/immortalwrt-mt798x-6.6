@@ -8,9 +8,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/RuijieNetworksCommunity/rtl837x-gsw-driver.git
-PKG_SOURCE_DATE:=2026-04-21
-PKG_SOURCE_VERSION:=de1c633939a1927517ea440190dca774d5c3c733
-PKG_MIRROR_HASH:=ebb3bce40bdce3c4ad16db8ab40bf05c9a9e1c511c9e5735cddfc67a898a1686
+PKG_SOURCE_DATE:=2026-05-25
+PKG_SOURCE_VERSION:=a1650c6ac6e658b7ee7594ec8283d94205a001fe
+PKG_MIRROR_HASH:=b60ab0f8025bbedda5a61f51db8a4e7d5d8c8f316fcbea7adb968ddf90dd0276
 
 PKG_LICENSE:=GPL-2.0-only
 PKG_LICENSE_FILES:=LICENSE
@@ -20,7 +20,7 @@ PKG_BUILD_PARALLEL:=1
 
 include $(INCLUDE_DIR)/package.mk
 
-define KernelPackage/switch-rtl837x
+define KernelPackage/$(PKG_NAME)
   SUBMENU:=Network Devices
   TITLE:=Realtek RTL837x switch driver
   FILES:=$(PKG_BUILD_DIR)/src/rtl837x_gsw.ko
@@ -28,14 +28,12 @@ define KernelPackage/switch-rtl837x
   DEPENDS:=+kmod-swconfig
 endef
 
-EXTRA_CFLAGS:= -DCONFIG_RTL837x_GSW_PORT_MIB_FEATURE=y
-
 define Build/Compile
 	+$(KERNEL_MAKE) $(PKG_JOBS) \
 		M="$(PKG_BUILD_DIR)/src" \
-		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		CONFIG_RTL837x_GSW=m \
+		CONFIG_RTL837x_GSW_PORT_MIB_FEATURE=y \
 		modules
 endef
 
-$(eval $(call KernelPackage,switch-rtl837x))
+$(eval $(call KernelPackage,$(PKG_NAME)))

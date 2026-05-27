@@ -1,0 +1,12 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+
+START=99
+
+boot() {
+	/usr/sbin/telnetd -l /bin/login
+	case $(board_name) in
+	*)
+		;;
+	esac
+}
