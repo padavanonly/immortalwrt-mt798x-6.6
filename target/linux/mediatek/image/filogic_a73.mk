@@ -309,14 +309,12 @@ define Device/tplink_tl-7dr7299-v1
   DEVICE_DTS := mt7988a-tplink-tl-7dr7299-v1
   DEVICE_DTS_DIR := ../dts
   DEVICE_DTS_LOADADDR := 0x47f00000
-  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt7992-firmware \
-	mt7988-wo-firmware kmod-mt798x-2p5g-phy kmod-phy-rtl8261d \
-	kmod-switch-rtl837x swconfig kmod-sfp kmod-usb3 automount \
-	wireless-regdb \
-	luci-app-mtwifi-cfg luci-i18n-mtwifi-cfg-zh-cn mtwifi-cfg \
-	kmod-mediatek_hnat kmod-warp kmod-mt_wifi_cmn kmod-mt_wifi7 \
-	kmod-mt_hwifi kmod-mtk_pci kmod-mtk_wed kmod-connac_if \
-	kmod-mt7992 kmod-mt799a
+  DEVICE_PACKAGES := \
+	mt798x-2p5g-phy-firmware-internal kmod-mt7992-firmware mt7988-wo-firmware kmod-mt798x-2p5g-phy kmod-phy-rtl8261d kmod-switch-rtl837x swconfig kmod-sfp kmod-usb3 automount wireless-regdb \
+	luci-app-mtwifi-cfg mtwifi-cfg luci-app-eqos-mtk luci-app-turboacc-mtk \
+	kmod-mediatek_hnat kmod-warp kmod-mt_wifi_cmn kmod-mt_wifi7 kmod-mt_hwifi kmod-mtk_pci kmod-mtk_wed kmod-connac_if kmod-mt7992 kmod-mt799a \
+	kmod-gpio-button-hotplug kmod-leds-gpio luci-light \
+	kmod-crypto-hw-safexcel
   KERNEL_LOADADDR := 0x48000000
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
