@@ -1,0 +1,28 @@
+From: sKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: phy: allow custom LED names via DT
+
+The of_phy_led() function sets devname_mandatory = true, which forces
+the MDIO device name (e.g., "mdio-bus:0f") as a prefix in every PHY
+LED name. This makes the LED names hard to read and device-specific.
+
+Set devname_mandatory to false so that DT label or color+function
+properties can be used directly as the LED name, matching the behavior
+of GPIO LEDs. Boards that want the devname prefix can still include it
+in the label property.
+
+Signed-off-by: sKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/phy/phy_device.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/net/phy/phy_device.c
++++ b/drivers/net/phy/phy_device.c
+@@ -3301,7 +3301,7 @@ static int of_phy_led(struct phy_device *phydev,
+ 	cdev->max_brightness = 1;
+ 	init_data.devicename = dev_name(&phydev->mdio.dev);
+ 	init_data.fwnode = of_fwnode_handle(led);
+-	init_data.devname_mandatory = true;
++	init_data.devname_mandatory = false;
+ 
+ 	err = led_classdev_register_ext(dev, cdev, &init_data);
+ 	if (err)
