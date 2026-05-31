@@ -50,9 +50,9 @@ huasifei,wh3000)
 	ucidef_set_led_netdev "wan" "WAN" "red:wan" "eth1" "link tx rx"
 	;;
 hiveton,h5000m)
-	ucidef_set_led_netdev "wan" "WAN" "mdio-bus:0f::lan" "eth1" "link tx rx"
-	ucidef_set_led_netdev "wlan2g" "WLAN2G" "blue:power" "ra0" "link tx rx"
-	ucidef_set_led_netdev "wlan5g" "WLAN5G" "yellow:power" "rai0" "link tx rx"
+	ucidef_set_led_netdev "wan" "WAN" "white:wan" "eth1" "link tx rx"
+	ucidef_set_led_netdev "wlan2g" "WLAN2G" "white:wlan-0" "ra0" "link tx rx"
+	ucidef_set_led_netdev "wlan5g" "WLAN5G" "white:wlan-1" "rai0" "link tx rx"
 	;;
 mercusys,mr80x-v3)
 	ucidef_set_led_netdev "lan1" "lan-1" "green:lan-1" "lan1" "link tx rx"
