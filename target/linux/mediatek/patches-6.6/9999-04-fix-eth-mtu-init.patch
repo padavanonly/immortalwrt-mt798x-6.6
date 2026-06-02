@@ -1,0 +1,73 @@
+From: Yuzhii0718 <admin@yuzhii0718.eu.org>
+Subject: [PATCH] mediatek: mtk_eth_soc: fix max_mtu init for DSA switch probe
+
+The max_mtu of the GMAC netdev was originally set only in mtk_open(),
+which runs when the interface is brought up. However, when the MT7531
+switch is connected via MDIO, the DSA framework probes the switch and
+validates its MTU against the master interface's max_mtu during boot
+— before the interface is ever opened. At that point max_mtu is still
+0 (uninitialized), causing the DSA switch MTU initialization to fail
+and the switch ports not to come up properly.
+
+Fix this by:
+
+ 1. Extracting the max_mtu calculation into a new mtk_get_max_mtu()
+    helper that takes the MTK caps and interface mode into account.
+ 2. Calling it in mtk_add_mac() (probe time) so max_mtu is initialized
+    before the DSA switch probes.
+ 3. Reusing the same helper in mtk_open() to avoid duplication.
+
+With this, the master interface's max_mtu is correctly set during
+device registration, allowing the DSA switch to complete its MTU
+validation and initialization successfully.
+
+---
+
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2026-05-02 10:44:52.901606184 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2026-05-02 10:45:06.509377175 +0800
+@@ -669,6 +669,20 @@
+ 	}
+ }
+ 
++static unsigned int mtk_get_max_mtu(struct mtk_eth *eth,
++				    phy_interface_t interface)
++{
++	if (MTK_HAS_CAPS(eth->soc->caps, MTK_NETSYS_RX_9K) &&
++	    MTK_MAX_RX_LENGTH >= MTK_MAX_RX_LENGTH_9K &&
++	    mtk_interface_mode_is_xgmii(interface))
++		return MTK_MAX_RX_LENGTH_9K - MTK_RX_ETH_HLEN;
++
++	if (MTK_MAX_RX_LENGTH >= MTK_MAX_RX_LENGTH_2K)
++		return MTK_MAX_RX_LENGTH_2K - MTK_RX_ETH_HLEN;
++
++	return MTK_MAX_RX_LENGTH - MTK_RX_ETH_HLEN;
++}
++
+ static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
+ 			   const struct phylink_link_state *state)
+ {
+@@ -4316,14 +4330,7 @@
+ 	phylink_start(mac->phylink);
+ 	netif_tx_start_all_queues(dev);
+ 
+-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_NETSYS_RX_9K) &&
+-	    MTK_MAX_RX_LENGTH >= MTK_MAX_RX_LENGTH_9K &&
+-	    mtk_interface_mode_is_xgmii(mac->interface))
+-		eth->netdev[mac->id]->max_mtu = MTK_MAX_RX_LENGTH_9K - MTK_RX_ETH_HLEN;
+-	else if (MTK_MAX_RX_LENGTH >= MTK_MAX_RX_LENGTH_2K)
+-		eth->netdev[mac->id]->max_mtu = MTK_MAX_RX_LENGTH_2K - MTK_RX_ETH_HLEN;
+-	else
+-		eth->netdev[mac->id]->max_mtu = MTK_MAX_RX_LENGTH - MTK_RX_ETH_HLEN;
++	eth->netdev[mac->id]->max_mtu = mtk_get_max_mtu(eth, mac->interface);
+ 
+ 	if (mtk_is_netsys_v2_or_greater(eth))
+ 		return 0;
+@@ -6222,6 +6229,8 @@
+ 		goto free_netdev;
+ 	}
+ 
++	eth->netdev[id]->max_mtu = mtk_get_max_mtu(eth, phy_mode);
++
+ 	/* mac config is not set */
+ 	mac->interface = PHY_INTERFACE_MODE_NA;
+ 	mac->speed = SPEED_UNKNOWN;
