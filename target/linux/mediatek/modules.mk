@@ -127,3 +127,19 @@ define KernelPackage/nvmem-an8855-efuse/description
 endef
 
 $(eval $(call KernelPackage,nvmem-an8855-efuse))
+
+
+define KernelPackage/phy-airoha-en8801sc
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Airoha EN8801SC Gigabit PHY driver
+  DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73) +kmod-libphy
+  KCONFIG:=CONFIG_AIROHA_EN8801SC_PHY
+  FILES:=$(LINUX_DIR)/drivers/net/phy/en8801sc.ko
+  AUTOLOAD:=$(call AutoProbe,en8801sc)
+endef
+
+define KernelPackage/phy-airoha-en8801sc/description
+  Airoha EN8801SC Gigabit Ethernet PHY driver
+endef
+
+$(eval $(call KernelPackage,phy-airoha-en8801sc))
