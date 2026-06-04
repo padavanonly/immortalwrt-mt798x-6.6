@@ -1,0 +1,238 @@
+--- a/mt_wifi/os/linux/mt_linux.c
++++ b/mt_wifi/os/linux/mt_linux.c
+@@ -88,25 +88,11 @@
+ }
+ EXPORT_SYMBOL(mt_synchronize_rcu);
+ 
+-
+-ktime_t mt_ktime_get(void)
+-{
+-	return ktime_get();
+-}
+-EXPORT_SYMBOL(mt_ktime_get);
+-
+-
+-ktime_t mt_ktime_get_with_offset(enum tk_offsets offs)
+-{
+-	return ktime_get_with_offset(offs);
+-}
+-EXPORT_SYMBOL(mt_ktime_get_with_offset);
+-
+-u64 mt_ktime_get_boottime_ns(void)
+-{
+-	return ktime_get_boottime_ns();
+-}
+-EXPORT_SYMBOL(mt_ktime_get_boottime_ns);
++/*
++ * mt_ktime_get, mt_ktime_get_with_offset, mt_ktime_get_boottime_ns,
++ * and mt_ktime_get_real_ts64 are provided by kmod-mt_wifi_cmn to avoid
++ * GPL-only symbol exports (ktime_get, etc.) from this proprietary module.
++ */
+ 
+ #ifdef RT_CFG80211_SUPPORT
+ int mt_cfg80211_vendor_cmd_reply(struct sk_buff *skb)
+
+--- a/mt_wifi/include/os/mt_linux.h
++++ b/mt_wifi/include/os/mt_linux.h
+@@ -61,6 +61,7 @@
+ ktime_t mt_ktime_get(void);
+ ktime_t mt_ktime_get_with_offset(enum tk_offsets offs);
+ u64 mt_ktime_get_boottime_ns(void);
++void mt_ktime_get_real_ts64(struct timespec64 *ts);
+ int mt_register_oom_notifier(struct notifier_block *nb);
+ int mt_unregister_oom_notifier(struct notifier_block *nb);
+ void mt_debugfs_remove(struct dentry *dentry);
+@@ -117,6 +118,7 @@
+ #define mt_ktime_get() ktime_get()
+ #define mt_ktime_get_with_offset(offs) ktime_get_with_offset(offs)
+ #define mt_ktime_get_boottime_ns() ktime_get_boottime_ns()
++#define mt_ktime_get_real_ts64(ts) ktime_get_real_ts64(ts)
+ #define mt_register_oom_notifier(nb) register_oom_notifier(nb)
+ #define mt_unregister_oom_notifier(nb) unregister_oom_notifier(nb)
+ #define mt_debugfs_remove(dentry) debugfs_remove(dentry)
+
+--- a/mt_wifi/common/cmm_radar.c
++++ b/mt_wifi/common/cmm_radar.c
+@@ -808,14 +808,14 @@
+ 		}
+ #ifdef ZERO_PKT_LOSS_SUPPORT
+ 		pAd->chan_switch_time[4] = jiffies_to_msecs(jiffies);
+-		chnl_switch_init = ktime_get();
++		chnl_switch_init = mt_ktime_get();
+ #endif /*#ZERO_PKT_LOSS_SUPPORT*/
+ 
+ 		/* Update channel of wdev as new channel */
+ 		ap_phy_rrm_init_byRf(pAd, wdev);
+ 
+ #ifdef ZERO_PKT_LOSS_SUPPORT
+-		chnl_switch_exit = ktime_get();
++		chnl_switch_exit = mt_ktime_get();
+ 
+ 		if (pAd->Zero_Loss_Enable) {
+ 			/*set ChnlSwitchState = ASIC_CHANNEL_SWITCH_COMMAND_ISSUED*/
+
+--- a/mt_wifi/common/scan.c
++++ b/mt_wifi/common/scan.c
+@@ -783,7 +783,7 @@
+ 		ScanCtrl->ScanTimeActualStart = mt_ktime_get();
+ #ifdef ZERO_PKT_LOSS_SUPPORT
+ 		/*read channel stats initial reading*/
+-		pAd->ScanCtrl.ScanTimeStartMibEvent = ktime_get();
++		pAd->ScanCtrl.ScanTimeStartMibEvent = mt_ktime_get();
+ 		read_channel_stats(pAd, band_idx, &(ScanCtrl->OffCannelScanStartStats));
+ #endif
+ 		pAutoChCtrl->AutoChSelCtrl.pre_cca_nav_tx_time = AsicGetCCACnt(pAd, band_idx);
+
+--- a/mt_wifi/common/fsm/fsm_sync.c
++++ b/mt_wifi/common/fsm/fsm_sync.c
+@@ -1332,7 +1332,7 @@
+ 			UpdateChannelInfo(pAd, pAd->ApCfg.current_channel_index, pAd->ApCfg.AutoChannelAlg, wdev);
+ #ifdef ZERO_PKT_LOSS_SUPPORT
+ 			read_channel_stats(pAd, BandIdx, &(ScanCtrl->OffCannelScanStopStats));
+-			pAd->ScanCtrl.ScanTimeEndMibEvent = ktime_get();
++			pAd->ScanCtrl.ScanTimeEndMibEvent = mt_ktime_get();
+ 			pAd->ScanCtrl.ScanTimeDiff =
+ 				ktime_to_ms(ktime_sub(pAd->ScanCtrl.ScanTimeEndMibEvent,
+ 				pAd->ScanCtrl.ScanTimeStartMibEvent)) + 1;
+
+--- a/mt_wifi/common/ba_action.c
++++ b/mt_wifi/common/ba_action.c
+@@ -1431,7 +1431,7 @@
+ 		}
+ 		skb = RTPKT_TO_OSPKT(mpdu_blk->pPacket);
+ #ifdef PROPRIETARY_DRIVER_SUPPORT
+-		ktime_get_real_ts64(&kts64);
++		mt_ktime_get_real_ts64(&kts64);
+ 		kts = timespec64_to_ktime(kts64);
+ 		TimeDelta = ktime_to_ms(ktime_sub(kts, skb->tstamp));
+ #else
+@@ -1490,7 +1490,7 @@
+ 
+ 		skb = RTPKT_TO_OSPKT(mpdu_blk->pPacket);
+ #ifdef PROPRIETARY_DRIVER_SUPPORT
+-		ktime_get_real_ts64(&kts64);
++		mt_ktime_get_real_ts64(&kts64);
+ 		kts = timespec64_to_ktime(kts64);
+ 		TimeDelta = ktime_to_ms(ktime_sub(kts, skb->tstamp));
+ #else
+@@ -3270,7 +3270,7 @@
+ 		msdu_blk->pPacket = pRxBlk->pRxPacket;
+ 
+ #ifdef PROPRIETARY_DRIVER_SUPPORT
+-		ktime_get_real_ts64(&kts64);
++		mt_ktime_get_real_ts64(&kts64);
+ 		RTPKT_TO_OSPKT(msdu_blk->pPacket)->tstamp = timespec64_to_ktime(kts64);
+ #else
+ 		__net_timestamp(RTPKT_TO_OSPKT(msdu_blk->pPacket));
+@@ -3381,7 +3381,7 @@
+ 		msdu_blk->pPacket = pRxBlk->pRxPacket;
+ 
+ #ifdef PROPRIETARY_DRIVER_SUPPORT
+-		ktime_get_real_ts64(&kts64);
++		mt_ktime_get_real_ts64(&kts64);
+ 		RTPKT_TO_OSPKT(msdu_blk->pPacket)->tstamp = timespec64_to_ktime(kts64);
+ #else
+ 		__net_timestamp(RTPKT_TO_OSPKT(msdu_blk->pPacket));
+
+--- a/mt_wifi/common/log_time.c
++++ b/mt_wifi/common/log_time.c
+@@ -21,7 +21,7 @@
+ #ifdef LINUX
+ 	else if (unit == LOG_TIME_UNIT_US) {
+ #if (KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE)
+-		ktime_get_real_ts64(&tl->t);
++		mt_ktime_get_real_ts64(&tl->t);
+ #else
+ 		do_gettimeofday(&tl->t);
+ #endif
+@@ -48,7 +48,7 @@
+ 	if (tl->unit == LOG_TIME_UNIT_US) {
+ #ifdef LINUX
+ #if (KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE)
+-		ktime_get_real_ts64(&t);
++		mt_ktime_get_real_ts64(&t);
+ 		tl->time = ((t.tv_sec - tl->t.tv_sec) * 1000000000 + t.tv_nsec - tl->t.tv_nsec)/1000;
+ #else
+ 		do_gettimeofday(&t);
+
+--- a/mt_wifi/hw_ctrl/physical_device_thread.c
++++ b/mt_wifi/hw_ctrl/physical_device_thread.c
+@@ -102,7 +102,7 @@
+ #if (KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE)
+ 	struct timespec64 time;
+ 
+-	ktime_get_real_ts64(&time);
++	mt_ktime_get_real_ts64(&time);
+ 	second = (unsigned int)time.tv_sec;
+ 	usecond = (unsigned int)time.tv_nsec/1000;
+ #else
+
+--- a/mt_wifi/common/dabs_qos.c
++++ b/mt_wifi/common/dabs_qos.c
+@@ -844,7 +844,7 @@
+ 			struct timespec64 kts64 = {0};
+ 			ktime_t kts, delta_kt;
+ 
+-			ktime_get_real_ts64(&kts64);
++			mt_ktime_get_real_ts64(&kts64);
+ 			kts = timespec64_to_ktime(kts64);
+ 			delta_kt = ktime_sub(kts, RTPKT_TO_OSPKT(pkt)->tstamp);
+ #else
+
+--- a/mt_wifi/common/cmm_cfg.c
++++ b/mt_wifi/common/cmm_cfg.c
+@@ -3813,7 +3813,7 @@
+ 		MTWF_PRINT("Format: iwpriv ra0 set time_sync=[second]-[usecond]\n");
+ 
+ #if (KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE)
+-		ktime_get_real_ts64(&time);
++		mt_ktime_get_real_ts64(&time);
+ 		second = (unsigned int)time.tv_sec;
+ 		usecond = (unsigned int)time.tv_nsec/1000;
+ #else
+
+--- a/mt_wifi/os/linux/cfg80211/cfg80211_util.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211_util.c
+@@ -1396,7 +1396,7 @@
+ #if (KERNEL_VERSION(5, 0, 0) < LINUX_VERSION_CODE)
+ 		struct timespec64 tv;
+ 
+-		ktime_get_real_ts64(&tv);
++		mt_ktime_get_real_ts64(&tv);
+ 		mgmt->u.probe_resp.timestamp = (((UINT64) tv.tv_sec * 1000000000) + tv.tv_nsec)/1000;
+ #else
+ 		struct timeval tv;
+
+--- a/mt_wifi/os/linux/cfg80211/cfg80211_rx.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211_rx.c
+@@ -838,7 +838,7 @@
+ #if (KERNEL_VERSION(5, 0, 0) < LINUX_VERSION_CODE)
+ 				struct timespec64 tv;
+ 
+-				ktime_get_real_ts64(&tv);
++				mt_ktime_get_real_ts64(&tv);
+ 				mgmt->u.probe_resp.timestamp = (((UINT64) tv.tv_sec * 1000000000) + tv.tv_nsec)/1000;
+ #else
+ 				struct timeval tv;
+
+--- a/mt_wifi/os/linux/diag.c
++++ b/mt_wifi/os/linux/diag.c
+@@ -247,7 +247,7 @@
+ 		return;
+ 	}
+ 	memset(entry, 0, sizeof(struct _DIAG_LOG_ENTRY));
+-	ktime_get_real_ts64(&txc);
++	mt_ktime_get_real_ts64(&txc);
+ 	entry->tm = rtc_ktime_to_tm(txc.tv_sec);
+ 
+ 	entry->isTX = info->isTX;
+@@ -1084,7 +1084,7 @@
+ 	}
+ 	memset(entry, 0, sizeof(struct DIAG_ASSOC_ERROR_ENTRY));
+ 	/*collect error info*/
+-	ktime_get_real_ts64(&txc);
++	mt_ktime_get_real_ts64(&txc);
+ 	entry->tm = rtc_ktime_to_tm(txc.tv_sec);
+ 	memcpy(entry->StaAddr, addr, 6);
+ 	if (pAd->ApCfg.MBSSID[apidx].SsidLen > 0 && pAd->ApCfg.MBSSID[apidx].SsidLen <= 32)
+
