@@ -1,0 +1,62 @@
+--- a/mt_wifi/common/cmm_sanity.c
++++ b/mt_wifi/common/cmm_sanity.c
+@@ -2282,10 +2282,30 @@
+ 	COPY_MAC_ADDR(ProbeReqParam->Addr1, &Fr->Hdr.Addr1);
+ #endif
+ 
+-	if (Fr->Octet[0] != IE_SSID || Fr->Octet[1] > MAX_LEN_OF_SSID || Fr->Octet[1] > (MsgLen - LENGTH_802_11 - 2)) {
+-		MTWF_DBG(NULL, DBG_CAT_TEST, CATTEST_SANITY, DBG_LVL_INFO,
+-			"sanity fail - wrong SSID IE\n");
+-		return FALSE;
++	{
++		UCHAR *ssid_ie = NULL;
++		UCHAR *ie_scan = Fr->Octet;
++		UINT scan_rem = MsgLen - LENGTH_802_11;
++		UINT ie_len;
++
++		/* Scan IEs to find SSID IE - some clients place vendor IEs first */
++		while (scan_rem >= 2) {
++			if (ie_scan[0] == IE_SSID) {
++				ssid_ie = ie_scan;
++				break;
++			}
++			ie_len = ie_scan[1] + 2;
++			if (ie_len < 2 || ie_len > scan_rem)
++				break;
++			ie_scan += ie_len;
++			scan_rem -= ie_len;
++		}
++
++		if (!ssid_ie || ssid_ie[1] > MAX_LEN_OF_SSID || ssid_ie[1] > (scan_rem - 2)) {
++			MTWF_DBG(NULL, DBG_CAT_TEST, CATTEST_SANITY, DBG_LVL_INFO,
++				"sanity fail - wrong SSID IE\n");
++			return FALSE;
++		}
+ 	}
+ #ifdef EM_PLUS_SUPPORT
+ 	if (IS_BROADCAST_MAC_ADDR(ProbeReqParam->Addr1)) {
+
+--- a/mt_wifi/common/fsm/fsm_sync.c
++++ b/mt_wifi/common/fsm/fsm_sync.c
+@@ -2209,7 +2209,7 @@
+ 
+ 	NdisZeroMemory(ProbeReqParam, sizeof(PEER_PROBE_REQ_PARAM));
+ 	if (PeerProbeReqSanity(pAd, Elem->Msg, Elem->MsgLen, ProbeReqParam) == FALSE) {
+-		MTWF_DBG(pAd, DBG_CAT_MLME, CATMLME_SYNC, DBG_LVL_ERROR,
++		MTWF_DBG(pAd, DBG_CAT_MLME, CATMLME_SYNC, DBG_LVL_WARN,
+ 			"PeerProbeReqSanity failed!\n");
+ 		os_free_mem(ProbeReqParam);
+ 		return;
+
+--- a/mt_wifi/os/linux/cfg80211/cfg80211_rx.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211_rx.c
+@@ -229,7 +229,7 @@
+ 	{
+ 		if (PeerProbeReqSanity(pAd, (VOID *)pRxBlk->pData,
+ 			pRxBlk->DataSize, ProbeReqParam) == FALSE) {
+-			MTWF_DBG(pAd, DBG_CAT_RX, CATRX_MGMT, DBG_LVL_ERROR,
++			MTWF_DBG(pAd, DBG_CAT_RX, CATRX_MGMT, DBG_LVL_WARN,
+ 				"PeerProbeReqSanity fail!\n");
+ 			os_free_mem(ProbeReqParam);
+ 			return TRUE; /*drop when SSID sanity check fails in ProbeReq */
+
