@@ -69,6 +69,7 @@
 		};
 
 		led-2 {
+			label = "green:10gsfp+";
 			color = <LED_COLOR_ID_GREEN>;
 			function = "sfp";
 			gpios = <&pio 81 GPIO_ACTIVE_LOW>;
@@ -162,6 +163,7 @@
 };
 
 &gsw_phy2_led0 {
+	label = "green:ge1";
 	function = LED_FUNCTION_LAN;
 	color = <LED_COLOR_ID_GREEN>;
 	status = "okay";
@@ -173,6 +175,7 @@
 };
 
 &gsw_phy3_led0 {
+	label = "green:ge2";
 	function = LED_FUNCTION_LAN;
 	color = <LED_COLOR_ID_GREEN>;
 	status = "okay";
@@ -271,8 +274,9 @@
 			#size-cells = <0>;
 
 			led@3 {
+				label = "green:10ge";
 				reg = <3>;
-				function = LED_FUNCTION_WAN;
+				function = LED_FUNCTION_LAN;
 				color = <LED_COLOR_ID_GREEN>;
 				active-low;
 			};

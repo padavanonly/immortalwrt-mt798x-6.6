@@ -39,6 +39,7 @@ endef
 $(eval $(call KernelPackage,iio-mt6577-auxadc))
 
 define KernelPackage/air-an8855-phy
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Airoha AN8855 PHY driver
   DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_AIR_AN8855_PHY
@@ -53,6 +54,7 @@ endef
 $(eval $(call KernelPackage,air-an8855-phy))
 
 define KernelPackage/an8855-gsw
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Airoha AN8855 GSW driver
   DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_AN8855_GSW
@@ -67,6 +69,7 @@ endef
 $(eval $(call KernelPackage,an8855-gsw))
 
 define KernelPackage/mdio-an8855
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Airoha AN8855 MDIO driver
   DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_MDIO_AN8855
@@ -81,6 +84,7 @@ endef
 $(eval $(call KernelPackage,mdio-an8855))
 
 define KernelPackage/mfd-airoha-an8855
+  SUBMENU:=$(OTHER_MENU)
   TITLE:=Airoha AN8855 MFD driver
   DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_MFD_AIROHA_AN8855
@@ -95,6 +99,7 @@ endef
 $(eval $(call KernelPackage,mfd-airoha-an8855))
 
 define KernelPackage/net-dsa-an8855
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Airoha AN8855 DSA driver
   DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_NET_DSA_AN8855
@@ -109,6 +114,7 @@ endef
 $(eval $(call KernelPackage,net-dsa-an8855))
 
 define KernelPackage/nvmem-an8855-efuse
+  SUBMENU:=$(OTHER_MENU)
   TITLE:=Airoha AN8855 eFuse NVMEM driver
   DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73)
   KCONFIG:=CONFIG_NVMEM_AN8855_EFUSE
@@ -121,3 +127,19 @@ define KernelPackage/nvmem-an8855-efuse/description
 endef
 
 $(eval $(call KernelPackage,nvmem-an8855-efuse))
+
+
+define KernelPackage/phy-airoha-en8801sc
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Airoha EN8801SC Gigabit PHY driver
+  DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_a73) +kmod-libphy
+  KCONFIG:=CONFIG_AIROHA_EN8801SC_PHY
+  FILES:=$(LINUX_DIR)/drivers/net/phy/en8801sc.ko
+  AUTOLOAD:=$(call AutoProbe,en8801sc)
+endef
+
+define KernelPackage/phy-airoha-en8801sc/description
+  Airoha EN8801SC Gigabit Ethernet PHY driver
+endef
+
+$(eval $(call KernelPackage,phy-airoha-en8801sc))
