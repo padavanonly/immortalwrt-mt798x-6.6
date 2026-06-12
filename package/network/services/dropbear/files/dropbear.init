@@ -8,7 +8,6 @@ STOP=50
 USE_PROCD=1
 PROG=/usr/sbin/dropbear
 NAME=dropbear
-PIDCOUNT=0
 
 extra_command "killclients" "Kill ${NAME} processes except servers and yourself"
 
@@ -178,7 +177,7 @@ validate_section_dropbear()
 		'SSHKeepAlive:uinteger:300' \
 		'IdleTimeout:uinteger:0' \
 		'MaxAuthTries:uinteger:3' \
-		'RecvWindowSize:uinteger:262144' \
+		'RecvWindowSize:uinteger:0' \
 		'LocalPortForward:bool:1' \
 		'RemotePortForward:bool:1' \
 		'mdns:bool:1'
@@ -300,8 +299,7 @@ dropbear_instance()
 		break
 	done
 
-	PIDCOUNT="$(( ${PIDCOUNT} + 1))"
-	local pid_file="/var/run/${NAME}.${PIDCOUNT}.pid"
+	local pid_file="/var/run/${NAME}.${1}.pid"
 
 	procd_open_instance
 	procd_set_param command "$PROG" -F -P "$pid_file"
