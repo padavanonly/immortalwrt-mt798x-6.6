@@ -2284,6 +2284,28 @@ define Device/tplink_wma301-ubootmod
   ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot tplink_wma301
 endef
 TARGET_DEVICES += tplink_wma301-ubootmod
+define Device/tplink_wma301_2.1
+  DEVICE_VENDOR := TP-Link
+  DEVICE_MODEL := WMA301 2.1
+  DEVICE_VARIANT := (stock layout)
+  DEVICE_DTS := mt7981b-tplink-wma301_2.1
+  DEVICE_DTS_DIR := ../dts
+  SUPPORTED_DEVICES += mediatek,mt7981-spim-snand-rfb
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 65536k
+  KERNEL_IN_UBI := 1
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  KERNEL = kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS = kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd
+endef
+TARGET_DEVICES += tplink_wma301_2.1
 
 define Device/ubnt_unifi-6-plus
   DEVICE_VENDOR := Ubiquiti
