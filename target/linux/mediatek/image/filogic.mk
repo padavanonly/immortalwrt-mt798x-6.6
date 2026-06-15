@@ -2284,6 +2284,7 @@ define Device/tplink_wma301-ubootmod
   ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot tplink_wma301
 endef
 TARGET_DEVICES += tplink_wma301-ubootmod
+
 define Device/tplink_wma301_2.1
   DEVICE_VENDOR := TP-Link
   DEVICE_MODEL := WMA301 2.1
