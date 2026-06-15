@@ -15,6 +15,7 @@
 #include "crypto-eip/debugfs.h"
 
 struct dentry *mtk_crypto_debugfs_root;
+int mac_filter_enable;
 
 static int mtk_crypto_debugfs_read(struct seq_file *s, void *private)
 {
@@ -113,6 +114,48 @@ static const struct file_operations mtk_crypto_offload_dev_fops = {
 	.release = single_release,
 };
 
+static int mtk_crypto_mac_filter_read(struct seq_file *m, void *private)
+{
+	pr_info("value=%d, mac filter is %s now!\n",
+		mac_filter_enable, (mac_filter_enable) ? "enabled" : "disabled");
+
+	return 0;
+}
+
+static int mtk_crypto_mac_filter_enable_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mtk_crypto_mac_filter_read, file->private_data);
+}
+
+static ssize_t mtk_crypto_mac_filter_enable_write(struct file *file,
+						  const char __user *buffer,
+						  size_t count, loff_t *data)
+{
+	char buf[8] = {0};
+	int len = count;
+
+	if ((len > 8) || copy_from_user(buf, buffer, len))
+		return -EFAULT;
+
+	if (buf[0] == '1' && !mac_filter_enable) {
+		pr_info("mac filter is going to be enabled !\n");
+		mac_filter_enable = 1;
+	} else if (buf[0] == '0' && mac_filter_enable) {
+		pr_info("mac filter is going to be disabled !\n");
+		mac_filter_enable = 0;
+	}
+
+	return len;
+}
+
+static const struct file_operations mtk_crypto_mac_filter_enable_fops = {
+	.open = mtk_crypto_mac_filter_enable_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = mtk_crypto_mac_filter_enable_write,
+	.release = single_release,
+};
+
 int mtk_crypto_debugfs_init(void)
 {
 	mtk_crypto_debugfs_root = debugfs_create_dir("mtk_crypto", NULL);
@@ -122,6 +165,9 @@ int mtk_crypto_debugfs_init(void)
 
 	debugfs_create_file("offload_dev", 0644, mtk_crypto_debugfs_root, NULL,
 				&mtk_crypto_offload_dev_fops);
+
+	debugfs_create_file("mac_filter_enable", 0644, mtk_crypto_debugfs_root, NULL,
+			    &mtk_crypto_mac_filter_enable_fops);
 
 	return 0;
 }
