@@ -741,6 +741,8 @@ setup_model()
 	ruijie,ew-6000gx-pro* |\
 	ruijie,rg-x60* |\
 	jdcloud,re-cp-03 |\
+	supergateway,s20l |\
+	supergateway,s20p |\
 	tplink,tl-xdr608* |\
 	zyxel,ex5700 |\
 	*7986*)

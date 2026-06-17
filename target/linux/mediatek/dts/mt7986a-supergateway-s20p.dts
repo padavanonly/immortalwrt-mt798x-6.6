@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/dts-v1/;
+#include "mt7986a-supergateway-s20-common.dtsi"
+
+/ {
+	model = "Super Gateway S20P";
+	compatible = "supergateway,s20p", "mediatek,mt7986a";
+
+	aliases {
+		label-mac-device = &gmac1;
+	};
+};
+
+&eth {
+	status = "okay";
+
+	gmac0: mac@0 {
+		compatible = "mediatek,eth-mac";
+		reg = <0>;
+		phy-mode = "2500base-x";
+		nvmem-cells = <&macaddr_factory_2a 0>;
+		nvmem-cell-names = "mac-address";
+
+		fixed-link {
+			speed = <2500>;
+			full-duplex;
+			pause;
+		};
+	};
+
+	gmac1: mac@1 {
+		compatible = "mediatek,eth-mac";
+		reg = <1>;
+		nvmem-cells = <&macaddr_factory_24 0>;
+		nvmem-cell-names = "mac-address";
+		phy-mode = "2500base-x";
+		phy-handle = <&phy7>;
+	};
+
+	mdio: mdio-bus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		phy5: ethernet-phy@5 {
+			compatible = "ethernet-phy-ieee802.3-c45";
+			reg = <5>;
+			reset-assert-us = <100000>;
+			reset-deassert-us = <100000>;
+			reset-gpios = <&pio 48 GPIO_ACTIVE_LOW>;
+			interrupt-parent = <&pio>;
+			interrupts = <47 IRQ_TYPE_LEVEL_LOW>;
+			realtek,aldps-enable;
+			realtek,led-link-select = <0xa7 0x03 0x0>; /* led0 at 10/100/1000/2.5G/(2.5G lite), led1 at 10/100 */
+			realtek,led-act-select = <0x321b>; /* led on time = 400ms, duty = 12.5%, freq = 60ms, Enable 10M LPI, modeA, led0 led1 act */
+			/*realtek,led-polarity-select = <0x0018>; */
+		};
+
+		phy7: ethernet-phy@7 {
+			compatible = "ethernet-phy-ieee802.3-c45";
+			reg = <7>;
+			reset-assert-us = <100000>;
+			reset-deassert-us = <100000>;
+			reset-gpios = <&pio 6 GPIO_ACTIVE_LOW>;
+			interrupt-parent = <&pio>;
+			interrupts = <46 IRQ_TYPE_LEVEL_LOW>;
+			realtek,aldps-enable;
+			realtek,led-link-select = <0xa7 0x03 0x0>; /* led0 at 10/100/1000/2.5G/(2.5G lite), led1 at 10/100 */
+			realtek,led-act-select = <0x321b>; /* led on time = 400ms, duty = 12.5%, freq = 60ms, Enable 10M LPI, modeA, led0 led1 act */
+			/*realtek,led-polarity-select = <0x0018>; */
+		};
+
+		switch: switch@1f {
+			compatible = "mediatek,mt7531";
+			reg = <31>;
+			reset-gpios = <&pio 5 GPIO_ACTIVE_HIGH>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			interrupt-parent = <&pio>;
+			interrupts = <66 IRQ_TYPE_LEVEL_HIGH>;
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+					label = "lan5";
+				};
+
+				port@1 {
+					reg = <1>;
+					label = "lan4";
+				};
+
+				port@2 {
+					reg = <2>;
+					label = "lan3";
+				};
+
+				port@3 {
+					reg = <3>;
+					label = "lan2";
+				};
+
+				port@4 {
+					reg = <4>;
+					label = "lan1";
+				
+				};
+
+				port@5 {
+					reg = <5>;
+					label = "lan6";
+					phy-mode = "2500base-x";
+					phy-handle = <&phy5>;
+				};
+
+				port@6 {
+					reg = <6>;
+					label = "cpu";
+					ethernet = <&gmac0>;
+					phy-mode = "2500base-x";
+
+					fixed-link {
+						speed = <2500>;
+						full-duplex;
+						pause;
+					};
+				};
+			};
+		};
+	};
+};
