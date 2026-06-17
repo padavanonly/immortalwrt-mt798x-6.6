@@ -615,16 +615,6 @@ define Device/cmcc_a10-ubootmod
 endef
 TARGET_DEVICES += cmcc_a10-ubootmod
 
-define Device/clx_s20p
-  DEVICE_VENDOR := CLX
-  DEVICE_MODEL := S20P
-  DEVICE_DTS := mt7986a-clx-s20p
-  DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware kmod-usb3 automount
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-endef
-TARGET_DEVICES += clx_s20p
-
 define Device/philips_hy3000
   DEVICE_VENDOR := Philips
   DEVICE_MODEL := HY3000
@@ -2100,6 +2090,37 @@ define Device/sn_r1
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += sn_r1
+
+define Device/supergateway_s20-common
+  DEVICE_VENDOR := Super Gateway
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
+    kmod-usb3 kmod-nvme kmod-mmc kmod-fs-f2fs kmod-fs-ext4 kmod-fs-vfat \
+    mkf2fs f2fsck e2fsprogs blkid blockdev losetup automount
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+
+define Device/supergateway_s20l
+  $(call Device/supergateway_s20-common)
+  DEVICE_MODEL := S20L
+  DEVICE_DTS := mt7986a-supergateway-s20l
+endef
+TARGET_DEVICES += supergateway_s20l
+
+define Device/supergateway_s20m
+  $(call Device/supergateway_s20-common)
+  DEVICE_MODEL := S20M
+  DEVICE_DTS := mt7986a-supergateway-s20m
+  DEVICE_PACKAGES += -kmod-mt7915e -kmod-mt7986-firmware -wpad-openssl
+endef
+TARGET_DEVICES += supergateway_s20m
+
+define Device/supergateway_s20p
+  $(call Device/supergateway_s20-common)
+  DEVICE_MODEL := S20P
+  DEVICE_DTS := mt7986a-supergateway-s20p
+endef
+TARGET_DEVICES += supergateway_s20p
 
 define Device/bt_r320
   DEVICE_VENDOR := BT

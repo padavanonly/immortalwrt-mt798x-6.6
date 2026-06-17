@@ -87,7 +87,8 @@ bt,rb300|\
 cmcc,rax3000me|\
 jdcloud,re-cp-03|\
 konka,komi-a31|\
-sn,r1)
+sn,r1|\
+supergateway,s20*)
 	. /lib/upgrade/fit.sh
 	export_fitblk_bootdev
 	case "$CI_METHOD" in
