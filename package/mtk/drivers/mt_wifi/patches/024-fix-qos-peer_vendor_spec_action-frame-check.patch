@@ -1,0 +1,29 @@
+--- a/mt_wifi/embedded/common/qos.c
++++ b/mt_wifi/embedded/common/qos.c
+@@ -820,17 +820,20 @@ void Peer_Vendor_Spec_Action(struct _RTMP_ADAPTER *pAd, struct _MLME_QUEUE_ELEM
+ 			return;
+ 		}
+ 
++		/* check frame length sanity */
++		if (Elem->MsgLen < (LENGTH_802_11 + 1 + MTK_OUI_LEN))
++			return;
++
++		/* check if it is MTK OUI */
++		if (!NdisEqualMemory((UCHAR *)pdabs_frame->Org_id,
++			(UCHAR *)mtk_oui, MTK_OUI_LEN))
++			return;
++
+ 		if (Elem->MsgLen != sizeof(FRAME_DABS_ACTION)) {
+ 			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+ 				"%s:frame len check error\n", __func__);
+ 			return;
+ 		}
+-		if (!NdisEqualMemory((UCHAR *)pdabs_frame->Org_id,
+-			(UCHAR *)mtk_oui, MTK_OUI_LEN)) {
+-			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+-				"%s:OUI check error\n", __func__);
+-			return;
+-		}
+ 
+ 		if (pdabs_frame->trans_id != pEntry->dabs_trans_id) {
+ 			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
