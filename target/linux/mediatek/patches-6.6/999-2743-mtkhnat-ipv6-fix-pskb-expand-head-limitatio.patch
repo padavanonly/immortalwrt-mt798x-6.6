@@ -23,9 +23,9 @@ index 886fad128..da6cae59c 100644
  	       skb_shinfo(skb),
  	       offsetof(struct skb_shared_info, frags[skb_shinfo(skb)->nr_frags]));
  
-+	/*headroom copy*/
-+	memcpy(data, skb->head, FOE_INFO_LEN);
-+
++	/* Copy FOE_INFO to the headroom start when space is available. */
++	if (skb_headroom(skb) >= FOE_INFO_LEN)
++		memcpy(data, skb->head, FOE_INFO_LEN);
  	/*
  	 * if shinfo is shared we must drop the old head gracefully, but if it
  	 * is not we can just drop the old head and let the existing refcount
