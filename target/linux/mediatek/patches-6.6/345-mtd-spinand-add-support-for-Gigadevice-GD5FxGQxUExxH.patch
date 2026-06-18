@@ -1,0 +1,47 @@
+From: yuzhii0718 <admin@yuzhii0718.eu.org>
+Date: Thu, 18 Jun 2026 11:20:57 +8000
+Subject: [PATCH] mtd: spinand: add support for Gigadevice GD5FxGQxUExxH
+
+---
+ drivers/mtd/nand/spi/gigadevice.c | 10 ++++++++++
+ 1 file changed, 30 insertions(+)
+
+--- a/drivers/mtd/nand/spi/gigadevice.c
++++ b/drivers/mtd/nand/spi/gigadevice.c
+@@ -523,6 +523,36 @@
+ 		     SPINAND_HAS_QE_BIT,
+ 		     SPINAND_ECCINFO(&gd5fxgqx_variant2_ooblayout,
+ 				     gd5fxgq4uexxg_ecc_get_status)),
++	SPINAND_INFO("GD5F1GQ5UExxH",
++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x31),
++			 NAND_MEMORG(1, 2048, 64, 64, 1024, 20, 1, 1, 1),
++			 NAND_ECCREQ(4, 512),
++			 SPINAND_INFO_OP_VARIANTS(&read_cache_variants_1gq5,
++					      &write_cache_variants,
++					      &update_cache_variants),
++			 SPINAND_HAS_QE_BIT,
++			 SPINAND_ECCINFO(&gd5fxgqx_variant2_ooblayout,
++				     gd5fxgq5xexxg_ecc_get_status)),
++	SPINAND_INFO("GD5F2GQ5UExxH",
++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x32),
++			 NAND_MEMORG(1, 2048, 64, 64, 2048, 40, 1, 1, 1),
++			 NAND_ECCREQ(4, 512),
++			 SPINAND_INFO_OP_VARIANTS(&read_cache_variants_2gq5,
++					      &write_cache_variants,
++					      &update_cache_variants),
++			 SPINAND_HAS_QE_BIT,
++			 SPINAND_ECCINFO(&gd5fxgqx_variant2_ooblayout,
++				     gd5fxgq5xexxg_ecc_get_status)),
++	SPINAND_INFO("GD5F4GQ6UExxH",
++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x35),
++			 NAND_MEMORG(1, 2048, 64, 64, 4096, 80, 1, 1, 1),
++			 NAND_ECCREQ(4, 512),
++			 SPINAND_INFO_OP_VARIANTS(&read_cache_variants_2gq5,
++					      &write_cache_variants,
++					      &update_cache_variants),
++			 SPINAND_HAS_QE_BIT,
++			 SPINAND_ECCINFO(&gd5fxgqx_variant2_ooblayout,
++				     gd5fxgq5xexxg_ecc_get_status)),
+ 	SPINAND_INFO("GD5F1GQ4RExxH",
+ 		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xc9),
+ 		     NAND_MEMORG(1, 2048, 64, 64, 1024, 20, 1, 1, 1),
