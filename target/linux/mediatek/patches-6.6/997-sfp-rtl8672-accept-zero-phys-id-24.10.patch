@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
+From: BananaPi-R4 community <openwrt@bananapi.org>
+Date: Sat, 24 May 2025 00:00:00 +0800
+Subject: [PATCH] net: phy: sfp: accept all-zero phys_id for RTL8672/RTL9601C modules
+
+Chinese ISP ONT SFP sticks based on Realtek RTL8672 and RTL9601C chips
+(e.g. locked Huawei, ZTE, Nokia modules issued by China Telecom, China
+Unicom, China Mobile) may return all-zero EEPROM data even when read
+byte-by-byte via the existing quirk path.  The driver then prints:
+
+  sfp sfp1: module is not supported - phys id 0x00 0x00
+
+and rejects the module because phys_id 0x00 is not SFF8024_ID_SFP (0x03).
+
+The all-zero EEPROM still passes the base checksum check (sum of 63
+zero-bytes equals zero, cc_base byte is also zero), so the rejection
+happens only in sfp_module_supported().
+
+Extend sfp_module_supported() to accept modules whose phys_id AND
+phys_ext_id are both 0x00, treating them as a valid SFP.  This mirrors
+the Ubiquiti U-Fiber Instant special-case already present in the
+function and is restricted to the (phys_id, phys_ext_id) == (0, 0)
+combination so that genuinely unknown module identifiers with a non-zero
+phys_ext_id are still rejected.
+
+Signed-off-by: BananaPi-R4 community <openwrt@bananapi.org>
+---
+ drivers/net/phy/sfp.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 165c624..88f0bad 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -314,6 +314,13 @@ static bool sfp_module_supported(const struct sfp_eeprom_id *id)
+ 	    id->base.phys_ext_id == SFP_PHYS_EXT_ID_SFP)
+ 		return true;
+ 
++	/* RTL8672/RTL9601C based GPON ONT sticks (e.g. locked Chinese ISP
++	 * modules) return all-zero EEPROM even after byte-by-byte I/O.
++	 * Accept (phys_id, phys_ext_id) == (0x00, 0x00) as standard SFP.
++	 */
++	if (!id->base.phys_id && !id->base.phys_ext_id)
++		return true;
++
+ 	/* SFP GPON module Ubiquiti U-Fiber Instant has in its EEPROM stored
+ 	 * phys id SFF instead of SFP. Therefore mark this module explicitly
+ 	 * as supported based on vendor name and pn match.
+-- 
+2.45.2

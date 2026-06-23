@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
+From: BananaPi-R4 community <openwrt@bananapi.org>
+Date: Thu, 18 Jun 2026 00:00:00 +0800
+Subject: [PATCH] net: phy: sfp: reduce false-positive RTL8672 warning on
+ MT7988
+
+The sfp_id_needs_byte_io() heuristic detects that multi-byte I2C reads
+return only the first byte of each block followed by zeros and assumes
+the module is an RTL8672/RTL9601C GPON ONT stick.  On MediaTek MT7988
+(BPI-R4) the I2C controller may exhibit the same multi-byte read
+limitation with any SFP module, including standard Aquantia AQR113C
+10G-T copper modules and CISCO-AVAGO SFBR-709SMZ-CS fibre modules,
+producing a misleading "Detected broken RTL8672/RTL9601C emulated
+EEPROM" warning in dmesg.
+
+After switching to byte-at-a-time I/O and re-reading the EEPROM
+successfully, check the vendor_name field.  If it contains meaningful
+printable ASCII text, the EEPROM data is valid and the multi-byte
+failure was a platform I2C issue, not an actual RTL8672 module.  In that
+case, emit a less alarming info message instead.
+
+The original "Detected broken RTL8672/RTL9601C emulated EEPROM" message
+is still shown when even the byte-at-a-time re-read yields all-zero,
+all-space, or otherwise invalid vendor data, indicating a genuine
+RTL8672/RTL9601C module with a blank EEPROM or a module that is not yet
+ready.
+
+Signed-off-by: BananaPi-R4 community <openwrt@bananapi.org>
+---
+ drivers/net/phy/sfp.c | 36 ++++++++++++++++++++++++++++++------
+ 1 file changed, 30 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index 88f0bad..902a5f3 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -2168,6 +2168,23 @@ static bool sfp_id_needs_byte_io(struct sfp *sfp, void *buf, size_t len)
+ 	return true;
+ }
+ 
++static bool sfp_id_has_valid_vendor_name(const char *name, size_t len)
++{
++	bool seen = false;
++	size_t i;
++
++	for (i = 0; i < len; i++) {
++		if (name[i] == ' ' || name[i] == '\0')
++			continue;
++		if (name[i] < 0x20 || name[i] > 0x7e)
++			return false;
++
++		seen = true;
++	}
++
++	return seen;
++}
++
+ static int sfp_cotsworks_fixup_check(struct sfp *sfp, struct sfp_eeprom_id *id)
+ {
+ 	u8 check;
+@@ -2248,10 +2265,6 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+ 	 * is really required and we have no other option.
+ 	 */
+ 	if (sfp_id_needs_byte_io(sfp, &id.base, sizeof(id.base))) {
+-		dev_info(sfp->dev,
+-			 "Detected broken RTL8672/RTL9601C emulated EEPROM\n");
+-		dev_info(sfp->dev,
+-			 "Switching to reading EEPROM to one byte at a time\n");
+ 		sfp->i2c_block_size = 1;
+ 
+ 		ret = sfp_read(sfp, false, 0, &id.base, sizeof(id.base));
+@@ -2268,6 +2281,19 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+ 				ERR_PTR(ret));
+ 			return -EAGAIN;
+ 		}
++
++		/* If the byte-at-a-time re-read yields a valid vendor
++		 * name, the module is a standard SFP whose multi-byte read
++		 * failed for platform (I2C) reasons rather than because it
++		 * is an RTL8672/RTL9601C GPON stick.  Tone down the warning.
++		 */
++		if (sfp_id_has_valid_vendor_name(id.base.vendor_name,
++						 sizeof(id.base.vendor_name)))
++			dev_info(sfp->dev,
++				 "I2C multi-byte read unreliable, falling back to byte-at-a-time\n");
++		else
++			dev_info(sfp->dev,
++				 "Detected broken RTL8672/RTL9601C emulated EEPROM\n");
+ 	}
+ 
+ 	/* Cotsworks do not seem to update the checksums when they
+-- 
+2.45.2
