@@ -1,0 +1,86 @@
+From 49a80ead2a0af887fa7a4bea91786acb0cd603d3 Mon Sep 17 00:00:00 2001
+From: "evan.zhang" <evan.zhang@mediatek.com>
+Date: Wed, 8 Jul 2026 17:17:04 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: use per-MAC SGMII syscfg0 mask
+
+ETHSYS_SYSCFG0 is shared by multiple GMACs. Clearing or restoring SYSCFG0_SGMII_MASK for one SGMII MAC can temporarily change the SGMII path bits of other MACs and cause link disruption.
+
+Keep NETSYS v1 on the original full-mask behavior, and use the per-GMAC SGMII bit on newer NETSYS versions.
+
+Signed-off-by: evan.zhang <evan.zhang@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 33 +++++++++++++++++----
+ 1 file changed, 28 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 79e24d2..b5f834a 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -726,6 +726,25 @@ static void mtk_set_mcr_max_rx(struct mtk_mac *mac, u32 val)
+ 	}
+ }
+ 
++static u32 mtk_syscfg0_sgmii_mask(struct mtk_mac *mac)
++{
++	struct mtk_eth *eth = mac->hw;
++
++	if (mtk_is_netsys_v1(eth))
++		return SYSCFG0_SGMII_MASK;
++
++	switch (mac->id) {
++	case MTK_GMAC1_ID:
++		return SYSCFG0_SGMII_GMAC1_V2;
++	case MTK_GMAC2_ID:
++		return SYSCFG0_SGMII_GMAC2_V2;
++	case MTK_GMAC3_ID:
++		return SYSCFG0_SGMII_GMAC3_V2;
++	default:
++		return 0;
++	}
++}
++
+ static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
+ 			   const struct phylink_link_state *state)
+ {
+@@ -733,7 +752,7 @@ static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
+ 					   phylink_config);
+ 	struct mtk_eth *eth = mac->hw;
+ 	int val, ge_mode, err = 0;
+-	u32 i;
++	u32 i, sgmii_mask;
+ 
+ 	/* MT76x8 has no hardware settings between for the MAC */
+ 	if (!MTK_HAS_CAPS(eth->soc->caps, MTK_SOC_MT7628) &&
+@@ -836,11 +855,12 @@ static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
+ 		/* The path GMAC to SGMII will be enabled once the SGMIISYS is
+ 		 * being setup done.
+ 		 */
++		sgmii_mask = mtk_syscfg0_sgmii_mask(mac);
++
+ 		regmap_read(eth->ethsys, ETHSYS_SYSCFG0, &val);
+ 
+ 		regmap_update_bits(eth->ethsys, ETHSYS_SYSCFG0,
+-				   SYSCFG0_SGMII_MASK,
+-				   ~(u32)SYSCFG0_SGMII_MASK);
++				   sgmii_mask, 0);
+ 
+ 		/* Save the syscfg0 value for mac_finish */
+ 		mac->syscfg0 = val;
+@@ -902,9 +922,12 @@ static int mtk_mac_finish(struct phylink_config *config, unsigned int mode,
+ 
+ 	/* Enable SGMII */
+ 	if (interface == PHY_INTERFACE_MODE_SGMII ||
+-	    phy_interface_mode_is_8023z(interface))
++	    phy_interface_mode_is_8023z(interface)) {
++		u32 sgmii_mask = mtk_syscfg0_sgmii_mask(mac);
++
+ 		regmap_update_bits(eth->ethsys, ETHSYS_SYSCFG0,
+-				   SYSCFG0_SGMII_MASK, mac->syscfg0);
++				   sgmii_mask, mac->syscfg0);
++	}
+ 
+ 	/* Setup gmac */
+ 	mcr_cur = mtk_r32(mac->hw, MTK_MAC_MCR(mac->id));
+-- 
+2.45.2
+
