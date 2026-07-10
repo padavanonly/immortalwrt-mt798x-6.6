@@ -1,0 +1,54 @@
+#!/bin/sh
+
+
+kernel_ver="$(uname -r)"
+
+has_module_file() {
+	local module
+
+	for module in "$@"; do
+		set -- "/lib/modules/$kernel_ver/$module.ko"*
+		[ -e "$1" ] && return 0
+	done
+
+	return 1
+}
+
+if has_module_file "mtkhnat" "mediatek_hnat"; then
+	uci -q set "turboacc.config.fastpath"="mediatek_hnat"
+	uci -q set "turboacc.config.fastpath_mh_eth_hnat"="1"
+	uci -q set "turboacc.config.fastpath_mh_eth_hnat_v6"="1"
+	uci -q set "turboacc.config.fastpath_mh_eth_hnat_bind_rate"="30"
+elif has_module_file "fast-classifier"; then
+	uci -q set "turboacc.config.fastpath"="fast_classifier"
+	uci -q set "turboacc.config.fastpath_fc_br"="1"
+	if [ -d "/proc/sys/net/ipv6" ]; then
+		uci -q set "turboacc.config.fastpath_fc_ipv6"="1"
+	else
+		uci -q set "turboacc.config.fastpath_fc_ipv6"="0"
+	fi
+elif has_module_file "shortcut-fe-cm"; then
+	uci -q set "turboacc.config.fastpath"="shortcut_fe_cm"
+else
+	uci -q set "turboacc.config.fastpath"="none"
+fi
+
+if has_module_file "xt_FULLCONENAT"; then
+	uci -q set "turboacc.config.fullcone"="1"
+else
+	uci -q set "turboacc.config.fullcone"="2"
+fi
+
+uci -q commit "turboacc"
+
+uci -q batch <<-EOF >/dev/null
+	delete ucitrack.@turboacc[-1]
+	add ucitrack turboacc
+	set ucitrack.@turboacc[-1].init='turboacc'
+	set ucitrack.@turboacc[-1].config='turboacc'
+EOF
+
+uci -q commit "ucitrack"
+
+rm -f /tmp/luci-indexcache
+exit 0

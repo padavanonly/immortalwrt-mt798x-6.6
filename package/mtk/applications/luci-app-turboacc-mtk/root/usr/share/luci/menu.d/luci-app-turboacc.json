@@ -1,0 +1,13 @@
+{
+	"admin/network/turboacc": {
+		"title": "网络加速",
+		"action": {
+			"type": "view",
+			"path": "turboacc"
+		},
+		"depends": {
+			"acl": [ "luci-app-turboacc" ],
+			"uci": { "turboacc": true }
+		}
+	}
+}

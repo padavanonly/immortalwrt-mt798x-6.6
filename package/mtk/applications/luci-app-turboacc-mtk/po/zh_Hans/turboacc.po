@@ -1,0 +1,314 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: PACKAGE VERSION\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: zh-Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:91
+msgid "Acceleration Status"
+msgstr "加速状态"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:191
+msgid "Boardcom_FULLCONE_NAT"
+msgstr "Boardcom_FULLCONE_NAT(更低的CPU占用)"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:151
+msgid "Bridge Acceleration"
+msgstr "桥接加速"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:95
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:99
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:103
+msgid "Collecting data..."
+msgstr "正在收集数据…"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:120
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:188
+msgid "Disable"
+msgstr "禁用"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:57
+msgid "Disabled"
+msgstr "已禁用"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:159
+msgid "Enable IPv6 Acceleration."
+msgstr "启用 IPv6 加速。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:152
+msgid ""
+"Enable bridge acceleration (may be functional conflict with bridge-mode VPN "
+"server)."
+msgstr "启用桥接加速（可能会与桥接模式的 VPN 服务器冲突）。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:165
+msgid "Enable ethernet HNAT"
+msgstr "启用以太网 HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:171
+msgid "Enable ethernet IPv6 HNAT"
+msgstr "启用以太网 IPv6 HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:172
+msgid "Enable hardware offloading for wired IPv6 connections."
+msgstr "为有线 IPv6 连接启用硬件加速。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:177
+msgid "Enable AP Mode"
+msgstr "启用AP模式"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:178
+msgid "Fill in ip to enable AP Mode(reboot needed)"
+msgstr "填写IP将启动AP模式（同网段不重复ip,需重启后生效.对于无线桥接，请桥接完成后再启用AP模式)"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:183
+msgid "HNAT bind rate threshold (pps)"
+msgstr "HNAT连接速率绑定阈值(pps)"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:184
+msgid "The smaller the threshold, the easier it is for the connection to be accelerated."
+msgstr "阈值越小，连接越容易被加速。"
+
+
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:166
+msgid "Enable hardware offloading for wired connections."
+msgstr "为有线连接启用硬件加速。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:178
+msgid "Enable hardware offloading for wireless connections."
+msgstr "为无线连接启用硬件加速。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:177
+msgid "Enable wireless HNAT"
+msgstr "启用无线 HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:124
+msgid "Fast classifier"
+msgstr "Fast classifier"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:136
+msgid "Fast classifier connection manager for the shortcut forwarding engine."
+msgstr "快速转发引擎（SFE）的 fast classifier 连接管理器。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:94
+msgid "FastPath Engine"
+msgstr "快速转发引擎"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:118
+msgid "Fastpath engine"
+msgstr "快速转发引擎"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:122
+msgid "Flow offloading"
+msgstr "Flow offloading"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:98
+msgid "Full Cone NAT"
+msgstr "全锥形 NAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:186
+msgid "Full cone NAT"
+msgstr "全锥形 NAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:187
+msgid "Full cone NAT (NAT1) can improve gaming performance effectively."
+msgstr "Full cone NAT（NAT1）可以有效提升游戏体验。"
+
+#: applications/luci-app-turboacc/root/usr/share/rpcd/acl.d/luci-app-turboacc.json:3
+msgid "Grant UCI access for luci-app-turboacc"
+msgstr "授予 luci-app-turboacc 访问 UCI 配置的权限。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:145
+msgid "Hardware flow offloading"
+msgstr "硬件流量分载"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:158
+msgid "IPv6 acceleration"
+msgstr "IPv6 加速"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:128
+msgid "MediaTek HNAT"
+msgstr "MediaTek HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:140
+msgid "MediaTek's open source hardware offloading engine."
+msgstr "由联发科实现的开源硬件流量分载引擎。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:74
+msgid "Open source flow offloading engine (fast path or hardware NAT)."
+msgstr "开源流量分载引擎（快速转发或硬件 NAT）。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:179
+msgid "Redirect to wireless settings"
+msgstr "跳转到无线设置"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:146
+msgid "Requires hardware NAT support. Implemented at least for mt7621."
+msgstr "需要硬件 NAT 支持。目前 mt7621 已实现。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:126
+msgid "SFE connection manager"
+msgstr "SFE connection manager"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:138
+msgid "Simple connection manager for the shortcut forwarding engine."
+msgstr "快速转发引擎（SFE）的简单连接管理器。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:134
+msgid "Software based offloading for routing/NAT."
+msgstr "基于软件的 路由/NAT 分载。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:102
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:195
+msgid "TCP CCA"
+msgstr "TCP 拥塞控制算法"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:196
+msgid "TCP congestion control algorithm."
+msgstr "TCP 拥塞控制算法。"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:119
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:142
+msgid "The offloading engine for routing/NAT."
+msgstr "用于 路由/NAT 的分载引擎。"
+
+#: applications/luci-app-turboacc/root/usr/share/luci/menu.d/luci-app-turboacc.json:3
+msgid "TurboACC"
+msgstr "网络加速"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:73
+msgid "TurboACC settings"
+msgstr "网络加速设置"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:190
+msgid "XT_FULLCONE_NAT"
+msgstr "XT_FULLCONE_NAT(更佳的兼容性)"
+
+msgid "Apply this setting after reboot."
+msgstr "重启后应用此项设置。"
+
+msgid "Number of HNAT PPE"
+msgstr "HNAT PPE数量"
+
+msgid "Bind Entrys"
+msgstr "已绑定连接数"
+
+msgid "Enabled"
+msgstr "已启用"
+
+msgid "Available"
+msgstr "可用"
+
+msgid "Unavailable"
+msgstr "不可用"
+
+msgid "Ethernet HNAT disabled"
+msgstr "以太网 HNAT 未启用"
+
+msgid "Wireless HNAT disabled"
+msgstr "无线 HNAT 未启用"
+
+msgid "No active acceleration path detected."
+msgstr "未检测到活动加速通路。"
+
+msgid "The current platform exposes IPv6, but this engine has no dedicated IPv6 toggle."
+msgstr "当前平台支持 IPv6，但所选引擎没有独立的 IPv6 开关。"
+
+msgid "Optimize the routing/NAT data plane for MediaTek 24.10 with live runtime telemetry."
+msgstr "为 MediaTek 24.10 优化路由/NAT 数据通路，并提供实时运行状态遥测。"
+
+msgid "MediaTek HNAT is the primary wired acceleration path on mt798x under 24.10."
+msgstr "在 24.10 的 mt798x 上，MediaTek HNAT 是主要的有线加速通路。"
+
+msgid "AP mode rewrites LAN/WAN topology and requires a reboot after applying."
+msgstr "AP 模式会重写 LAN/WAN 拓扑，应用后需要重启。"
+
+msgid "The legacy PPE selector is hidden on 24.10 because the current init script does not consume it."
+msgstr "24.10 下已隐藏旧的 PPE 选择器，因为当前 init 脚本并不会读取它。"
+
+msgid "Save & Apply is required before live runtime cards reflect configuration changes."
+msgstr "必须先保存并应用，上方实时卡片才会反映配置变化。"
+
+msgid "Live data plane"
+msgstr "实时数据通路"
+
+msgid "Configured profile"
+msgstr "当前配置方案"
+
+msgid "Bound sessions"
+msgstr "已绑定会话"
+
+msgid "NAT & congestion"
+msgstr "NAT 与拥塞控制"
+
+msgid "Configured NAT mode"
+msgstr "当前 NAT 模式"
+
+msgid "Current TCP CCA"
+msgstr "当前 TCP CCA"
+
+msgid "AP mode target IP"
+msgstr "AP 模式目标 IP"
+
+msgid "Available engines"
+msgstr "可用引擎"
+
+msgid "PPE session load"
+msgstr "PPE 会话负载"
+
+msgid "Runtime details"
+msgstr "运行时详情"
+
+msgid "Route/NAT engine"
+msgstr "路由/NAT 引擎"
+
+msgid "Runtime warnings"
+msgstr "运行时告警"
+
+msgid "PPE lanes"
+msgstr "PPE 通道数"
+
+msgid "Total sessions"
+msgstr "总会话数"
+
+msgid "Capability matrix"
+msgstr "能力矩阵"
+
+msgid "Kernel IPv6 stack"
+msgstr "内核 IPv6 协议栈"
+
+msgid "Operating notes"
+msgstr "使用说明"
+
+msgid "Tune wired acceleration, NAT behavior and congestion control without leaving this page."
+msgstr "无需离开当前页面，即可完成有线加速、NAT 行为和拥塞控制调优。"
+
+msgid "Acceleration profile"
+msgstr "加速方案"
+
+msgid "Choose the primary acceleration engine used for routing and NAT."
+msgstr "选择用于路由/NAT 的主加速引擎。"
+
+msgid "HNAT tuning"
+msgstr "HNAT 调优"
+
+msgid "Tune wired HNAT behavior for MediaTek targets."
+msgstr "调整 MediaTek 平台的有线 HNAT 行为。"
+
+msgid "Pick the main data plane. Runtime cards above show what the kernel is actually using."
+msgstr "选择主数据通路。上方运行卡片显示的是内核当前实际生效状态。"
+
+msgid "Preferred HNAT path for MediaTek mt798x on OpenWrt 24.10."
+msgstr "OpenWrt 24.10 下 mt798x 首选的 HNAT 通路。"
+
+msgid "Keep wired IPv6 sessions on the HNAT path when supported by the current driver."
+msgstr "当前驱动支持时，让有线 IPv6 会话也走 HNAT 通路。"
+
+msgid "Set a LAN IPv4 address to switch into AP mode after reboot."
+msgstr "填写一个 LAN IPv4 地址，重启后切换为 AP 模式。"
+
