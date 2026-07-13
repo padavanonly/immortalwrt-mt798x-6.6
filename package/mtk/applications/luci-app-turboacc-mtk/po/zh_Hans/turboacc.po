@@ -83,10 +83,6 @@ msgstr "为有线连接启用硬件加速。"
 msgid "Enable hardware offloading for wireless connections."
 msgstr "为无线连接启用硬件加速。"
 
-#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:177
-msgid "Enable wireless HNAT"
-msgstr "启用无线 HNAT"
-
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:124
 msgid "Fast classifier"
 msgstr "Fast classifier"
@@ -192,9 +188,6 @@ msgstr "XT_FULLCONE_NAT(更佳的兼容性)"
 msgid "Apply this setting after reboot."
 msgstr "重启后应用此项设置。"
 
-msgid "Number of HNAT PPE"
-msgstr "HNAT PPE数量"
-
 msgid "Bind Entrys"
 msgstr "已绑定连接数"
 
@@ -210,8 +203,8 @@ msgstr "不可用"
 msgid "Ethernet HNAT disabled"
 msgstr "以太网 HNAT 未启用"
 
-msgid "Wireless HNAT disabled"
-msgstr "无线 HNAT 未启用"
+msgid "HNAT Partially Enabled"
+msgstr "HNAT 部分启用"
 
 msgid "No active acceleration path detected."
 msgstr "未检测到活动加速通路。"
@@ -224,12 +217,6 @@ msgstr "为 MediaTek 24.10 优化路由/NAT 数据通路，并提供实时运行
 
 msgid "MediaTek HNAT is the primary wired acceleration path on mt798x under 24.10."
 msgstr "在 24.10 的 mt798x 上，MediaTek HNAT 是主要的有线加速通路。"
-
-msgid "AP mode rewrites LAN/WAN topology and requires a reboot after applying."
-msgstr "AP 模式会重写 LAN/WAN 拓扑，应用后需要重启。"
-
-msgid "The legacy PPE selector is hidden on 24.10 because the current init script does not consume it."
-msgstr "24.10 下已隐藏旧的 PPE 选择器，因为当前 init 脚本并不会读取它。"
 
 msgid "Save & Apply is required before live runtime cards reflect configuration changes."
 msgstr "必须先保存并应用，上方实时卡片才会反映配置变化。"
@@ -251,9 +238,6 @@ msgstr "当前 NAT 模式"
 
 msgid "Current TCP CCA"
 msgstr "当前 TCP CCA"
-
-msgid "AP mode target IP"
-msgstr "AP 模式目标 IP"
 
 msgid "Available engines"
 msgstr "可用引擎"
@@ -308,7 +292,3 @@ msgstr "OpenWrt 24.10 下 mt798x 首选的 HNAT 通路。"
 
 msgid "Keep wired IPv6 sessions on the HNAT path when supported by the current driver."
 msgstr "当前驱动支持时，让有线 IPv6 会话也走 HNAT 通路。"
-
-msgid "Set a LAN IPv4 address to switch into AP mode after reboot."
-msgstr "填写一个 LAN IPv4 地址，重启后切换为 AP 模式。"
-

@@ -200,8 +200,8 @@ function getRuntimeLabel(token) {
 		return _('Boardcom_FULLCONE_NAT');
 	case 'Ethernet HNAT Disabled':
 		return _('以太网 HNAT 未启用');
-	case 'Wireless HNAT Disabled':
-		return _('无线 HNAT 未启用');
+	case 'HNAT Partially Enabled':
+		return _('HNAT 部分启用');
 	default:
 		return token;
 	}
@@ -1023,9 +1023,9 @@ function buildForm(features, config) {
 	var s = m.section(form.NamedSection, 'config', 'turboacc');
 	var o;
 	var tcpccaOptions = parseTokenList(features.hasTCPCCA);
-	var showFlowOffloading = !!features.hasFLOWOFFLOADING;
-	var showFastClassifier = isEngineAvailable(features.hasFASTCLASSIFIER, config, 'fast_classifier');
-	var showShortcutFeCm = isEngineAvailable(features.hasSHORTCUTFECM, config, 'shortcut_fe_cm');
+	var showFlowOffloading = true;
+	var showFastClassifier = true;
+	var showShortcutFeCm = true;
 	var showMediatekHnat = true;
 
 	s.tab('engine', _('主通路'), _('选择主加速引擎。'));
@@ -1035,7 +1035,7 @@ function buildForm(features, config) {
 		s.tab('hnat', _('HNAT 高级项'), _('MediaTek HNAT 专用设置。'));
 
 	o = s.taboption('engine', form.ListValue, 'fastpath', _('主加速引擎'),
-		_('选择当前使用的加速通路。'));
+		_('选择当前使用的加速方式。'));
 	o.value('disabled', _('禁用'));
 	if (showFlowOffloading)
 		o.value('flow_offloading', _('流量分载'));
@@ -1043,20 +1043,93 @@ function buildForm(features, config) {
 		o.value('fast_classifier', _('快速分类器'));
 	if (showShortcutFeCm)
 		o.value('shortcut_fe_cm', _('SFE 连接管理器'));
-	o.value('mediatek_hnat', features.hasMEDIATEKHNAT ? _('MediaTek HNAT') : _('MediaTek HNAT（尝试加载）'));
+	o.value('mediatek_hnat', features.hasMEDIATEKHNAT ? _('MediaTek HNAT') : _('MediaTek HNAT（保存后尝试）'));
 	o.default = config.fastpath || 'disabled';
 	o.widget = 'select';
 	o.rmempty = false;
+	var engineStatus = {
+		'disabled': {
+			label: _('关闭'),
+			cls: 'is-neutral',
+			title: _('关闭转发加速'),
+			hint: _('不启用额外加速，网络和 Wi-Fi 会按系统默认方式运行。')
+		},
+		'flow_offloading': {
+			label: _('保留选项'),
+			cls: 'is-warning',
+			title: _('Flow Offloading 是兼容旧配置的保留选项。'),
+			hint: _('保留给旧配置使用；当前固件通常优先使用 HNAT，系统不支持时会自动跳过。')
+		},
+		'fast_classifier': {
+			label: _('保留选项'),
+			cls: 'is-warning',
+			title: _('Fast Classifier 是兼容旧配置的保留选项。'),
+			hint: _('当前固件未提供 Fast Classifier 模块；保存后若无法加载，会自动跳过，不影响网络。')
+		},
+		'shortcut_fe_cm': {
+			label: _('保留选项'),
+			cls: 'is-warning',
+			title: _('SFE 连接管理器是兼容旧配置的保留选项。'),
+			hint: _('当前固件未提供 SFE 连接管理器模块；保存后若无法加载，会自动跳过，不影响网络。')
+		},
+		'mediatek_hnat': {
+			label: features.hasMEDIATEKHNAT ? _('推荐') : _('待加载'),
+			cls: features.hasMEDIATEKHNAT ? 'is-ok' : 'is-warning',
+			title: features.hasMEDIATEKHNAT ? _('MediaTek HNAT 已可用，适合 MT7988 硬件加速。') : _('MediaTek HNAT 当前未检测到，保存后会尝试加载。'),
+			hint: features.hasMEDIATEKHNAT ? _('MediaTek HNAT（PPE + WED + HNAT），绕过 CPU 直接硬件转发，推荐作为主加速引擎。') : _('当前尚未检测到 HNAT 模块；保存配置后会尝试加载，失败时不影响基础网络。')
+		}
+	};
+	var updateEngineStatus = function(container, value) {
+		var info = engineStatus[value] || engineStatus['disabled'];
+		var field = container.closest('.cbi-value-field') || container.parentNode;
+		var wrap = field.querySelector('.ta-engine-popup-wrap');
+		var chip, hint;
+
+		if (!wrap) {
+			wrap = E('span', { 'class': 'ta-engine-popup-wrap' });
+			chip = E('span', { 'class': 'ta-engine-status ta-chip' });
+			hint = E('div', { 'class': 'ta-engine-hint' });
+			wrap.appendChild(chip);
+			wrap.appendChild(hint);
+			container.parentNode.appendChild(wrap);
+		} else {
+			chip = wrap.querySelector('.ta-engine-status');
+			hint = wrap.querySelector('.ta-engine-hint');
+		}
+
+		chip.className = 'ta-engine-status ta-chip ' + info.cls;
+		chip.replaceChildren(E('span', { 'class': 'ta-chip-dot' }), info.label);
+		hint.textContent = info.hint || info.title || '';
+	};
+	var renderEngineWidget = o.renderWidget;
+	o.renderWidget = function(section_id, option_index, cfgvalue) {
+		var node = renderEngineWidget.apply(this, arguments);
+
+		window.setTimeout(L.bind(function() {
+			var select = node.querySelector ? node.querySelector('select') : null;
+			if (select) {
+				select.classList.add('ta-engine-select');
+				updateEngineStatus(select, select.value || cfgvalue || 'disabled');
+			}
+		}, this), 0);
+
+		return node;
+	};
+	o.onchange = function(ev, section_id, value) {
+		updateEngineStatus(ev.target, value);
+		if (ev.target && ev.target.blur)
+			ev.target.blur();
+	};
 	o.cfgvalue = function(section_id) {
 		var value = normalizeFastpathValue(uci.get('turboacc', section_id, 'fastpath'));
 
-		return value === 'flow_offloading' && !showFlowOffloading ? 'disabled' : value;
+		return value;
 	};
 	o.write = function(section_id, value) {
 		return uci.set('turboacc', section_id, 'fastpath', value === 'disabled' ? 'none' : value);
 	};
 	o.validate = function(section_id, value) {
-		return value === 'disabled' || (showFlowOffloading && value === 'flow_offloading') || value === 'fast_classifier' ||
+		return value === 'disabled' || value === 'flow_offloading' || value === 'fast_classifier' ||
 			value === 'shortcut_fe_cm' || value === 'mediatek_hnat'
 				? true
 				: _('无效的主加速引擎');
@@ -1141,6 +1214,7 @@ function buildForm(features, config) {
 		o.datatype = 'range(1,30)';
 		o.placeholder = '30';
 		o.depends({ fastpath: 'mediatek_hnat', fastpath_mh_eth_hnat: '1' });
+
 	}
 
 	return m;
@@ -1246,6 +1320,8 @@ function renderStyle() {
 
 		'.ta-chip{display:inline-flex;align-items:center;max-width:100%;padding:6px 11px;border-radius:999px;background:var(--ta-chip-bg);border:1px solid var(--ta-chip-border);color:var(--ta-chip);font-size:.8rem;font-weight:700;line-height:1.2;word-break:break-word}',
 
+		'.ta-chip-dot{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:999px;background:currentColor;flex:0 0 auto}',
+
 		'.ta-chip.is-ok{background:var(--ta-good-bg);color:var(--ta-good)}',
 
 		'.ta-chip.is-warning{background:var(--ta-warn-bg);color:var(--ta-warn)}',
@@ -1253,6 +1329,20 @@ function renderStyle() {
 		'.ta-chip.is-info{background:var(--ta-info-bg);color:var(--ta-info)}',
 
 		'.ta-chip.is-muted{background:rgba(148,163,184,.14);color:var(--ta-text-muted)}',
+
+		'.ta-chip.is-neutral{background:rgba(148,163,184,.14);color:var(--ta-text-muted)}',
+
+		'.ta-engine-popup-wrap{position:relative;display:inline-flex;max-width:100%;margin-left:8px;z-index:3}',
+
+		'.cbi-value-field:has(.ta-engine-popup-wrap){overflow:visible}',
+
+		'.ta-engine-status{margin-left:0;vertical-align:middle;white-space:nowrap;cursor:help}',
+
+		'.ta-engine-hint{position:absolute;left:50%;bottom:calc(100% + 10px);z-index:999;width:clamp(280px,36vw,560px);max-width:calc(100vw - 32px);padding:13px 15px;border-radius:14px;background:transparent;border:1px solid var(--ta-panel-border);box-shadow:0 14px 30px rgba(15,23,42,.18);color:var(--ta-info);font-size:.82rem;font-weight:600;line-height:1.55;white-space:normal;text-align:left;text-shadow:0 1px 2px var(--ta-panel-bg);opacity:0;visibility:hidden;transform:translate(-50%,4px);transition:opacity .18s ease,transform .18s ease,visibility .18s ease;pointer-events:none}',
+
+		'.ta-dark .ta-engine-hint{background:transparent;box-shadow:0 14px 30px rgba(0,0,0,.42)}',
+
+		'.ta-engine-popup-wrap:hover .ta-engine-hint{opacity:1;visibility:visible;transform:translate(-50%,0)}',
 
 		'.ta-status-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}',
 
@@ -1565,6 +1655,10 @@ function renderStyle() {
 
 		'.ta-config-shell select,.ta-config-shell input[type="text"],.ta-config-shell input[type="number"],.ta-config-shell input:not([type]){min-height:34px;min-width:220px;max-width:100%;padding:6px 12px;border-radius:10px!important;border:1px solid #dce6f1!important;background:linear-gradient(180deg,#fbfdff,#f4f8fd)!important;color:#263b58!important;-webkit-text-fill-color:#263b58;font-size:.84rem;box-shadow:none!important}',
 
+		'.ta-config-shell select{width:clamp(240px,22vw,340px)}',
+
+		'.ta-config-shell select.ta-engine-select{width:clamp(240px,20vw,320px);min-width:240px}',
+
 		'.ta-config-shell select:focus,.ta-config-shell input:focus{border-color:#7aa8ff!important;box-shadow:0 0 0 3px rgba(91,111,238,.12)!important;outline:none}',
 
 		'.ta-config-shell select option{color:#1f3150;background:#fff}',
@@ -1593,7 +1687,7 @@ function renderStyle() {
 		/* ===== Responsive ===== */
 		'@media (max-width:1040px){.ta-hero{grid-template-columns:1fr}.ta-telemetry-grid{grid-template-columns:1fr}.ta-status-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.ta-compact-grid{grid-template-columns:1fr}}',
 
-		'@media (max-width:760px){.ta-page{padding-top:10px}.ta-page:before{top:-4px;height:4px}.ta-hero{padding:20px}.ta-hero-main{flex-direction:column}.ta-hero-badge{width:84px;height:84px;border-radius:24px}.ta-hero-title{padding:12px 24px}.ta-section-pill,.ta-status-item,.ta-panel{padding:18px 20px}.ta-status-strip{grid-template-columns:1fr}.ta-status-item strong{text-align:left}.ta-kv-row,.ta-info-row{grid-template-columns:1fr}.ta-kv-value,.ta-info-value,.ta-info-value .ta-chip-list{text-align:left;justify-content:flex-start}.ta-progress-head{flex-direction:column;align-items:flex-start}.ta-progress-value{white-space:normal}.ta-compact-hero-top{flex-direction:column;align-items:flex-start}.ta-compact-state{width:100%;justify-content:flex-start}.ta-compact-summary-grid{grid-template-columns:1fr}.ta-config-shell{padding:14px}.ta-config-shell h2{padding:16px 18px}.ta-config-shell .cbi-tabmenu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 0 12px}.ta-config-shell .cbi-tabmenu li{width:100%;min-width:0}.ta-config-shell .cbi-tabmenu li a{padding:10px 8px}.ta-config-shell .cbi-page-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ta-config-shell .cbi-page-actions .cbi-button{width:100%;min-width:0;min-height:42px;padding:0 12px;justify-content:center}.ta-config-shell .cbi-page-actions .cbi-button-apply{grid-column:1/-1;order:-1}}',
+		'@media (max-width:760px){.ta-page{padding-top:10px}.ta-page:before{top:-4px;height:4px}.ta-hero{padding:20px}.ta-hero-main{flex-direction:column}.ta-hero-badge{width:84px;height:84px;border-radius:24px}.ta-hero-title{padding:12px 24px}.ta-section-pill,.ta-status-item,.ta-panel{padding:18px 20px}.ta-status-strip{grid-template-columns:1fr}.ta-status-item strong{text-align:left}.ta-kv-row,.ta-info-row{grid-template-columns:1fr}.ta-kv-value,.ta-info-value,.ta-info-value .ta-chip-list{text-align:left;justify-content:flex-start}.ta-progress-head{flex-direction:column;align-items:flex-start}.ta-progress-value{white-space:normal}.ta-compact-hero-top{flex-direction:column;align-items:flex-start}.ta-compact-state{width:100%;justify-content:flex-start}.ta-compact-summary-grid{grid-template-columns:1fr}.ta-config-shell{padding:14px}.ta-config-shell h2{padding:16px 18px}.ta-config-shell select,.ta-config-shell select.ta-engine-select{width:100%;min-width:0}.ta-config-shell .cbi-tabmenu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 0 12px}.ta-config-shell .cbi-tabmenu li{width:100%;min-width:0}.ta-config-shell .cbi-tabmenu li a{padding:10px 8px}.ta-config-shell .cbi-page-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ta-config-shell .cbi-page-actions .cbi-button{width:100%;min-width:0;min-height:42px;padding:0 12px;justify-content:center}.ta-config-shell .cbi-page-actions .cbi-button-apply{grid-column:1/-1;order:-1}}',
 
 		'@media (max-width:380px){.ta-config-shell .cbi-tabmenu,.ta-config-shell .cbi-page-actions{grid-template-columns:1fr}.ta-config-shell .cbi-page-actions .cbi-button{min-height:40px}.ta-config-shell .cbi-page-actions .cbi-button-apply{grid-column:auto}}'
 	].join('\n'));

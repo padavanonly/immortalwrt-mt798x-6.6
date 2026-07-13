@@ -34,9 +34,11 @@ load_hnat_module() {
 	try_modprobe "mtkhnat" "mediatek_hnat"
 }
 
-unload_hnat_module() {
-	rmmod "mtkhnat" 2>/dev/null || true
-	rmmod "mediatek_hnat" 2>/dev/null || true
+disable_hnat_runtime() {
+	local hnat_path="${1:-/sys/kernel/debug/hnat}"
+
+	[ -w "$hnat_path/hook_toggle" ] && echo "0" >"$hnat_path/hook_toggle" 2>/dev/null
+	[ -w "$hnat_path/hnat_setting" ] && echo "8 0" >"$hnat_path/hnat_setting" 2>/dev/null
 }
 
 wait_hnat_debugfs() {
@@ -51,7 +53,7 @@ wait_hnat_debugfs() {
 	return 1
 }
 
-# busybox-safe debugfs mount check — avoids `mountpoint -q` which may be absent
+# busybox-safe debugfs mount check; avoids `mountpoint -q` which may be absent
 ensure_debugfs() {
 	grep -q ' /sys/kernel/debug debugfs ' /proc/mounts 2>/dev/null && return 0
 	mkdir -p /sys/kernel/debug 2>/dev/null
@@ -94,9 +96,7 @@ stop_service() {
 	ensure_debugfs
 
 	# disable HNAT hook if still accessible
-	[ -w "$hnat_path/hook_toggle" ] && echo "0" >"$hnat_path/hook_toggle" 2>/dev/null
-	[ -w "$hnat_path/hnat_setting" ] && echo "8 0" >"$hnat_path/hnat_setting" 2>/dev/null
-	unload_hnat_module
+	disable_hnat_runtime "$hnat_path"
 
 	# restore fullcone to a safe default
 	if [ -w "/proc/sys/net/netfilter/nf_conntrack_nat_mode" ]; then
@@ -133,9 +133,7 @@ start_service() {
 	ensure_debugfs
 
 	if [ "$fastpath" != "mediatek_hnat" ] && hnat_module_loaded && [ -w "$hnat_path/hook_toggle" ]; then
-		echo "0" >"$hnat_path/hook_toggle" 2>/dev/null
-		[ -w "$hnat_path/hnat_setting" ] && echo "8 0" >"$hnat_path/hnat_setting" 2>/dev/null
-		unload_hnat_module
+		disable_hnat_runtime "$hnat_path"
 	fi
 
 	# ---------- engine activation ----------
@@ -215,11 +213,6 @@ start_service() {
 			logger -t turboacc "WARNING: failed to set tcp_congestion_control=$tcpcca"
 	else
 		logger -t turboacc "WARNING: tcpcca=$tcpcca not available, keeping current"
-	fi
-
-	# ---------- reload firewall (may be needed for fullcone rules) ----------
-	if [ -x /etc/init.d/firewall ]; then
-		/etc/init.d/firewall reload >/dev/null 2>&1 || true
 	fi
 
 	logger -t turboacc "started (fastpath=$fastpath fullcone=$fullcone tcpcca=$tcpcca)"

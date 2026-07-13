@@ -74,10 +74,6 @@ msgstr ""
 msgid "Enable hardware offloading for wireless connections."
 msgstr ""
 
-#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:177
-msgid "Enable wireless HNAT"
-msgstr ""
-
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:124
 msgid "Fast classifier"
 msgstr ""

@@ -94,15 +94,15 @@ local methods = {
 			elseif (fs.stat("/sys/kernel/debug/hnat", "type") == "dir" or module_loaded({ "mtkhnat", "mediatek_hnat" })) and
 				hnat_hook_enabled()
 			then
-				local wireless_hnat = ""
+				local hnat_note = ""
 
 				if has_mediatek_wireless_dat() and
 					sys.call("grep -q 'WHNAT=1' /etc/wireless/mediatek/*.dat") ~= 0
 				then
-					wireless_hnat = " / Wireless HNAT Disabled"
+					hnat_note = " / HNAT Partially Enabled"
 				end
 
-				fptype = "MediaTek HNAT" .. wireless_hnat
+				fptype = "MediaTek HNAT" .. hnat_note
 			end
 			print(json.stringify({ type = fptype }))
 		end
