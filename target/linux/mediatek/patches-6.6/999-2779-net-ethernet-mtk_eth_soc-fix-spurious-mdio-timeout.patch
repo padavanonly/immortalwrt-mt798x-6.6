@@ -1,0 +1,46 @@
+From d76d4b9a306a841f6fcebcb4f62c77557d30ab61 Mon Sep 17 00:00:00 2001
+From: "neal.yen" <neal.yen@mediatek.com>
+Date: Fri, 17 Jul 2026 10:49:25 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: fix spurious MDIO timeout using read_poll_timeout
+
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 21 +++++++++++----------
+ 1 file changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 21ce998..ec92a02 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -355,18 +355,19 @@ u32 mtk_m32(struct mtk_eth *eth, u32 mask, u32 set, unsigned int reg)
+ 
+ static int mtk_mdio_busy_wait(struct mtk_eth *eth)
+ {
+-	unsigned long t_start = jiffies;
++	u32 val;
++	int ret;
+ 
+-	while (1) {
+-		if (!(mtk_r32(eth, MTK_PHY_IAC) & PHY_IAC_ACCESS))
+-			return 0;
+-		if (time_after(jiffies, t_start + PHY_IAC_TIMEOUT))
+-			break;
+-		cond_resched();
+-	}
++	ret = read_poll_timeout(mtk_r32, val,
++				!(val & PHY_IAC_ACCESS),
++				10,
++				jiffies_to_usecs(PHY_IAC_TIMEOUT),
++				false,
++				eth, MTK_PHY_IAC);
++	if (ret)
++		dev_err(eth->dev, "mdio: MDIO timeout\n");
+ 
+-	dev_err(eth->dev, "mdio: MDIO timeout\n");
+-	return -ETIMEDOUT;
++	return ret;
+ }
+ 
+ int _mtk_mdio_write_c22(struct mtk_eth *eth, u32 phy_addr, u32 phy_reg,
+-- 
+2.45.2
+
