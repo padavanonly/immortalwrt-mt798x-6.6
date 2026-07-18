@@ -1,0 +1,205 @@
+From: Petr Wozniak <petr.wozniak@gmail.com>
+Date: Thu, 22 May 2026 14:00:00 +0200
+Subject: [PATCH 6.6] net: sfp: add 1G multi-speed reprobe watchdog for
+ RTL8261BE
+
+Some active copper SFP+ modules (e.g. RTL8261BE-based) advertise
+10GBASE-T at power-on and only switch to 1000BASE-T once they have
+locked a 1G link partner.  If the host probed them while they still
+advertised 10G, the MAC stays stuck on 10GBASE-R and never links.
+
+Add a reprobe watchdog to the SFP state machine:
+
+- When entering SFP_S_LINK_UP, change the timeout from 0 (indefinite)
+  to T_LINK_STABLE (5 seconds).  The link-up event is reported to
+  phylink/MAC immediately via sfp_link_up(); the timeout only controls
+  when the watchdog considers the link "stable" and stops monitoring.
+
+- The watchdog is armed ONLY for copper SFP+ modules (connector type
+  SFF8024_CONNECTOR_RJ45), detected via sm_reprobe_enabled flag set
+  during module probe.  GPON, fiber, and unpopulated slots are
+  completely unaffected.
+
+- When armed: a T_LINK_FAIL (60s) timer fires if the link does not
+  become stable within 60 seconds, triggering a simulated
+  remove/insert cycle to re-read the module advertisement.
+  The 60s threshold is conservative to avoid interrupting slow-to-link
+  GPON/ONU modules (which are excluded by the connector check anyway).
+
+- Bounded by R_REPROBE (5) attempts.  Worst-case retry window is
+  5 x 60s = 5 minutes.
+
+- The reprobe is guarded by sm_reprobing to prevent the REMOVE event
+  handler from cancelling the reprobe work during the simulated cycle.
+
+T_LINK_FAIL   = 60000 ms
+T_LINK_STABLE =  5000 ms
+R_REPROBE     =     5
+
+Scope: copper SFP+ only (SFF8024_CONNECTOR_RJ45 = 0x22)
+
+Note: This patch targets the Linux 6.6 kernel with padavanonly's
+existing SFP patches (999-2753, 999-2754, 999-2764, 999-2765)
+already applied.  The sfp_sm_main() hunk is designed to apply
+AFTER padavanonly's 999-2764 (which changed the phy_probe path
+from "ret == -ENODEV" to "ret == -ENODEV || ret == -EINVAL").
+
+Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
+---
+ drivers/net/phy/sfp.c | 67 +++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 72 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -207,6 +207,19 @@
+ #define T_PROBE_RETRY_SLOW	msecs_to_jiffies(5000)
+ #define R_PROBE_RETRY_SLOW	12
+ 
++/* T_LINK_FAIL: how long we wait for a stable link after selecting the host
++ * interface before re-reading the module. Some active copper SFP+ modules
++ * (e.g. RTL8261BE based) advertise 10GBASE-T at power-on and only switch to
++ * 1000BASE-T once they have locked a 1G link partner; if the host probed them
++ * while they still advertised 10G it stays stuck on 10GBASE-R and never links.
++ * Re-reading the module picks up the changed advertisement. T_LINK_STABLE is
++ * how long the link must stay up to be considered good. R_REPROBE bounds the
++ * number of re-read attempts.
++ */
++#define T_LINK_FAIL		msecs_to_jiffies(60000)
++#define T_LINK_STABLE		msecs_to_jiffies(5000)
++#define R_REPROBE		5
++
+ /* SFP modules appear to always have their PHY configured for bus address
+  * 0x56 (which with mdio-i2c, translates to a PHY address of 22).
+  * RollBall SFPs access phy via SFP Enhanced Digital Diagnostic Interface
+@@ -290,3 +290,7 @@
+ 	struct delayed_work poll;
+ 	struct delayed_work timeout;
++	struct delayed_work reprobe;
++	unsigned char sm_reprobe_tries;
++	bool sm_reprobing;
++	bool sm_reprobe_enabled;
+ 
+@@ -1976,7 +1993,7 @@
+ static void sfp_sm_link_up(struct sfp *sfp)
+ {
+ 	sfp_link_up(sfp->sfp_bus);
+-	sfp_sm_next(sfp, SFP_S_LINK_UP, 0);
++	sfp_sm_next(sfp, SFP_S_LINK_UP, T_LINK_STABLE);
+ }
+ 
+ static void sfp_sm_link_down(struct sfp *sfp)
+@@ -2439,4 +2456,11 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+ 	if (sfp->quirk && sfp->quirk->fixup)
+ 		sfp->quirk->fixup(sfp);
++	/* Enable reprobe watchdog only for copper SFP+ modules (e.g.
++	 * RTL8261BE-based) that may change advertised speeds after
++	 * link partner negotiation. GPON/fiber are unaffected.
++	 */
++	sfp->sm_reprobe_enabled =
++		sfp->id.base.connector == SFF8024_CONNECTOR_RJ45;
++
+ 	mutex_unlock(&sfp->st_mutex);
+ 
+@@ -2611,6 +2635,8 @@
+ 
+ 	/* Handle remove event globally, it resets this state machine */
+ 	if (event == SFP_E_REMOVE) {
++		if (!sfp->sm_reprobing)
++			cancel_delayed_work(&sfp->reprobe);
+ 		sfp_sm_mod_remove(sfp);
+ 		sfp_sm_mod_next(sfp, SFP_MOD_EMPTY, 0);
+ 		return;
+@@ -2632,6 +2658,9 @@
+ 			sfp_sm_mod_next(sfp, SFP_MOD_PROBE, T_SERIAL);
+ 			sfp->sm_mod_tries_init = R_PROBE_RETRY_INIT;
+ 			sfp->sm_mod_tries = R_PROBE_RETRY_SLOW;
++			if (!sfp->sm_reprobing)
++				sfp->sm_reprobe_tries = R_REPROBE;
++			sfp->sm_reprobing = false;
+ 		}
+ 		break;
+ 
+@@ -2841,6 +2870,14 @@
+ 			sfp_sm_next(sfp, SFP_S_FAIL, 0);
+ 			break;
+ 		}
++		/* Arm the re-probe watchdog: if the link does not become
++		 * stable within T_LINK_FAIL, re-read the module in case it
++		 * changed its advertised capabilities.
++		 *
++		 * (padavanonly 999-2764 precedes us here: ret==ENODEV||EINVAL)
++		 */
++		if (sfp->sm_reprobe_enabled && sfp->sm_reprobe_tries)
++			mod_delayed_work(system_wq, &sfp->reprobe, T_LINK_FAIL);
+ 		sfp_sm_link_check_los(sfp);
+ 
+ 		/* Reset the fault retry count */
+@@ -2862,7 +2899,12 @@
+ 		break;
+ 
+ 	case SFP_S_LINK_UP:
+-		if (event == SFP_E_TX_FAULT) {
++		if (event == SFP_E_TIMEOUT) {
++			/* Link has stayed up for T_LINK_STABLE: the module is
++			 * happy with the selected interface, stop the watchdog.
++			 */
++			cancel_delayed_work(&sfp->reprobe);
++		} else if (event == SFP_E_TX_FAULT) {
+ 			sfp_sm_link_down(sfp);
+ 			sfp_sm_fault(sfp, SFP_S_TX_FAULT, true);
+ 		} else if (sfp_los_event_active(sfp, event)) {
+@@ -3107,6 +3149,28 @@
+ 		mod_delayed_work(system_wq, &sfp->poll, poll_jiffies);
+ }
+ 
++static void sfp_reprobe(struct work_struct *work)
++{
++	struct sfp *sfp = container_of(work, struct sfp, reprobe.work);
++
++	if (!sfp->sm_reprobe_tries)
++		return;
++
++	sfp->sm_reprobe_tries--;
++	dev_info(sfp->dev,
++		 "link not established, re-reading module (%u tries left)\n",
++		 sfp->sm_reprobe_tries);
++
++	/* Replicate a physical remove/insert so the module is re-read and the
++	 * upstream interface is re-selected from its current advertisement.
++	 * Runs in process context without sm_mutex held, so taking it via
++	 * sfp_sm_event() is safe.
++	 */
++	sfp->sm_reprobing = true;
++	sfp_sm_event(sfp, SFP_E_REMOVE);
++	sfp_sm_event(sfp, SFP_E_INSERT);
++}
++
+ static struct sfp *sfp_alloc(struct device *dev)
+ {
+ 	struct sfp *sfp;
+@@ -3122,6 +3186,7 @@
+ 	mutex_init(&sfp->st_mutex);
+ 	INIT_DELAYED_WORK(&sfp->poll, sfp_poll);
+ 	INIT_DELAYED_WORK(&sfp->timeout, sfp_timeout);
++	INIT_DELAYED_WORK(&sfp->reprobe, sfp_reprobe);
+ 
+ 	sfp_hwmon_init(sfp);
+ 
+@@ -3136,6 +3201,7 @@
+ 
+ 	cancel_delayed_work_sync(&sfp->poll);
+ 	cancel_delayed_work_sync(&sfp->timeout);
++	cancel_delayed_work_sync(&sfp->reprobe);
+ 	if (sfp->i2c_mii) {
+ 		mdiobus_unregister(sfp->i2c_mii);
+ 		mdiobus_free(sfp->i2c_mii);
+@@ -3319,6 +3385,7 @@
+ 
+ 	cancel_delayed_work_sync(&sfp->poll);
+ 	cancel_delayed_work_sync(&sfp->timeout);
++	cancel_delayed_work_sync(&sfp->reprobe);
+ }
+ 
+ static struct platform_driver sfp_driver = {
+-- 
+2.45.0

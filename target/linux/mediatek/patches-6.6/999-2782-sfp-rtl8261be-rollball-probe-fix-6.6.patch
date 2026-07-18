@@ -1,0 +1,135 @@
+From: Petr Wozniak <petr.wozniak@gmail.com>
+Date: Thu, 15 May 2026 12:00:00 +0200
+Subject: [PATCH 6.6] net: sfp: probe-based RTL8261BE rollball detection
+
+RTL8261BE is a pure media converter — it has no I2C-to-MDIO PHY bridge
+and does not support the ROLLBALL protocol.  Previously, the kernel
+unconditionally matched it via sfp_fixup_rollball_cc, causing an 8-minute
+PHY probe retry loop that never succeeds.
+
+Add i2c_mii_probe_rollball() which sends the ROLLBALL unlock password,
+switches to the MDIO page, issues CMD_READ, and polls CMD_DONE for up
+to 200ms (10×20ms).  A real RollBall bridge asserts CMD_DONE within
+~70ms; RTL8261BE (no bridge) never asserts it, so the probe times out.
+
+Modify sfp_fixup_rollball_cc() to call sfp_has_rollball_bridge() first:
+- Bridge detected   → MDIO_I2C_ROLLBALL + extended_cc fix (normal path)
+- No bridge (RTL8261BE) → MDIO_I2C_NONE (skip PHY probing entirely)
+
+Also fix mdio_i2c_alloc() to treat -ENODEV from rollball init as a
+non-fatal condition (gracefully downgrade to no MDIO bus).
+
+Add SFP-10G-T-I (industrial RTL8261BE variant) to the quirk table.
+
+Tested: iperf3 9.34 Gbits/sec between two BPI-R4 via RTL8261BE + Cat5e.
+
+Note: This patch targets the Linux 6.6 kernel with padavanonly's
+existing SFP quirk patches (999-2753, 999-2754, 999-2764, 999-2765)
+already applied.  The mdio-i2c.c changes have no conflicts with any
+existing padavanonly patches.
+
+The sfp_sm_add_mdio_bus() change from the 25.12 version is omitted
+here — this function was introduced in Linux 6.7+ and does not exist
+in the 6.6 kernel.
+
+Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
+---
+ drivers/net/mdio/mdio-i2c.c | 48 ++++++++++++++++++++++++++++++++++++--------
+ drivers/net/phy/sfp.c       |  1 +
+ 2 files changed, 41 insertions(+), 8 deletions(-)
+
+--- a/drivers/net/mdio/mdio-i2c.c
++++ b/drivers/net/mdio/mdio-i2c.c
+@@ -419,6 +419,50 @@
+ 	return 0;
+ }
+ 
++static int i2c_mii_probe_rollball(struct i2c_adapter *i2c)
++{
++	u8 data_buf[] = { ROLLBALL_DATA_ADDR, 0x01, 0x00, 0x00 };
++	u8 cmd_buf[]  = { ROLLBALL_CMD_ADDR, ROLLBALL_CMD_READ };
++	u8 cmd_addr   = ROLLBALL_CMD_ADDR;
++	struct i2c_msg msgs[2];
++	u8 result;
++	int ret;
++	int i;
++
++	msgs[0].addr  = ROLLBALL_PHY_I2C_ADDR;
++	msgs[0].flags = 0;
++	msgs[0].len   = sizeof(data_buf);
++	msgs[0].buf   = data_buf;
++	msgs[1].addr  = ROLLBALL_PHY_I2C_ADDR;
++	msgs[1].flags = 0;
++	msgs[1].len   = sizeof(cmd_buf);
++	msgs[1].buf   = cmd_buf;
++
++	ret = i2c_transfer_rollball(i2c, msgs, ARRAY_SIZE(msgs));
++	if (ret < 0)
++		return -ENODEV;
++
++	msgs[0].addr  = ROLLBALL_PHY_I2C_ADDR;
++	msgs[0].flags = 0;
++	msgs[0].len   = 1;
++	msgs[0].buf   = &cmd_addr;
++	msgs[1].addr  = ROLLBALL_PHY_I2C_ADDR;
++	msgs[1].flags = I2C_M_RD;
++	msgs[1].len   = 1;
++	msgs[1].buf   = &result;
++
++	for (i = 0; i < 10; i++) {
++		msleep(20);
++		ret = i2c_transfer_rollball(i2c, msgs, ARRAY_SIZE(msgs));
++		if (ret < 0)
++			return -ENODEV;
++		if (result == ROLLBALL_CMD_DONE)
++			return 0;
++	}
++
++	return -ENODEV;
++}
++
+ static int i2c_mii_init_rollball(struct i2c_adapter *i2c)
+ {
+ 	struct i2c_msg msg;
+@@ -438,11 +482,11 @@
+ 
+ 	ret = i2c_transfer(i2c, &msg, 1);
+ 	if (ret < 0)
+-		return ret;
+-	else if (ret != 1)
++		return -ENODEV;
++	if (ret != 1)
+ 		return -EIO;
+-	else
+-		return 0;
++
++	return i2c_mii_probe_rollball(i2c);
+ }
+ 
+ static bool mdio_i2c_check_functionality(struct i2c_adapter *i2c,
+@@ -487,9 +531,10 @@
+ 	case MDIO_I2C_ROLLBALL:
+ 		ret = i2c_mii_init_rollball(i2c);
+ 		if (ret < 0) {
+-			dev_err(parent,
+-				"Cannot initialize RollBall MDIO I2C protocol: %d\n",
+-				ret);
++			if (ret != -ENODEV)
++				dev_err(parent,
++					"Cannot initialize RollBall MDIO I2C protocol: %d\n",
++					ret);
+ 			mdiobus_free(mii);
+ 			return ERR_PTR(ret);
+ 		}
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -527,6 +527,7 @@
+ 	// OEM SFP-GE-T is a 1000Base-T module with broken TX_FAULT indicator
+ 	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
+ 
++	SFP_QUIRK_F("OEM", "SFP-10G-T-I", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("ETU", "ESP-T5-R", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("OEM", "SFP-10G-T", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_M("OEM", "SFP-2.5G-T", sfp_quirk_oem_2_5g),
+-- 
+2.45.0
