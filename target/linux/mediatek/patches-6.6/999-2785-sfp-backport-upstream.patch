@@ -1,0 +1,243 @@
+Index: linux-6.6.94/drivers/net/phy/sfp.c
+===================================================================
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -270,6 +270,7 @@ struct sfp {
+ 	unsigned int state_hw_drive;
+ 	unsigned int state_hw_mask;
+ 	unsigned int state_soft_mask;
++	unsigned int state_ignore_mask;
+ 	unsigned int state;
+ 
+ 	struct delayed_work poll;
+@@ -294,7 +295,6 @@ struct sfp {
+ 	unsigned int rs_state_mask;
+ 
+ 	bool have_a2;
+-	bool tx_fault_ignore;
+ 
+ 	const struct sfp_quirk *quirk;
+ 
+@@ -392,9 +392,35 @@ static void sfp_fixup_long_startup(struc
+ 	sfp->module_t_start_up = T_START_UP_BAD_GPON;
+ }
+ 
++static void sfp_fixup_ignore_los(struct sfp *sfp)
++{
++	/* This forces LOS to zero, so we ignore transitions */
++	sfp->state_ignore_mask |= SFP_F_LOS;
++	/* Make sure that LOS options are clear */
++	sfp->id.ext.options &= ~cpu_to_be16(SFP_OPTIONS_LOS_INVERTED |
++					    SFP_OPTIONS_LOS_NORMAL);
++}
++
+ static void sfp_fixup_ignore_tx_fault(struct sfp *sfp)
+ {
+-	sfp->tx_fault_ignore = true;
++	sfp->state_ignore_mask |= SFP_F_TX_FAULT;
++}
++
++static void sfp_fixup_ignore_tx_fault_and_los(struct sfp *sfp)
++{
++	sfp_fixup_ignore_tx_fault(sfp);
++	sfp_fixup_ignore_los(sfp);
++}
++
++static void sfp_fixup_ignore_hw(struct sfp *sfp, unsigned int mask)
++{
++	sfp->state_hw_mask &= ~mask;
++}
++
++static void sfp_fixup_nokia(struct sfp *sfp)
++{
++	sfp_fixup_long_startup(sfp);
++	sfp_fixup_ignore_los(sfp);
+ }
+ 
+ // For 10GBASE-T short-reach modules
+@@ -439,7 +465,19 @@ static void sfp_fixup_halny_gsfp(struct
+ 	 * these are possibly used for other purposes on this
+ 	 * module, e.g. a serial port.
+ 	 */
+-	sfp->state_hw_mask &= ~(SFP_F_TX_FAULT | SFP_F_LOS);
++	sfp_fixup_ignore_hw(sfp, SFP_F_TX_FAULT | SFP_F_LOS);
++}
++
++static void sfp_fixup_potron(struct sfp *sfp)
++{
++	/*
++	 * The TX_FAULT and LOS pins on this device are used for serial
++	 * communication, so ignore them. Additionally, provide extra
++	 * time for this device to fully start up.
++	 */
++
++	sfp_fixup_long_startup(sfp);
++	sfp_fixup_ignore_hw(sfp, SFP_F_TX_FAULT | SFP_F_LOS);
+ }
+ 
+ static void sfp_fixup_rollball_cc(struct sfp *sfp)
+@@ -483,10 +521,17 @@ static void sfp_quirk_ubnt_uf_instant(co
+ {
+ 	/* Ubiquiti U-Fiber Instant module claims that support all transceiver
+ 	 * types including 10G Ethernet which is not truth. So clear all claimed
+-	 * modes and set only one mode which module supports: 1000baseX_Full.
++	 * modes and set only one mode which module supports: 1000baseX_Full,
++	 * along with the Autoneg and pause bits.
+ 	 */
+ 	linkmode_zero(modes);
+ 	linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseX_Full_BIT, modes);
++	linkmode_set_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, modes);
++	linkmode_set_bit(ETHTOOL_LINK_MODE_Pause_BIT, modes);
++	linkmode_set_bit(ETHTOOL_LINK_MODE_Asym_Pause_BIT, modes);
++
++	phy_interface_zero(interfaces);
++	__set_bit(PHY_INTERFACE_MODE_1000BASEX, interfaces);
+ }
+ 
+ #define SFP_QUIRK(_v, _p, _m, _f) \
+@@ -503,7 +548,12 @@ static const struct sfp_quirk sfp_quirks
+ 	// Alcatel Lucent G-010S-A can operate at 2500base-X, but report 3.2GBd
+ 	// NRZ in their EEPROM
+ 	SFP_QUIRK("ALCATELLUCENT", "3FE46541AA", sfp_quirk_2500basex,
+-		  sfp_fixup_long_startup),
++		  sfp_fixup_nokia),
++
++	SFP_QUIRK_F("BIDB", "X-ONU-SFPP", sfp_fixup_potron),
++
++	// FLYPRO SFP-10GT-CS-30M uses Rollball protocol to talk to the PHY.
++	SFP_QUIRK_F("FLYPRO", "SFP-10GT-CS-30M", sfp_fixup_rollball),
+ 
+ 	// Fiberstore SFP-10G-T doesn't identify as copper, uses the Rollball
+ 	// protocol to talk to the PHY and needs 4 sec wait before probing the
+@@ -531,6 +581,8 @@ static const struct sfp_quirk sfp_quirks
+ 
+ 	SFP_QUIRK_F("HALNy", "HL-GSFP", sfp_fixup_halny_gsfp),
+ 
++	SFP_QUIRK_F("H-COM", "SPP425H-GAB4", sfp_fixup_potron),
++
+ 	// HG MXPD-483II-F 2.5G supports 2500Base-X, but incorrectly reports
+ 	// 2600MBd in their EERPOM
+ 	SFP_QUIRK_M("HG GENUINE", "MXPD-483II", sfp_quirk_2500basex),
+@@ -538,14 +590,31 @@ static const struct sfp_quirk sfp_quirks
+ 	// Huawei MA5671A can operate at 2500base-X, but report 1.2GBd NRZ in
+ 	// their EEPROM
+ 	SFP_QUIRK("HUAWEI", "MA5671A", sfp_quirk_2500basex,
++		  sfp_fixup_ignore_tx_fault_and_los),
++
++	// Hisense LXT-010S-H is a GPON ONT SFP (sold as LEOX LXT-010S-H) that
++	// can operate at 2500base-X, but reports 1000BASE-LX / 1300MBd in its
++	// EEPROM
++	SFP_QUIRK("Hisense-Leox", "LXT-010S-H", sfp_quirk_2500basex,
+ 		  sfp_fixup_ignore_tx_fault),
+ 
+-	// OEM SFP-GE-T is 1000Base-T module
+-	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
++	// Hisense ZNID-GPON-2311NA can operate at 2500base-X, but reports
++	// 1000BASE-LX / 1300MBd in its EEPROM
++	SFP_QUIRK("Hisense", "ZNID-GPON-2311NA", sfp_quirk_2500basex,
++		  sfp_fixup_ignore_tx_fault),
+ 
+-	// Lantech 8330-262D-E can operate at 2500base-X, but incorrectly report
+-	// 2500MBd NRZ in their EEPROM
++	// HSGQ HSGQ-XPON-Stick can operate at 2500base-X, but reports
++	// 1000BASE-LX / 1300MBd in its EEPROM
++	SFP_QUIRK("HSGQ", "HSGQ-XPON-Stick", sfp_quirk_2500basex,
++		  sfp_fixup_ignore_tx_fault),
++
++	// Lantech 8330-262D-E and 8330-265D can operate at 2500base-X, but
++	// incorrectly report 2500MBd NRZ in their EEPROM.
++	// Some 8330-265D modules have inverted LOS, while all of them report
++	// normal LOS in EEPROM. Therefore we need to ignore LOS entirely.
+ 	SFP_QUIRK_M("Lantech", "8330-262D-E", sfp_quirk_2500basex),
++	SFP_QUIRK("Lantech", "8330-265D", sfp_quirk_2500basex,
++		  sfp_fixup_ignore_los),
+ 
+ 	SFP_QUIRK_M("UBNT", "UF-INSTANT", sfp_quirk_ubnt_uf_instant),
+ 
+@@ -554,6 +623,8 @@ static const struct sfp_quirk sfp_quirks
+ 	SFP_QUIRK_F("Walsun", "HXSX-ATRC-1", sfp_fixup_fs_10gt),
+ 	SFP_QUIRK_F("Walsun", "HXSX-ATRI-1", sfp_fixup_fs_10gt),
+ 
++	SFP_QUIRK_F("YV", "SFP+ONU-XGSPON", sfp_fixup_potron),
++
+ 	// OEM SFP-GE-T is a 1000Base-T module with broken TX_FAULT indicator
+ 	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
+ 
+@@ -566,6 +637,7 @@ static const struct sfp_quirk sfp_quirks
+ 	SFP_QUIRK_F("OEM", "RTSFP-10", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("OEM", "RTSFP-10G", sfp_fixup_rollball_cc),
+ 	SFP_QUIRK_F("OEM", "TNBYV02-C0X-C3", sfp_fixup_rollball_cc),
++	SFP_QUIRK_F("Turris", "RTSFP-2.5G", sfp_fixup_rollball),
+ 	SFP_QUIRK_F("Turris", "RTSFP-10", sfp_fixup_rollball),
+ 	SFP_QUIRK_F("Turris", "RTSFP-10G", sfp_fixup_rollball),
+ 	SFP_QUIRK_F("JESS-LINK", "P60000BBC001-1", sfp_fixup_rollball),
+@@ -879,7 +951,8 @@ static void sfp_soft_start_poll(struct s
+ 
+ 	mutex_lock(&sfp->st_mutex);
+ 	// Poll the soft state for hardware pins we want to ignore
+-	sfp->state_soft_mask = ~sfp->state_hw_mask & mask;
++	sfp->state_soft_mask = ~sfp->state_hw_mask & ~sfp->state_ignore_mask &
++			       mask;
+ 
+ 	if (sfp->state_soft_mask & (SFP_F_LOS | SFP_F_TX_FAULT) &&
+ 	    !sfp->need_poll)
+@@ -2319,6 +2392,10 @@ static int sfp_sm_mod_probe(struct sfp *
+ 	 * is really required and we have no other option.
+ 	 */
+ 	if (sfp_id_needs_byte_io(sfp, &id.base, sizeof(id.base))) {
++		dev_info(sfp->dev,
++			 "Detected broken RTL8672/RTL9601C emulated EEPROM\n");
++		dev_info(sfp->dev,
++			 "Switching to reading EEPROM to one byte at a time\n");
+ 		sfp->i2c_block_size = 1;
+ 
+ 		ret = sfp_read(sfp, false, 0, &id.base, sizeof(id.base));
+@@ -2471,7 +2548,7 @@ static int sfp_sm_mod_probe(struct sfp *
+ 	sfp->module_t_wait = T_WAIT;
+ 	sfp->phy_t_retry = T_PHY_RETRY;
+ 
+-	sfp->tx_fault_ignore = false;
++	sfp->state_ignore_mask = 0;
+ 
+ 	if (sfp->id.base.extended_cc == SFF8024_ECC_10GBASE_T_SFI ||
+ 	    sfp->id.base.extended_cc == SFF8024_ECC_10GBASE_T_SR ||
+@@ -2494,6 +2571,9 @@ static int sfp_sm_mod_probe(struct sfp *
+ 
+ 	if (sfp->quirk && sfp->quirk->fixup)
+ 		sfp->quirk->fixup(sfp);
++
++	sfp->state_hw_mask &= ~sfp->state_ignore_mask;
++
+ 	/* Enable reprobe watchdog only for copper SFP+ modules (e.g.
+ 	 * RTL8261BE-based) that may change advertised speeds after
+ 	 * link partner negotiation. GPON/fiber are unaffected.
+@@ -2752,8 +2832,7 @@ static void sfp_sm_main(struct sfp *sfp,
+ 			 * or t_start_up, so assume there is a fault.
+ 			 */
+ 			sfp_sm_fault(sfp, SFP_S_INIT_TX_FAULT,
+-				     !sfp->tx_fault_ignore &&
+-				     (sfp->sm_fault_retries == N_FAULT_INIT));
++				     sfp->sm_fault_retries == N_FAULT_INIT);
+ 		} else if (event == SFP_E_TIMEOUT || event == SFP_E_TX_CLEAR) {
+ 	init_done:
+ 			/* Create mdiobus and start trying for PHY */
+@@ -3024,12 +3103,7 @@ static void sfp_check_state(struct sfp *
+ 	mutex_lock(&sfp->st_mutex);
+ 	state = sfp_get_state(sfp);
+ 	changed = state ^ sfp->state;
+-	if (sfp->tx_fault_ignore) {
+-		changed &= SFP_F_PRESENT | SFP_F_LOS;
+-		state &= ~SFP_F_TX_FAULT;
+-	} else {
+-		changed &= SFP_F_PRESENT | SFP_F_LOS | SFP_F_TX_FAULT;
+-	}
++	changed &= SFP_F_PRESENT | SFP_F_LOS | SFP_F_TX_FAULT;
+ 
+ 	for (i = 0; i < GPIO_MAX; i++)
+ 		if (changed & BIT(i))
+ 		sfp->gpio_irq[i] = gpiod_to_irq(sfp->gpio[i]);
+@@ -3348,3 +3422,4 @@ module_exit(sfp_exit);
+ MODULE_ALIAS("platform:sfp");
+ MODULE_AUTHOR("Russell King");
+ MODULE_LICENSE("GPL v2");
++MODULE_DESCRIPTION("SFP cage support");
