@@ -63,7 +63,7 @@ msgstr "启用AP模式"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:178
 msgid "Fill in ip to enable AP Mode(reboot needed)"
-msgstr "填写IP将启动AP模式（同网段不重复ip,需重启后生效.对于无线桥接，请桥接完成后再启用AP模式)"
+msgstr "填写IP将启动AP模式（同网段不重复ip，需重启后生效。对于无线桥接，请桥接完成后再启用AP模式）"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:183
 msgid "HNAT bind rate threshold (pps)"
@@ -72,8 +72,6 @@ msgstr "HNAT连接速率绑定阈值(pps)"
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:184
 msgid "The smaller the threshold, the easier it is for the connection to be accelerated."
 msgstr "阈值越小，连接越容易被加速。"
-
-
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:166
 msgid "Enable hardware offloading for wired connections."
@@ -85,7 +83,7 @@ msgstr "为无线连接启用硬件加速。"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:124
 msgid "Fast classifier"
-msgstr "Fast classifier"
+msgstr "快速分类器"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:136
 msgid "Fast classifier connection manager for the shortcut forwarding engine."
@@ -101,7 +99,7 @@ msgstr "快速转发引擎"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:122
 msgid "Flow offloading"
-msgstr "Flow offloading"
+msgstr "流量分载"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:98
 msgid "Full Cone NAT"
@@ -113,7 +111,7 @@ msgstr "全锥形 NAT"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:187
 msgid "Full cone NAT (NAT1) can improve gaming performance effectively."
-msgstr "Full cone NAT（NAT1）可以有效提升游戏体验。"
+msgstr "全锥形 NAT（NAT1）可以有效提升游戏体验。"
 
 #: applications/luci-app-turboacc/root/usr/share/rpcd/acl.d/luci-app-turboacc.json:3
 msgid "Grant UCI access for luci-app-turboacc"
@@ -149,7 +147,7 @@ msgstr "需要硬件 NAT 支持。目前 mt7621 已实现。"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:126
 msgid "SFE connection manager"
-msgstr "SFE connection manager"
+msgstr "SFE 连接管理器"
 
 #: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:138
 msgid "Simple connection manager for the shortcut forwarding engine."
@@ -292,3 +290,406 @@ msgstr "OpenWrt 24.10 下 mt798x 首选的 HNAT 通路。"
 
 msgid "Keep wired IPv6 sessions on the HNAT path when supported by the current driver."
 msgstr "当前驱动支持时，让有线 IPv6 会话也走 HNAT 通路。"
+
+# New strings for proper i18n
+msgid "Software routing/NAT offloading with broad compatibility, conservative acceleration depth."
+msgstr "软件路由/NAT 分载，通用性最好，但加速深度偏保守。"
+
+msgid "Fast classifier for SFE, suitable when bridge acceleration is needed."
+msgstr "面向 SFE 的快速分类器，适合希望继续启用桥接加速的场景。"
+
+msgid "Lightweight SFE connection manager with narrower platform coverage."
+msgstr "SFE 的轻量连接管理器，路径简单，但平台覆盖面更窄。"
+
+msgid "Primary wired acceleration path for mt798x under 24.10 with real-time PPE binding insight."
+msgstr "mt798x 在 24.10 下的主力有线加速通路，可配合 PPE 实时观察绑定情况。"
+
+msgid "No primary acceleration engine is currently enabled."
+msgstr "当前未启用主加速引擎。"
+
+msgid "XT_FULLCONE_NAT (better compatibility)"
+msgstr "XT_FULLCONE_NAT（更佳的兼容性）"
+
+msgid "Boardcom_FULLCONE_NAT (legacy compatibility)"
+msgstr "Boardcom_FULLCONE_NAT（旧实现兼容）"
+
+msgid "Follow main path"
+msgstr "跟随主通路"
+
+msgid "IPv6 acceleration not available on this platform."
+msgstr "当前平台未开放 IPv6 加速能力。"
+
+msgid "Fast classifier has IPv6 acceleration enabled."
+msgstr "Fast classifier 已打开 IPv6 加速。"
+
+msgid "Fast classifier can enable IPv6 acceleration independently."
+msgstr "Fast classifier 可单独启用 IPv6 加速。"
+
+msgid "Wired IPv6 sessions can enter the HNAT path."
+msgstr "有线 IPv6 会话可进入 HNAT 通路。"
+
+msgid "Currently accelerating IPv4 only, IPv6 goes through the regular stack."
+msgstr "当前仅加速 IPv4，会保留 IPv6 走常规栈。"
+
+msgid "No independent IPv6 acceleration when the main path is disabled."
+msgstr "主通路关闭时不会有独立 IPv6 加速。"
+
+msgid "The current engine does not have a separate IPv6 toggle."
+msgstr "当前引擎没有单独的 IPv6 开关。"
+
+msgid "Current config"
+msgstr "当前配置"
+
+msgid "Active in runtime"
+msgstr "实时生效"
+
+msgid "Switchable"
+msgstr "可切换"
+
+msgid "PPE details"
+msgstr "PPE 明细"
+
+msgid "Bound sessions per PPE lane."
+msgstr "PPE 通道的已绑定连接数。"
+
+msgid "Primary acceleration path reported by the kernel."
+msgstr "当前内核返回的主加速通路。"
+
+msgid "No active data path detected on this page."
+msgstr "当前页面没有检测到活动的数据通路。"
+
+msgid "Selected "
+msgstr "已选择 "
+
+msgid ", but the runtime kernel shows "
+msgstr "，但实时内核仍显示 "
+
+msgid "."
+msgstr "。"
+
+msgid "Runtime warnings: "
+msgstr "运行告警："
+
+msgid "MediaTek HNAT selected, but \"Enable ethernet HNAT\" is not enabled."
+msgstr "已选 MediaTek HNAT，但\"启用有线 HNAT\"当前未打开。"
+
+msgid "IPv6 not currently on HNAT path, enable if pure IPv6 scenarios require it."
+msgstr "IPv6 当前未进入 HNAT，若有纯 IPv6 场景可视需求再开启。"
+
+msgid "Bridge acceleration enabled; review this if bridge-mode VPN has issues."
+msgstr "桥接加速已打开，若桥接模式 VPN 出现异常，应优先回看这一项。"
+
+msgid "Current PPE capacity: "
+msgstr "当前 PPE 总容量："
+
+msgid "TurboACC Console"
+msgstr "TurboACC 控制台"
+
+msgid "Real-time path"
+msgstr "实时通路"
+
+msgid "PPE sessions"
+msgstr "PPE 连接数"
+
+msgid "Config"
+msgstr "配置"
+
+msgid "Runtime"
+msgstr "实时"
+
+msgid "PPE"
+msgstr "PPE"
+
+msgid "NAT"
+msgstr "NAT"
+
+msgid "IPv6"
+msgstr "IPv6"
+
+msgid "TCP"
+msgstr "TCP"
+
+msgid "Bind threshold"
+msgstr "绑定阈值"
+
+msgid "Switchable engines available"
+msgstr "当前可切换主引擎数量"
+
+msgid "Config profile"
+msgstr "配置档案"
+
+msgid "Not enabled"
+msgstr "未启用"
+
+msgid "Selected"
+msgstr "已选择"
+
+msgid "NAT / TCP policy"
+msgstr "NAT / TCP 策略"
+
+msgid "Engine pool"
+msgstr "引擎储备"
+
+msgid "Live telemetry"
+msgstr "实时遥测"
+
+msgid "Wired data path"
+msgstr "有线数据通路"
+
+msgid "Allowed"
+msgstr "已放行"
+
+msgid "Pending"
+msgstr "待放行"
+
+msgid "MediaTek HNAT is the primary path to verify on mt798x 24.10."
+msgstr "MediaTek HNAT 是 mt798x 24.10 上最值得优先确认的主通路。"
+
+msgid "The current primary path determines most routing/NAT forwarding behavior."
+msgstr "当前主通路决定了大部分路由/NAT 转发行为。"
+
+msgid "Runtime engine"
+msgstr "实时引擎"
+
+msgid "Bridge acceleration"
+msgstr "桥接加速"
+
+msgid "Ethernet HNAT"
+msgstr "有线 HNAT"
+
+msgid "Priority check"
+msgstr "优先检查"
+
+msgid "Switch on demand"
+msgstr "按需切换"
+
+msgid "Gaming & NAT behavior"
+msgstr "游戏与 NAT 行为"
+
+msgid "Full cone NAT primarily affects multiplayer and port mapping, not the data path itself."
+msgstr "全锥形 NAT 主要影响联机和端口映射体验，不代表主通路本身一定工作。"
+
+msgid "Runtime feedback"
+msgstr "实时反馈"
+
+msgid "Risk note"
+msgstr "风险提示"
+
+msgid "Multiplayer scenarios rely more on manual mapping"
+msgstr "联机型业务更依赖手动映射"
+
+msgid "Better suited for game consoles and P2P scenarios"
+msgstr "更适合游戏主机与 P2P 场景"
+
+msgid "Experience"
+msgstr "体验侧"
+
+msgid "IPv6 & advanced tuning"
+msgstr "IPv6 与高级调优"
+
+msgid "PPE overview"
+msgstr "PPE 总览"
+
+msgid "Advanced"
+msgstr "高级项"
+
+msgid "Path candidates"
+msgstr "通路候选"
+
+msgid "Display \"Current config\" and \"Active in runtime\" side by side to avoid misjudging real state from config alone."
+msgstr "把\"当前配置\"和\"实时生效\"并排摆出来，避免只看配置误判真实状态。"
+
+msgid "This reads actual kernel and rpcd responses, not just form config."
+msgstr "这里读的是当前内核和 rpcd 的实际返回，不是单纯的表单配置。"
+
+msgid "Primary acceleration engine"
+msgstr "主加速引擎"
+
+msgid "Runtime warnings"
+msgstr "运行告警"
+
+msgid "None"
+msgstr "无"
+
+msgid "Full cone NAT"
+msgstr "全锥形 NAT"
+
+msgid "IPv6 acceleration"
+msgstr "IPv6 加速"
+
+msgid "PPE lane count"
+msgstr "PPE 通道数"
+
+msgid "Bound sessions"
+msgstr "已绑定会话"
+
+msgid "Current assessment"
+msgstr "当前判断"
+
+msgid "Capability matrix"
+msgstr "能力矩阵"
+
+msgid "SFE"
+msgstr "SFE"
+
+msgid "HNAT"
+msgstr "HNAT"
+
+msgid "FullCone"
+msgstr "FullCone"
+
+msgid "Kernel IPv6 stack"
+msgstr "内核 IPv6 协议栈"
+
+msgid "Status OK"
+msgstr "状态正常"
+
+msgid "Overall status"
+msgstr "总状态"
+
+msgid "NAT / TCP"
+msgstr "NAT / TCP"
+
+msgid "Lanes"
+msgstr "通道"
+
+msgid "Threshold"
+msgstr "阈值"
+
+msgid "Ethernet HNAT enabled"
+msgstr "有线 HNAT 已启用"
+
+msgid "Ethernet HNAT not enabled"
+msgstr "有线 HNAT 未启用"
+
+msgid "Main path"
+msgstr "主通路"
+
+msgid "Runtime status"
+msgstr "运行状态"
+
+msgid "Keeping only the most commonly used runtime status and live info."
+msgstr "只保留最常用的运行状态与实时信息。"
+
+msgid "Notes"
+msgstr "提示"
+
+msgid "Splitting config, runtime path, and key policies makes troubleshooting more direct."
+msgstr "把当前配置、实时通路和关键策略拆开看，排查与确认都会更直接。"
+
+msgid "Keeping commonly used runtime details to avoid information overload."
+msgstr "保留最常用的实时明细，避免页面信息过多又不易定位。"
+
+msgid "TurboACC Configuration"
+msgstr "TurboACC 配置面板"
+
+msgid "Only commonly used options are shown; save & apply after changes."
+msgstr "只保留常用配置项，更改后保存并应用即可。"
+
+msgid "Select the primary acceleration engine."
+msgstr "选择主加速引擎。"
+
+msgid "Experience tuning"
+msgstr "体验优化"
+
+msgid "NAT and TCP settings."
+msgstr "NAT 与 TCP 设置。"
+
+msgid "HNAT advanced"
+msgstr "HNAT 高级项"
+
+msgid "MediaTek HNAT specific settings."
+msgstr "MediaTek HNAT 专用设置。"
+
+msgid "Choose the acceleration method to use."
+msgstr "选择当前使用的加速方式。"
+
+msgid "MediaTek HNAT (try after save)"
+msgstr "MediaTek HNAT（保存后尝试）"
+
+msgid "Off"
+msgstr "关闭"
+
+msgid "Disable acceleration offloading"
+msgstr "关闭转发加速"
+
+msgid "No additional acceleration; network and Wi-Fi will run with system defaults."
+msgstr "不启用额外加速，网络和 Wi-Fi 会按系统默认方式运行。"
+
+msgid "Legacy option"
+msgstr "保留选项"
+
+msgid "Flow Offloading is a legacy option for backward compatibility."
+msgstr "Flow Offloading 是兼容旧配置的保留选项。"
+
+msgid "Kept for legacy configs; current firmware prefers HNAT, skips automatically if unsupported."
+msgstr "保留给旧配置使用；当前固件通常优先使用 HNAT，系统不支持时会自动跳过。"
+
+msgid "Fast Classifier is a legacy option for backward compatibility."
+msgstr "Fast Classifier 是兼容旧配置的保留选项。"
+
+msgid "Current firmware doesn't provide Fast Classifier; it will be skipped if unavailable."
+msgstr "当前固件未提供 Fast Classifier 模块；保存后若无法加载，会自动跳过，不影响网络。"
+
+msgid "SFE connection manager is a legacy option for backward compatibility."
+msgstr "SFE 连接管理器是兼容旧配置的保留选项。"
+
+msgid "Current firmware doesn't provide SFE CM; it will be skipped if unavailable."
+msgstr "当前固件未提供 SFE 连接管理器模块；保存后若无法加载，会自动跳过，不影响网络。"
+
+msgid "Recommended"
+msgstr "推荐"
+
+msgid "Pending load"
+msgstr "待加载"
+
+msgid "MediaTek HNAT is available, suitable for MT7988 hardware acceleration."
+msgstr "MediaTek HNAT 已可用，适合 MT7988 硬件加速。"
+
+msgid "MediaTek HNAT not detected; will attempt to load after save."
+msgstr "MediaTek HNAT 当前未检测到，保存后会尝试加载。"
+
+msgid "MediaTek HNAT (PPE + WED + HNAT) bypasses CPU for direct hardware forwarding, recommended as the primary acceleration engine."
+msgstr "MediaTek HNAT（PPE + WED + HNAT），绕过 CPU 直接硬件转发，推荐作为主加速引擎。"
+
+msgid "HNAT module not detected; will try loading after save, network unaffected if it fails."
+msgstr "当前尚未检测到 HNAT 模块；保存配置后会尝试加载，失败时不影响基础网络。"
+
+msgid "Invalid primary acceleration engine"
+msgstr "无效的主加速引擎"
+
+msgid "Enable hardware flow offloading"
+msgstr "启用硬件流量分载"
+
+msgid "Enable when hardware supports it."
+msgstr "硬件支持时可开启。"
+
+msgid "Enable bridge acceleration"
+msgstr "启用桥接加速"
+
+msgid "May affect bridge-mode VPN."
+msgstr "可能影响桥接 VPN。"
+
+msgid "Enable IPv6 for Fast classifier"
+msgstr "为 Fast classifier 打开 IPv6"
+
+msgid "Enable IPv6 acceleration."
+msgstr "启用 IPv6 加速。"
+
+msgid "Enable for gaming or P2P needs."
+msgstr "游戏或 P2P 需要时开启。"
+
+msgid "TCP congestion control algorithm"
+msgstr "TCP 拥塞控制算法"
+
+msgid "Choose TCP congestion control algorithm. BBR for high-bandwidth links, CUBIC is the kernel default, Reno for best compatibility."
+msgstr "选择 TCP 拥塞控制算法。BBR 适合高带宽链路，CUBIC 为内核默认，Reno 兼容性最佳。"
+
+msgid "Enable MediaTek HNAT hook_toggle; turboacc service writes kernel toggle after save & apply."
+msgstr "启用 MediaTek HNAT hook_toggle；保存并应用后由 turboacc 服务写入内核开关。"
+
+msgid "Enable IPv6 HNAT."
+msgstr "启用 IPv6 HNAT。"
+
+msgid "Default 30."
+msgstr "默认 30。"

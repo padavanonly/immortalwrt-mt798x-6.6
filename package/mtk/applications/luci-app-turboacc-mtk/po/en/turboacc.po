@@ -1,0 +1,731 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-turboacc-mtk\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:91
+msgid "Acceleration Status"
+msgstr "Acceleration Status"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:191
+msgid "Boardcom_FULLCONE_NAT"
+msgstr "Boardcom_FULLCONE_NAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:151
+msgid "Bridge Acceleration"
+msgstr "Bridge Acceleration"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:95
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:99
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:103
+msgid "Collecting data..."
+msgstr "Collecting data..."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:120
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:188
+msgid "Disable"
+msgstr "Disable"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:57
+msgid "Disabled"
+msgstr "Disabled"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:177
+msgid "Enable AP Mode"
+msgstr "Enable AP Mode"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:178
+msgid "Fill in ip to enable AP Mode(reboot needed)"
+msgstr "Fill in ip to enable AP Mode(reboot needed)"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:183
+msgid "HNAT bind rate threshold (pps)"
+msgstr "HNAT bind rate threshold (pps)"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:184
+msgid "The smaller the threshold, the easier it is for the connection to be accelerated."
+msgstr "The smaller the threshold, the easier it is for the connection to be accelerated."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:152
+msgid "Enable bridge acceleration (may be functional conflict with bridge-mode VPN server)."
+msgstr "Enable bridge acceleration (may be functional conflict with bridge-mode VPN server)."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:165
+msgid "Enable ethernet HNAT"
+msgstr "Enable ethernet HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:171
+msgid "Enable ethernet IPv6 HNAT"
+msgstr "Enable ethernet IPv6 HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:172
+msgid "Enable hardware offloading for wired IPv6 connections."
+msgstr "Enable hardware offloading for wired IPv6 connections."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:166
+msgid "Enable hardware offloading for wired connections."
+msgstr "Enable hardware offloading for wired connections."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:178
+msgid "Enable hardware offloading for wireless connections."
+msgstr "Enable hardware offloading for wireless connections."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:124
+msgid "Fast classifier"
+msgstr "Fast classifier"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:136
+msgid "Fast classifier connection manager for the shortcut forwarding engine."
+msgstr "Fast classifier connection manager for the shortcut forwarding engine."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:94
+msgid "FastPath Engine"
+msgstr "FastPath Engine"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:118
+msgid "Fastpath engine"
+msgstr "Fastpath engine"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:122
+msgid "Flow offloading"
+msgstr "Flow offloading"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:98
+msgid "Full Cone NAT"
+msgstr "Full Cone NAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:186
+msgid "Full cone NAT"
+msgstr "Full cone NAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:187
+msgid "Full cone NAT (NAT1) can improve gaming performance effectively."
+msgstr "Full cone NAT (NAT1) can improve gaming performance effectively."
+
+#: applications/luci-app-turboacc/root/usr/share/rpcd/acl.d/luci-app-turboacc.json:3
+msgid "Grant UCI access for luci-app-turboacc"
+msgstr "Grant UCI access for luci-app-turboacc"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:145
+msgid "Hardware flow offloading"
+msgstr "Hardware flow offloading"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:158
+msgid "IPv6 acceleration"
+msgstr "IPv6 acceleration"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:128
+msgid "MediaTek HNAT"
+msgstr "MediaTek HNAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:140
+msgid "MediaTek's open source hardware offloading engine."
+msgstr "MediaTek's open source hardware offloading engine."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:74
+msgid "Open source flow offloading engine (fast path or hardware NAT)."
+msgstr "Open source flow offloading engine (fast path or hardware NAT)."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:179
+msgid "Redirect to wireless settings"
+msgstr "Redirect to wireless settings"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:146
+msgid "Requires hardware NAT support. Implemented at least for mt7621."
+msgstr "Requires hardware NAT support. Implemented at least for mt7621."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:126
+msgid "SFE connection manager"
+msgstr "SFE connection manager"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:138
+msgid "Simple connection manager for the shortcut forwarding engine."
+msgstr "Simple connection manager for the shortcut forwarding engine."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:134
+msgid "Software based offloading for routing/NAT."
+msgstr "Software based offloading for routing/NAT."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:102
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:195
+msgid "TCP CCA"
+msgstr "TCP CCA"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:196
+msgid "TCP congestion control algorithm."
+msgstr "TCP congestion control algorithm."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:119
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:142
+msgid "The offloading engine for routing/NAT."
+msgstr "The offloading engine for routing/NAT."
+
+#: applications/luci-app-turboacc/root/usr/share/luci/menu.d/luci-app-turboacc.json:3
+msgid "TurboACC"
+msgstr "TurboACC"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:73
+msgid "TurboACC settings"
+msgstr "TurboACC settings"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:159
+msgid "Enable IPv6 Acceleration."
+msgstr "Enable IPv6 Acceleration."
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:190
+msgid "XT_FULLCONE_NAT"
+msgstr "XT_FULLCONE_NAT"
+
+#: applications/luci-app-turboacc/htdocs/luci-static/resources/view/turboacc.js:191
+msgid "Boardcom_FULLCONE_NAT"
+msgstr "Boardcom_FULLCONE_NAT"
+
+# Extra entries used in turboacc.js runtime
+msgid "Apply this setting after reboot."
+msgstr "Apply this setting after reboot."
+
+msgid "Bind Entrys"
+msgstr "Bind Entrys"
+
+msgid "Enabled"
+msgstr "Enabled"
+
+msgid "Available"
+msgstr "Available"
+
+msgid "Unavailable"
+msgstr "Unavailable"
+
+msgid "Ethernet HNAT disabled"
+msgstr "Ethernet HNAT disabled"
+
+msgid "HNAT Partially Enabled"
+msgstr "HNAT Partially Enabled"
+
+msgid "No active acceleration path detected."
+msgstr "No active acceleration path detected."
+
+msgid "The current platform exposes IPv6, but this engine has no dedicated IPv6 toggle."
+msgstr "The current platform exposes IPv6, but this engine has no dedicated IPv6 toggle."
+
+msgid "Optimize the routing/NAT data plane for MediaTek 24.10 with live runtime telemetry."
+msgstr "Optimize the routing/NAT data plane for MediaTek 24.10 with live runtime telemetry."
+
+msgid "MediaTek HNAT is the primary wired acceleration path on mt798x under 24.10."
+msgstr "MediaTek HNAT is the primary wired acceleration path on mt798x under 24.10."
+
+msgid "Save & Apply is required before live runtime cards reflect configuration changes."
+msgstr "Save & Apply is required before live runtime cards reflect configuration changes."
+
+msgid "Live data plane"
+msgstr "Live data plane"
+
+msgid "Configured profile"
+msgstr "Configured profile"
+
+msgid "Bound sessions"
+msgstr "Bound sessions"
+
+msgid "NAT & congestion"
+msgstr "NAT & congestion"
+
+msgid "Configured NAT mode"
+msgstr "Configured NAT mode"
+
+msgid "Current TCP CCA"
+msgstr "Current TCP CCA"
+
+msgid "Available engines"
+msgstr "Available engines"
+
+msgid "PPE session load"
+msgstr "PPE session load"
+
+msgid "Runtime details"
+msgstr "Runtime details"
+
+msgid "Route/NAT engine"
+msgstr "Route/NAT engine"
+
+msgid "Runtime warnings"
+msgstr "Runtime warnings"
+
+msgid "PPE lanes"
+msgstr "PPE lanes"
+
+msgid "Total sessions"
+msgstr "Total sessions"
+
+msgid "Capability matrix"
+msgstr "Capability matrix"
+
+msgid "Kernel IPv6 stack"
+msgstr "Kernel IPv6 stack"
+
+msgid "Operating notes"
+msgstr "Operating notes"
+
+msgid "Tune wired acceleration, NAT behavior and congestion control without leaving this page."
+msgstr "Tune wired acceleration, NAT behavior and congestion control without leaving this page."
+
+msgid "Acceleration profile"
+msgstr "Acceleration profile"
+
+msgid "Choose the primary acceleration engine used for routing and NAT."
+msgstr "Choose the primary acceleration engine used for routing and NAT."
+
+msgid "HNAT tuning"
+msgstr "HNAT tuning"
+
+msgid "Tune wired HNAT behavior for MediaTek targets."
+msgstr "Tune wired HNAT behavior for MediaTek targets."
+
+msgid "Pick the main data plane. Runtime cards above show what the kernel is actually using."
+msgstr "Pick the main data plane. Runtime cards above show what the kernel is actually using."
+
+msgid "Preferred HNAT path for MediaTek mt798x on OpenWrt 24.10."
+msgstr "Preferred HNAT path for MediaTek mt798x on OpenWrt 24.10."
+
+msgid "Keep wired IPv6 sessions on the HNAT path when supported by the current driver."
+msgstr "Keep wired IPv6 sessions on the HNAT path when supported by the current driver."
+
+# New strings for proper i18n
+msgid "Flow offloading"
+msgstr "Flow offloading"
+
+msgid "Fast classifier"
+msgstr "Fast classifier"
+
+msgid "SFE connection manager"
+msgstr "SFE connection manager"
+
+msgid "Software routing/NAT offloading with broad compatibility, conservative acceleration depth."
+msgstr "Software routing/NAT offloading with broad compatibility, conservative acceleration depth."
+
+msgid "Fast classifier for SFE, suitable when bridge acceleration is needed."
+msgstr "Fast classifier for SFE, suitable when bridge acceleration is needed."
+
+msgid "Lightweight SFE connection manager with narrower platform coverage."
+msgstr "Lightweight SFE connection manager with narrower platform coverage."
+
+msgid "Primary wired acceleration path for mt798x under 24.10 with real-time PPE binding insight."
+msgstr "Primary wired acceleration path for mt798x under 24.10 with real-time PPE binding insight."
+
+msgid "No primary acceleration engine is currently enabled."
+msgstr "No primary acceleration engine is currently enabled."
+
+msgid "XT_FULLCONE_NAT (better compatibility)"
+msgstr "XT_FULLCONE_NAT (better compatibility)"
+
+msgid "Boardcom_FULLCONE_NAT (legacy compatibility)"
+msgstr "Boardcom_FULLCONE_NAT (legacy compatibility)"
+
+msgid "Follow main path"
+msgstr "Follow main path"
+
+msgid "IPv6 acceleration not available on this platform."
+msgstr "IPv6 acceleration not available on this platform."
+
+msgid "Fast classifier has IPv6 acceleration enabled."
+msgstr "Fast classifier has IPv6 acceleration enabled."
+
+msgid "Fast classifier can enable IPv6 acceleration independently."
+msgstr "Fast classifier can enable IPv6 acceleration independently."
+
+msgid "Wired IPv6 sessions can enter the HNAT path."
+msgstr "Wired IPv6 sessions can enter the HNAT path."
+
+msgid "Currently accelerating IPv4 only, IPv6 goes through the regular stack."
+msgstr "Currently accelerating IPv4 only, IPv6 goes through the regular stack."
+
+msgid "No independent IPv6 acceleration when the main path is disabled."
+msgstr "No independent IPv6 acceleration when the main path is disabled."
+
+msgid "The current engine does not have a separate IPv6 toggle."
+msgstr "The current engine does not have a separate IPv6 toggle."
+
+msgid "Current config"
+msgstr "Current config"
+
+msgid "Active in runtime"
+msgstr "Active in runtime"
+
+msgid "Switchable"
+msgstr "Switchable"
+
+msgid "PPE details"
+msgstr "PPE details"
+
+msgid "Bound sessions per PPE lane."
+msgstr "Bound sessions per PPE lane."
+
+msgid "Primary acceleration path reported by the kernel."
+msgstr "Primary acceleration path reported by the kernel."
+
+msgid "No active data path detected on this page."
+msgstr "No active data path detected on this page."
+
+msgid "Selected "
+msgstr "Selected "
+
+msgid ", but the runtime kernel shows "
+msgstr ", but the runtime kernel shows "
+
+msgid "."
+msgstr "."
+
+msgid "Runtime warnings: "
+msgstr "Runtime warnings: "
+
+msgid "MediaTek HNAT selected, but \"Enable ethernet HNAT\" is not enabled."
+msgstr "MediaTek HNAT selected, but \"Enable ethernet HNAT\" is not enabled."
+
+msgid "IPv6 not currently on HNAT path, enable if pure IPv6 scenarios require it."
+msgstr "IPv6 not currently on HNAT path, enable if pure IPv6 scenarios require it."
+
+msgid "Bridge acceleration enabled; review this if bridge-mode VPN has issues."
+msgstr "Bridge acceleration enabled; review this if bridge-mode VPN has issues."
+
+msgid "Current PPE capacity: "
+msgstr "Current PPE capacity: "
+
+msgid "TurboACC Console"
+msgstr "TurboACC Console"
+
+msgid "Real-time path"
+msgstr "Real-time path"
+
+msgid "PPE sessions"
+msgstr "PPE sessions"
+
+msgid "Config"
+msgstr "Config"
+
+msgid "Runtime"
+msgstr "Runtime"
+
+msgid "PPE"
+msgstr "PPE"
+
+msgid "NAT"
+msgstr "NAT"
+
+msgid "IPv6"
+msgstr "IPv6"
+
+msgid "TCP"
+msgstr "TCP"
+
+msgid "PPE lanes"
+msgstr "PPE lanes"
+
+msgid "Bind threshold"
+msgstr "Bind threshold"
+
+msgid "Switchable engines available"
+msgstr "Switchable engines available"
+
+msgid "Config profile"
+msgstr "Config profile"
+
+msgid "Not enabled"
+msgstr "Not enabled"
+
+msgid "Selected"
+msgstr "Selected"
+
+msgid "NAT / TCP policy"
+msgstr "NAT / TCP policy"
+
+msgid "PPE sessions"
+msgstr "PPE sessions"
+
+msgid "Engine pool"
+msgstr "Engine pool"
+
+msgid "Live telemetry"
+msgstr "Live telemetry"
+
+msgid "Wired data path"
+msgstr "Wired data path"
+
+msgid "Allowed"
+msgstr "Allowed"
+
+msgid "Pending"
+msgstr "Pending"
+
+msgid "MediaTek HNAT is the primary path to verify on mt798x 24.10."
+msgstr "MediaTek HNAT is the primary path to verify on mt798x 24.10."
+
+msgid "The current primary path determines most routing/NAT forwarding behavior."
+msgstr "The current primary path determines most routing/NAT forwarding behavior."
+
+msgid "Runtime engine"
+msgstr "Runtime engine"
+
+msgid "Bridge acceleration"
+msgstr "Bridge acceleration"
+
+msgid "Ethernet HNAT"
+msgstr "Ethernet HNAT"
+
+msgid "Priority check"
+msgstr "Priority check"
+
+msgid "Switch on demand"
+msgstr "Switch on demand"
+
+msgid "Gaming & NAT behavior"
+msgstr "Gaming & NAT behavior"
+
+msgid "Full cone NAT primarily affects multiplayer and port mapping, not the data path itself."
+msgstr "Full cone NAT primarily affects multiplayer and port mapping, not the data path itself."
+
+msgid "Runtime feedback"
+msgstr "Runtime feedback"
+
+msgid "Risk note"
+msgstr "Risk note"
+
+msgid "Multiplayer scenarios rely more on manual mapping"
+msgstr "Multiplayer scenarios rely more on manual mapping"
+
+msgid "Better suited for game consoles and P2P scenarios"
+msgstr "Better suited for game consoles and P2P scenarios"
+
+msgid "Experience"
+msgstr "Experience"
+
+msgid "IPv6 & advanced tuning"
+msgstr "IPv6 & advanced tuning"
+
+msgid "PPE overview"
+msgstr "PPE overview"
+
+msgid "Advanced"
+msgstr "Advanced"
+
+msgid "Path candidates"
+msgstr "Path candidates"
+
+msgid "Display \"Current config\" and \"Active in runtime\" side by side to avoid misjudging real state from config alone."
+msgstr "Display \"Current config\" and \"Active in runtime\" side by side to avoid misjudging real state from config alone."
+
+msgid "This reads actual kernel and rpcd responses, not just form config."
+msgstr "This reads actual kernel and rpcd responses, not just form config."
+
+msgid "Primary acceleration engine"
+msgstr "Primary acceleration engine"
+
+msgid "Runtime warnings"
+msgstr "Runtime warnings"
+
+msgid "None"
+msgstr "None"
+
+msgid "Full cone NAT"
+msgstr "Full cone NAT"
+
+msgid "IPv6 acceleration"
+msgstr "IPv6 acceleration"
+
+msgid "PPE lane count"
+msgstr "PPE lane count"
+
+msgid "Bound sessions"
+msgstr "Bound sessions"
+
+msgid "Current assessment"
+msgstr "Current assessment"
+
+msgid "Capability matrix"
+msgstr "Capability matrix"
+
+msgid "SFE"
+msgstr "SFE"
+
+msgid "HNAT"
+msgstr "HNAT"
+
+msgid "FullCone"
+msgstr "FullCone"
+
+msgid "Kernel IPv6 stack"
+msgstr "Kernel IPv6 stack"
+
+msgid "Status OK"
+msgstr "Status OK"
+
+msgid "Overall status"
+msgstr "Overall status"
+
+msgid "NAT / TCP"
+msgstr "NAT / TCP"
+
+msgid "Lanes"
+msgstr "Lanes"
+
+msgid "Threshold"
+msgstr "Threshold"
+
+msgid "Ethernet HNAT enabled"
+msgstr "Ethernet HNAT enabled"
+
+msgid "Ethernet HNAT not enabled"
+msgstr "Ethernet HNAT not enabled"
+
+msgid "Main path"
+msgstr "Main path"
+
+msgid "Runtime status"
+msgstr "Runtime status"
+
+msgid "Keeping only the most commonly used runtime status and live info."
+msgstr "Keeping only the most commonly used runtime status and live info."
+
+msgid "Notes"
+msgstr "Notes"
+
+msgid "Splitting config, runtime path, and key policies makes troubleshooting more direct."
+msgstr "Splitting config, runtime path, and key policies makes troubleshooting more direct."
+
+msgid "Runtime details"
+msgstr "Runtime details"
+
+msgid "Keeping commonly used runtime details to avoid information overload."
+msgstr "Keeping commonly used runtime details to avoid information overload."
+
+msgid "TurboACC Configuration"
+msgstr "TurboACC Configuration"
+
+msgid "Only commonly used options are shown; save & apply after changes."
+msgstr "Only commonly used options are shown; save & apply after changes."
+
+msgid "Main path"
+msgstr "Main path"
+
+msgid "Select the primary acceleration engine."
+msgstr "Select the primary acceleration engine."
+
+msgid "Experience tuning"
+msgstr "Experience tuning"
+
+msgid "NAT and TCP settings."
+msgstr "NAT and TCP settings."
+
+msgid "HNAT advanced"
+msgstr "HNAT advanced"
+
+msgid "MediaTek HNAT specific settings."
+msgstr "MediaTek HNAT specific settings."
+
+msgid "Choose the acceleration method to use."
+msgstr "Choose the acceleration method to use."
+
+msgid "Disable"
+msgstr "Disable"
+
+msgid "MediaTek HNAT (try after save)"
+msgstr "MediaTek HNAT (try after save)"
+
+msgid "Off"
+msgstr "Off"
+
+msgid "Disable acceleration offloading"
+msgstr "Disable acceleration offloading"
+
+msgid "No additional acceleration; network and Wi-Fi will run with system defaults."
+msgstr "No additional acceleration; network and Wi-Fi will run with system defaults."
+
+msgid "Legacy option"
+msgstr "Legacy option"
+
+msgid "Flow Offloading is a legacy option for backward compatibility."
+msgstr "Flow Offloading is a legacy option for backward compatibility."
+
+msgid "Kept for legacy configs; current firmware prefers HNAT, skips automatically if unsupported."
+msgstr "Kept for legacy configs; current firmware prefers HNAT, skips automatically if unsupported."
+
+msgid "Fast Classifier is a legacy option for backward compatibility."
+msgstr "Fast Classifier is a legacy option for backward compatibility."
+
+msgid "Current firmware doesn't provide Fast Classifier; it will be skipped if unavailable."
+msgstr "Current firmware doesn't provide Fast Classifier; it will be skipped if unavailable."
+
+msgid "SFE connection manager is a legacy option for backward compatibility."
+msgstr "SFE connection manager is a legacy option for backward compatibility."
+
+msgid "Current firmware doesn't provide SFE CM; it will be skipped if unavailable."
+msgstr "Current firmware doesn't provide SFE CM; it will be skipped if unavailable."
+
+msgid "Recommended"
+msgstr "Recommended"
+
+msgid "Pending load"
+msgstr "Pending load"
+
+msgid "MediaTek HNAT is available, suitable for MT7988 hardware acceleration."
+msgstr "MediaTek HNAT is available, suitable for MT7988 hardware acceleration."
+
+msgid "MediaTek HNAT not detected; will attempt to load after save."
+msgstr "MediaTek HNAT not detected; will attempt to load after save."
+
+msgid "MediaTek HNAT (PPE + WED + HNAT) bypasses CPU for direct hardware forwarding, recommended as the primary acceleration engine."
+msgstr "MediaTek HNAT (PPE + WED + HNAT) bypasses CPU for direct hardware forwarding, recommended as the primary acceleration engine."
+
+msgid "HNAT module not detected; will try loading after save, network unaffected if it fails."
+msgstr "HNAT module not detected; will try loading after save, network unaffected if it fails."
+
+msgid "Invalid primary acceleration engine"
+msgstr "Invalid primary acceleration engine"
+
+msgid "Enable hardware flow offloading"
+msgstr "Enable hardware flow offloading"
+
+msgid "Enable when hardware supports it."
+msgstr "Enable when hardware supports it."
+
+msgid "Enable bridge acceleration"
+msgstr "Enable bridge acceleration"
+
+msgid "May affect bridge-mode VPN."
+msgstr "May affect bridge-mode VPN."
+
+msgid "Enable IPv6 for Fast classifier"
+msgstr "Enable IPv6 for Fast classifier"
+
+msgid "Enable IPv6 acceleration."
+msgstr "Enable IPv6 acceleration."
+
+msgid "Enable for gaming or P2P needs."
+msgstr "Enable for gaming or P2P needs."
+
+msgid "TCP congestion control algorithm"
+msgstr "TCP congestion control algorithm"
+
+msgid "Choose TCP congestion control algorithm. BBR for high-bandwidth links, CUBIC is the kernel default, Reno for best compatibility."
+msgstr "Choose TCP congestion control algorithm. BBR for high-bandwidth links, CUBIC is the kernel default, Reno for best compatibility."
+
+msgid "Enable ethernet HNAT"
+msgstr "Enable ethernet HNAT"
+
+msgid "Enable MediaTek HNAT hook_toggle; turboacc service writes kernel toggle after save & apply."
+msgstr "Enable MediaTek HNAT hook_toggle; turboacc service writes kernel toggle after save & apply."
+
+msgid "Enable ethernet IPv6 HNAT"
+msgstr "Enable ethernet IPv6 HNAT"
+
+msgid "Enable IPv6 HNAT."
+msgstr "Enable IPv6 HNAT."
+
+msgid "HNAT bind rate threshold (pps)"
+msgstr "HNAT bind rate threshold (pps)"
+
+msgid "Default 30."
+msgstr "Default 30."
