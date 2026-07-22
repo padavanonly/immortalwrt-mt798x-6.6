@@ -1,19 +1,15 @@
-diff --git a/drivers/clk/mediatek/clk-mt7988-apmixed.c b/drivers/clk/mediatek/clk-mt7988-apmixed.c
-index baf95643..63d33a78 100644
 --- a/drivers/clk/mediatek/clk-mt7988-apmixed.c
 +++ b/drivers/clk/mediatek/clk-mt7988-apmixed.c
-@@ -111,4 +111,6 @@ static struct platform_driver clk_mt7988_apmixed_drv = {
+@@ -111,4 +111,6 @@ static struct platform_driver clk_mt7988
  	},
  };
  builtin_platform_driver(clk_mt7988_apmixed_drv);
 +
 +MODULE_DESCRIPTION("MediaTek MT7988 apmixedsys clocks driver");
  MODULE_LICENSE("GPL");
-diff --git a/drivers/clk/mediatek/clk-mt7988-infracfg.c b/drivers/clk/mediatek/clk-mt7988-infracfg.c
-index 14381430..6c2bebab 100644
 --- a/drivers/clk/mediatek/clk-mt7988-infracfg.c
 +++ b/drivers/clk/mediatek/clk-mt7988-infracfg.c
-@@ -196,10 +196,12 @@ static const struct mtk_gate infra_clks[] = {
+@@ -196,10 +196,12 @@ static const struct mtk_gate infra_clks[
  	GATE_INFRA2(CLK_INFRA_SPINFI, "infra_f_fspinfi", "spinfi_sel", 10),
  	GATE_INFRA2_FLAGS(CLK_INFRA_66M_NFI_HCK, "infra_hf_66m_nfi_hck", "sysaxi_sel", 11,
  			  CLK_IS_CRITICAL),
@@ -28,18 +24,16 @@ index 14381430..6c2bebab 100644
  	GATE_INFRA2(CLK_INFRA_66M_SPI1_HCK, "infra_hf_66m_spi1_hck", "sysaxi_sel", 16),
  	GATE_INFRA2(CLK_INFRA_66M_SPI2_HCK, "infra_hf_66m_spi2_hck", "sysaxi_sel", 17),
  	GATE_INFRA2(CLK_INFRA_66M_FLASHIF_AXI, "infra_hf_66m_flashif_axi", "sysaxi_sel", 18),
-@@ -293,4 +295,6 @@ static struct platform_driver clk_mt7988_infracfg_drv = {
+@@ -293,4 +295,6 @@ static struct platform_driver clk_mt7988
  	.remove_new = mtk_clk_simple_remove,
  };
  module_platform_driver(clk_mt7988_infracfg_drv);
 +
 +MODULE_DESCRIPTION("MediaTek MT7988 infracfg clocks driver");
  MODULE_LICENSE("GPL");
-diff --git a/drivers/clk/mediatek/clk-mt7988-topckgen.c b/drivers/clk/mediatek/clk-mt7988-topckgen.c
-index 760f8e0d..86a22a2b 100644
 --- a/drivers/clk/mediatek/clk-mt7988-topckgen.c
 +++ b/drivers/clk/mediatek/clk-mt7988-topckgen.c
-@@ -225,15 +225,15 @@ static const struct mtk_mux top_muxes[] = {
+@@ -225,15 +225,15 @@ static const struct mtk_mux top_muxes[]
  				   0x0d0, 0x0d4, 0x0d8, 0, 2, 7, 0x1C4, 21, CLK_IS_CRITICAL),
  	MUX_GATE_CLR_SET_UPD_FLAGS(CLK_TOP_INFRA_F26M_SEL, "csw_infra_f26m_sel", sspxtp_parents,
  				   0x0d0, 0x0d4, 0x0d8, 8, 1, 15, 0x1C4, 22, CLK_IS_CRITICAL),
@@ -63,7 +57,7 @@ index 760f8e0d..86a22a2b 100644
  	MUX_GATE_CLR_SET_UPD(CLK_TOP_DA_XTP_GLB_P0_SEL, "da_xtp_glb_p0_sel", da_xtp_glb_p0_parents,
  			     0x0e0, 0x0e4, 0x0e8, 16, 1, 23, 0x1C4, 27),
  	MUX_GATE_CLR_SET_UPD(CLK_TOP_DA_XTP_GLB_P1_SEL, "da_xtp_glb_p1_sel", da_xtp_glb_p0_parents,
-@@ -322,4 +322,6 @@ static struct platform_driver clk_mt7988_topckgen_drv = {
+@@ -322,4 +322,6 @@ static struct platform_driver clk_mt7988
  	},
  };
  module_platform_driver(clk_mt7988_topckgen_drv);

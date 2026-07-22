@@ -92,7 +92,7 @@
  #ifdef CONFIG_LED_TRIGGER_PHY
  	struct phy_led_trigger *phy_led_triggers;
  	unsigned int phy_num_led_triggers;
-@@ -1289,6 +1288,16 @@ void of_set_phy_eee_broken(struct phy_de
+@@ -1286,6 +1285,16 @@ void of_set_phy_eee_broken(struct phy_de
  int phy_speed_down_core(struct phy_device *phydev);
  
  /**

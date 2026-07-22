@@ -7,11 +7,9 @@ Subject: [PATCH 9/9] mtkhnat-ipv6-fix-pskb-expand-head-limitation.patch
  net/core/skbuff.c | 4 ++++
  1 file changed, 4 insertions(+)
 
-diff --git a/net/core/skbuff.c b/net/core/skbuff.c
-index 886fad128..da6cae59c 100644
 --- a/net/core/skbuff.c
 +++ b/net/core/skbuff.c
-@@ -73,6 +73,7 @@
+@@ -76,6 +76,7 @@
  #include <net/mctp.h>
  #include <net/page_pool/helpers.h>
  #include <net/dropreason.h>
@@ -19,7 +17,7 @@ index 886fad128..da6cae59c 100644
  
  #include <linux/uaccess.h>
  #include <trace/events/skb.h>
-@@ -1871,6 +1872,9 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
+@@ -2127,6 +2128,9 @@ int pskb_expand_head(struct sk_buff *skb
  	       skb_shinfo(skb),
  	       offsetof(struct skb_shared_info, frags[skb_shinfo(skb)->nr_frags]));
  
@@ -29,6 +27,3 @@ index 886fad128..da6cae59c 100644
  	/*
  	 * if shinfo is shared we must drop the old head gracefully, but if it
  	 * is not we can just drop the old head and let the existing refcount
--- 
-2.18.0
-

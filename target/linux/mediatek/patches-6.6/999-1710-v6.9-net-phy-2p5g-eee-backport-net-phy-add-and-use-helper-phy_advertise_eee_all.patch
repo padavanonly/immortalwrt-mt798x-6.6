@@ -1,6 +1,6 @@
 --- a/drivers/net/phy/phy_device.c
 +++ b/drivers/net/phy/phy_device.c
-@@ -2895,6 +2895,22 @@ void phy_advertise_supported(struct phy_
+@@ -2897,6 +2897,22 @@ void phy_advertise_supported(struct phy_
  EXPORT_SYMBOL(phy_advertise_supported);
  
  /**
@@ -25,7 +25,7 @@
   *
 --- a/include/linux/phy.h
 +++ b/include/linux/phy.h
-@@ -2009,6 +2009,7 @@ int phy_get_rate_matching(struct phy_dev
+@@ -2006,6 +2006,7 @@ int phy_get_rate_matching(struct phy_dev
  void phy_set_max_speed(struct phy_device *phydev, u32 max_speed);
  void phy_remove_link_mode(struct phy_device *phydev, u32 link_mode);
  void phy_advertise_supported(struct phy_device *phydev);

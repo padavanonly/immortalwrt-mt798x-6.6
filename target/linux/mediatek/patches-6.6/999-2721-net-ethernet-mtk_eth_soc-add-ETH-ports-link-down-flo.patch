@@ -16,11 +16,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  5 ++
  2 files changed, 75 insertions(+), 3 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 3ac9ae5..d179a04 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -5147,8 +5147,48 @@ static int mtk_siocdevprivate(struct net_device *dev, struct ifreq *ifr,
+@@ -5154,8 +5154,48 @@ static int mtk_siocdevprivate(struct net
  	return mtk_do_priv_ioctl(dev, ifr, cmd);
  }
  
@@ -69,7 +67,7 @@ index 3ac9ae5..d179a04 100644
  	u32 val;
  	int i;
  
-@@ -5167,9 +5207,23 @@ static void mtk_prepare_for_reset(struct mtk_eth *eth)
+@@ -5174,9 +5214,23 @@ static void mtk_prepare_for_reset(struct
  	mtk_w32(eth, 0, MTK_FE_INT_ENABLE);
  
  	/* force link down GMAC */
@@ -96,7 +94,7 @@ index 3ac9ae5..d179a04 100644
  	}
  }
  
-@@ -5217,6 +5271,11 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -5224,6 +5278,11 @@ static void mtk_pending_work(struct work
  				    "Driver up/down cycle failed\n");
  			dev_close(eth->netdev[i]);
  		}
@@ -108,7 +106,7 @@ index 3ac9ae5..d179a04 100644
  	}
  
  	clear_bit(MTK_RESETTING, &eth->state);
-@@ -5884,6 +5943,11 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+@@ -5964,6 +6023,11 @@ static int mtk_add_mac(struct mtk_eth *e
  		}
  	}
  
@@ -120,7 +118,7 @@ index 3ac9ae5..d179a04 100644
  	memset(mac->hwlro_ip, 0, sizeof(mac->hwlro_ip));
  	mac->hwlro_ip_cnt = 0;
  
-@@ -6504,6 +6568,9 @@ static int mtk_remove(struct platform_device *pdev)
+@@ -6595,6 +6659,9 @@ static int mtk_remove(struct platform_de
  	struct mtk_mac *mac;
  	int i;
  
@@ -130,11 +128,9 @@ index 3ac9ae5..d179a04 100644
  	/* stop all devices to make sure that dma is properly shut down */
  	for (i = 0; i < MTK_MAX_DEVS; i++) {
  		if (!eth->netdev[i])
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 8c26f03..b022e71 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -768,6 +768,10 @@
+@@ -771,6 +771,10 @@
  #define MT7628_SDM_MAC_ADRL	(MT7628_SDM_OFFSET + 0x0c)
  #define MT7628_SDM_MAC_ADRH	(MT7628_SDM_OFFSET + 0x10)
  
@@ -145,7 +141,7 @@ index 8c26f03..b022e71 100644
  /* Counter / stat register */
  #define MT7628_SDM_TPCNT	(MT7628_SDM_OFFSET + 0x100)
  #define MT7628_SDM_TBCNT	(MT7628_SDM_OFFSET + 0x104)
-@@ -1595,6 +1599,7 @@ struct mtk_eth {
+@@ -1558,6 +1562,7 @@ struct mtk_eth {
  	struct device			*dev;
  	struct device			*dma_dev;
  	void __iomem			*base;
@@ -153,6 +149,3 @@ index 8c26f03..b022e71 100644
  	void				*sram_base;
  	spinlock_t			page_lock;
  	spinlock_t			tx_irq_lock;
--- 
-2.45.2
-

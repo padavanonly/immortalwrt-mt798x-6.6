@@ -7,11 +7,9 @@ Subject: [PATCH 5/6] Fix Eagle mlo tx T.P too low issue
  drivers/net/ethernet/mediatek/mtk_wed.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
-index ff86f45..e0232f9 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
-@@ -2134,7 +2134,7 @@ mtk_wed_dma_enable(struct mtk_wed_device *dev)
+@@ -2134,7 +2134,7 @@ mtk_wed_dma_enable(struct mtk_wed_device
  			MTK_WED_WDMA_RX_PREF_DDONE2_EN);
  		wed_set(dev, MTK_WED_WDMA_RX_PREF_CFG, MTK_WED_WDMA_RX_PREF_EN);
  
@@ -20,6 +18,3 @@ index ff86f45..e0232f9 100644
  			MTK_WED_WPDMA_GLO_CFG_TX_DDONE_CHK_LAST);
  		wed_set(dev, MTK_WED_WPDMA_GLO_CFG,
  			MTK_WED_WPDMA_GLO_CFG_TX_DDONE_CHK |
--- 
-2.45.2
-

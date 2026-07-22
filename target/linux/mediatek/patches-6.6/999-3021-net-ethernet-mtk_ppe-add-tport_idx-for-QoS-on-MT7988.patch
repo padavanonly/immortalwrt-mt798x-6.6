@@ -12,11 +12,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_ppe.h | 4 ++++
  2 files changed, 10 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index 1557b35..5b91e0f 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -647,6 +647,12 @@ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+@@ -646,6 +646,12 @@ int mtk_foe_entry_set_queue(struct mtk_e
  		*ib2 |= MTK_FOE_IB2_PSE_QOS;
  	}
  
@@ -29,8 +27,6 @@ index 1557b35..5b91e0f 100644
  	return 0;
  }
  
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
-index 7bfb6f6..1077695 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
 @@ -97,6 +97,8 @@ enum {
@@ -51,6 +47,3 @@ index 7bfb6f6..1077695 100644
  };
  
  /* software-only entry type */
--- 
-2.45.2
-

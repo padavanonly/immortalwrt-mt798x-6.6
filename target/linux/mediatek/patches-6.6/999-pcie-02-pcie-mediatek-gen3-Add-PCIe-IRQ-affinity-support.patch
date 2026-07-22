@@ -14,8 +14,6 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
  drivers/pci/controller/pcie-mediatek-gen3.c | 270 ++++++++++++++++++--
  1 file changed, 242 insertions(+), 28 deletions(-)
 
-diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
-index e7e92d1..49bb70f 100644
 --- a/drivers/pci/controller/pcie-mediatek-gen3.c
 +++ b/drivers/pci/controller/pcie-mediatek-gen3.c
 @@ -52,6 +52,7 @@
@@ -40,11 +38,10 @@ index e7e92d1..49bb70f 100644
  
  #define PCIE_MSI_SET_ADDR_HI_BASE	0xc80
  #define PCIE_MSI_SET_ADDR_HI_OFFSET	0x04
-@@ -100,16 +108,42 @@
- #define PCIE_ATR_TLP_TYPE_MEM		PCIE_ATR_TLP_TYPE(0)
+@@ -101,15 +109,41 @@
  #define PCIE_ATR_TLP_TYPE_IO		PCIE_ATR_TLP_TYPE(2)
  
-+/**
+ /**
 + * enum mtk_msi_group_type - PCIe controller MSI group type
 + * @group0_merge_msi: all MSI are merged to group0
 + * @group1_direct_msi: all MSI have independent IRQs via group1
@@ -56,7 +53,7 @@ index e7e92d1..49bb70f 100644
 +	group_binding_msi,
 +};
 +
- /**
++/**
   * struct mtk_msi_set - MSI information for each set
   * @base: IO mapped register base
 + * @enable: IO mapped enable register address
@@ -116,7 +113,7 @@ index e7e92d1..49bb70f 100644
  	struct mutex lock;
  	DECLARE_BITMAP(msi_irq_in_use, PCIE_MSI_IRQS_NUM);
  };
-@@ -327,14 +367,23 @@ static int mtk_pcie_set_trans_table(struct mtk_gen3_pcie *pcie,
+@@ -327,14 +367,23 @@ static int mtk_pcie_set_trans_table(stru
  
  static void mtk_pcie_enable_msi(struct mtk_gen3_pcie *pcie)
  {
@@ -142,7 +139,7 @@ index e7e92d1..49bb70f 100644
  		msi_set->msg_addr = pcie->reg_base + PCIE_MSI_SET_BASE_REG +
  				    i * PCIE_MSI_SET_OFFSET;
  
-@@ -462,10 +511,53 @@ static int mtk_pcie_startup_port(struct mtk_gen3_pcie *pcie)
+@@ -462,10 +511,53 @@ static int mtk_pcie_startup_port(struct
  	return 0;
  }
  
@@ -198,7 +195,7 @@ index e7e92d1..49bb70f 100644
  }
  
  static void mtk_pcie_msi_irq_mask(struct irq_data *data)
-@@ -522,15 +614,19 @@ static void mtk_msi_bottom_irq_mask(struct irq_data *data)
+@@ -522,15 +614,19 @@ static void mtk_msi_bottom_irq_mask(stru
  {
  	struct mtk_msi_set *msi_set = irq_data_get_irq_chip_data(data);
  	struct mtk_gen3_pcie *pcie = data->domain->host_data;
@@ -220,7 +217,7 @@ index e7e92d1..49bb70f 100644
  	raw_spin_unlock_irqrestore(&pcie->irq_lock, flags);
  }
  
-@@ -538,15 +634,19 @@ static void mtk_msi_bottom_irq_unmask(struct irq_data *data)
+@@ -538,15 +634,19 @@ static void mtk_msi_bottom_irq_unmask(st
  {
  	struct mtk_msi_set *msi_set = irq_data_get_irq_chip_data(data);
  	struct mtk_gen3_pcie *pcie = data->domain->host_data;
@@ -242,7 +239,7 @@ index e7e92d1..49bb70f 100644
  	raw_spin_unlock_irqrestore(&pcie->irq_lock, flags);
  }
  
-@@ -555,7 +655,7 @@ static struct irq_chip mtk_msi_bottom_irq_chip = {
+@@ -555,7 +655,7 @@ static struct irq_chip mtk_msi_bottom_ir
  	.irq_mask		= mtk_msi_bottom_irq_mask,
  	.irq_unmask		= mtk_msi_bottom_irq_unmask,
  	.irq_compose_msi_msg	= mtk_compose_msi_msg,
@@ -251,7 +248,7 @@ index e7e92d1..49bb70f 100644
  	.name			= "MSI",
  };
  
-@@ -652,11 +752,28 @@ static void mtk_intx_eoi(struct irq_data *data)
+@@ -652,11 +752,28 @@ static void mtk_intx_eoi(struct irq_data
  	writel_relaxed(BIT(hwirq), pcie->base + PCIE_INT_STATUS_REG);
  }
  
@@ -281,7 +278,7 @@ index e7e92d1..49bb70f 100644
  	.name			= "INTx",
  };
  
-@@ -730,7 +847,10 @@ static int mtk_pcie_init_irq_domains(struct mtk_gen3_pcie *pcie)
+@@ -730,7 +847,10 @@ out_put_node:
  
  static void mtk_pcie_irq_teardown(struct mtk_gen3_pcie *pcie)
  {
@@ -293,7 +290,7 @@ index e7e92d1..49bb70f 100644
  
  	if (pcie->intx_domain)
  		irq_domain_remove(pcie->intx_domain);
-@@ -741,16 +861,26 @@ static void mtk_pcie_irq_teardown(struct mtk_gen3_pcie *pcie)
+@@ -741,16 +861,26 @@ static void mtk_pcie_irq_teardown(struct
  	if (pcie->msi_bottom_domain)
  		irq_domain_remove(pcie->msi_bottom_domain);
  
@@ -323,7 +320,7 @@ index e7e92d1..49bb70f 100644
  
  	do {
  		msi_status = readl_relaxed(msi_set->base +
-@@ -781,22 +911,91 @@ static void mtk_pcie_irq_handler(struct irq_desc *desc)
+@@ -781,22 +911,91 @@ static void mtk_pcie_irq_handler(struct
  		generic_handle_domain_irq(pcie->intx_domain,
  					  irq_bit - PCIE_INTX_SHIFT);
  
@@ -336,7 +333,8 @@ index e7e92d1..49bb70f 100644
 +		for_each_set_bit_from(irq_bit, &status, PCIE_MSI_SET_NUM +
 +				      PCIE_MSI_SHIFT) {
 +			mtk_pcie_msi_handler(desc, irq_bit - PCIE_MSI_SHIFT);
-+
+ 
+-		writel_relaxed(BIT(irq_bit), pcie->base + PCIE_INT_STATUS_REG);
 +			writel_relaxed(BIT(irq_bit), pcie->base +
 +				       PCIE_INT_STATUS_REG);
 +		}
@@ -344,8 +342,7 @@ index e7e92d1..49bb70f 100644
 +		for (irq_bit = PCIE_MSI_SHIFT; irq_bit < (PCIE_MSI_SET_NUM +
 +		     PCIE_MSI_SHIFT); irq_bit++) {
 +			mtk_pcie_msi_handler(desc, irq_bit - PCIE_MSI_SHIFT);
- 
--		writel_relaxed(BIT(irq_bit), pcie->base + PCIE_INT_STATUS_REG);
++
 +			writel_relaxed(BIT(irq_bit), pcie->base +
 +				       PCIE_INT_STATUS_REG);
 +		}
@@ -421,7 +418,7 @@ index e7e92d1..49bb70f 100644
  
  	err = mtk_pcie_init_irq_domains(pcie);
  	if (err)
-@@ -806,7 +1005,14 @@ static int mtk_pcie_setup_irq(struct mtk_gen3_pcie *pcie)
+@@ -806,7 +1005,14 @@ static int mtk_pcie_setup_irq(struct mtk
  	if (pcie->irq < 0)
  		return pcie->irq;
  
@@ -437,7 +434,7 @@ index e7e92d1..49bb70f 100644
  
  	return 0;
  }
-@@ -866,6 +1072,12 @@ static int mtk_pcie_parse_port(struct mtk_gen3_pcie *pcie)
+@@ -866,6 +1072,12 @@ static int mtk_pcie_parse_port(struct mt
  	if (pcie->max_link_width < 0)
  		dev_err(dev, "failed to get max link width\n");
  
@@ -450,7 +447,7 @@ index e7e92d1..49bb70f 100644
  	return 0;
  }
  
-@@ -1016,7 +1228,7 @@ static void mtk_pcie_remove(struct platform_device *pdev)
+@@ -1016,7 +1228,7 @@ static void mtk_pcie_remove(struct platf
  
  static void mtk_pcie_irq_save(struct mtk_gen3_pcie *pcie)
  {
@@ -459,7 +456,7 @@ index e7e92d1..49bb70f 100644
  
  	raw_spin_lock(&pcie->irq_lock);
  
-@@ -1025,8 +1237,9 @@ static void mtk_pcie_irq_save(struct mtk_gen3_pcie *pcie)
+@@ -1025,8 +1237,9 @@ static void mtk_pcie_irq_save(struct mtk
  	for (i = 0; i < PCIE_MSI_SET_NUM; i++) {
  		struct mtk_msi_set *msi_set = &pcie->msi_sets[i];
  
@@ -471,7 +468,7 @@ index e7e92d1..49bb70f 100644
  	}
  
  	raw_spin_unlock(&pcie->irq_lock);
-@@ -1034,7 +1247,7 @@ static void mtk_pcie_irq_save(struct mtk_gen3_pcie *pcie)
+@@ -1034,7 +1247,7 @@ static void mtk_pcie_irq_save(struct mtk
  
  static void mtk_pcie_irq_restore(struct mtk_gen3_pcie *pcie)
  {
@@ -480,7 +477,7 @@ index e7e92d1..49bb70f 100644
  
  	raw_spin_lock(&pcie->irq_lock);
  
-@@ -1043,8 +1256,9 @@ static void mtk_pcie_irq_restore(struct mtk_gen3_pcie *pcie)
+@@ -1043,8 +1256,9 @@ static void mtk_pcie_irq_restore(struct
  	for (i = 0; i < PCIE_MSI_SET_NUM; i++) {
  		struct mtk_msi_set *msi_set = &pcie->msi_sets[i];
  
@@ -492,6 +489,3 @@ index e7e92d1..49bb70f 100644
  	}
  
  	raw_spin_unlock(&pcie->irq_lock);
--- 
-2.46.0
-

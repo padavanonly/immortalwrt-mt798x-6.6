@@ -14,7 +14,7 @@ Signed-off-by: SkyLake.Huang <skylake.huang@mediatek.com>
 
 --- a/drivers/net/phy/mediatek/mtk-phy-lib.c
 +++ b/drivers/net/phy/mediatek/mtk-phy-lib.c
-@@ -127,29 +127,33 @@ int mtk_phy_led_hw_ctrl_set(struct phy_d
+@@ -121,29 +121,33 @@ int mtk_phy_led_hw_ctrl_set(struct phy_d
  		on |= MTK_PHY_LED_ON_LINK2500;
  
  	if (rules & BIT(TRIGGER_NETDEV_RX)) {

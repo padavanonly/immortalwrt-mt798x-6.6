@@ -1,6 +1,5 @@
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
---- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c	2025-08-29 01:35:54.795005677 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c	2025-11-08 01:58:18.254001301 +0800
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
 @@ -29,6 +29,7 @@
  
  #include "mtk_eth_soc.h"
@@ -9,7 +8,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/
  #include "mtk_wed_regs.h"
  
  enum mt753x_presence {
-@@ -795,19 +796,30 @@
+@@ -795,19 +796,30 @@ static ssize_t mtketh_debugfs_reset(stru
  		break;
  	case 1:
  		if (atomic_read(&eth->reset.force) && !test_bit(MTK_RESETTING, &eth->state))
@@ -40,10 +39,9 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/
  		break;
  	}
  
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_reset.c b/drivers/net/ethernet/mediatek/mtk_eth_reset.c
---- a/drivers/net/ethernet/mediatek/mtk_eth_reset.c	2025-08-29 01:35:54.795005677 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.c	2025-11-08 02:22:56.678002006 +0800
-@@ -86,3 +86,13 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.c
+@@ -86,3 +86,13 @@ int mtk_eth_netdevice_event(struct notif
  
  	return NOTIFY_DONE;
  }
@@ -57,10 +55,9 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_reset.c b/drivers/net/etherne
 +
 +	return 0;
 +}
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_reset.h b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
---- a/drivers/net/ethernet/mediatek/mtk_eth_reset.h	2025-08-29 01:35:54.795005677 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.h	2025-11-08 02:23:13.873002014 +0800
-@@ -29,6 +29,6 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+@@ -29,6 +29,6 @@ extern int mtk_wifi_num;
  extern u32 mtk_reset_flag;
  extern bool mtk_stop_fail;
  
@@ -69,10 +66,9 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_reset.h b/drivers/net/etherne
 +void mtk_set_pse_drop(u32 config);
 +int mtk_eth_netdevice_event_init(struct mtk_eth *eth);
  #endif		/* MTK_ETH_RESET_H */
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
---- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-11-08 01:28:32.153000449 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-11-08 02:23:24.485002019 +0800
-@@ -4749,7 +4749,7 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -4749,7 +4749,7 @@ static void mtk_hw_warm_reset(struct mtk
  			rst_mask |= RSTCTRL_PPE1_V3;
  		if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE2))
  			rst_mask |= RSTCTRL_PPE2;
@@ -81,7 +77,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  		rst_mask |= RSTCTRL_WDMA0 | RSTCTRL_WDMA1 | RSTCTRL_WDMA2;
  	} else if (mtk_is_netsys_v2_or_greater(eth)) {
  		rst_mask = RSTCTRL_ETH | RSTCTRL_PPE0_V2;
-@@ -4854,6 +4854,7 @@
+@@ -4854,6 +4854,7 @@ static bool mtk_hw_check_dma_hang(struct
  		    wtx_busy && cdm_busy && oq_free) {
  			if (++eth->reset.wdma_hang_count[i] > 2) {
  				dev_warn(eth->dev, "detect WDMA%d Tx hang!\n", i);
@@ -89,7 +85,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  				eth->reset.wdma_hang_count[i] = 0;
  				ret = true;
  			}
-@@ -4878,6 +4879,7 @@
+@@ -4878,6 +4879,7 @@ static bool mtk_hw_check_dma_hang(struct
  	if (!qpse_fc && qfsm_hang && qfwd_hang) {
  		if (++eth->reset.qdma_hang_count > 2) {
  			dev_warn(eth->dev, "detect QDMA Tx hang !\n");
@@ -97,7 +93,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  			eth->reset.qdma_hang_count = 0;
  			ret = true;
  		}
-@@ -4908,6 +4910,7 @@
+@@ -4908,6 +4910,7 @@ static bool mtk_hw_check_dma_hang(struct
  		if (oq_hang && gmac_tx && (txgp_cnt == eth->reset.gdm_txgp_cnt[i])) {
  			if (++eth->reset.mac_tx_hang_count[i] > 2) {
  				dev_warn(eth->dev, "detect GMAC%d Tx hang!\n", i + 1);
@@ -105,7 +101,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  				eth->reset.mac_tx_hang_count[i] = 0;
  				ret = true;
  			}
-@@ -4922,6 +4925,7 @@
+@@ -4922,6 +4925,7 @@ static bool mtk_hw_check_dma_hang(struct
  		if (gmac_rx && (rxgp_cnt == eth->reset.gdm_rxgp_cnt[i])) {
  			if (++eth->reset.mac_rx_hang_count[i] > 2) {
  				dev_warn(eth->dev, "detect GMAC%d Rx hang!\n", i + 1);
@@ -113,7 +109,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  				eth->reset.mac_rx_hang_count[i] = 0;
  				ret = true;
  			}
-@@ -4939,6 +4943,7 @@
+@@ -4939,6 +4943,7 @@ skip_gmac:
  		    ((gdm_txfsm == eth->reset.gdm_txfsm[i]) && (gdm_txfsm == 0x1033))) {
  			if (++eth->reset.gdm_tx_hang_count[i] > 2) {
  				dev_warn(eth->dev, "detect GDM%d Tx hang!\n", i + 1);
@@ -121,7 +117,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  				eth->reset.gdm_tx_hang_count[i] = 0;
  				ret = true;
  			}
-@@ -4962,6 +4967,7 @@
+@@ -4962,6 +4967,7 @@ skip_gmac:
  		     (gdm_rxfsm == 0x23 || gdm_rxfsm == 0x24))) {
  			if (++eth->reset.gdm_rx_hang_count[i] > 2) {
  				dev_warn(eth->dev, "detect GDM%d Rx hang!\n", i + 1);
@@ -129,7 +125,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  				eth->reset.gdm_rx_hang_count[i] = 0;
  				ret = true;
  			}
-@@ -4992,6 +4998,7 @@
+@@ -4992,6 +4998,7 @@ skip_gmac:
  	    ((cdma_rxfsm != 0) && (cdma_rxfsm != eth->reset.cdma_rxfsm))) {
  		if (++eth->reset.adma_hang_count > 2) {
  			dev_warn(eth->dev, "detect ADMA Rx hang!\n");
@@ -137,7 +133,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  			eth->reset.adma_hang_count = 0;
  			ret = true;
  		}
-@@ -5478,7 +5485,38 @@
+@@ -5478,7 +5485,38 @@ static void mtk_pending_work(struct work
  
  	mtk_save_qdma_cfg(eth);
  	mtk_prepare_for_reset(eth);
@@ -177,7 +173,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  	/* Run again reset preliminary configuration in order to avoid any
  	 * possible race during FE reset since it can run releasing RTNL lock.
  	 */
-@@ -5517,6 +5555,30 @@
+@@ -5517,6 +5555,30 @@ static void mtk_pending_work(struct work
  			mt7988_esw_force_link(eth, true);
  	}
  
@@ -208,7 +204,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  	clear_bit(MTK_RESETTING, &eth->state);
  
  	mtk_wed_fe_reset_complete();
-@@ -6888,8 +6950,7 @@
+@@ -6888,8 +6950,7 @@ static int mtk_probe(struct platform_dev
  
  	platform_set_drvdata(pdev, eth);
  #if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
@@ -218,10 +214,9 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  #endif
  	schedule_delayed_work(&eth->reset.monitor_work,
  			      MTK_DMA_MONITOR_TIMEOUT);
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
---- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-11-08 01:28:32.151000449 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-11-08 02:18:35.475001881 +0800
-@@ -1726,6 +1726,7 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1726,6 +1726,7 @@ struct mtk_eth {
  		struct delayed_work monitor_work;
  		struct notifier_block netdevice_notifier;
  		atomic_t force;

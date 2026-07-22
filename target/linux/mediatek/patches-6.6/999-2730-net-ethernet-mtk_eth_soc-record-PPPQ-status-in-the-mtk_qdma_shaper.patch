@@ -10,11 +10,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.h | 18 ++++++++
  2 files changed, 57 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index d504a5c..de45ec7 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -858,6 +858,40 @@ static void mtk_mac_link_down(struct phylink_config *config, unsigned int mode,
+@@ -895,6 +895,40 @@ static void mtk_mac_link_down(struct phy
  	}
  }
  
@@ -55,7 +53,7 @@ index d504a5c..de45ec7 100644
  static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
  				int speed)
  {
-@@ -968,6 +1002,10 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+@@ -1005,6 +1039,10 @@ static void mtk_set_queue_speed(struct m
  		}
  	}
  
@@ -66,7 +64,7 @@ index d504a5c..de45ec7 100644
  	ofs = MTK_QTX_OFFSET * idx;
  	mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
  }
-@@ -6352,6 +6390,7 @@ static int mtk_probe(struct platform_device *pdev)
+@@ -6434,6 +6472,7 @@ static int mtk_probe(struct platform_dev
  	spin_lock_init(&eth->tx_irq_lock);
  	spin_lock_init(&eth->rx_irq_lock);
  	spin_lock_init(&eth->dim_lock);
@@ -74,8 +72,6 @@ index d504a5c..de45ec7 100644
  
  	eth->rx_dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
  	INIT_WORK(&eth->rx_dim.work, mtk_dim_rx);
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 81979d2..b247e73 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 @@ -27,6 +27,7 @@
@@ -86,7 +82,7 @@ index 81979d2..b247e73 100644
  #define MTK_QDMA_PAGE_SIZE	2048
  #define MTK_MAX_RX_LENGTH	1536
  #define MTK_MAX_RX_LENGTH_2K	2048
-@@ -1247,6 +1247,20 @@ struct mtk_qdma_params {
+@@ -1211,6 +1212,20 @@ struct mtk_qdma_params {
  	u32	tx_sch[2];
  };
  
@@ -107,7 +103,7 @@ index 81979d2..b247e73 100644
  enum mkt_eth_capabilities {
  	MTK_RGMII_BIT = 0,
  	MTK_TRGMII_BIT,
-@@ -1657,6 +1671,7 @@ struct mtk_eth {
+@@ -1624,6 +1639,7 @@ struct mtk_eth {
  	struct mtk_napi			rx_napi[MTK_RX_NAPI_NUM];
  	struct mtk_rss_params		rss_params;
  	struct mtk_qdma_params		qdma_params;
@@ -115,7 +111,7 @@ index 81979d2..b247e73 100644
  	struct clk			*clks[MTK_CLK_MAX];
  
  	struct mii_bus			*mii_bus;
-@@ -1990,5 +1990,7 @@ int mtk_flow_offload_cmd(struct mtk_eth *eth, struct flow_cls_offload *cls,
+@@ -1873,5 +1889,7 @@ int mtk_flow_offload_cmd(struct mtk_eth
  void mtk_flow_offload_cleanup(struct mtk_eth *eth, struct list_head *list);
  void mtk_eth_set_dma_device(struct mtk_eth *eth, struct device *dma_dev);
  
@@ -123,6 +119,3 @@ index 81979d2..b247e73 100644
 +void mtk_shaper_update_refcnt(struct mtk_eth *eth, int idx, bool add);
  
  #endif /* MTK_ETH_H */
--- 
-2.45.2
-

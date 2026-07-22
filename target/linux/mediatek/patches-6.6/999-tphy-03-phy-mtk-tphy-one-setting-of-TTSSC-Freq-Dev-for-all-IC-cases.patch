@@ -8,11 +8,9 @@ Subject: [PATCH 3/4]
  drivers/phy/mediatek/phy-mtk-tphy.c | 27 +++++++++++++++++++++++++++
  1 file changed, 27 insertions(+)
 
-diff --git a/drivers/phy/mediatek/phy-mtk-tphy.c b/drivers/phy/mediatek/phy-mtk-tphy.c
-index 181a1960128c..0288e8d9a50b 100644
 --- a/drivers/phy/mediatek/phy-mtk-tphy.c
 +++ b/drivers/phy/mediatek/phy-mtk-tphy.c
-@@ -200,6 +200,12 @@
+@@ -202,6 +202,12 @@
  #define U3P_U3_PHYD_RXDET2		0x12c
  #define P3D_RG_RXDET_STB2_SET_P3	GENMASK(8, 0)
  
@@ -25,7 +23,7 @@ index 181a1960128c..0288e8d9a50b 100644
  #define U3P_SPLLC_XTALCTL3		0x018
  #define XC3_RG_U3_XTAL_RX_PWD		BIT(9)
  #define XC3_RG_U3_FRC_XTAL_RX_PWD	BIT(8)
-@@ -344,6 +350,8 @@ struct mtk_phy_instance {
+@@ -349,6 +355,8 @@ struct mtk_phy_instance {
  	int discth;
  	int pre_emphasis;
  	bool bc12_en;
@@ -34,7 +32,7 @@ index 181a1960128c..0288e8d9a50b 100644
  };
  
  struct mtk_tphy {
-@@ -807,6 +815,12 @@ static void u3_phy_instance_init(struct mtk_tphy *tphy,
+@@ -813,6 +821,12 @@ static void u3_phy_instance_init(struct
  
  	mtk_phy_update_field(phyd + U3P_U3_PHYD_RXDET2, P3D_RG_RXDET_STB2_SET_P3, 0x10);
  
@@ -47,7 +45,7 @@ index 181a1960128c..0288e8d9a50b 100644
  	dev_dbg(tphy->dev, "%s(%d)\n", __func__, instance->index);
  }
  
-@@ -1167,6 +1181,19 @@ static void phy_parse_property(struct mtk_tphy *tphy,
+@@ -1177,6 +1191,19 @@ static void phy_parse_property(struct mt
  {
  	struct device *dev = &instance->phy->dev;
  
@@ -67,6 +65,3 @@ index 181a1960128c..0288e8d9a50b 100644
  	if (instance->type != PHY_TYPE_USB2)
  		return;
  
--- 
-2.46.0
-

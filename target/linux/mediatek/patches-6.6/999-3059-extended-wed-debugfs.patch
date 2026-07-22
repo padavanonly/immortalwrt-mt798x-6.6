@@ -10,8 +10,6 @@ Subject: [PATCH 1/2] extended wed debugfs
  drivers/net/ethernet/mediatek/mtk_wed_regs.h  |  71 ++-
  4 files changed, 440 insertions(+), 56 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
-index 45e24df..1914c9c 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
 @@ -58,6 +58,7 @@ struct mtk_wed_flow_block_priv {
@@ -22,7 +20,7 @@ index 45e24df..1914c9c 100644
  		.tx_bm_tkid		= 0x088,
  		.wpdma_rx_ring0		= 0x770,
  		.wpdma_rx_ring1		= 0,
-@@ -70,6 +71,7 @@ static const struct mtk_wed_soc_data mt7622_data = {
+@@ -70,6 +71,7 @@ static const struct mtk_wed_soc_data mt7
  
  static const struct mtk_wed_soc_data mt7986_data = {
  	.regmap = {
@@ -30,7 +28,7 @@ index 45e24df..1914c9c 100644
  		.tx_bm_tkid		= 0x0c8,
  		.wpdma_rx_ring0		= 0x770,
  		.wpdma_rx_ring1		= 0,
-@@ -82,6 +84,7 @@ static const struct mtk_wed_soc_data mt7986_data = {
+@@ -82,6 +84,7 @@ static const struct mtk_wed_soc_data mt7
  
  static const struct mtk_wed_soc_data mt7988_data = {
  	.regmap = {
@@ -38,7 +36,7 @@ index 45e24df..1914c9c 100644
  		.tx_bm_tkid		= 0x0c8,
  		.wpdma_rx_ring0		= 0x7d0,
  		.wpdma_rx_ring1		= 0x7d8,
-@@ -1691,8 +1694,8 @@ mtk_wed_rx_reset(struct mtk_wed_device *dev)
+@@ -1691,8 +1694,8 @@ mtk_wed_rx_reset(struct mtk_wed_device *
  	/* reset tx wdma drv */
  	wed_clr(dev, MTK_WED_WDMA_GLO_CFG, MTK_WED_WDMA_GLO_CFG_TX_DRV_EN);
  	if (mtk_wed_is_v3_or_greater(dev->hw))
@@ -49,7 +47,7 @@ index 45e24df..1914c9c 100644
  	else
  		mtk_wed_poll_busy(dev, MTK_WED_CTRL,
  				  MTK_WED_CTRL_WDMA_INT_AGENT_BUSY);
-@@ -2494,7 +2497,7 @@ mtk_wed_attach(struct mtk_wed_device *dev)
+@@ -2494,7 +2497,7 @@ mtk_wed_attach(struct mtk_wed_device *de
  		regmap_update_bits(hw->hifsys, HIFSYS_DMA_AG_MAP,
  				   BIT(hw->index), 0);
  	else
@@ -58,8 +56,6 @@ index 45e24df..1914c9c 100644
  
  	if (mtk_wed_get_rx_capa(dev))
  		ret = mtk_wed_wo_init(hw);
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed.h b/drivers/net/ethernet/mediatek/mtk_wed.h
-index 33bca92..56a5c16 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed.h
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.h
 @@ -16,6 +16,7 @@ struct mtk_wed_wo;
@@ -70,8 +66,6 @@ index 33bca92..56a5c16 100644
  		u32 tx_bm_tkid;
  		u32 wpdma_rx_ring0;
  		u32 wpdma_rx_ring1;
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c b/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c
-index 781c691..57c56e0 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed_debugfs.c
 @@ -17,11 +17,15 @@ struct reg_dump {
@@ -90,21 +84,18 @@ index 781c691..57c56e0 100644
  };
  
  #define DUMP_STR(_str) { _str, 0, DUMP_TYPE_STRING }
-@@ -29,6 +33,13 @@ enum {
- #define DUMP_REG_MASK(_reg, _mask)	\
- 	{ #_mask, MTK_##_reg, DUMP_TYPE_WED, 0, MTK_##_mask }
- #define DUMP_RING(_prefix, _base, ...)				\
-+	{ _prefix " BASE", _base, __VA_ARGS__ },		\
-+	{ _prefix " CNT",  _base + 0x4, __VA_ARGS__ },	\
-+	{ _prefix " CIDX", _base + 0x8, __VA_ARGS__ },	\
+@@ -32,20 +36,34 @@ enum {
+ 	{ _prefix " BASE", _base, __VA_ARGS__ },		\
+ 	{ _prefix " CNT",  _base + 0x4, __VA_ARGS__ },	\
+ 	{ _prefix " CIDX", _base + 0x8, __VA_ARGS__ },	\
 +	{ _prefix " DIDX", _base + 0xc, __VA_ARGS__ },	\
 +	{ _prefix " Qcnt", _base , __VA_ARGS__ }
 +
 +#define DUMP_RRO_DATA_RING(_prefix, _base, ...)			\
- 	{ _prefix " BASE", _base, __VA_ARGS__ },		\
- 	{ _prefix " CNT",  _base + 0x4, __VA_ARGS__ },	\
- 	{ _prefix " CIDX", _base + 0x8, __VA_ARGS__ },	\
-@@ -36,16 +47,23 @@ enum {
++	{ _prefix " BASE", _base, __VA_ARGS__ },		\
++	{ _prefix " CNT",  _base + 0x4, __VA_ARGS__ },	\
++	{ _prefix " CIDX", _base + 0x8, __VA_ARGS__ },	\
+ 	{ _prefix " DIDX", _base + 0xc, __VA_ARGS__ }
  
  #define DUMP_WED(_reg) DUMP_REG(_reg, DUMP_TYPE_WED)
  #define DUMP_WED_MASK(_reg, _mask) DUMP_REG_MASK(_reg, _mask)
@@ -129,7 +120,7 @@ index 781c691..57c56e0 100644
  
  static void
  print_reg_val(struct seq_file *s, const char *name, u32 val)
-@@ -58,7 +76,7 @@ dump_wed_regs(struct seq_file *s, struct mtk_wed_device *dev,
+@@ -58,7 +76,7 @@ dump_wed_regs(struct seq_file *s, struct
  	      const struct reg_dump *regs, int n_regs)
  {
  	const struct reg_dump *cur;
@@ -138,7 +129,7 @@ index 781c691..57c56e0 100644
  
  	for (cur = regs; cur < &regs[n_regs]; cur++) {
  		switch (cur->type) {
-@@ -72,16 +90,100 @@ dump_wed_regs(struct seq_file *s, struct mtk_wed_device *dev,
+@@ -72,16 +90,100 @@ dump_wed_regs(struct seq_file *s, struct
  			val = wed_r32(dev, cur->offset);
  			break;
  		case DUMP_TYPE_WDMA:
@@ -243,7 +234,7 @@ index 781c691..57c56e0 100644
  			break;
  		}
  		print_reg_val(s, cur->name, val);
-@@ -112,41 +214,61 @@ wed_txinfo_show(struct seq_file *s, void *data)
+@@ -112,41 +214,61 @@ wed_txinfo_show(struct seq_file *s, void
  		DUMP_WPDMA_TX_RING(0),
  		DUMP_WPDMA_TX_RING(1),
  
@@ -368,7 +359,7 @@ index 781c691..57c56e0 100644
  
  		DUMP_STR("WED WO RRO"),
  		DUMP_WED_RRO_RING(WED_RROQM_MIOD_CTRL0),
-@@ -179,14 +318,16 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+@@ -179,14 +318,16 @@ wed_rxinfo_show(struct seq_file *s, void
  		DUMP_WED(WED_RROQM_MOD_MIB),
  		DUMP_WED(WED_RROQM_MOD_COHERENT_MIB),
  		DUMP_WED_RRO_FDBK(WED_RROQM_FDBK_CTRL0),
@@ -386,7 +377,7 @@ index 781c691..57c56e0 100644
  
  		DUMP_STR("WDMA TX"),
  		DUMP_WDMA(WDMA_GLO_CFG),
-@@ -195,14 +336,9 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+@@ -195,14 +336,9 @@ wed_rxinfo_show(struct seq_file *s, void
  
  		DUMP_STR("WED RX BM"),
  		DUMP_WED(WED_RX_BM_BASE),
@@ -403,7 +394,7 @@ index 781c691..57c56e0 100644
  	};
  	static const struct reg_dump regs_wed_v2[] = {
  		DUMP_STR("WED Route QM"),
-@@ -217,30 +353,71 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+@@ -217,30 +353,71 @@ wed_rxinfo_show(struct seq_file *s, void
  		DUMP_WED(WED_RTQM_PFDBK_MIB),
  	};
  	static const struct reg_dump regs_wed_v3[] = {
@@ -484,7 +475,7 @@ index 781c691..57c56e0 100644
  
  		DUMP_STR("WED Route QM"),
  		DUMP_WED(WED_RTQM_ENQ_I2Q_DMAD_CNT),
-@@ -262,12 +439,18 @@ wed_rxinfo_show(struct seq_file *s, void *data)
+@@ -262,12 +439,18 @@ wed_rxinfo_show(struct seq_file *s, void
  
  	if (dev) {
  		dump_wed_regs(s, dev, regs_common, ARRAY_SIZE(regs_common));
@@ -505,7 +496,7 @@ index 781c691..57c56e0 100644
  	}
  
  	return 0;
-@@ -470,6 +653,21 @@ wed_amsdu_show(struct seq_file *s, void *data)
+@@ -470,6 +653,21 @@ wed_amsdu_show(struct seq_file *s, void
  		DUMP_WED_MASK(WED_MON_AMSDU_QMEM_PTR(9), WED_AMSDU_QMEM_TID6_QTAIL),
  		DUMP_WED_MASK(WED_MON_AMSDU_QMEM_PTR(9), WED_AMSDU_QMEM_TID7_QTAIL),
  
@@ -527,11 +518,10 @@ index 781c691..57c56e0 100644
  		DUMP_STR("WED HIFTXD MSDU INFO"),
  		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_MSDU(1)),
  		DUMP_WED(WED_MON_AMSDU_HIFTXD_FETCH_MSDU(2)),
-@@ -582,6 +780,125 @@ wed_rro_show(struct seq_file *s, void *data)
- }
+@@ -583,6 +781,125 @@ wed_rro_show(struct seq_file *s, void *d
  DEFINE_SHOW_ATTRIBUTE(wed_rro);
  
-+static int
+ static int
 +wed_hw_cfg_show(struct seq_file *s, void *data)
 +{
 +	static const struct reg_dump regs_common[] = {
@@ -650,10 +640,11 @@ index 781c691..57c56e0 100644
 +}
 +DEFINE_SHOW_ATTRIBUTE(wed_hw_cfg);
 +
- static int
++static int
  mtk_wed_reg_set(void *data, u64 val)
  {
-@@ -625,6 +942,8 @@ void mtk_wed_hw_add_debugfs(struct mtk_wed_hw *hw)
+ 	struct mtk_wed_hw *hw = data;
+@@ -625,6 +942,8 @@ void mtk_wed_hw_add_debugfs(struct mtk_w
  	if (!mtk_wed_is_v1(hw)) {
  		debugfs_create_file_unsafe("rxinfo", 0400, dir, hw,
  					   &wed_rxinfo_fops);
@@ -662,8 +653,6 @@ index 781c691..57c56e0 100644
  		if (mtk_wed_is_v3_or_greater(hw)) {
  			debugfs_create_file_unsafe("amsdu", 0400, dir, hw,
  						   &wed_amsdu_fops);
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed_regs.h b/drivers/net/ethernet/mediatek/mtk_wed_regs.h
-index c711909..15676e7 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed_regs.h
 +++ b/drivers/net/ethernet/mediatek/mtk_wed_regs.h
 @@ -24,6 +24,8 @@ struct mtk_wdma_desc {
@@ -922,6 +911,3 @@ index c711909..15676e7 100644
  
  #define MTK_WED_PCIE_BASE			0x11280000
  #define MTK_WED_PCIE_BASE0			0x11300000
--- 
-2.45.2
-

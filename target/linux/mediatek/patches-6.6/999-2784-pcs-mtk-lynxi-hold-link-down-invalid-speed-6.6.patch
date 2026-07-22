@@ -29,8 +29,8 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 
 --- a/drivers/net/pcs/pcs-mtk-lynxi.c
 +++ b/drivers/net/pcs/pcs-mtk-lynxi.c
-@@ -140,6 +140,13 @@
- 		case SGMII_SPEED_1000:
+@@ -171,6 +171,13 @@ static void mtk_pcs_lynxi_get_state(stru
+ 			rgc3 &= SGMII_PHY_SPEED_MASK;
  			state->speed = (rgc3 == SGMII_PHY_SPEED_3_125G) ? SPEED_2500 : SPEED_1000;
  			break;
 +		default:
@@ -43,5 +43,3 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  		}
  
  		if (sgm_mode & SGMII_DUPLEX_HALF)
--- 
-2.45.0

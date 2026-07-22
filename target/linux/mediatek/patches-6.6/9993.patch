@@ -1,11 +1,9 @@
-diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
---- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-07-02 01:09:25.192002459 +0800
-+++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-07-05 00:04:21.642001693 +0800
-@@ -12,6 +12,15 @@
- #include <dt-bindings/pinctrl/mt65xx.h>
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -13,6 +13,15 @@
  #include <dt-bindings/reset/mediatek,mt7988-resets.h>
  #include <dt-bindings/thermal/thermal.h>
-+
+ 
 +#include <dt-bindings/reset/ti-syscon.h>		
 +			
 +		
@@ -14,10 +12,11 @@ diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/med
 +			
 +		
 +		
- 
++
  /* TOPRGU resets */
  #define MT7988_TOPRGU_SGMII0_GRST		1
-@@ -193,6 +202,86 @@
+ #define MT7988_TOPRGU_SGMII1_GRST		2
+@@ -197,6 +206,86 @@
  		regulator-always-on;
  	};
  
@@ -104,7 +103,7 @@ diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/med
  	reserved-memory {
  		ranges;
  		#address-cells = <2>;
-@@ -204,31 +293,36 @@
+@@ -208,31 +297,36 @@
  			no-map;
  		};
  
@@ -155,7 +154,7 @@ diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/med
  	};
  
  	gsw: gsw@15020000 {
-@@ -824,6 +918,22 @@
+@@ -828,6 +922,22 @@
  			status = "disabled";
  		};
  
@@ -178,7 +177,7 @@ diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/med
  		spi0: spi@11007000 {
  			compatible = "mediatek,ipm-spi-quad", "mediatek,spi-ipm";
  			reg = <0 0x11007000 0 0x100>;
-@@ -1260,56 +1370,22 @@
+@@ -1264,56 +1374,22 @@
  		};
  
  		ethsys: syscon@15000000 {
@@ -248,7 +247,7 @@ diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/med
  		switch: switch@15020000 {
  			compatible = "mediatek,mt7988-switch";
  			reg = <0 0x15020000 0 0x8000>;
-@@ -1545,7 +1621,7 @@
+@@ -1549,7 +1625,7 @@
  						 <&apmixedsys CLK_APMIXED_SGMPLL>;
  			mediatek,ethsys = <&ethsys>;
  			mediatek,infracfg = <&topmisc>;
@@ -257,7 +256,7 @@ diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/med
  			#address-cells = <1>;
  			#size-cells = <0>;
  
-@@ -1619,72 +1695,7 @@
+@@ -1623,72 +1699,7 @@
  		       ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4","phy";
                 };
  

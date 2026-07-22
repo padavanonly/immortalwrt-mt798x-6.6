@@ -12,11 +12,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  45 ++++-
  2 files changed, 187 insertions(+), 34 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 099cc27..36ee28b 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -3106,6 +3106,47 @@ static void mtk_rx_clean(struct mtk_eth *eth, struct mtk_rx_ring *ring, bool in_
+@@ -3110,6 +3110,47 @@ static void mtk_rx_clean(struct mtk_eth
  	}
  }
  
@@ -64,12 +62,15 @@ index 099cc27..36ee28b 100644
  static int mtk_hwlro_rx_init(struct mtk_eth *eth)
  {
  	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
-@@ -3114,27 +3155,49 @@ static int mtk_hwlro_rx_init(struct mtk_eth *eth)
+@@ -3118,27 +3159,49 @@ static int mtk_hwlro_rx_init(struct mtk_
  	u32 ring_ctrl_dw1 = 0, ring_ctrl_dw2 = 0, ring_ctrl_dw3 = 0;
  	u32 lro_ctrl_dw0 = 0, lro_ctrl_dw3 = 0;
  
 -	/* set LRO rings to auto-learn modes */
 -	ring_ctrl_dw2 |= MTK_RING_AUTO_LERAN_MODE;
+-
+-	/* validate LRO ring */
+-	ring_ctrl_dw2 |= MTK_RING_VLD;
 +	if (MTK_HAS_CAPS(eth->soc->caps, MTK_GLO_MEM_ACCESS)) {
 +		for (i = 1; i <= MTK_HW_LRO_RING_NUM; i++) {
 +			/* set AGG timer (unit: 20us) */
@@ -94,34 +95,34 @@ index 099cc27..36ee28b 100644
 +		/* set LRO rings to auto-learn modes */
 +		ring_ctrl_dw2 |= MTK_RING_AUTO_LERAN_MODE;
  
--	/* validate LRO ring */
--	ring_ctrl_dw2 |= MTK_RING_VLD;
-+		/* validate LRO ring */
-+		ring_ctrl_dw2 |= MTK_RING_VLD;
- 
 -	/* set AGE timer (unit: 20us) */
 -	ring_ctrl_dw2 |= MTK_RING_AGE_TIME_H;
 -	ring_ctrl_dw1 |= MTK_RING_AGE_TIME_L;
-+		/* set AGE timer (unit: 20us) */
-+		ring_ctrl_dw2 |= MTK_RING_AGE_TIME_H;
-+		ring_ctrl_dw1 |= MTK_RING_AGE_TIME_L;
- 
+-
 -	/* set max AGG timer (unit: 20us) */
 -	ring_ctrl_dw2 |= MTK_RING_MAX_AGG_TIME;
-+		/* set max AGG timer (unit: 20us) */
-+		ring_ctrl_dw2 |= MTK_RING_MAX_AGG_TIME;
- 
+-
 -	/* set max LRO AGG count */
 -	ring_ctrl_dw2 |= MTK_RING_MAX_AGG_CNT_L;
 -	ring_ctrl_dw3 |= MTK_RING_MAX_AGG_CNT_H;
-+		/* set max LRO AGG count */
-+		ring_ctrl_dw2 |= MTK_RING_MAX_AGG_CNT_L;
-+		ring_ctrl_dw3 |= MTK_RING_MAX_AGG_CNT_H;
++		/* validate LRO ring */
++		ring_ctrl_dw2 |= MTK_RING_VLD;
  
 -	for (i = 1; i <= MTK_HW_LRO_RING_NUM; i++) {
 -		mtk_w32(eth, ring_ctrl_dw1, MTK_LRO_CTRL_DW1_CFG(i));
 -		mtk_w32(eth, ring_ctrl_dw2, MTK_LRO_CTRL_DW2_CFG(i));
 -		mtk_w32(eth, ring_ctrl_dw3, MTK_LRO_CTRL_DW3_CFG(i));
++		/* set AGE timer (unit: 20us) */
++		ring_ctrl_dw2 |= MTK_RING_AGE_TIME_H;
++		ring_ctrl_dw1 |= MTK_RING_AGE_TIME_L;
++
++		/* set max AGG timer (unit: 20us) */
++		ring_ctrl_dw2 |= MTK_RING_MAX_AGG_TIME;
++
++		/* set max LRO AGG count */
++		ring_ctrl_dw2 |= MTK_RING_MAX_AGG_CNT_L;
++		ring_ctrl_dw3 |= MTK_RING_MAX_AGG_CNT_H;
++
 +		for (i = 1; i <= MTK_HW_LRO_RING_NUM; i++) {
 +			mtk_w32(eth, ring_ctrl_dw1, MTK_LRO_CTRL_DW1_CFG(i));
 +			mtk_w32(eth, ring_ctrl_dw2, MTK_LRO_CTRL_DW2_CFG(i));
@@ -130,7 +131,7 @@ index 099cc27..36ee28b 100644
  	}
  
  	/* IPv4 checksum update enable */
-@@ -3212,8 +3275,17 @@ static void mtk_hwlro_rx_uninit(struct mtk_eth *eth)
+@@ -3216,8 +3279,17 @@ static void mtk_hwlro_rx_uninit(struct m
  	}
  
  	/* invalidate lro rings */
@@ -150,7 +151,7 @@ index 099cc27..36ee28b 100644
  
  	/* disable HW LRO */
  	mtk_w32(eth, 0, MTK_PDMA_LRO_CTRL_DW0);
-@@ -3224,15 +3296,36 @@ static void mtk_hwlro_val_ipaddr(struct mtk_eth *eth, int idx, __be32 ip)
+@@ -3228,15 +3300,36 @@ static void mtk_hwlro_val_ipaddr(struct
  	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
  	u32 reg_val;
  
@@ -193,7 +194,7 @@ index 099cc27..36ee28b 100644
  }
  
  static void mtk_hwlro_inval_ipaddr(struct mtk_eth *eth, int idx)
-@@ -3240,12 +3333,21 @@ static void mtk_hwlro_inval_ipaddr(struct mtk_eth *eth, int idx)
+@@ -3244,12 +3337,21 @@ static void mtk_hwlro_inval_ipaddr(struc
  	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
  	u32 reg_val;
  
@@ -219,7 +220,7 @@ index 099cc27..36ee28b 100644
  }
  
  static int mtk_hwlro_get_ip_cnt(struct mtk_mac *mac)
-@@ -3271,7 +3373,11 @@ static int mtk_hwlro_add_ipaddr_idx(struct net_device *dev, u32 ip4dst)
+@@ -3275,7 +3377,11 @@ static int mtk_hwlro_add_ipaddr_idx(stru
  
  	/* check for duplicate IP address in the current DIP list */
  	for (i = 1; i <= MTK_HW_LRO_DIP_NUM; i++) {
@@ -232,7 +233,7 @@ index 099cc27..36ee28b 100644
  		if (reg_val == ip4dst)
  			break;
  	}
-@@ -3283,7 +3389,11 @@ static int mtk_hwlro_add_ipaddr_idx(struct net_device *dev, u32 ip4dst)
+@@ -3287,7 +3393,11 @@ static int mtk_hwlro_add_ipaddr_idx(stru
  
  	/* find out available DIP index */
  	for (i = 1; i <= MTK_HW_LRO_DIP_NUM; i++) {
@@ -245,7 +246,7 @@ index 099cc27..36ee28b 100644
  		if (reg_val == 0UL)
  			break;
  	}
-@@ -3306,7 +3416,11 @@ static int mtk_hwlro_get_ipaddr_idx(struct net_device *dev, u32 ip4dst)
+@@ -3310,7 +3420,11 @@ static int mtk_hwlro_get_ipaddr_idx(stru
  
  	/* find out DIP index that matches the given IP address */
  	for (i = 1; i <= MTK_HW_LRO_DIP_NUM; i++) {
@@ -258,11 +259,9 @@ index 099cc27..36ee28b 100644
  		if (reg_val == ip4dst)
  			break;
  	}
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 8ad271b..a462b17 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -180,6 +180,42 @@
+@@ -183,6 +183,42 @@
  /* PSE Output Queue Threshold Register*/
  #define PSE_OQ_TH(x)		(0x160 + (((x) - 1) << 2))
  
@@ -305,7 +304,7 @@ index 8ad271b..a462b17 100644
  /* GDM and CDM Threshold */
  #define MTK_GDM2_THRES		0x1530
  #define MTK_CDMW0_THRES		0x164c
-@@ -189,7 +225,8 @@
+@@ -192,7 +228,8 @@
  #define MTK_CDMM_THRES		0x165c
  
  /* PDMA HW LRO Control Registers */
@@ -315,7 +314,7 @@ index 8ad271b..a462b17 100644
  #define MTK_HW_LRO_RING_NUM		(mtk_is_netsys_v3_or_greater(eth) ? 4 : 3)
  #define MTK_HW_LRO_RING(x)		((x) + (mtk_is_netsys_v3_or_greater(eth) ? 4 : 1))
  #define MTK_HW_LRO_IRQ(x)		((x) + (mtk_is_netsys_v3_or_greater(eth) ? 0 : 1))
-@@ -1187,6 +1224,7 @@ enum mkt_eth_capabilities {
+@@ -1144,6 +1181,7 @@ enum mkt_eth_capabilities {
  	MTK_MUX_BIT,
  	MTK_INFRA_BIT,
  	MTK_SHARED_SGMII_BIT,
@@ -323,7 +322,7 @@ index 8ad271b..a462b17 100644
  	MTK_HWLRO_BIT,
  	MTK_RSS_BIT,
  	MTK_SHARED_INT_BIT,
-@@ -1238,6 +1276,7 @@ enum mkt_eth_capabilities {
+@@ -1195,6 +1233,7 @@ enum mkt_eth_capabilities {
  #define MTK_MUX			BIT_ULL(MTK_MUX_BIT)
  #define MTK_INFRA		BIT_ULL(MTK_INFRA_BIT)
  #define MTK_SHARED_SGMII	BIT_ULL(MTK_SHARED_SGMII_BIT)
@@ -331,7 +330,7 @@ index 8ad271b..a462b17 100644
  #define MTK_HWLRO		BIT_ULL(MTK_HWLRO_BIT)
  #define MTK_RSS			BIT_ULL(MTK_RSS_BIT)
  #define MTK_SHARED_INT		BIT_ULL(MTK_SHARED_INT_BIT)
-@@ -1364,8 +1403,8 @@ enum mkt_eth_capabilities {
+@@ -1321,8 +1360,8 @@ enum mkt_eth_capabilities {
  		      MTK_GMAC2_2P5GPHY_V2 | MTK_GMAC2_SGMII | MTK_GMAC3_SGMII | \
  		      MTK_MUX_GMAC123_TO_GEPHY_SGMII | MTK_MUX_GMAC2_TO_2P5GPHY | \
  		      MTK_MUX_U3_GMAC23_TO_QPHY | MTK_U3_COPHY_V2 | \
@@ -342,6 +341,3 @@ index 8ad271b..a462b17 100644
  
  #define MT7988_CAPS  (MTK_36BIT_DMA | MTK_GDM1_ESW | MTK_GMAC1_SGMII | \
  		      MTK_GMAC2_2P5GPHY | MTK_GMAC2_SGMII | MTK_GMAC2_USXGMII | \
--- 
-2.45.2
-

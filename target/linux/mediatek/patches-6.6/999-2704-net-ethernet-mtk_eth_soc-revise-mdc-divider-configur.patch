@@ -12,11 +12,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.c | 62 ++++++++++++++-------
  1 file changed, 43 insertions(+), 19 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 082b32a..19b651f 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -1002,11 +1002,11 @@ static const struct phylink_mac_ops mtk_phylink_ops = {
+@@ -971,11 +971,11 @@ static const struct phylink_mac_ops mtk_
  	.mac_link_up = mtk_mac_link_up,
  };
  
@@ -30,7 +28,7 @@ index 082b32a..19b651f 100644
  	u32 val;
  
  	mii_np = of_get_child_by_name(eth->dev->of_node, "mdio-bus");
-@@ -1020,23 +1020,6 @@ static int mtk_mdio_init(struct mtk_eth *eth)
+@@ -989,23 +989,6 @@ static int mtk_mdio_init(struct mtk_eth
  		goto err_put_node;
  	}
  
@@ -54,7 +52,7 @@ index 082b32a..19b651f 100644
  	if (!of_property_read_u32(mii_np, "clock-frequency", &val)) {
  		if (val > MDC_MAX_FREQ || val < MDC_MAX_FREQ / MDC_MAX_DIVIDER) {
  			dev_err(eth->dev, "MDIO clock frequency out of range");
-@@ -1059,6 +1042,43 @@ static int mtk_mdio_init(struct mtk_eth *eth)
+@@ -1028,6 +1011,43 @@ static int mtk_mdio_init(struct mtk_eth
  
  	dev_dbg(eth->dev, "MDC is running on %d Hz\n", MDC_MAX_FREQ / divider);
  
@@ -98,7 +96,7 @@ index 082b32a..19b651f 100644
  	ret = of_mdiobus_register(eth->mii_bus, mii_np);
  
  err_put_node:
-@@ -4349,6 +4369,10 @@ static int mtk_hw_init(struct mtk_eth *eth, bool reset)
+@@ -4125,6 +4145,10 @@ static int mtk_hw_init(struct mtk_eth *e
  	else
  		mtk_hw_reset(eth);
  
@@ -109,6 +107,3 @@ index 082b32a..19b651f 100644
  	if (mtk_is_netsys_v3_or_greater(eth)) {
  		/* Set FE to PDMAv2 if necessary */
  		val = mtk_r32(eth, MTK_FE_GLO_MISC);
--- 
-2.45.2
-

@@ -14,11 +14,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  .../net/ethernet/mediatek/mtk_ppe_debugfs.c   | 60 +++++++++++++++++++
  4 files changed, 64 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 7284fa1..5ad5a03 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -5553,6 +5553,7 @@ static int mtk_probe(struct platform_device *pdev)
+@@ -6812,6 +6812,7 @@ static int mtk_probe(struct platform_dev
  			if (err)
  				goto err_deinit_ppe;
  		}
@@ -26,11 +24,9 @@ index 7284fa1..5ad5a03 100644
  	}
  #endif
  
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index 341ef9d..2b2aae5 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -909,6 +909,7 @@ struct mtk_ppe *mtk_ppe_init(struct mtk_eth *eth, void __iomem *base, int index)
+@@ -905,6 +905,7 @@ struct mtk_ppe *mtk_ppe_init(struct mtk_
  	ppe->base = base;
  	ppe->eth = eth;
  	ppe->dev = dev;
@@ -38,11 +34,9 @@ index 341ef9d..2b2aae5 100644
  	ppe->version = eth->soc->offload_version;
  	ppe->accounting = accounting;
  
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
-index 9c6ff33..ed20ca9 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
-@@ -328,6 +328,7 @@ struct mtk_ppe {
+@@ -326,6 +326,7 @@ struct mtk_ppe {
  	struct mtk_eth *eth;
  	struct device *dev;
  	void __iomem *base;
@@ -50,7 +44,7 @@ index 9c6ff33..ed20ca9 100644
  	int version;
  	char dirname[5];
  	bool accounting;
-@@ -403,6 +404,7 @@ int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+@@ -401,6 +402,7 @@ int mtk_foe_entry_set_queue(struct mtk_e
  int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
  void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
  int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index);
@@ -58,11 +52,9 @@ index 9c6ff33..ed20ca9 100644
  void mtk_foe_entry_get_stats(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
  			     int *idle);
  
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-index c406ba3..0ba49a5 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-@@ -125,6 +125,8 @@ mtk_ppe_debugfs_foe_show(struct seq_file *m, void *private, bool bind)
+@@ -125,6 +125,8 @@ mtk_ppe_debugfs_foe_show(struct seq_file
  			break;
  		}
  
@@ -71,7 +63,7 @@ index c406ba3..0ba49a5 100644
  		seq_printf(m, " orig=");
  		mtk_print_addr_info(m, &ai);
  
-@@ -192,3 +194,61 @@ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index)
+@@ -192,3 +194,61 @@ int mtk_ppe_debugfs_init(struct mtk_ppe
  
  	return 0;
  }
@@ -133,6 +125,3 @@ index c406ba3..0ba49a5 100644
 +
 +	return 0;
 +}
--- 
-2.45.2
-

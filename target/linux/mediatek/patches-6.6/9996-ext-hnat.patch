@@ -1,7 +1,6 @@
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
---- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-14 01:19:46.630002351 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-14 01:33:45.947002751 +0800
-@@ -1782,6 +1782,10 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -1782,6 +1782,10 @@ static void mtk_tx_set_dma_desc_v2(struc
  	}
  
  	data |= TX_DMA_SWC_V2 | QID_BITS_V2(info->qid);
@@ -12,7 +11,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  	WRITE_ONCE(desc->txd4, data);
  
  	data = 0;
-@@ -1792,7 +1796,10 @@
+@@ -1792,7 +1796,10 @@ static void mtk_tx_set_dma_desc_v2(struc
  		if (info->csum)
  			data |= TX_DMA_CHKSUM_V2;
  		if (mtk_is_netsys_v3_or_greater(eth) && netdev_uses_dsa(dev))
@@ -24,7 +23,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  	}
  	WRITE_ONCE(desc->txd5, data);
  
-@@ -1829,6 +1836,7 @@
+@@ -1829,6 +1836,7 @@ static int mtk_tx_map(struct sk_buff *sk
  		.vlan_tci = skb_vlan_tag_get(skb),
  		.first = true,
  		.last = !skb_is_nonlinear(skb),
@@ -32,7 +31,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  	};
  	struct netdev_queue *txq;
  	struct mtk_mac *mac = netdev_priv(dev);
-@@ -2441,6 +2449,7 @@
+@@ -2441,6 +2449,7 @@ static int mtk_poll_rx(struct napi_struc
  	int done = 0, bytes = 0;
  	dma_addr_t dma_addr = DMA_MAPPING_ERROR;
  	int ppe_idx = 0;
@@ -40,7 +39,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  
  	if (unlikely(!ring))
  		goto rx_done;
-@@ -2471,6 +2480,7 @@
+@@ -2471,6 +2480,7 @@ static int mtk_poll_rx(struct napi_struc
  				mac = MTK_GMAC3_ID;
  				break;
  			default:
@@ -48,7 +47,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  				break;
  			}
  		} else if (!MTK_HAS_CAPS(eth->soc->caps, MTK_SOC_MT7628) &&
-@@ -2478,6 +2488,13 @@
+@@ -2478,6 +2488,13 @@ static int mtk_poll_rx(struct napi_struc
  			mac = RX_DMA_GET_SPORT(trxd.rxd4) - 1;
  		}
  
@@ -62,7 +61,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
  			     !eth->netdev[mac]))
  			goto release_desc;
-@@ -2639,6 +2656,10 @@
+@@ -2639,6 +2656,10 @@ static int mtk_poll_rx(struct napi_struc
  			hw_lro_flush_stats_update(ring->ring_no, &trxd);
  		}
  
@@ -73,7 +72,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  		skb_record_rx_queue(skb, 0);
  		napi_gro_receive(napi, skb);
  
-@@ -4268,9 +4289,6 @@
+@@ -4268,9 +4289,6 @@ static int mtk_open(struct net_device *d
  			}
  			mtk_gdm_config(eth, target_mac->id, gdm_config);
  		}
@@ -83,7 +82,7 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  
  		napi_enable(&eth->tx_napi);
  		napi_enable(&eth->rx_napi[0].napi);
-@@ -5917,7 +5935,8 @@
+@@ -5917,7 +5935,8 @@ static u16 mtk_select_queue(struct net_d
  		queue = skb_get_queue_mapping(skb) + 3;
  	else
  		queue = mac->id;
@@ -93,19 +92,9 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  	if (queue >= dev->num_tx_queues)
  		queue = 0;
  
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
---- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-08-14 01:19:46.647002351 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h	2025-08-14 01:34:09.087002762 +0800
-@@ -439,7 +439,7 @@
- 
- /* QDMA TX NUM */
- #define QID_BITS_V2(x)		(((x) & 0x3f) << 16)
--#define MTK_QDMA_GMAC2_QID	8
-+#define MTK_QDMA_GMAC2_QID	8
- 
- #define MTK_TX_DMA_BUF_SHIFT	8
- 
-@@ -1484,6 +1484,7 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1484,6 +1484,7 @@ struct mtk_tx_dma_desc_info {
  	u8		vlan:1;
  	u8		first:1;
  	u8		last:1;

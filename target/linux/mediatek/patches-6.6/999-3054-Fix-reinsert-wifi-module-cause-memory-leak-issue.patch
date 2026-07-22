@@ -7,11 +7,9 @@ Subject: [PATCH 4/6] Fix reinsert wifi module cause memory leak issue
  drivers/net/ethernet/mediatek/mtk_wed.c | 22 ++++++++++++++++++++--
  1 file changed, 20 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
-index c48fba8..ff86f45 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
-@@ -929,6 +929,16 @@ mtk_wed_free_ring(struct mtk_wed_device *dev, struct mtk_wed_ring *ring)
+@@ -929,6 +929,16 @@ mtk_wed_free_ring(struct mtk_wed_device
  static void
  mtk_wed_free_rx_rings(struct mtk_wed_device *dev)
  {
@@ -28,7 +26,7 @@ index c48fba8..ff86f45 100644
  	mtk_wed_free_rx_buffer(dev);
  	mtk_wed_free_ring(dev, &dev->rro.ring);
  }
-@@ -939,9 +949,12 @@ mtk_wed_free_tx_rings(struct mtk_wed_device *dev)
+@@ -939,9 +949,12 @@ mtk_wed_free_tx_rings(struct mtk_wed_dev
  	int i;
  
  	for (i = 0; i < ARRAY_SIZE(dev->tx_ring); i++)
@@ -43,7 +41,7 @@ index c48fba8..ff86f45 100644
  }
  
  static void
-@@ -1906,6 +1919,8 @@ mtk_wed_wdma_rx_ring_setup(struct mtk_wed_device *dev, int idx, int size,
+@@ -1906,6 +1919,8 @@ mtk_wed_wdma_rx_ring_setup(struct mtk_we
  					 dev->hw->soc->wdma_desc_size, true))
  		return -ENOMEM;
  
@@ -52,7 +50,7 @@ index c48fba8..ff86f45 100644
  	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_BASE,
  		 wdma->desc_phys);
  	wdma_w32(dev, MTK_WDMA_RING_RX(idx) + MTK_WED_RING_OFS_COUNT,
-@@ -1952,6 +1967,8 @@ mtk_wed_wdma_tx_ring_setup(struct mtk_wed_device *dev, int idx, int size,
+@@ -1952,6 +1967,8 @@ mtk_wed_wdma_tx_ring_setup(struct mtk_we
  		}
  	}
  
@@ -61,7 +59,7 @@ index c48fba8..ff86f45 100644
  	wdma_w32(dev, MTK_WDMA_RING_TX(idx) + MTK_WED_RING_OFS_BASE,
  		 wdma->desc_phys);
  	wdma_w32(dev, MTK_WDMA_RING_TX(idx) + MTK_WED_RING_OFS_COUNT,
-@@ -2507,6 +2524,7 @@ mtk_wed_tx_ring_setup(struct mtk_wed_device *dev, int idx, void __iomem *regs,
+@@ -2507,6 +2524,7 @@ mtk_wed_tx_ring_setup(struct mtk_wed_dev
  
  	ring->reg_base = MTK_WED_RING_TX(idx);
  	ring->wpdma = regs;
@@ -69,6 +67,3 @@ index c48fba8..ff86f45 100644
  
  	if (mtk_wed_is_v3_or_greater(dev->hw) && idx == 1) {
  		/* reset prefetch index */
--- 
-2.45.2
-

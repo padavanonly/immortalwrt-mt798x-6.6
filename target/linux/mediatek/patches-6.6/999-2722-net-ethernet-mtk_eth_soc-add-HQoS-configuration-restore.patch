@@ -17,11 +17,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.h | 16 +++++++
  2 files changed, 66 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index dc3dcfa..5e862c5 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -5186,6 +5186,54 @@ static void mt7988_esw_force_link(struct mtk_eth *eth, bool link_up)
+@@ -5193,6 +5193,54 @@ static void mt7988_esw_force_link(struct
  	__raw_writel(val, eth->esw_base + MT753X_PMCR_P(6));
  }
  
@@ -76,7 +74,7 @@ index dc3dcfa..5e862c5 100644
  static void mtk_prepare_for_reset(struct mtk_eth *eth)
  {
  	struct mtk_mac *mac;
-@@ -5238,6 +5286,7 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -5245,6 +5293,7 @@ static void mtk_pending_work(struct work
  
  	mtk_hw_dump_all(eth);
  
@@ -84,7 +82,7 @@ index dc3dcfa..5e862c5 100644
  	mtk_prepare_for_reset(eth);
  	mtk_wed_fe_reset();
  	/* Run again reset preliminary configuration in order to avoid any
-@@ -5281,6 +5330,7 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -5288,6 +5337,7 @@ static void mtk_pending_work(struct work
  	clear_bit(MTK_RESETTING, &eth->state);
  
  	mtk_wed_fe_reset_complete();
@@ -92,11 +90,9 @@ index dc3dcfa..5e862c5 100644
  
  	rtnl_unlock();
  }
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 7786e19..b4f16f9 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1216,6 +1216,21 @@ struct mtk_napi {
+@@ -1178,6 +1178,21 @@ struct mtk_napi {
  	struct mtk_rx_ring	*rx_ring;
  };
  
@@ -118,7 +114,7 @@ index 7786e19..b4f16f9 100644
  enum mkt_eth_capabilities {
  	MTK_RGMII_BIT = 0,
  	MTK_TRGMII_BIT,
-@@ -1626,6 +1641,7 @@ struct mtk_eth {
+@@ -1588,6 +1603,7 @@ struct mtk_eth {
  	struct napi_struct		tx_napi;
  	struct mtk_napi			rx_napi[MTK_RX_NAPI_NUM];
  	struct mtk_rss_params		rss_params;
@@ -126,6 +122,3 @@ index 7786e19..b4f16f9 100644
  	void				*scratch_ring;
  	dma_addr_t			phy_scratch_ring;
  	void				*scratch_head[MTK_FQ_DMA_HEAD];
--- 
-2.45.2
-

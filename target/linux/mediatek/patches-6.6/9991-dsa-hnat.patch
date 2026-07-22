@@ -1,7 +1,6 @@
-diff -u -r a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
---- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-25 23:35:35.238002373 +0800
-+++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-25 23:43:56.711002613 +0800
-@@ -1610,6 +1610,19 @@
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -1614,6 +1614,19 @@
  			};
  		};
  

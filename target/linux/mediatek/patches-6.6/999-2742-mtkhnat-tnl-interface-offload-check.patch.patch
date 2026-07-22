@@ -8,11 +8,9 @@ Subject: [PATCH 8/9] mtkhnat-tnl-interface-offload-check.patch
  net/l2tp/l2tp_ppp.c       | 28 ++++++++++++++++++++++++++++
  2 files changed, 29 insertions(+)
 
-diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
-index 2c2dd2fbe..dd354643e 100644
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -901,6 +901,7 @@ enum net_device_path_type {
+@@ -912,6 +912,7 @@ enum net_device_path_type {
  	DEV_PATH_MTK_WDMA,
  	DEV_PATH_DSLITE,
  	DEV_PATH_6RD,
@@ -20,8 +18,6 @@ index 2c2dd2fbe..dd354643e 100644
  };
  
  struct net_device_path {
-diff --git a/net/l2tp/l2tp_ppp.c b/net/l2tp/l2tp_ppp.c
-index f011af660..18cd9fa14 100644
 --- a/net/l2tp/l2tp_ppp.c
 +++ b/net/l2tp/l2tp_ppp.c
 @@ -89,6 +89,9 @@
@@ -49,7 +45,7 @@ index f011af660..18cd9fa14 100644
  };
  
  static const struct proto_ops pppol2tp_ops;
-@@ -328,6 +336,26 @@ static int pppol2tp_sendmsg(struct socket *sock, struct msghdr *m,
+@@ -328,6 +336,26 @@ error:
  	return error;
  }
  
@@ -76,6 +72,3 @@ index f011af660..18cd9fa14 100644
  /* Transmit function called by generic PPP driver.  Sends PPP frame
   * over PPPoL2TP socket.
   *
--- 
-2.18.0
-

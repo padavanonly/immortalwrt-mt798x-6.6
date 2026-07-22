@@ -8,11 +8,9 @@ Subject: [PATCH 6/9] net: dsa: support hardware flow table offload
  net/dsa/slave.c                       | 28 +++++++++++++++++++++++++++
  2 files changed, 29 insertions(+)
 
-diff --git a/include/net/netfilter/nf_flow_table.h b/include/net/netfilter/nf_flow_table.h
-index 2a8f0e0f4..8fe0ffb2f 100644
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -189,6 +189,7 @@ struct flow_offload_hw_path {
+@@ -194,6 +194,7 @@ struct flow_offload_hw_path {
  	u16 vlan_proto;
  	u16 vlan_id;
  	u16 pppoe_sid;
@@ -20,11 +18,9 @@ index 2a8f0e0f4..8fe0ffb2f 100644
  };
  
  #define NF_FLOW_TIMEOUT (30 * HZ)
-diff --git a/net/dsa/slave.c b/net/dsa/slave.c
-index 5fe075bf4..7e1357204 100644
 --- a/net/dsa/slave.c
 +++ b/net/dsa/slave.c
-@@ -21,6 +21,10 @@
+@@ -22,6 +22,10 @@
  #include <net/dcbnl.h>
  #include <linux/netpoll.h>
  #include <linux/string.h>
@@ -34,8 +30,8 @@ index 5fe075bf4..7e1357204 100644
 +#endif
  
  #include "dsa.h"
- 
-@@ -2185,6 +2189,27 @@ static void dsa_slave_get_stats64(struct net_device *dev,
+ #include "port.h"
+@@ -2406,6 +2410,27 @@ static void dsa_slave_get_stats64(struct
  		dev_get_tstats64(dev, s);
  }
  
@@ -63,9 +59,9 @@ index 5fe075bf4..7e1357204 100644
  static int dsa_slave_fill_forward_path(struct net_device_path_ctx *ctx,
  				       struct net_device_path *path)
  {
-@@ -2222,6 +2247,9 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
+@@ -2442,6 +2467,9 @@ static const struct net_device_ops dsa_s
+ 	.ndo_vlan_rx_add_vid	= dsa_slave_vlan_rx_add_vid,
  	.ndo_vlan_rx_kill_vid	= dsa_slave_vlan_rx_kill_vid,
- 	.ndo_get_devlink_port	= dsa_slave_get_devlink_port,
  	.ndo_change_mtu		= dsa_slave_change_mtu,
 +#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
 +	.ndo_flow_offload_check	 = dsa_flow_offload_check,
@@ -73,6 +69,3 @@ index 5fe075bf4..7e1357204 100644
  	.ndo_fill_forward_path	= dsa_slave_fill_forward_path,
  };
  
--- 
-2.18.0
-

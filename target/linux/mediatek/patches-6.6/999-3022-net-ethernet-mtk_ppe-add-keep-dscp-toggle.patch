@@ -20,11 +20,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_ppe_regs.h  |  1 +
  5 files changed, 76 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index e971c6f..2f57a6b 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1708,6 +1708,7 @@ struct mtk_eth {
+@@ -1710,6 +1710,7 @@ struct mtk_eth {
  	struct metadata_dst		*dsa_meta[MTK_MAX_DSA_PORTS];
  
  	u8				debug_level;
@@ -32,11 +30,9 @@ index e971c6f..2f57a6b 100644
  	u8				qos_toggle;
  	struct mtk_ppe			*ppe[3];
  	struct rhashtable		flow_table;
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index 5b91e0f..cea64bb 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -368,6 +368,17 @@ mtk_foe_entry_ib2(struct mtk_eth *eth, struct mtk_foe_entry *entry)
+@@ -368,6 +368,17 @@ mtk_foe_entry_ib2(struct mtk_eth *eth, s
  	return &entry->ipv4.ib2;
  }
  
@@ -54,7 +50,7 @@ index 5b91e0f..cea64bb 100644
  int mtk_foe_entry_prepare(struct mtk_eth *eth, struct mtk_foe_entry *entry,
  			  int type, int l4proto, u8 pse_port, u8 *src_mac,
  			  u8 *dest_mac)
-@@ -551,6 +562,12 @@ int mtk_foe_entry_set_dscp(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+@@ -551,6 +562,12 @@ int mtk_foe_entry_set_dscp(struct mtk_et
  	*ib2 &= ~MTK_FOE_IB2_DSCP;
  	*ib2 |= FIELD_PREP(MTK_FOE_IB2_DSCP, dscp);
  
@@ -67,7 +63,7 @@ index 5b91e0f..cea64bb 100644
  	return 0;
  }
  
-@@ -1238,6 +1255,8 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+@@ -1237,6 +1254,8 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
  			 MTK_PPE_ENTRIES_SHIFT);
  	if (mtk_is_netsys_v2_or_greater(ppe->eth))
  		val |= MTK_PPE_TB_CFG_INFO_SEL;
@@ -76,8 +72,6 @@ index 5b91e0f..cea64bb 100644
  	if (!mtk_is_netsys_v3_or_greater(ppe->eth))
  		val |= MTK_PPE_TB_CFG_ENTRY_80B;
  	ppe_w32(ppe, MTK_PPE_TB_CFG, val);
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
-index 1077695..fdb1619 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
 @@ -97,6 +97,9 @@ enum {
@@ -90,15 +84,12 @@ index 1077695..fdb1619 100644
  #define MTK_FOE_TPORT_IDX		GENMASK(3, 0)
  
  enum {
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-index c35878c..2cefa7a 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-@@ -195,6 +195,56 @@ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index)
- 	return 0;
+@@ -196,6 +196,56 @@ int mtk_ppe_debugfs_init(struct mtk_ppe
  }
  
-+static int
+ static int
 +mtk_ppe_internal_debugfs_read_dscp(struct seq_file *m, void *private)
 +{
 +	struct mtk_eth *eth = m->private;
@@ -148,10 +139,11 @@ index c35878c..2cefa7a 100644
 +	.release = single_release,
 +};
 +
- static int
++static int
  mtk_ppe_internal_debugfs_read_qos(struct seq_file *m, void *private)
  {
-@@ -369,6 +419,8 @@ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
+ 	struct mtk_eth *eth = m->private;
+@@ -369,6 +419,8 @@ int mtk_ppe_internal_debugfs_init(struct
  			    &mtk_ppe_internal_debugfs_foe_all_fops);
  	debugfs_create_file("bind", S_IRUGO, root, eth,
  			    &mtk_ppe_internal_debugfs_foe_bind_fops);
@@ -160,8 +152,6 @@ index c35878c..2cefa7a 100644
  	debugfs_create_file("qos_toggle", S_IRUGO, root, eth,
  			    &mtk_ppe_internal_debugfs_qos_fops);
  	debugfs_create_file("debug_level", S_IRUGO, root, eth,
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
-index 0b9527a..9b2209d 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
 @@ -65,6 +65,7 @@
@@ -172,6 +162,3 @@ index 0b9527a..9b2209d 100644
  
  #define MTK_PPE_BIND_LMT1			0x230
  #define MTK_PPE_NTU_KEEPALIVE			GENMASK(23, 16)
--- 
-2.45.2
-

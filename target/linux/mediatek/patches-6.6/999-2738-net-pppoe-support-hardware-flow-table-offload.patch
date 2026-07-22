@@ -9,8 +9,6 @@ Subject: [PATCH 5/9] net: pppoe: support hardware flow table offload
  include/linux/ppp_channel.h   |  3 +++
  3 files changed, 66 insertions(+)
 
-diff --git a/drivers/net/ppp/ppp_generic.c b/drivers/net/ppp/ppp_generic.c
-index 1d71f5276..8d13767c8 100644
 --- a/drivers/net/ppp/ppp_generic.c
 +++ b/drivers/net/ppp/ppp_generic.c
 @@ -53,6 +53,11 @@
@@ -25,7 +23,7 @@ index 1d71f5276..8d13767c8 100644
  #define PPP_VERSION	"2.4.2"
  
  /*
-@@ -1577,6 +1582,28 @@ static void ppp_dev_priv_destructor(struct net_device *dev)
+@@ -1603,6 +1608,28 @@ static void ppp_dev_priv_destructor(stru
  		ppp_destroy_interface(ppp);
  }
  
@@ -54,7 +52,7 @@ index 1d71f5276..8d13767c8 100644
  static int ppp_fill_forward_path(struct net_device_path_ctx *ctx,
  				 struct net_device_path *path)
  {
-@@ -1604,6 +1631,9 @@ static const struct net_device_ops ppp_netdev_ops = {
+@@ -1630,6 +1657,9 @@ static const struct net_device_ops ppp_n
  	.ndo_start_xmit  = ppp_start_xmit,
  	.ndo_siocdevprivate = ppp_net_siocdevprivate,
  	.ndo_get_stats64 = ppp_get_stats64,
@@ -64,8 +62,6 @@ index 1d71f5276..8d13767c8 100644
  	.ndo_fill_forward_path = ppp_fill_forward_path,
  };
  
-diff --git a/drivers/net/ppp/pppoe.c b/drivers/net/ppp/pppoe.c
-index ce2cbb590..f1dd314e6 100644
 --- a/drivers/net/ppp/pppoe.c
 +++ b/drivers/net/ppp/pppoe.c
 @@ -73,6 +73,11 @@
@@ -80,7 +76,7 @@ index ce2cbb590..f1dd314e6 100644
  #include <linux/nsproxy.h>
  #include <net/net_namespace.h>
  #include <net/netns/generic.h>
-@@ -995,8 +1000,36 @@ static int pppoe_fill_forward_path(struct net_device_path_ctx *ctx,
+@@ -995,8 +1000,36 @@ static int pppoe_fill_forward_path(struc
  	return 0;
  }
  
@@ -117,8 +113,6 @@ index ce2cbb590..f1dd314e6 100644
  	.fill_forward_path = pppoe_fill_forward_path,
  };
  
-diff --git a/include/linux/ppp_channel.h b/include/linux/ppp_channel.h
-index 45e6e427c..5e655c2fa 100644
 --- a/include/linux/ppp_channel.h
 +++ b/include/linux/ppp_channel.h
 @@ -30,6 +30,9 @@ struct ppp_channel_ops {
@@ -131,6 +125,3 @@ index 45e6e427c..5e655c2fa 100644
  	int	(*fill_forward_path)(struct net_device_path_ctx *,
  				     struct net_device_path *,
  				     const struct ppp_channel *);
--- 
-2.18.0
-

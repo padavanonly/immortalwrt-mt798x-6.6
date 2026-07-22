@@ -12,8 +12,6 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_path.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_path.c b/drivers/net/ethernet/mediatek/mtk_eth_path.c
-index d18602c..461a287 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_path.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_path.c
 @@ -14,7 +14,7 @@
@@ -25,6 +23,3 @@ index d18602c..461a287 100644
  	int		(*set_path)(struct mtk_eth *eth, u64 path);
  };
  
--- 
-2.45.2
-

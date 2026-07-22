@@ -1,5 +1,3 @@
-diff --git a/drivers/net/phy/aquantia/aquantia.h b/drivers/net/phy/aquantia/aquantia.h
-index 5b2d4a1..9d1cee1 100644
 --- a/drivers/net/phy/aquantia/aquantia.h
 +++ b/drivers/net/phy/aquantia/aquantia.h
 @@ -68,7 +68,7 @@
@@ -11,11 +9,9 @@ index 5b2d4a1..9d1cee1 100644
  
  #define VEND1_GLOBAL_LED_PROV_LINK_MASK		(VEND1_GLOBAL_LED_PROV_LINK100 | \
  						 VEND1_GLOBAL_LED_PROV_LINK1000 | \
-diff --git a/drivers/net/phy/aquantia/aquantia_leds.c b/drivers/net/phy/aquantia/aquantia_leds.c
-index 00ad231..67fd80c 100644
 --- a/drivers/net/phy/aquantia/aquantia_leds.c
 +++ b/drivers/net/phy/aquantia/aquantia_leds.c
-@@ -110,11 +110,15 @@ int aqr_phy_led_hw_control_set(struct phy_device *phydev, u8 index,
+@@ -110,11 +110,15 @@ int aqr_phy_led_hw_control_set(struct ph
  	if (rules & BIT(TRIGGER_NETDEV_TX))
  		val |= VEND1_GLOBAL_LED_PROV_TX_ACT;
  
@@ -32,8 +28,6 @@ index 00ad231..67fd80c 100644
  }
  
  int aqr_phy_led_active_low_set(struct phy_device *phydev, int index, bool enable)
-diff --git a/drivers/net/phy/aquantia/aquantia_main.c b/drivers/net/phy/aquantia/aquantia_main.c
-index a9ad522..811dc13 100644
 --- a/drivers/net/phy/aquantia/aquantia_main.c
 +++ b/drivers/net/phy/aquantia/aquantia_main.c
 @@ -33,6 +33,7 @@
@@ -44,7 +38,7 @@ index a9ad522..811dc13 100644
  
  #define MDIO_PHYXS_VEND_IF_STATUS		0xe812
  #define MDIO_PHYXS_VEND_IF_STATUS_TYPE_MASK	GENMASK(7, 3)
-@@ -178,6 +179,31 @@ static void aqr107_get_stats(struct phy_device *phydev,
+@@ -178,6 +179,31 @@ static void aqr107_get_stats(struct phy_
  	}
  }
  
@@ -76,7 +70,7 @@ index a9ad522..811dc13 100644
  static int aqr_config_aneg(struct phy_device *phydev)
  {
  	bool changed = false;
-@@ -631,6 +657,7 @@ static int aqr107_config_init(struct phy_device *phydev)
+@@ -631,6 +657,7 @@ static int aqr107_config_init(struct phy
  		if (ret)
  			return ret;
  	}
@@ -84,7 +78,7 @@ index a9ad522..811dc13 100644
  
  	ret = phy_clear_bits_mmd(phydev, MDIO_MMD_PMAPMD, MDIO_PMA_TXDIS,
  				 MDIO_PMD_TXDIS_GLOBAL);
-@@ -645,6 +672,10 @@ static int aqr107_config_init(struct phy_device *phydev)
+@@ -645,6 +672,10 @@ static int aqr107_config_init(struct phy
  	if (ret)
  		return ret;
  
@@ -95,7 +89,7 @@ index a9ad522..811dc13 100644
  	ret = aqr107_config_mdi(phydev);
  	if (ret)
  		return ret;
-@@ -1091,6 +1122,30 @@ static struct phy_driver aqr_driver[] = {
+@@ -1099,6 +1130,30 @@ static struct phy_driver aqr_driver[] =
  	.get_strings	= aqr107_get_strings,
  	.get_stats	= aqr107_get_stats,
  },
@@ -126,7 +120,7 @@ index a9ad522..811dc13 100644
  };
  
  module_phy_driver(aqr_driver);
-@@ -1113,6 +1168,7 @@ static struct mdio_device_id __maybe_unused aqr_tbl[] = {
+@@ -1121,6 +1176,7 @@ static struct mdio_device_id __maybe_unu
  	{ PHY_ID_MATCH_MODEL(PHY_ID_AQR813) },
  	{ PHY_ID_MATCH_MODEL(PHY_ID_AQR112C) },
  	{ PHY_ID_MATCH_MODEL(PHY_ID_AQR112R) },

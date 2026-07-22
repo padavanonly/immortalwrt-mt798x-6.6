@@ -1,7 +1,7 @@
---- a/drivers/net/phy/Makefile	2025-06-21 06:34:45.633002781 +0800
-+++ b/drivers/net/phy/Makefile	2025-06-21 10:51:35.902000421 +0800
-@@ -51,7 +51,8 @@
- obj-$(CONFIG_ADIN1100_PHY)	+= adin1100.o
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -52,7 +52,8 @@ obj-$(CONFIG_ADIN1100_PHY)	+= adin1100.o
+ obj-$(CONFIG_AIROHA_AN8801_PHY)	+= an8801.o
  obj-$(CONFIG_AIROHA_EN8801SC_PHY)   += en8801sc.o
  obj-$(CONFIG_AIR_AN8855_PHY)		+= air_an8855.o
 -obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811h.o
@@ -12,9 +12,9 @@
  obj-$(CONFIG_AX88796B_PHY)	+= ax88796b.o
 --- a/drivers/usb/serial/option.c
 +++ b/drivers/usb/serial/option.c
-@@ -2338,9 +2338,17 @@ static const struct usb_device_id option
- 	{ USB_DEVICE_INTERFACE_CLASS(0x2cb7, 0x0a06, 0xff) },			/* Fibocom FM650-CN (RNDIS mode) */
- 	{ USB_DEVICE_INTERFACE_CLASS(0x2cb7, 0x0a07, 0xff) },			/* Fibocom FM650-CN (MBIM mode) */
+@@ -2380,9 +2380,17 @@ static const struct usb_device_id option
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(0x2dee, 0x4d22, 0xff, 0xff, 0x40) },	/* MeiG Smart SRM825L */
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(0x2dee, 0x4d22, 0xff, 0xff, 0x60) },	/* MeiG Smart SRM825L */
  	{ USB_DEVICE_INTERFACE_CLASS(0x2df3, 0x9d03, 0xff) },			/* LongSung M5710 */
 +	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1402, 0xff) },			/* GosunCn GM800 (Download mode) */
 +	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1403, 0xff) },			/* GosunCn GM800 (rmnet, old) */

@@ -13,11 +13,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  net/netfilter/xt_FLOWOFFLOAD.c | 4 ++++
  1 file changed, 4 insertions(+)
 
-diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
-index 5fce866..146c5fb 100644
 --- a/net/netfilter/xt_FLOWOFFLOAD.c
 +++ b/net/netfilter/xt_FLOWOFFLOAD.c
-@@ -391,6 +391,10 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+@@ -396,6 +396,10 @@ static void nf_dev_path_info(const struc
  				break;
  			}
  			break;
@@ -28,6 +26,3 @@ index 5fce866..146c5fb 100644
  		default:
  			break;
  		}
--- 
-2.45.2
-

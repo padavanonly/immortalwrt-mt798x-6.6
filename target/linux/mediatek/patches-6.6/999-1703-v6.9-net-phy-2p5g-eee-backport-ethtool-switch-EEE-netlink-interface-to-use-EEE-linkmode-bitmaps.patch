@@ -1,6 +1,6 @@
 --- a/drivers/net/dsa/b53/b53_common.c
 +++ b/drivers/net/dsa/b53/b53_common.c
-@@ -1261,7 +1261,7 @@ static void b53_adjust_link(struct dsa_s
+@@ -1256,7 +1256,7 @@ static void b53_adjust_link(struct dsa_s
  			    struct phy_device *phydev)
  {
  	struct b53_device *dev = ds->priv;
@@ -9,7 +9,7 @@
  	u8 rgmii_ctrl = 0, reg = 0, off;
  	bool tx_pause = false;
  	bool rx_pause = false;
-@@ -2228,10 +2228,10 @@ int b53_eee_init(struct dsa_switch *ds,
+@@ -2237,10 +2237,10 @@ int b53_eee_init(struct dsa_switch *ds,
  }
  EXPORT_SYMBOL(b53_eee_init);
  
@@ -22,7 +22,7 @@
  	u16 reg;
  
  	if (is5325(dev) || is5365(dev))
-@@ -2245,10 +2245,10 @@ int b53_get_mac_eee(struct dsa_switch *d
+@@ -2254,10 +2254,10 @@ int b53_get_mac_eee(struct dsa_switch *d
  }
  EXPORT_SYMBOL(b53_get_mac_eee);
  
@@ -89,7 +89,7 @@
  	int ret;
 --- a/drivers/net/dsa/mt7530.c
 +++ b/drivers/net/dsa/mt7530.c
-@@ -3031,7 +3031,7 @@ mt753x_setup(struct dsa_switch *ds)
+@@ -3054,7 +3054,7 @@ mt753x_setup(struct dsa_switch *ds)
  }
  
  static int mt753x_get_mac_eee(struct dsa_switch *ds, int port,
@@ -98,7 +98,7 @@
  {
  	struct mt7530_priv *priv = ds->priv;
  	u32 eeecr = mt7530_read(priv, MT753X_PMEEECR_P(port));
-@@ -3043,7 +3043,7 @@ static int mt753x_get_mac_eee(struct dsa
+@@ -3066,7 +3066,7 @@ static int mt753x_get_mac_eee(struct dsa
  }
  
  static int mt753x_set_mac_eee(struct dsa_switch *ds, int port,
@@ -148,7 +148,7 @@
  	return 0;
 --- a/drivers/net/dsa/qca/qca8k.h
 +++ b/drivers/net/dsa/qca/qca8k.h
-@@ -517,8 +517,8 @@ void qca8k_get_ethtool_stats(struct dsa_
+@@ -518,8 +518,8 @@ void qca8k_get_ethtool_stats(struct dsa_
  int qca8k_get_sset_count(struct dsa_switch *ds, int port, int sset);
  
  /* Common eee function */
@@ -286,7 +286,7 @@
  		DP(BNX2X_MSG_ETHTOOL,
 --- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
 +++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
-@@ -9591,10 +9591,10 @@ static int bnxt_hwrm_phy_qcaps(struct bn
+@@ -9592,10 +9592,10 @@ static int bnxt_hwrm_phy_qcaps(struct bn
  
  	bp->phy_flags = resp->flags | (le16_to_cpu(resp->flags2) << 8);
  	if (resp->flags & PORT_PHY_QCAPS_RESP_FLAGS_EEE_SUPPORTED) {
@@ -299,7 +299,7 @@
  		bp->lpi_tmr_lo = le32_to_cpu(resp->tx_lpi_timer_low) &
  				 PORT_PHY_QCAPS_RESP_TX_LPI_TIMER_LOW_MASK;
  		bp->lpi_tmr_hi = le32_to_cpu(resp->valid_tx_lpi_timer_high) &
-@@ -9697,7 +9697,7 @@ int bnxt_update_link(struct bnxt *bp, bo
+@@ -9698,7 +9698,7 @@ int bnxt_update_link(struct bnxt *bp, bo
  	link_info->module_status = resp->module_status;
  
  	if (bp->phy_flags & BNXT_PHY_FL_EEE_CAP) {
@@ -308,7 +308,7 @@
  		u16 fw_speeds;
  
  		eee->eee_active = 0;
-@@ -9706,7 +9706,7 @@ int bnxt_update_link(struct bnxt *bp, bo
+@@ -9707,7 +9707,7 @@ int bnxt_update_link(struct bnxt *bp, bo
  			eee->eee_active = 1;
  			fw_speeds = le16_to_cpu(
  				resp->link_partner_adv_eee_link_speed_mask);
@@ -317,7 +317,7 @@
  				_bnxt_fw_to_ethtool_adv_spds(fw_speeds, 0);
  		}
  
-@@ -9717,7 +9717,7 @@ int bnxt_update_link(struct bnxt *bp, bo
+@@ -9718,7 +9718,7 @@ int bnxt_update_link(struct bnxt *bp, bo
  				eee->eee_enabled = 1;
  
  			fw_speeds = le16_to_cpu(resp->adv_eee_link_speed_mask);
@@ -326,7 +326,7 @@
  				_bnxt_fw_to_ethtool_adv_spds(fw_speeds, 0);
  
  			if (resp->eee_config_phy_addr &
-@@ -9891,7 +9891,7 @@ int bnxt_hwrm_set_pause(struct bnxt *bp)
+@@ -9892,7 +9892,7 @@ int bnxt_hwrm_set_pause(struct bnxt *bp)
  static void bnxt_hwrm_set_eee(struct bnxt *bp,
  			      struct hwrm_port_phy_cfg_input *req)
  {
@@ -335,7 +335,7 @@
  
  	if (eee->eee_enabled) {
  		u16 eee_speeds;
-@@ -9903,7 +9903,7 @@ static void bnxt_hwrm_set_eee(struct bnx
+@@ -9904,7 +9904,7 @@ static void bnxt_hwrm_set_eee(struct bnx
  			flags |= PORT_PHY_CFG_REQ_FLAGS_EEE_TX_LPI_DISABLE;
  
  		req->flags |= cpu_to_le32(flags);
@@ -344,7 +344,7 @@
  		req->eee_link_speed_mask = cpu_to_le16(eee_speeds);
  		req->tx_lpi_timer = cpu_to_le32(eee->tx_lpi_timer);
  	} else {
-@@ -10331,7 +10331,7 @@ static void bnxt_hwmon_open(struct bnxt
+@@ -10332,7 +10332,7 @@ static void bnxt_hwmon_open(struct bnxt
  
  static bool bnxt_eee_config_ok(struct bnxt *bp)
  {
@@ -353,7 +353,7 @@
  	struct bnxt_link_info *link_info = &bp->link_info;
  
  	if (!(bp->phy_flags & BNXT_PHY_FL_EEE_CAP))
-@@ -10345,8 +10345,8 @@ static bool bnxt_eee_config_ok(struct bn
+@@ -10346,8 +10346,8 @@ static bool bnxt_eee_config_ok(struct bn
  			eee->eee_enabled = 0;
  			return false;
  		}
@@ -377,7 +377,7 @@
  
 --- a/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
 +++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
-@@ -3102,10 +3102,10 @@ static int bnxt_set_eeprom(struct net_de
+@@ -3128,10 +3128,10 @@ static int bnxt_set_eeprom(struct net_de
  				eeprom->len);
  }
  
@@ -390,7 +390,7 @@
  	struct bnxt_link_info *link_info = &bp->link_info;
  	u32 advertising;
  	int rc = 0;
-@@ -3137,16 +3137,16 @@ static int bnxt_set_eee(struct net_devic
+@@ -3163,16 +3163,16 @@ static int bnxt_set_eee(struct net_devic
  			edata->tx_lpi_timer = eee->tx_lpi_timer;
  		}
  	}
@@ -412,7 +412,7 @@
  	eee->tx_lpi_enabled = edata->tx_lpi_enabled;
  	eee->tx_lpi_timer = edata->tx_lpi_timer;
  eee_ok:
-@@ -3160,7 +3160,7 @@ eee_exit:
+@@ -3186,7 +3186,7 @@ eee_exit:
  	return rc;
  }
  
@@ -421,7 +421,7 @@
  {
  	struct bnxt *bp = netdev_priv(dev);
  
-@@ -3172,12 +3172,12 @@ static int bnxt_get_eee(struct net_devic
+@@ -3198,12 +3198,12 @@ static int bnxt_get_eee(struct net_devic
  		/* Preserve tx_lpi_timer so that the last value will be used
  		 * by default when it is re-enabled.
  		 */
@@ -598,7 +598,7 @@
  	const char			*fw_needed;
 --- a/drivers/net/ethernet/engleder/tsnep_main.c
 +++ b/drivers/net/ethernet/engleder/tsnep_main.c
-@@ -228,7 +228,7 @@ static int tsnep_phy_loopback(struct tsn
+@@ -240,7 +240,7 @@ static int tsnep_phy_loopback(struct tsn
  static int tsnep_phy_open(struct tsnep_adapter *adapter)
  {
  	struct phy_device *phydev;
@@ -607,7 +607,7 @@
  	int retval;
  
  	retval = phy_connect_direct(adapter->netdev, adapter->phydev,
-@@ -247,8 +247,8 @@ static int tsnep_phy_open(struct tsnep_a
+@@ -259,8 +259,8 @@ static int tsnep_phy_open(struct tsnep_a
  	phy_remove_link_mode(phydev, ETHTOOL_LINK_MODE_1000baseT_Half_BIT);
  
  	/* disable EEE autoneg, EEE not supported by TSNEP */
@@ -620,7 +620,7 @@
  	phy_start(adapter->phydev);
 --- a/drivers/net/ethernet/freescale/enetc/enetc.c
 +++ b/drivers/net/ethernet/freescale/enetc/enetc.c
-@@ -2426,7 +2426,7 @@ static void enetc_clear_interrupts(struc
+@@ -2471,7 +2471,7 @@ static void enetc_clear_interrupts(struc
  static int enetc_phylink_connect(struct net_device *ndev)
  {
  	struct enetc_ndev_priv *priv = netdev_priv(ndev);
@@ -629,7 +629,7 @@
  	int err;
  
  	if (!priv->phylink) {
-@@ -2442,7 +2442,7 @@ static int enetc_phylink_connect(struct
+@@ -2487,7 +2487,7 @@ static int enetc_phylink_connect(struct
  	}
  
  	/* disable EEE autoneg, until ENETC driver supports it */
@@ -651,7 +651,7 @@
  	/* ptp clock period in ns*/
 --- a/drivers/net/ethernet/freescale/fec_main.c
 +++ b/drivers/net/ethernet/freescale/fec_main.c
-@@ -3175,7 +3175,7 @@ static int fec_enet_us_to_tx_cycle(struc
+@@ -3178,7 +3178,7 @@ static int fec_enet_us_to_tx_cycle(struc
  static int fec_enet_eee_mode_set(struct net_device *ndev, bool enable)
  {
  	struct fec_enet_private *fep = netdev_priv(ndev);
@@ -660,7 +660,7 @@
  	unsigned int sleep_cycle, wake_cycle;
  	int ret = 0;
  
-@@ -3202,10 +3202,10 @@ static int fec_enet_eee_mode_set(struct
+@@ -3205,10 +3205,10 @@ static int fec_enet_eee_mode_set(struct
  }
  
  static int
@@ -673,7 +673,7 @@
  
  	if (!(fep->quirks & FEC_QUIRK_HAS_EEE))
  		return -EOPNOTSUPP;
-@@ -3222,10 +3222,10 @@ fec_enet_get_eee(struct net_device *ndev
+@@ -3225,10 +3225,10 @@ fec_enet_get_eee(struct net_device *ndev
  }
  
  static int
@@ -1206,7 +1206,7 @@
  	params.eee.tx_lpi_enable = edata->tx_lpi_enabled;
 --- a/drivers/net/ethernet/realtek/r8169_main.c
 +++ b/drivers/net/ethernet/realtek/r8169_main.c
-@@ -2096,7 +2096,7 @@ static unsigned int r8169_get_tx_lpi_tim
+@@ -2156,7 +2156,7 @@ static unsigned int r8169_get_tx_lpi_tim
  	return DIV_ROUND_CLOSEST(timer * BITS_PER_BYTE, speed);
  }
  
@@ -1215,7 +1215,7 @@
  {
  	struct rtl8169_private *tp = netdev_priv(dev);
  	int ret;
-@@ -2114,7 +2114,7 @@ static int rtl8169_get_eee(struct net_de
+@@ -2174,7 +2174,7 @@ static int rtl8169_get_eee(struct net_de
  	return 0;
  }
  
@@ -1601,7 +1601,7 @@
  	int ret;
 --- a/drivers/net/usb/r8152.c
 +++ b/drivers/net/usb/r8152.c
-@@ -892,8 +892,8 @@ struct r8152 {
+@@ -893,8 +893,8 @@ struct r8152 {
  		void (*up)(struct r8152 *tp);
  		void (*down)(struct r8152 *tp);
  		void (*unload)(struct r8152 *tp);
@@ -1612,7 +1612,7 @@
  		bool (*in_nway)(struct r8152 *tp);
  		void (*hw_phy_cfg)(struct r8152 *tp);
  		void (*autosuspend_en)(struct r8152 *tp, bool enable);
-@@ -8954,7 +8954,7 @@ static void rtl8152_get_strings(struct n
+@@ -8955,7 +8955,7 @@ static void rtl8152_get_strings(struct n
  	}
  }
  
@@ -1621,7 +1621,7 @@
  {
  	u32 lp, adv, supported = 0;
  	u16 val;
-@@ -8970,16 +8970,16 @@ static int r8152_get_eee(struct r8152 *t
+@@ -8971,16 +8971,16 @@ static int r8152_get_eee(struct r8152 *t
  
  	eee->eee_enabled = tp->eee_en;
  	eee->eee_active = !!(supported & adv & lp);
@@ -1643,7 +1643,7 @@
  
  	tp->eee_en = eee->eee_enabled;
  	tp->eee_adv = val;
-@@ -8989,7 +8989,7 @@ static int r8152_set_eee(struct r8152 *t
+@@ -8990,7 +8990,7 @@ static int r8152_set_eee(struct r8152 *t
  	return 0;
  }
  
@@ -1652,7 +1652,7 @@
  {
  	u32 lp, adv, supported = 0;
  	u16 val;
-@@ -9005,15 +9005,15 @@ static int r8153_get_eee(struct r8152 *t
+@@ -9006,15 +9006,15 @@ static int r8153_get_eee(struct r8152 *t
  
  	eee->eee_enabled = tp->eee_en;
  	eee->eee_active = !!(supported & adv & lp);
@@ -1672,7 +1672,7 @@
  {
  	struct r8152 *tp = netdev_priv(net);
  	int ret;
-@@ -9040,7 +9040,7 @@ out:
+@@ -9041,7 +9041,7 @@ out:
  }
  
  static int
@@ -1716,7 +1716,7 @@
  	int	(*set_tunable)(struct net_device *,
 --- a/include/linux/phy.h
 +++ b/include/linux/phy.h
-@@ -1950,9 +1950,9 @@ int genphy_c45_plca_get_status(struct ph
+@@ -1947,9 +1947,9 @@ int genphy_c45_plca_get_status(struct ph
  int genphy_c45_eee_is_active(struct phy_device *phydev, unsigned long *adv,
  			     unsigned long *lp, bool *is_enabled);
  int genphy_c45_ethtool_get_eee(struct phy_device *phydev,
@@ -1728,7 +1728,7 @@
  int genphy_c45_write_eee_adv(struct phy_device *phydev, unsigned long *adv);
  int genphy_c45_an_config_eee_aneg(struct phy_device *phydev);
  int genphy_c45_read_eee_adv(struct phy_device *phydev, unsigned long *adv);
-@@ -2030,8 +2030,8 @@ int phy_unregister_fixup_for_uid(u32 phy
+@@ -2027,8 +2027,8 @@ int phy_unregister_fixup_for_uid(u32 phy
  
  int phy_init_eee(struct phy_device *phydev, bool clk_stop_enable);
  int phy_get_eee_err(struct phy_device *phydev);

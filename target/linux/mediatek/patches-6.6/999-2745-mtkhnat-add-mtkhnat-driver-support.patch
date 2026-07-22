@@ -1,5 +1,3 @@
-diff --git a/drivers/net/ethernet/mediatek/Kconfig b/drivers/net/ethernet/mediatek/Kconfig
-index a8d88fa..259935e 100644
 --- a/drivers/net/ethernet/mediatek/Kconfig
 +++ b/drivers/net/ethernet/mediatek/Kconfig
 @@ -32,4 +32,28 @@ config NET_MEDIATEK_STAR_EMAC
@@ -31,8 +29,6 @@ index a8d88fa..259935e 100644
 +	  family.
 +
  endif #NET_VENDOR_MEDIATEK
-diff --git a/drivers/net/ethernet/mediatek/Makefile b/drivers/net/ethernet/mediatek/Makefile
-index b6b45ce..013945a 100644
 --- a/drivers/net/ethernet/mediatek/Makefile
 +++ b/drivers/net/ethernet/mediatek/Makefile
 @@ -11,3 +11,4 @@ mtk_eth-$(CONFIG_NET_MEDIATEK_SOC_WED) +
@@ -40,8 +36,6 @@ index b6b45ce..013945a 100644
  obj-$(CONFIG_NET_MEDIATEK_SOC_WED) += mtk_wed_ops.o
  obj-$(CONFIG_NET_MEDIATEK_STAR_EMAC) += mtk_star_emac.o
 +obj-$(CONFIG_NET_MEDIATEK_HNAT) += mtk_hnat/
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 851766b..afcd264 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 @@ -36,6 +36,10 @@

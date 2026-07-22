@@ -13,11 +13,9 @@ Signed-off-by: chak-kei.lam <chak-kei.lam@mediatek.com>
  net/netfilter/xt_FLOWOFFLOAD.c |  4 +++-
  3 files changed, 15 insertions(+), 1 deletion(-)
 
-diff --git a/drivers/net/macvlan.c b/drivers/net/macvlan.c
-index 2f578a1..4851915 100644
 --- a/drivers/net/macvlan.c
 +++ b/drivers/net/macvlan.c
-@@ -1142,6 +1142,16 @@ static int macvlan_dev_get_iflink(const struct net_device *dev)
+@@ -1177,6 +1177,16 @@ static int macvlan_dev_get_iflink(const
  	return vlan->lowerdev->ifindex;
  }
  
@@ -34,7 +32,7 @@ index 2f578a1..4851915 100644
  #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
  static int macvlan_dev_flow_offload_check(struct flow_offload_hw_path *path)
  {
-@@ -1190,6 +1200,7 @@ static const struct net_device_ops macvlan_netdev_ops = {
+@@ -1225,6 +1235,7 @@ static const struct net_device_ops macvl
  	.ndo_features_check	= passthru_features_check,
  	.ndo_hwtstamp_get	= macvlan_hwtstamp_get,
  	.ndo_hwtstamp_set	= macvlan_hwtstamp_set,
@@ -42,11 +40,9 @@ index 2f578a1..4851915 100644
  #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
  	.ndo_flow_offload_check = macvlan_dev_flow_offload_check,
  #endif
-diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
-index 835845a..a3cba7c 100644
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -849,6 +849,7 @@ enum net_device_path_type {
+@@ -909,6 +909,7 @@ enum net_device_path_type {
  	DEV_PATH_BRIDGE,
  	DEV_PATH_PPPOE,
  	DEV_PATH_DSA,
@@ -54,11 +50,9 @@ index 835845a..a3cba7c 100644
  	DEV_PATH_MTK_WDMA,
  	DEV_PATH_DSLITE,
  	DEV_PATH_6RD,
-diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
-index a8aaf7f..bad3c51 100644
 --- a/net/netfilter/xt_FLOWOFFLOAD.c
 +++ b/net/netfilter/xt_FLOWOFFLOAD.c
-@@ -325,10 +325,12 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+@@ -352,10 +352,12 @@ static void nf_dev_path_info(const struc
  		case DEV_PATH_DSA:
  		case DEV_PATH_VLAN:
  		case DEV_PATH_PPPOE:
@@ -72,6 +66,3 @@ index a8aaf7f..bad3c51 100644
  				break;
  			if (path->type == DEV_PATH_DSA) {
  				i = stack->num_paths;
--- 
-2.45.2
-

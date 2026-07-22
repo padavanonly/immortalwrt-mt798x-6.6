@@ -1,6 +1,6 @@
---- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-24 12:27:43.819001528 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-08-24 13:09:43.421000136 +0800
-@@ -2588,23 +2588,23 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2588,23 +2588,23 @@ static int mtk_poll_rx(struct napi_struc
  
  		skb->dev = netdev;
  		bytes += skb->len;

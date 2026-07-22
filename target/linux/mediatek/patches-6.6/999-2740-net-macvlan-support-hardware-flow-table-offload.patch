@@ -7,8 +7,6 @@ Subject: [PATCH] net: macvlan: support hardware flow table offload
  drivers/net/macvlan.c | 22 ++++++++++++++++++++++
  1 file changed, 22 insertions(+)
 
-diff --git a/drivers/net/macvlan.c b/drivers/net/macvlan.c
-index 90e8b56..2f578a1 100644
 --- a/drivers/net/macvlan.c
 +++ b/drivers/net/macvlan.c
 @@ -33,6 +33,11 @@
@@ -22,8 +20,8 @@ index 90e8b56..2f578a1 100644
 +
  #define MACVLAN_HASH_BITS	8
  #define MACVLAN_HASH_SIZE	(1<<MACVLAN_HASH_BITS)
- #define MACVLAN_BC_QUEUE_LEN	1000
-@@ -1137,6 +1142,20 @@ static int macvlan_dev_get_iflink(const struct net_device *dev)
+ #define MACVLAN_DEFAULT_BC_QUEUE_LEN	1000
+@@ -1172,6 +1177,20 @@ static int macvlan_dev_get_iflink(const
  	return vlan->lowerdev->ifindex;
  }
  
@@ -44,7 +42,7 @@ index 90e8b56..2f578a1 100644
  static const struct ethtool_ops macvlan_ethtool_ops = {
  	.get_link		= ethtool_op_get_link,
  	.get_link_ksettings	= macvlan_ethtool_get_link_ksettings,
-@@ -1171,6 +1190,9 @@ static const struct net_device_ops macvlan_netdev_ops = {
+@@ -1206,6 +1225,9 @@ static const struct net_device_ops macvl
  	.ndo_features_check	= passthru_features_check,
  	.ndo_hwtstamp_get	= macvlan_hwtstamp_get,
  	.ndo_hwtstamp_set	= macvlan_hwtstamp_set,
@@ -53,7 +51,4 @@ index 90e8b56..2f578a1 100644
 +#endif
  };
  
- void macvlan_common_setup(struct net_device *dev)
--- 
-2.45.2
-
+ static void macvlan_dev_free(struct net_device *dev)

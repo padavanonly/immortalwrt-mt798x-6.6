@@ -8,8 +8,6 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: add hw lro support
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  55 ++---
  2 files changed, 226 insertions(+), 48 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index f6f22b2..6dea176 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 @@ -2400,6 +2400,12 @@ static int mtk_poll_rx(struct napi_struc
@@ -428,8 +426,6 @@ index f6f22b2..6dea176 100644
  		.dma_max_len = MTK_TX_DMA_BUF_LEN,
  		.dma_len_offset = 16,
  		.dma_size = MTK_DMA_SIZE(2K),
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index f1eedc2..f46e26e 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 @@ -36,7 +36,7 @@
@@ -558,6 +554,3 @@ index f1eedc2..f46e26e 100644
  
  #ifdef CONFIG_SOC_MT7621
  static inline bool mtk_is_netsys_v1(struct mtk_eth *eth)
--- 
-2.45.2
-

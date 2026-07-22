@@ -1,6 +1,6 @@
 --- a/drivers/net/ppp/pptp.c
 +++ b/drivers/net/ppp/pptp.c
-@@ -308,6 +308,15 @@ static int pptp_rcv_core(struct sock *sk
+@@ -320,6 +320,15 @@ static int pptp_rcv_core(struct sock *sk
  				(PPP_PROTOCOL(payload) == PPP_LCP) &&
  				((payload[4] == PPP_LCP_ECHOREQ) || (payload[4] == PPP_LCP_ECHOREP)))
  			goto allow_packet;

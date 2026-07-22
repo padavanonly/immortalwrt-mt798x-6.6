@@ -15,11 +15,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  net/netfilter/nf_flow_table_offload.c         |  4 +-
  5 files changed, 154 insertions(+), 12 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index b88f006..190b8b9 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1707,6 +1707,7 @@ struct mtk_eth {
+@@ -1709,6 +1709,7 @@ struct mtk_eth {
  
  	struct metadata_dst		*dsa_meta[MTK_MAX_DSA_PORTS];
  
@@ -27,7 +25,7 @@ index b88f006..190b8b9 100644
  	struct mtk_ppe			*ppe[3];
  	struct rhashtable		flow_table;
  
-@@ -1907,6 +1908,18 @@ static inline u32 mtk_get_ib2_multicast_mask(struct mtk_eth *eth)
+@@ -1909,6 +1910,18 @@ static inline u32 mtk_get_ib2_multicast_
  	return MTK_FOE_IB2_MULTICAST;
  }
  
@@ -46,15 +44,12 @@ index b88f006..190b8b9 100644
  static inline bool mtk_interface_mode_is_xgmii(phy_interface_t interface)
  {
  	switch (interface) {
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-index 0ba49a5..129bde4 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-@@ -195,6 +195,62 @@ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index)
- 	return 0;
+@@ -196,6 +196,62 @@ int mtk_ppe_debugfs_init(struct mtk_ppe
  }
  
-+static int
+ static int
 +mtk_ppe_internal_debugfs_read_qos(struct seq_file *m, void *private)
 +{
 +	struct mtk_eth *eth = m->private;
@@ -110,10 +105,11 @@ index 0ba49a5..129bde4 100644
 +	.release = single_release,
 +};
 +
- static int
++static int
  mtk_ppe_internal_debugfs_foe_all_show(struct seq_file *m, void *private)
  {
-@@ -240,6 +296,9 @@ DEFINE_SHOW_ATTRIBUTE(mtk_ppe_internal_debugfs_foe_bind);
+ 	struct mtk_eth *eth = m->private;
+@@ -240,6 +296,9 @@ DEFINE_SHOW_ATTRIBUTE(mtk_ppe_internal_d
  int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
  {
  	struct dentry *root;
@@ -123,7 +119,7 @@ index 0ba49a5..129bde4 100644
  
  	root = debugfs_create_dir("mtk_ppe", NULL);
  	if (!root)
-@@ -249,6 +308,41 @@ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
+@@ -249,6 +308,41 @@ int mtk_ppe_internal_debugfs_init(struct
  			    &mtk_ppe_internal_debugfs_foe_all_fops);
  	debugfs_create_file("bind", S_IRUGO, root, eth,
  			    &mtk_ppe_internal_debugfs_foe_bind_fops);
@@ -165,8 +161,6 @@ index 0ba49a5..129bde4 100644
 +err:
 +	return ret;
  }
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-index 4729191..82ca90a 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
 @@ -9,6 +9,8 @@
@@ -178,7 +172,7 @@ index 4729191..82ca90a 100644
  #include <net/dsa.h>
  #include "mtk_eth_soc.h"
  #include "mtk_wed.h"
-@@ -187,13 +189,17 @@ mtk_flow_get_dsa_port(struct net_device **dev)
+@@ -187,13 +189,17 @@ mtk_flow_get_dsa_port(struct net_device
  
  static int
  mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
@@ -198,7 +192,7 @@ index 4729191..82ca90a 100644
  		mtk_foe_entry_set_wdma(eth, foe, info.wdma_idx, info.queue,
  				       info.bss, info.wcid, info.amsdu);
  		if (mtk_is_netsys_v2_or_greater(eth)) {
-@@ -217,24 +223,50 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+@@ -217,24 +223,50 @@ mtk_flow_set_output_device(struct mtk_et
  		goto out;
  	}
  
@@ -256,7 +250,7 @@ index 4729191..82ca90a 100644
  
  out:
  	mtk_foe_entry_set_pse_port(eth, foe, pse_port);
-@@ -455,8 +487,8 @@ mtk_flow_offload_replace(struct mtk_eth *eth, struct flow_cls_offload *f,
+@@ -455,8 +487,8 @@ mtk_flow_offload_replace(struct mtk_eth
  	if (data.pppoe.num == 1)
  		mtk_foe_entry_set_pppoe(eth, &foe, data.pppoe.sid);
  
@@ -267,8 +261,6 @@ index 4729191..82ca90a 100644
  	if (err)
  		return err;
  
-diff --git a/include/net/flow_offload.h b/include/net/flow_offload.h
-index 9efa9a5..77635e6 100644
 --- a/include/net/flow_offload.h
 +++ b/include/net/flow_offload.h
 @@ -603,6 +603,7 @@ struct flow_cls_offload {
@@ -279,11 +271,9 @@ index 9efa9a5..77635e6 100644
  	struct flow_rule *rule;
  	struct flow_stats stats;
  	u32 classid;
-diff --git a/net/netfilter/nf_flow_table_offload.c b/net/netfilter/nf_flow_table_offload.c
-index 3d46372..9189ece 100644
 --- a/net/netfilter/nf_flow_table_offload.c
 +++ b/net/netfilter/nf_flow_table_offload.c
-@@ -820,11 +820,13 @@ static int nf_flow_offload_alloc(const struct flow_offload_work *offload,
+@@ -820,11 +820,13 @@ static int nf_flow_offload_alloc(const s
  }
  
  static void nf_flow_offload_init(struct flow_cls_offload *cls_flow,
@@ -297,7 +287,7 @@ index 3d46372..9189ece 100644
  	cls_flow->common.protocol = proto;
  	cls_flow->common.prio = priority;
  	cls_flow->common.extack = extack;
-@@ -846,7 +848,7 @@ static int nf_flow_offload_tuple(struct nf_flowtable *flowtable,
+@@ -846,7 +848,7 @@ static int nf_flow_offload_tuple(struct
  	__be16 proto = ETH_P_ALL;
  	int err, i = 0;
  
@@ -306,6 +296,3 @@ index 3d46372..9189ece 100644
  			     &flow->tuplehash[dir].tuple, &extack);
  	if (cmd == FLOW_CLS_REPLACE)
  		cls_flow.rule = flow_rule->rule;
--- 
-2.45.2
-

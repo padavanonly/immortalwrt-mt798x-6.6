@@ -1,7 +1,6 @@
-diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
---- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-11-26 20:42:39.290000239 +0800
-+++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c	2025-11-26 20:47:48.843000043 +0800
-@@ -2660,6 +2660,7 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2660,6 +2660,7 @@ static int mtk_poll_rx(struct napi_struc
  		if (sent_ppd && ppd_dev){
  			skb->protocol = eth_hdr(skb)->h_proto;
  			skb->dev = ppd_dev;
@@ -9,10 +8,9 @@ diff -u -r a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/
  		}
  		skb_record_rx_queue(skb, 0);
  		napi_gro_receive(napi, skb);
-diff -u -r a/net/bridge/br_input.c b/net/bridge/br_input.c
---- a/net/bridge/br_input.c	2025-11-26 20:42:38.756000239 +0800
-+++ b/net/bridge/br_input.c	2025-11-26 20:48:12.008000054 +0800
-@@ -137,7 +137,7 @@
+--- a/net/bridge/br_input.c
++++ b/net/bridge/br_input.c
+@@ -137,7 +137,7 @@ int br_handle_frame_finish(struct net *n
  	nbp_switchdev_frame_mark(p, skb);
  
  	/* insert into forwarding database after filtering to avoid spoofing */

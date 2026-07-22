@@ -8,11 +8,9 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: revise xgmac force mode
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  3 ++-
  2 files changed, 25 insertions(+), 8 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 7237b9b..cc33931 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -759,6 +759,24 @@ static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
+@@ -748,6 +748,24 @@ init_err:
  		mac->id, phy_modes(state->interface), err);
  }
  
@@ -37,7 +35,7 @@ index 7237b9b..cc33931 100644
  static int mtk_mac_finish(struct phylink_config *config, unsigned int mode,
  			  phy_interface_t interface)
  {
-@@ -794,10 +812,9 @@ static void mtk_mac_link_down(struct phylink_config *config, unsigned int mode,
+@@ -783,10 +801,9 @@ static void mtk_mac_link_down(struct phy
  
  	if (!mtk_interface_mode_is_xgmii(interface)) {
  		mtk_m32(mac->hw, MAC_MCR_TX_EN | MAC_MCR_RX_EN | MAC_MCR_FORCE_LINK, 0, MTK_MAC_MCR(mac->id));
@@ -49,7 +47,7 @@ index 7237b9b..cc33931 100644
  	}
  }
  
-@@ -913,7 +930,7 @@ static void mtk_xgdm_mac_link_up(struct mtk_mac *mac,
+@@ -902,7 +919,7 @@ static void mtk_xgdm_mac_link_up(struct
  				 unsigned int mode, phy_interface_t interface,
  				 int speed, int duplex, bool tx_pause, bool rx_pause)
  {
@@ -58,7 +56,7 @@ index 7237b9b..cc33931 100644
  
  	if (mac->id == MTK_GMAC1_ID)
  		return;
-@@ -923,10 +940,8 @@ static void mtk_xgdm_mac_link_up(struct mtk_mac *mac,
+@@ -912,10 +929,8 @@ static void mtk_xgdm_mac_link_up(struct
  	mdelay(20);
  	mtk_m32(mac->hw, XMAC_GLB_CNTCLR, XMAC_GLB_CNTCLR, MTK_XMAC_CNT_CTRL(mac->id));
  
@@ -71,7 +69,7 @@ index 7237b9b..cc33931 100644
  
  	mcr = mtk_r32(mac->hw, MTK_XMAC_MCR(mac->id));
  	mcr &= ~(XMAC_MCR_FORCE_TX_FC | XMAC_MCR_FORCE_RX_FC | XMAC_MCR_TRX_DISABLE);
-@@ -961,6 +976,7 @@ static void mtk_mac_link_up(struct phylink_config *config,
+@@ -950,6 +965,7 @@ static void mtk_mac_link_up(struct phyli
  static const struct phylink_mac_ops mtk_phylink_ops = {
  	.mac_select_pcs = mtk_mac_select_pcs,
  	.mac_config = mtk_mac_config,
@@ -79,11 +77,9 @@ index 7237b9b..cc33931 100644
  	.mac_finish = mtk_mac_finish,
  	.mac_link_down = mtk_mac_link_down,
  	.mac_link_up = mtk_mac_link_up,
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 82e758e..bd4a62e 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -467,7 +467,8 @@
+@@ -432,7 +432,8 @@
  
  /* XMAC status registers */
  #define MTK_XGMAC_STS(x)	(((x) == MTK_GMAC3_ID) ? 0x1001C : 0x1000C)
@@ -93,6 +89,3 @@ index 82e758e..bd4a62e 100644
  #define MTK_USXGMII_PCS_LINK	BIT(8)
  #define MTK_XGMAC_RX_FC		BIT(5)
  #define MTK_XGMAC_TX_FC		BIT(4)
--- 
-2.45.2
-

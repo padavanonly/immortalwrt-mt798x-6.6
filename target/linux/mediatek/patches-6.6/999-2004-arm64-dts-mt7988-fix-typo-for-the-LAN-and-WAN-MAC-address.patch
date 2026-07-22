@@ -12,11 +12,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  .../boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso  | 8 ++++----
  1 file changed, 4 insertions(+), 4 deletions(-)
 
-diff --git a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso
-index 3fe75ac..d5f8050 100644
 --- a/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso
 +++ b/arch/arm64/boot/dts/mediatek/mt7988a-rfb-spim-nand-factory.dtso
-@@ -27,12 +27,12 @@ gmac2_mac: eeprom@fffee {
+@@ -27,12 +27,12 @@
  							reg = <0xfffee 0x6>;
  						};
  
@@ -33,6 +31,3 @@ index 3fe75ac..d5f8050 100644
  						};
  					};
  				};
--- 
-2.45.2
-

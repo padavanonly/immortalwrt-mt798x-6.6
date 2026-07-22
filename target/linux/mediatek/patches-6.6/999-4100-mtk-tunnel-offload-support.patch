@@ -1,6 +1,6 @@
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -179,10 +179,21 @@ struct flow_offload {
+@@ -187,10 +187,21 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
  };
  

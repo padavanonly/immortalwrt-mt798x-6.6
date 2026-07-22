@@ -4,11 +4,9 @@ Subject: [PATCH] 999-2756-net-dsa-change-mt753x-agetime-setting-method
  drivers/net/dsa/mt7530.c | 29 ++++-------------------------
  1 file changed, 4 insertions(+), 25 deletions(-)
 
-diff --git a/drivers/net/dsa/mt7530.c b/drivers/net/dsa/mt7530.c
-index f35304a..6281cc7 100644
 --- a/drivers/net/dsa/mt7530.c
 +++ b/drivers/net/dsa/mt7530.c
-@@ -817,35 +817,14 @@ mt7530_set_ageing_time(struct dsa_switch *ds, unsigned int msecs)
+@@ -817,35 +817,14 @@ mt7530_set_ageing_time(struct dsa_switch
  {
  	struct mt7530_priv *priv = ds->priv;
  	unsigned int secs = msecs / 1000;
@@ -48,6 +46,3 @@ index f35304a..6281cc7 100644
  
  	mt7530_write(priv, MT7530_AAC, AGE_CNT(age_count) | AGE_UNIT(age_unit));
  
--- 
-2.45.2
-

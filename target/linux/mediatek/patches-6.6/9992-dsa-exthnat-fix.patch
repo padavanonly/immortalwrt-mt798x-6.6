@@ -1,6 +1,6 @@
---- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-28 21:30:09.731001441 +0800
-+++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi	2025-06-28 21:34:08.226001555 +0800
-@@ -1002,10 +1002,9 @@
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -1006,10 +1006,9 @@
  			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P2>,
  				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P2>,
  				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P2>,
@@ -13,7 +13,7 @@
  			pinctrl-names = "default";
  			pinctrl-0 = <&pcie2_pins>;
  			phys = <&xphyu3port0 PHY_TYPE_PCIE>;
-@@ -1044,10 +1043,9 @@
+@@ -1048,10 +1047,9 @@
  			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P3>,
  				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P3>,
  				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P3>,
@@ -26,7 +26,7 @@
  			pinctrl-names = "default";
  			pinctrl-0 = <&pcie3_pins>;
  			#interrupt-cells = <1>;
-@@ -1084,10 +1082,9 @@
+@@ -1088,10 +1086,9 @@
  			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P0>,
  				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P0>,
  				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P0>,
@@ -39,7 +39,7 @@
  			pinctrl-names = "default";
  			pinctrl-0 = <&pcie0_pins>;
  			#interrupt-cells = <1>;
-@@ -1124,10 +1121,9 @@
+@@ -1128,10 +1125,9 @@
  			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P1>,
  				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P1>,
  				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P1>,
@@ -52,10 +52,9 @@
  			pinctrl-names = "default";
  			pinctrl-0 = <&pcie1_pins>;
  			#interrupt-cells = <1>;
-
---- a/drivers/pci/controller/pcie-mediatek-gen3.c	2025-06-28 21:30:09.724001441 +0800
-+++ b/drivers/pci/controller/pcie-mediatek-gen3.c	2025-06-29 11:35:51.737000212 +0800
-@@ -1219,6 +1219,17 @@
+--- a/drivers/pci/controller/pcie-mediatek-gen3.c
++++ b/drivers/pci/controller/pcie-mediatek-gen3.c
+@@ -1219,6 +1219,17 @@ err_setup:
  	return err;
  }
  
@@ -73,7 +72,7 @@
  static int mtk_pcie_probe(struct platform_device *pdev)
  {
  	struct device *dev = &pdev->dev;
-@@ -1466,6 +1477,7 @@
+@@ -1466,6 +1477,7 @@ MODULE_DEVICE_TABLE(of, mtk_pcie_of_matc
  
  static struct platform_driver mtk_pcie_driver = {
  	.probe = mtk_pcie_probe,

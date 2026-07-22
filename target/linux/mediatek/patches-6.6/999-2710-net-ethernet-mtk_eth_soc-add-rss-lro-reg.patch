@@ -9,11 +9,9 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: add register definitions for rss
  drivers/net/ethernet/mediatek/mtk_eth_soc.h | 32 ++++++++++++++-------
  2 files changed, 45 insertions(+), 10 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 5ad5a03..02fb1b0 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -55,13 +55,18 @@ static const struct mtk_reg_map mtk_reg_map = {
+@@ -55,13 +55,18 @@ static const struct mtk_reg_map mtk_reg_
  		.rx_cnt_cfg	= 0x0904,
  		.pcrx_ptr	= 0x0908,
  		.pdrx_ptr	= 0x090c,
@@ -32,7 +30,7 @@ index 5ad5a03..02fb1b0 100644
  	},
  	.qdma = {
  		.qtx_cfg	= 0x1800,
-@@ -122,6 +127,7 @@ static const struct mtk_reg_map mt7986_reg_map = {
+@@ -122,6 +127,7 @@ static const struct mtk_reg_map mt7986_r
  	.tx_irq_mask		= 0x461c,
  	.tx_irq_status		= 0x4618,
  	.pdma = {
@@ -40,7 +38,7 @@ index 5ad5a03..02fb1b0 100644
  		.rx_ptr		= 0x4100,
  		.rx_cnt_cfg	= 0x4104,
  		.pcrx_ptr	= 0x4108,
-@@ -133,6 +139,12 @@ static const struct mtk_reg_map mt7986_reg_map = {
+@@ -133,6 +139,12 @@ static const struct mtk_reg_map mt7986_r
  		.irq_mask	= 0x4228,
  		.adma_rx_dbg0	= 0x4238,
  		.int_grp	= 0x4250,
@@ -53,7 +51,7 @@ index 5ad5a03..02fb1b0 100644
  	},
  	.qdma = {
  		.qtx_cfg	= 0x4400,
-@@ -185,10 +197,21 @@ static const struct mtk_reg_map mt7988_reg_map = {
+@@ -185,10 +197,21 @@ static const struct mtk_reg_map mt7988_r
  		.glo_cfg	= 0x6a04,
  		.rst_idx	= 0x6a08,
  		.delay_irq	= 0x6a0c,
@@ -75,11 +73,9 @@ index 5ad5a03..02fb1b0 100644
  	},
  	.qdma = {
  		.qtx_cfg	= 0x4400,
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 18f2dd6..8cbfd1a 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1219,17 +1219,29 @@ struct mtk_reg_map {
+@@ -1221,17 +1221,29 @@ struct mtk_reg_map {
  	u32	tx_irq_mask;
  	u32	tx_irq_status;
  	struct {
@@ -119,6 +115,3 @@ index 18f2dd6..8cbfd1a 100644
  	} pdma;
  	struct {
  		u32	qtx_cfg;	/* tx queue configuration */
--- 
-2.45.2
-

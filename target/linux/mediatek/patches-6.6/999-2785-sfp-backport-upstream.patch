@@ -1,5 +1,3 @@
-Index: linux-6.6.94/drivers/net/phy/sfp.c
-===================================================================
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
 @@ -270,6 +270,7 @@ struct sfp {
@@ -136,14 +134,14 @@ Index: linux-6.6.94/drivers/net/phy/sfp.c
 +	// 1000BASE-LX / 1300MBd in its EEPROM
 +	SFP_QUIRK("Hisense", "ZNID-GPON-2311NA", sfp_quirk_2500basex,
 +		  sfp_fixup_ignore_tx_fault),
- 
--	// Lantech 8330-262D-E can operate at 2500base-X, but incorrectly report
--	// 2500MBd NRZ in their EEPROM
++
 +	// HSGQ HSGQ-XPON-Stick can operate at 2500base-X, but reports
 +	// 1000BASE-LX / 1300MBd in its EEPROM
 +	SFP_QUIRK("HSGQ", "HSGQ-XPON-Stick", sfp_quirk_2500basex,
 +		  sfp_fixup_ignore_tx_fault),
-+
+ 
+-	// Lantech 8330-262D-E can operate at 2500base-X, but incorrectly report
+-	// 2500MBd NRZ in their EEPROM
 +	// Lantech 8330-262D-E and 8330-265D can operate at 2500base-X, but
 +	// incorrectly report 2500MBd NRZ in their EEPROM.
 +	// Some 8330-265D modules have inverted LOS, while all of them report
@@ -235,9 +233,3 @@ Index: linux-6.6.94/drivers/net/phy/sfp.c
  
  	for (i = 0; i < GPIO_MAX; i++)
  		if (changed & BIT(i))
- 		sfp->gpio_irq[i] = gpiod_to_irq(sfp->gpio[i]);
-@@ -3348,3 +3422,4 @@ module_exit(sfp_exit);
- MODULE_ALIAS("platform:sfp");
- MODULE_AUTHOR("Russell King");
- MODULE_LICENSE("GPL v2");
-+MODULE_DESCRIPTION("SFP cage support");

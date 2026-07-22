@@ -13,11 +13,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |  5 +++-
  2 files changed, 8 insertions(+), 24 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 0f4fbf2..e4d0d97 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -5152,15 +5152,10 @@ static void mtk_prepare_for_reset(struct mtk_eth *eth)
+@@ -5160,15 +5160,10 @@ static void mtk_prepare_for_reset(struct
  	int i;
  
  	/* set FE PPE ports link down */
@@ -37,7 +35,7 @@ index 0f4fbf2..e4d0d97 100644
  	}
  
  	/* adjust PPE configurations to prepare for reset */
-@@ -5181,7 +5176,6 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -5189,7 +5184,6 @@ static void mtk_pending_work(struct work
  {
  	struct mtk_eth *eth = container_of(work, struct mtk_eth, pending_work);
  	unsigned long restart = 0;
@@ -45,7 +43,7 @@ index 0f4fbf2..e4d0d97 100644
  	int i;
  
  	rtnl_lock();
-@@ -5224,19 +5218,6 @@ static void mtk_pending_work(struct work_struct *work)
+@@ -5232,19 +5226,6 @@ static void mtk_pending_work(struct work
  		}
  	}
  
@@ -65,8 +63,6 @@ index 0f4fbf2..e4d0d97 100644
  	clear_bit(MTK_RESETTING, &eth->state);
  
  	mtk_wed_fe_reset_complete();
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index fbfc4c0..b6a7850 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 @@ -84,7 +84,7 @@
@@ -78,7 +74,7 @@ index fbfc4c0..b6a7850 100644
  #define MTK_FE_LINK_DOWN_P(x)	BIT(((x) + 8) % 16)
  
  /* Frame Engine Global Reset Register */
-@@ -1089,6 +1089,9 @@ enum mtk_pse_port {
+@@ -1052,6 +1052,9 @@ enum mtk_pse_port {
  #define PSE_GDM_PORT(x)		(((x) == 0) ? PSE_GDM1_PORT : \
  				 ((x) == 1) ? PSE_GDM2_PORT : PSE_GDM3_PORT)
  
@@ -88,6 +84,3 @@ index fbfc4c0..b6a7850 100644
  #define PSE_WDMA_PORT(x)	(((x) == 0) ? PSE_WDMA0_PORT : \
  				 ((x) == 1) ? PSE_WDMA1_PORT : PSE_WDMA2_PORT)
  
--- 
-2.45.2
-

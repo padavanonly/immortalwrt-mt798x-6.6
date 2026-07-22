@@ -11,11 +11,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_ppe.c | 3 ---
  1 file changed, 3 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index fc707d7..118785f 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -253,9 +253,6 @@ int mtk_foe_entry_prepare(struct mtk_eth *eth, struct mtk_foe_entry *entry,
+@@ -253,9 +253,6 @@ int mtk_foe_entry_prepare(struct mtk_eth
  		      FIELD_PREP(MTK_FOE_IB2_PORT_AG, 0x1f);
  	}
  
@@ -25,6 +23,3 @@ index fc707d7..118785f 100644
  	ports_pad = 0xa5a5a500 | (l4proto & 0xff);
  	if (type == MTK_PPE_PKT_TYPE_IPV4_ROUTE)
  		entry->ipv4.orig.ports = ports_pad;
--- 
-2.45.2
-

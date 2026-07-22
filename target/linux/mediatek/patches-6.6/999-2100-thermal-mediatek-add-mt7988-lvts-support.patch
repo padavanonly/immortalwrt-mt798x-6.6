@@ -8,8 +8,6 @@ Without this patch, the behavior of LVTS will not be as expected.
  drivers/thermal/mediatek/lvts_thermal.c | 492 +++++++++++++++++++-----
  1 file changed, 394 insertions(+), 98 deletions(-)
 
-diff --git a/drivers/thermal/mediatek/lvts_thermal.c b/drivers/thermal/mediatek/lvts_thermal.c
-index cb68b61..98bb4fd 100644
 --- a/drivers/thermal/mediatek/lvts_thermal.c
 +++ b/drivers/thermal/mediatek/lvts_thermal.c
 @@ -62,7 +62,6 @@
@@ -133,7 +131,7 @@ index cb68b61..98bb4fd 100644
  #ifdef CONFIG_MTK_LVTS_THERMAL_DEBUGFS
  
  #define LVTS_DEBUG_FS_REGS(__reg)		\
-@@ -316,6 +353,39 @@ static int lvts_get_temp(struct thermal_zone_device *tz, int *temp)
+@@ -316,6 +353,39 @@ static int lvts_get_temp(struct thermal_
  	return 0;
  }
  
@@ -173,7 +171,7 @@ index cb68b61..98bb4fd 100644
  static void lvts_update_irq_mask(struct lvts_ctrl *lvts_ctrl)
  {
  	u32 masks[] = {
-@@ -375,36 +445,39 @@ static int lvts_set_trips(struct thermal_zone_device *tz, int low, int high)
+@@ -375,36 +445,39 @@ static int lvts_set_trips(struct thermal
  		lvts_ctrl->high_thresh = high;
  		lvts_ctrl->low_thresh = low;
  	}
@@ -240,7 +238,7 @@ index cb68b61..98bb4fd 100644
  
  	return 0;
  }
-@@ -499,6 +572,7 @@ static irqreturn_t lvts_ctrl_irq_handler(struct lvts_ctrl *lvts_ctrl)
+@@ -499,6 +572,7 @@ static irqreturn_t lvts_ctrl_irq_handler
  
  		thermal_zone_device_update(lvts_ctrl->sensors[i].tz,
  					   THERMAL_TRIP_VIOLATED);
@@ -248,7 +246,7 @@ index cb68b61..98bb4fd 100644
  		iret = IRQ_HANDLED;
  	}
  
-@@ -547,6 +621,10 @@ static struct thermal_zone_device_ops lvts_ops = {
+@@ -547,6 +621,10 @@ static struct thermal_zone_device_ops lv
  	.set_trips = lvts_set_trips,
  };
  
@@ -259,7 +257,7 @@ index cb68b61..98bb4fd 100644
  static int lvts_sensor_init(struct device *dev, struct lvts_ctrl *lvts_ctrl,
  					const struct lvts_ctrl_data *lvts_ctrl_data)
  {
-@@ -625,8 +703,11 @@ static int lvts_sensor_init(struct device *dev, struct lvts_ctrl *lvts_ctrl,
+@@ -625,8 +703,11 @@ static int lvts_sensor_init(struct devic
   * <-----sensor#2----->        <-----sensor#3----->
   *  0x0C | 0x0D | 0x0E | 0x0F | 0x10 | 0x11 | 0x12 | 0x13
   *
@@ -273,7 +271,7 @@ index cb68b61..98bb4fd 100644
   *
   * Stream index map for AP Domain mt8192 :
   *
-@@ -651,8 +732,11 @@ static int lvts_sensor_init(struct device *dev, struct lvts_ctrl *lvts_ctrl,
+@@ -651,8 +732,11 @@ static int lvts_sensor_init(struct devic
   * <-----mcu-tc#1-----> <-----sensor#2-----> <-----sensor#3----->
   *  0x0A | 0x0B | 0x0C | 0x0D | 0x0E | 0x0F | 0x10 | 0x11 | 0x12
   *
@@ -287,7 +285,7 @@ index cb68b61..98bb4fd 100644
   *
   * Stream index map for AP Domain mt8195 :
   *
-@@ -675,11 +759,18 @@ static int lvts_calibration_init(struct device *dev, struct lvts_ctrl *lvts_ctrl
+@@ -675,11 +759,18 @@ static int lvts_calibration_init(struct
  					const struct lvts_ctrl_data *lvts_ctrl_data,
  					u8 *efuse_calibration)
  {
@@ -309,7 +307,7 @@ index cb68b61..98bb4fd 100644
  
  	return 0;
  }
-@@ -734,20 +825,21 @@ static int lvts_calibration_read(struct device *dev, struct lvts_domain *lvts_td
+@@ -734,20 +825,21 @@ static int lvts_calibration_read(struct
  	return 0;
  }
  
@@ -338,7 +336,7 @@ index cb68b61..98bb4fd 100644
  
  	return 0;
  }
-@@ -770,7 +862,7 @@ static int lvts_ctrl_init(struct device *dev, struct lvts_domain *lvts_td,
+@@ -770,7 +862,7 @@ static int lvts_ctrl_init(struct device
  	 * The golden temp information is contained in the first chunk
  	 * of efuse data.
  	 */
@@ -347,7 +345,7 @@ index cb68b61..98bb4fd 100644
  	if (ret)
  		return ret;
  
-@@ -780,6 +872,7 @@ static int lvts_ctrl_init(struct device *dev, struct lvts_domain *lvts_td,
+@@ -780,6 +872,7 @@ static int lvts_ctrl_init(struct device
  
  	for (i = 0; i < lvts_data->num_lvts_ctrl; i++) {
  
@@ -355,7 +353,7 @@ index cb68b61..98bb4fd 100644
  		lvts_ctrl[i].base = lvts_td->base + lvts_data->lvts_ctrl[i].offset;
  		lvts_ctrl[i].lvts_data = lvts_data;
  
-@@ -838,39 +931,43 @@ static void lvts_write_config(struct lvts_ctrl *lvts_ctrl, u32 *cmds, int nr_cmd
+@@ -838,39 +931,43 @@ static void lvts_write_config(struct lvt
  	 */
  	for (i = 0; i < nr_cmds; i++) {
  		writel(cmds[i], LVTS_CONFIG(lvts_ctrl->base));
@@ -426,7 +424,7 @@ index cb68b61..98bb4fd 100644
  
  	/*
  	 * LVTS_MONINT : Interrupt configuration register
-@@ -878,7 +975,8 @@ static int lvts_irq_init(struct lvts_ctrl *lvts_ctrl)
+@@ -878,7 +975,8 @@ static int lvts_irq_init(struct lvts_ctr
  	 * The LVTS_MONINT register layout is the same as the LVTS_MONINTSTS
  	 * register, except we set the bits to enable the interrupt.
  	 */
@@ -436,7 +434,7 @@ index cb68b61..98bb4fd 100644
  
  	return 0;
  }
-@@ -932,6 +1030,28 @@ static int lvts_ctrl_connect(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -932,6 +1030,28 @@ static int lvts_ctrl_connect(struct devi
  	return 0;
  }
  
@@ -465,7 +463,7 @@ index cb68b61..98bb4fd 100644
  static int lvts_ctrl_initialize(struct device *dev, struct lvts_ctrl *lvts_ctrl)
  {
  	/*
-@@ -949,6 +1069,23 @@ static int lvts_ctrl_initialize(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -949,6 +1069,23 @@ static int lvts_ctrl_initialize(struct d
  	return 0;
  }
  
@@ -489,7 +487,7 @@ index cb68b61..98bb4fd 100644
  static int lvts_ctrl_calibrate(struct device *dev, struct lvts_ctrl *lvts_ctrl)
  {
  	int i;
-@@ -974,6 +1111,9 @@ static int lvts_ctrl_calibrate(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -974,6 +1111,9 @@ static int lvts_ctrl_calibrate(struct de
  
  static int lvts_ctrl_configure(struct device *dev, struct lvts_ctrl *lvts_ctrl)
  {
@@ -499,7 +497,7 @@ index cb68b61..98bb4fd 100644
  	u32 value;
  
  	/*
-@@ -992,8 +1132,8 @@ static int lvts_ctrl_configure(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -992,8 +1132,8 @@ static int lvts_ctrl_configure(struct de
  	/*
  	 * LVTS_CALSCALE : ADC voltage round
  	 */
@@ -509,7 +507,7 @@ index cb68b61..98bb4fd 100644
  
  	/*
  	 * LVTS_MSRCTL0 : Sensor filtering strategy
-@@ -1014,8 +1154,10 @@ static int lvts_ctrl_configure(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -1014,8 +1154,10 @@ static int lvts_ctrl_configure(struct de
  	 * 6-8  : Sensor2 filter
  	 * 9-11 : Sensor3 filter
  	 */
@@ -522,7 +520,7 @@ index cb68b61..98bb4fd 100644
  	writel(value, LVTS_MSRCTL0(lvts_ctrl->base));
  
  	/*
-@@ -1058,7 +1200,7 @@ static int lvts_ctrl_configure(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -1058,7 +1200,7 @@ static int lvts_ctrl_configure(struct de
  	 *       9 - 0  : Period unit
  	 *
  	 */
@@ -531,7 +529,7 @@ index cb68b61..98bb4fd 100644
  	writel(value, LVTS_MONCTL1(lvts_ctrl->base));
  
  	/*
-@@ -1071,12 +1213,51 @@ static int lvts_ctrl_configure(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -1071,12 +1213,51 @@ static int lvts_ctrl_configure(struct de
  	 *       9-0  : Interval unit in PERIOD_UNIT between each sensor
  	 *
  	 */
@@ -584,7 +582,7 @@ index cb68b61..98bb4fd 100644
  static int lvts_ctrl_start(struct device *dev, struct lvts_ctrl *lvts_ctrl)
  {
  	struct lvts_sensor *lvts_sensors = lvts_ctrl->sensors;
-@@ -1094,7 +1275,6 @@ static int lvts_ctrl_start(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -1094,7 +1275,6 @@ static int lvts_ctrl_start(struct device
  			     sensor_imm_bitmap : sensor_filt_bitmap;
  
  	for (i = 0; i < lvts_ctrl->num_lvts_sensor; i++) {
@@ -592,7 +590,7 @@ index cb68b61..98bb4fd 100644
  		int dt_id = lvts_sensors[i].dt_id;
  
  		tz = devm_thermal_of_zone_register(dev, dt_id, &lvts_sensors[i],
-@@ -1165,9 +1345,40 @@ static int lvts_ctrl_start(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+@@ -1165,9 +1345,40 @@ static int lvts_ctrl_start(struct device
  	return 0;
  }
  
@@ -633,7 +631,7 @@ index cb68b61..98bb4fd 100644
  	struct lvts_ctrl *lvts_ctrl;
  	int i, ret;
  
-@@ -1203,13 +1414,13 @@ static int lvts_domain_init(struct device *dev, struct lvts_domain *lvts_td,
+@@ -1203,13 +1414,13 @@ static int lvts_domain_init(struct devic
  			return ret;
  		}
  
@@ -649,7 +647,7 @@ index cb68b61..98bb4fd 100644
  		if (ret) {
  			dev_dbg(dev, "Failed to initialize controller");
  			return ret;
-@@ -1221,13 +1432,19 @@ static int lvts_domain_init(struct device *dev, struct lvts_domain *lvts_td,
+@@ -1221,13 +1432,19 @@ static int lvts_domain_init(struct devic
  			return ret;
  		}
  
@@ -670,7 +668,7 @@ index cb68b61..98bb4fd 100644
  		if (ret) {
  			dev_dbg(dev, "Failed to start controller");
  			return ret;
-@@ -1269,9 +1486,11 @@ static int lvts_probe(struct platform_device *pdev)
+@@ -1269,9 +1486,11 @@ static int lvts_probe(struct platform_de
  	if (IS_ERR(lvts_td->reset))
  		return dev_err_probe(dev, PTR_ERR(lvts_td->reset), "Failed to get reset control\n");
  
@@ -685,7 +683,7 @@ index cb68b61..98bb4fd 100644
  
  	golden_temp_offset = lvts_data->temp_offset;
  
-@@ -1283,10 +1502,14 @@ static int lvts_probe(struct platform_device *pdev)
+@@ -1283,10 +1502,14 @@ static int lvts_probe(struct platform_de
  	 * At this point the LVTS is initialized and enabled. We can
  	 * safely enable the interrupt.
  	 */
@@ -704,7 +702,7 @@ index cb68b61..98bb4fd 100644
  
  	platform_set_drvdata(pdev, lvts_td);
  
-@@ -1309,26 +1532,34 @@ static void lvts_remove(struct platform_device *pdev)
+@@ -1309,26 +1532,34 @@ static void lvts_remove(struct platform_
  static const struct lvts_ctrl_data mt7988_lvts_ap_data_ctrl[] = {
  	{
  		.cal_offset = { 0x00, 0x04, 0x08, 0x0c },
@@ -739,7 +737,7 @@ index cb68b61..98bb4fd 100644
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT7988,
  	}
  };
-@@ -1372,6 +1603,7 @@ static const struct lvts_ctrl_data mt8192_lvts_mcu_data_ctrl[] = {
+@@ -1372,6 +1603,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_MCU_BIG_CPU0 },
  			{ .dt_id = MT8192_MCU_BIG_CPU1 }
  		},
@@ -747,7 +745,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x0,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1383,6 +1615,7 @@ static const struct lvts_ctrl_data mt8192_lvts_mcu_data_ctrl[] = {
+@@ -1383,6 +1615,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_MCU_BIG_CPU2 },
  			{ .dt_id = MT8192_MCU_BIG_CPU3 }
  		},
@@ -755,7 +753,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x100,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1396,6 +1629,7 @@ static const struct lvts_ctrl_data mt8192_lvts_mcu_data_ctrl[] = {
+@@ -1396,6 +1629,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_MCU_LITTLE_CPU2 },
  			{ .dt_id = MT8192_MCU_LITTLE_CPU3 }
  		},
@@ -763,7 +761,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 4,
  		.offset = 0x200,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1410,6 +1644,7 @@ static const struct lvts_ctrl_data mt8192_lvts_ap_data_ctrl[] = {
+@@ -1410,6 +1644,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_AP_VPU0 },
  			{ .dt_id = MT8192_AP_VPU1 }
  		},
@@ -771,7 +769,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x0,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1420,6 +1655,7 @@ static const struct lvts_ctrl_data mt8192_lvts_ap_data_ctrl[] = {
+@@ -1420,6 +1655,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_AP_GPU0 },
  			{ .dt_id = MT8192_AP_GPU1 }
  		},
@@ -779,7 +777,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x100,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1430,6 +1666,7 @@ static const struct lvts_ctrl_data mt8192_lvts_ap_data_ctrl[] = {
+@@ -1430,6 +1666,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_AP_INFRA },
  			{ .dt_id = MT8192_AP_CAM },
  		},
@@ -787,7 +785,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x200,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1441,6 +1678,7 @@ static const struct lvts_ctrl_data mt8192_lvts_ap_data_ctrl[] = {
+@@ -1441,6 +1678,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8192_AP_MD1 },
  			{ .dt_id = MT8192_AP_MD2 }
  		},
@@ -795,7 +793,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 3,
  		.offset = 0x300,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8192,
-@@ -1454,6 +1692,7 @@ static const struct lvts_ctrl_data mt8195_lvts_mcu_data_ctrl[] = {
+@@ -1454,6 +1692,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_MCU_BIG_CPU0 },
  			{ .dt_id = MT8195_MCU_BIG_CPU1 }
  		},
@@ -803,7 +801,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x0,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1464,6 +1703,7 @@ static const struct lvts_ctrl_data mt8195_lvts_mcu_data_ctrl[] = {
+@@ -1464,6 +1703,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_MCU_BIG_CPU2 },
  			{ .dt_id = MT8195_MCU_BIG_CPU3 }
  		},
@@ -811,7 +809,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x100,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1476,6 +1716,7 @@ static const struct lvts_ctrl_data mt8195_lvts_mcu_data_ctrl[] = {
+@@ -1476,6 +1716,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_MCU_LITTLE_CPU2 },
  			{ .dt_id = MT8195_MCU_LITTLE_CPU3 }
  		},
@@ -819,7 +817,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 4,
  		.offset = 0x200,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1489,6 +1730,7 @@ static const struct lvts_ctrl_data mt8195_lvts_ap_data_ctrl[] = {
+@@ -1489,6 +1730,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_AP_VPU0 },
  			{ .dt_id = MT8195_AP_VPU1 }
  		},
@@ -827,7 +825,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x0,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1499,6 +1741,7 @@ static const struct lvts_ctrl_data mt8195_lvts_ap_data_ctrl[] = {
+@@ -1499,6 +1741,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_AP_GPU0 },
  			{ .dt_id = MT8195_AP_GPU1 }
  		},
@@ -835,7 +833,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x100,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1510,6 +1753,7 @@ static const struct lvts_ctrl_data mt8195_lvts_ap_data_ctrl[] = {
+@@ -1510,6 +1753,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_AP_IMG },
  			{ .dt_id = MT8195_AP_INFRA },
  		},
@@ -843,7 +841,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 3,
  		.offset = 0x200,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1520,6 +1764,7 @@ static const struct lvts_ctrl_data mt8195_lvts_ap_data_ctrl[] = {
+@@ -1520,6 +1764,7 @@ static const struct lvts_ctrl_data mt819
  			{ .dt_id = MT8195_AP_CAM0 },
  			{ .dt_id = MT8195_AP_CAM1 }
  		},
@@ -851,7 +849,7 @@ index cb68b61..98bb4fd 100644
  		.num_lvts_sensor = 2,
  		.offset = 0x300,
  		.hw_tshut_temp = LVTS_HW_SHUTDOWN_MT8195,
-@@ -1528,6 +1773,17 @@ static const struct lvts_ctrl_data mt8195_lvts_ap_data_ctrl[] = {
+@@ -1528,6 +1773,17 @@ static const struct lvts_ctrl_data mt819
  
  static const struct lvts_data mt7988_lvts_ap_data = {
  	.lvts_ctrl	= mt7988_lvts_ap_data_ctrl,
@@ -869,7 +867,7 @@ index cb68b61..98bb4fd 100644
  	.num_lvts_ctrl	= ARRAY_SIZE(mt7988_lvts_ap_data_ctrl),
  	.temp_factor	= LVTS_COEFF_A_MT7988,
  	.temp_offset	= LVTS_COEFF_B_MT7988,
-@@ -1535,16 +1791,46 @@ static const struct lvts_data mt7988_lvts_ap_data = {
+@@ -1535,16 +1791,46 @@ static const struct lvts_data mt7988_lvt
  
  static const struct lvts_data mt8192_lvts_mcu_data = {
  	.lvts_ctrl	= mt8192_lvts_mcu_data_ctrl,
@@ -916,7 +914,7 @@ index cb68b61..98bb4fd 100644
  	.num_lvts_ctrl	= ARRAY_SIZE(mt8195_lvts_mcu_data_ctrl),
  	.temp_factor	= LVTS_COEFF_A_MT8195,
  	.temp_offset	= LVTS_COEFF_B_MT8195,
-@@ -1552,6 +1838,16 @@ static const struct lvts_data mt8195_lvts_mcu_data = {
+@@ -1552,6 +1838,16 @@ static const struct lvts_data mt8195_lvt
  
  static const struct lvts_data mt8195_lvts_ap_data = {
  	.lvts_ctrl	= mt8195_lvts_ap_data_ctrl,
@@ -933,6 +931,3 @@ index cb68b61..98bb4fd 100644
  	.num_lvts_ctrl	= ARRAY_SIZE(mt8195_lvts_ap_data_ctrl),
  	.temp_factor	= LVTS_COEFF_A_MT8195,
  	.temp_offset	= LVTS_COEFF_B_MT8195,
--- 
-2.45.2
-

@@ -40,7 +40,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 
 --- a/drivers/net/mdio/mdio-i2c.c
 +++ b/drivers/net/mdio/mdio-i2c.c
-@@ -419,6 +419,50 @@
+@@ -352,6 +352,50 @@ static int i2c_mii_write_rollball(struct
  	return 0;
  }
  
@@ -91,7 +91,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  static int i2c_mii_init_rollball(struct i2c_adapter *i2c)
  {
  	struct i2c_msg msg;
-@@ -438,11 +482,11 @@
+@@ -371,11 +415,11 @@ static int i2c_mii_init_rollball(struct
  
  	ret = i2c_transfer(i2c, &msg, 1);
  	if (ret < 0)
@@ -106,8 +106,8 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 +	return i2c_mii_probe_rollball(i2c);
  }
  
- static bool mdio_i2c_check_functionality(struct i2c_adapter *i2c,
-@@ -487,9 +531,10 @@
+ struct mii_bus *mdio_i2c_alloc(struct device *parent, struct i2c_adapter *i2c,
+@@ -399,9 +443,10 @@ struct mii_bus *mdio_i2c_alloc(struct de
  	case MDIO_I2C_ROLLBALL:
  		ret = i2c_mii_init_rollball(i2c);
  		if (ret < 0) {
@@ -123,7 +123,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  		}
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
-@@ -527,6 +527,7 @@
+@@ -540,6 +540,7 @@ static const struct sfp_quirk sfp_quirks
  	// OEM SFP-GE-T is a 1000Base-T module with broken TX_FAULT indicator
  	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
  
@@ -131,5 +131,3 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  	SFP_QUIRK_F("ETU", "ESP-T5-R", sfp_fixup_rollball_cc),
  	SFP_QUIRK_F("OEM", "SFP-10G-T", sfp_fixup_rollball_cc),
  	SFP_QUIRK_M("OEM", "SFP-2.5G-T", sfp_quirk_oem_2_5g),
--- 
-2.45.0

@@ -13,11 +13,9 @@ WiFi roams.
  .../net/ethernet/mediatek/mtk_ppe_debugfs.c   |  56 +++++
  5 files changed, 281 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 35ef427..92b0c6c 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -4144,6 +4144,11 @@ static int mtk_open(struct net_device *dev)
+@@ -4243,6 +4243,11 @@ static int mtk_open(struct net_device *d
  			mtk_ppe_start(eth->ppe[i]);
  #endif
  
@@ -29,7 +27,7 @@ index 35ef427..92b0c6c 100644
  		for (i = 0; i < MTK_MAX_DEVS; i++) {
  			if (!eth->netdev[i])
  				continue;
-@@ -4299,6 +4304,8 @@ static int mtk_stop(struct net_device *dev)
+@@ -4404,6 +4409,8 @@ static int mtk_stop(struct net_device *d
  
  	mtk_dma_free(eth);
  
@@ -38,11 +36,9 @@ index 35ef427..92b0c6c 100644
  #if !defined(CONFIG_NET_MEDIATEK_HNAT) && !defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
  	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
  		mtk_ppe_stop(eth->ppe[i]);
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 9aff6ab..25bfada 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1684,10 +1684,15 @@ struct mtk_eth {
+@@ -1709,10 +1709,15 @@ struct mtk_eth {
  
  	struct metadata_dst		*dsa_meta[MTK_MAX_DSA_PORTS];
  
@@ -58,8 +54,6 @@ index 9aff6ab..25bfada 100644
  	struct bpf_prog			__rcu *prog;
  
  	struct {
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index 193093b..1b198cb 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
 @@ -10,6 +10,7 @@
@@ -70,7 +64,7 @@ index 193093b..1b198cb 100644
  #include "mtk_eth_soc.h"
  #include "mtk_ppe.h"
  #include "mtk_ppe_regs.h"
-@@ -525,6 +526,28 @@ mtk_flow_entry_match(struct mtk_eth *eth, struct mtk_flow_entry *entry,
+@@ -525,6 +526,28 @@ mtk_flow_entry_match(struct mtk_eth *eth
  	return !memcmp(&entry->data.data, &data->data, len - 4);
  }
  
@@ -291,11 +285,9 @@ index 193093b..1b198cb 100644
 +
 +	return 0;
 +}
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
-index 87b8223..e06d757 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
-@@ -350,6 +350,8 @@ struct mtk_ppe {
+@@ -349,6 +349,8 @@ struct mtk_ppe {
  struct mtk_ppe *mtk_ppe_init(struct mtk_eth *eth, void __iomem *base, int index);
  
  void mtk_ppe_deinit(struct mtk_eth *eth);
@@ -304,15 +296,12 @@ index 87b8223..e06d757 100644
  void mtk_ppe_start(struct mtk_ppe *ppe);
  int mtk_ppe_stop(struct mtk_ppe *ppe);
  int mtk_ppe_prepare_reset(struct mtk_ppe *ppe);
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-index 129bde4..9a494a3 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-@@ -251,6 +251,60 @@ static const struct file_operations mtk_ppe_internal_debugfs_qos_fops = {
- 	.release = single_release,
+@@ -252,6 +252,60 @@ static const struct file_operations mtk_
  };
  
-+static int
+ static int
 +mtk_ppe_internal_debugfs_level_show(struct seq_file *m, void *private)
 +{
 +	struct mtk_eth *eth = m->private;
@@ -366,10 +355,11 @@ index 129bde4..9a494a3 100644
 +	.release = single_release,
 +};
 +
- static int
++static int
  mtk_ppe_internal_debugfs_foe_all_show(struct seq_file *m, void *private)
  {
-@@ -310,6 +364,8 @@ int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
+ 	struct mtk_eth *eth = m->private;
+@@ -310,6 +364,8 @@ int mtk_ppe_internal_debugfs_init(struct
  			    &mtk_ppe_internal_debugfs_foe_bind_fops);
  	debugfs_create_file("qos_toggle", S_IRUGO, root, eth,
  			    &mtk_ppe_internal_debugfs_qos_fops);
@@ -378,6 +368,3 @@ index 129bde4..9a494a3 100644
  
  	for (i = 0; i < (mtk_is_netsys_v2_or_greater(eth) ? 4 : 2); i++) {
  		ret = snprintf(name, sizeof(name), "qdma_sch%ld", i);
--- 
-2.45.2
-

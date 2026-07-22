@@ -17,11 +17,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  6 files changed, 271 insertions(+), 1 deletion(-)
  create mode 100644 net/netfilter/nf_flow_table_netlink.c
 
-diff --git a/include/net/netfilter/nf_flow_table.h b/include/net/netfilter/nf_flow_table.h
-index 1609845..9496781 100644
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -294,6 +294,7 @@ int nf_flow_table_init(struct nf_flowtable *flow_table);
+@@ -308,6 +308,7 @@ int nf_flow_table_init(struct nf_flowtab
  void nf_flow_table_free(struct nf_flowtable *flow_table);
  
  void flow_offload_teardown(struct flow_offload *flow);
@@ -29,8 +27,6 @@ index 1609845..9496781 100644
  
  int nf_flow_table_iterate(struct nf_flowtable *flow_table,
                        void (*iter)(struct nf_flowtable *flowtable,
-diff --git a/include/uapi/linux/netfilter/nfnetlink.h b/include/uapi/linux/netfilter/nfnetlink.h
-index 6cd58cd..71cd2d0 100644
 --- a/include/uapi/linux/netfilter/nfnetlink.h
 +++ b/include/uapi/linux/netfilter/nfnetlink.h
 @@ -61,7 +61,8 @@ struct nfgenmsg {
@@ -43,8 +39,6 @@ index 6cd58cd..71cd2d0 100644
  
  /* Reserved control nfnetlink messages */
  #define NFNL_MSG_BATCH_BEGIN		NLMSG_MIN_TYPE
-diff --git a/net/netfilter/Kconfig b/net/netfilter/Kconfig
-index 7e933b9..e65be20 100644
 --- a/net/netfilter/Kconfig
 +++ b/net/netfilter/Kconfig
 @@ -742,6 +742,15 @@ config NF_FLOW_TABLE_PROCFS
@@ -63,11 +57,9 @@ index 7e933b9..e65be20 100644
  config NETFILTER_XTABLES
  	tristate "Netfilter Xtables support (required for ip_tables)"
  	default m if NETFILTER_ADVANCED=n
-diff --git a/net/netfilter/Makefile b/net/netfilter/Makefile
-index 8789ecf..4b3d926 100644
 --- a/net/netfilter/Makefile
 +++ b/net/netfilter/Makefile
-@@ -146,6 +146,7 @@ nf_flow_table-objs		:= nf_flow_table_core.o nf_flow_table_ip.o \
+@@ -146,6 +146,7 @@ nf_flow_table-objs		:= nf_flow_table_cor
  nf_flow_table-$(CONFIG_NF_FLOW_TABLE_PROCFS) += nf_flow_table_procfs.o
  
  obj-$(CONFIG_NF_FLOW_TABLE_INET) += nf_flow_table_inet.o
@@ -75,11 +67,9 @@ index 8789ecf..4b3d926 100644
  
  # generic X tables
  obj-$(CONFIG_NETFILTER_XTABLES) += x_tables.o xt_tcpudp.o
-diff --git a/net/netfilter/nf_flow_table_core.c b/net/netfilter/nf_flow_table_core.c
-index 23aa1e2..bad3307 100644
 --- a/net/netfilter/nf_flow_table_core.c
 +++ b/net/netfilter/nf_flow_table_core.c
-@@ -347,6 +347,29 @@ void flow_offload_teardown(struct flow_offload *flow)
+@@ -349,6 +349,29 @@ void flow_offload_teardown(struct flow_o
  }
  EXPORT_SYMBOL_GPL(flow_offload_teardown);
  
@@ -109,9 +99,6 @@ index 23aa1e2..bad3307 100644
  struct flow_offload_tuple_rhash *
  flow_offload_lookup(struct nf_flowtable *flow_table,
  		    struct flow_offload_tuple *tuple)
-diff --git a/net/netfilter/nf_flow_table_netlink.c b/net/netfilter/nf_flow_table_netlink.c
-new file mode 100644
-index 0000000..c1c86f2
 --- /dev/null
 +++ b/net/netfilter/nf_flow_table_netlink.c
 @@ -0,0 +1,235 @@
@@ -350,6 +337,3 @@ index 0000000..c1c86f2
 +MODULE_LICENSE("GPL");
 +module_init(ftnetlink_init);
 +module_exit(ftnetlink_exit);
--- 
-2.45.2
-

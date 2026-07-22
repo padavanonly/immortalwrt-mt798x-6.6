@@ -1,5 +1,3 @@
-diff --git a/drivers/net/ethernet/mediatek/Makefile b/drivers/net/ethernet/mediatek/Makefile
-index 03e008f..b6b45ce 100644
 --- a/drivers/net/ethernet/mediatek/Makefile
 +++ b/drivers/net/ethernet/mediatek/Makefile
 @@ -4,7 +4,7 @@
@@ -11,11 +9,9 @@ index 03e008f..b6b45ce 100644
  mtk_eth-$(CONFIG_NET_MEDIATEK_SOC_WED) += mtk_wed.o mtk_wed_mcu.o mtk_wed_wo.o
  ifdef CONFIG_DEBUG_FS
  mtk_eth-$(CONFIG_NET_MEDIATEK_SOC_WED) += mtk_wed_debugfs.o
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 3a9e9eb..552dba5 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -33,6 +33,7 @@
+@@ -32,6 +32,7 @@
  #include <net/page_pool/helpers.h>
  
  #include "mtk_eth_soc.h"
@@ -23,7 +19,7 @@ index 3a9e9eb..552dba5 100644
  #include "mtk_wed.h"
  
  static int mtk_msg_level = -1;
-@@ -53,6 +54,7 @@ static const struct mtk_reg_map mtk_reg_map = {
+@@ -52,6 +53,7 @@ static const struct mtk_reg_map mtk_reg_
  		.rx_ptr		= 0x0900,
  		.rx_cnt_cfg	= 0x0904,
  		.pcrx_ptr	= 0x0908,
@@ -31,7 +27,7 @@ index 3a9e9eb..552dba5 100644
  		.glo_cfg	= 0x0a04,
  		.rst_idx	= 0x0a08,
  		.delay_irq	= 0x0a0c,
-@@ -74,9 +76,11 @@ static const struct mtk_reg_map mtk_reg_map = {
+@@ -72,9 +74,11 @@ static const struct mtk_reg_map mtk_reg_
  		.fc_th		= 0x1a10,
  		.tx_sch_rate	= 0x1a14,
  		.int_grp	= 0x1a20,
@@ -43,7 +39,7 @@ index 3a9e9eb..552dba5 100644
  		.crx_ptr	= 0x1b10,
  		.drx_ptr	= 0x1b14,
  		.fq_head	= 0x1b20,
-@@ -104,6 +108,7 @@ static const struct mtk_reg_map mt7628_reg_map = {
+@@ -102,6 +106,7 @@ static const struct mtk_reg_map mt7628_r
  		.rx_ptr		= 0x0900,
  		.rx_cnt_cfg	= 0x0904,
  		.pcrx_ptr	= 0x0908,
@@ -51,7 +47,7 @@ index 3a9e9eb..552dba5 100644
  		.glo_cfg	= 0x0a04,
  		.rst_idx	= 0x0a08,
  		.delay_irq	= 0x0a0c,
-@@ -120,6 +125,7 @@ static const struct mtk_reg_map mt7986_reg_map = {
+@@ -118,6 +123,7 @@ static const struct mtk_reg_map mt7986_r
  		.rx_ptr		= 0x4100,
  		.rx_cnt_cfg	= 0x4104,
  		.pcrx_ptr	= 0x4108,
@@ -59,7 +55,7 @@ index 3a9e9eb..552dba5 100644
  		.glo_cfg	= 0x4204,
  		.rst_idx	= 0x4208,
  		.delay_irq	= 0x420c,
-@@ -140,9 +146,12 @@ static const struct mtk_reg_map mt7986_reg_map = {
+@@ -137,9 +143,12 @@ static const struct mtk_reg_map mt7986_r
  		.delay_irq	= 0x460c,
  		.fc_th		= 0x4610,
  		.int_grp	= 0x4620,
@@ -72,7 +68,7 @@ index 3a9e9eb..552dba5 100644
  		.crx_ptr	= 0x4710,
  		.drx_ptr	= 0x4714,
  		.fq_head	= 0x4720,
-@@ -172,6 +181,7 @@ static const struct mtk_reg_map mt7988_reg_map = {
+@@ -169,6 +178,7 @@ static const struct mtk_reg_map mt7988_r
  		.rx_ptr		= 0x6900,
  		.rx_cnt_cfg	= 0x6904,
  		.pcrx_ptr	= 0x6908,
@@ -80,7 +76,7 @@ index 3a9e9eb..552dba5 100644
  		.glo_cfg	= 0x6a04,
  		.rst_idx	= 0x6a08,
  		.delay_irq	= 0x6a0c,
-@@ -192,9 +202,12 @@ static const struct mtk_reg_map mt7988_reg_map = {
+@@ -188,9 +198,12 @@ static const struct mtk_reg_map mt7988_r
  		.delay_irq	= 0x460c,
  		.fc_th		= 0x4610,
  		.int_grp	= 0x4620,
@@ -93,7 +89,7 @@ index 3a9e9eb..552dba5 100644
  		.crx_ptr	= 0x4710,
  		.drx_ptr	= 0x4714,
  		.fq_head	= 0x4720,
-@@ -329,8 +342,8 @@ static int mtk_mdio_busy_wait(struct mtk_eth *eth)
+@@ -325,8 +338,8 @@ static int mtk_mdio_busy_wait(struct mtk
  	return -ETIMEDOUT;
  }
  
@@ -104,7 +100,7 @@ index 3a9e9eb..552dba5 100644
  {
  	int ret;
  
-@@ -353,8 +366,8 @@ static int _mtk_mdio_write_c22(struct mtk_eth *eth, u32 phy_addr, u32 phy_reg,
+@@ -349,8 +362,8 @@ static int _mtk_mdio_write_c22(struct mt
  	return 0;
  }
  
@@ -115,7 +111,7 @@ index 3a9e9eb..552dba5 100644
  {
  	int ret;
  
-@@ -389,7 +402,7 @@ static int _mtk_mdio_write_c45(struct mtk_eth *eth, u32 phy_addr,
+@@ -385,7 +398,7 @@ static int _mtk_mdio_write_c45(struct mt
  	return 0;
  }
  
@@ -124,7 +120,7 @@ index 3a9e9eb..552dba5 100644
  {
  	int ret;
  
-@@ -411,8 +424,8 @@ static int _mtk_mdio_read_c22(struct mtk_eth *eth, u32 phy_addr, u32 phy_reg)
+@@ -407,8 +420,8 @@ static int _mtk_mdio_read_c22(struct mtk
  	return mtk_r32(eth, MTK_PHY_IAC) & PHY_IAC_DATA_MASK;
  }
  
@@ -135,7 +131,7 @@ index 3a9e9eb..552dba5 100644
  {
  	int ret;
  
-@@ -2609,12 +2622,12 @@ static int mtk_poll_tx(struct mtk_eth *eth, int budget)
+@@ -2595,12 +2608,12 @@ static int mtk_poll_tx(struct mtk_eth *e
  
  static void mtk_handle_status_irq(struct mtk_eth *eth)
  {
@@ -150,7 +146,7 @@ index 3a9e9eb..552dba5 100644
  	}
  }
  
-@@ -3394,7 +3407,7 @@ static void mtk_dma_free(struct mtk_eth *eth)
+@@ -3380,7 +3393,7 @@ static void mtk_dma_free(struct mtk_eth
  
  static bool mtk_hw_reset_check(struct mtk_eth *eth)
  {
@@ -159,7 +155,7 @@ index 3a9e9eb..552dba5 100644
  
  	return (val & MTK_FE_INT_FQ_EMPTY) || (val & MTK_FE_INT_RFIFO_UF) ||
  	       (val & MTK_FE_INT_RFIFO_OV) || (val & MTK_FE_INT_TSO_FAIL) ||
-@@ -4404,6 +4417,12 @@ static int mtk_do_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+@@ -4348,6 +4361,12 @@ static int mtk_do_ioctl(struct net_devic
  	return -EOPNOTSUPP;
  }
  
@@ -172,7 +168,7 @@ index 3a9e9eb..552dba5 100644
  static void mtk_prepare_for_reset(struct mtk_eth *eth)
  {
  	u32 val;
-@@ -4813,6 +4832,7 @@ static const struct net_device_ops mtk_netdev_ops = {
+@@ -4757,6 +4776,7 @@ static const struct net_device_ops mtk_n
  	.ndo_set_mac_address	= mtk_set_mac_address,
  	.ndo_validate_addr	= eth_validate_addr,
  	.ndo_eth_ioctl		= mtk_do_ioctl,
@@ -180,7 +176,7 @@ index 3a9e9eb..552dba5 100644
  	.ndo_change_mtu		= mtk_change_mtu,
  	.ndo_tx_timeout		= mtk_tx_timeout,
  	.ndo_get_stats64        = mtk_get_stats64,
-@@ -5570,6 +5590,9 @@ static int mtk_probe(struct platform_device *pdev)
+@@ -5354,6 +5374,9 @@ static int mtk_probe(struct platform_dev
  	netif_napi_add(&eth->dummy_dev, &eth->tx_napi, mtk_napi_tx);
  	netif_napi_add(&eth->dummy_dev, &eth->rx_napi, mtk_napi_rx);
  
@@ -190,8 +186,6 @@ index 3a9e9eb..552dba5 100644
  	platform_set_drvdata(pdev, eth);
  	schedule_delayed_work(&eth->reset.monitor_work,
  			      MTK_DMA_MONITOR_TIMEOUT);
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index b18fc5f..cfa85e2 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 @@ -86,7 +86,7 @@
@@ -218,7 +212,7 @@ index b18fc5f..cfa85e2 100644
  /* CDMP Ingress Control Register */
  #define MTK_CDMQ_IG_CTRL	0x1400
  #define MTK_CDMQ_STAG_EN	BIT(0)
-@@ -193,6 +201,13 @@
+@@ -196,6 +204,13 @@
  #define MTK_MULTI_EN		BIT(10)
  #define MTK_PDMA_SIZE_8DWORDS	(1 << 4)
  
@@ -232,7 +226,7 @@ index b18fc5f..cfa85e2 100644
  /* PDMA Global Configuration Register */
  #define MTK_PDMA_LRO_SDL	0x3000
  #define MTK_RX_CFG_SDL_OFFSET	16
-@@ -238,7 +253,29 @@
+@@ -241,7 +256,29 @@
  #define MTK_RING_MAX_AGG_CNT_L		((MTK_HW_LRO_MAX_AGG_CNT & 0x3f) << 26)
  #define MTK_RING_MAX_AGG_CNT_H		((MTK_HW_LRO_MAX_AGG_CNT >> 6) & 0x3)
  
@@ -262,7 +256,7 @@ index b18fc5f..cfa85e2 100644
  #define MTK_QTX_OFFSET		0x10
  #define QDMA_RES_THRES		4
  
-@@ -256,8 +293,19 @@
+@@ -259,8 +296,19 @@
  #define MTK_QTX_SCH_MAX_RATE_MAN	GENMASK(10, 4)
  #define MTK_QTX_SCH_MAX_RATE_EXP	GENMASK(3, 0)
  
@@ -282,7 +276,7 @@ index b18fc5f..cfa85e2 100644
  
  /* QDMA Global Configuration Register */
  #define MTK_RX_2B_OFFSET	BIT(31)
-@@ -384,6 +432,10 @@
+@@ -387,6 +435,10 @@
  #define RX_DMA_L4_VALID_PDMA	BIT(30)		/* when PDMA is used */
  #define RX_DMA_SPECIAL_TAG	BIT(22)
  
@@ -293,7 +287,7 @@ index b18fc5f..cfa85e2 100644
  /* PDMA descriptor rxd5 */
  #define MTK_RXD5_FOE_ENTRY	GENMASK(14, 0)
  #define MTK_RXD5_PPE_CPU_REASON	GENMASK(22, 18)
-@@ -396,6 +448,10 @@
+@@ -399,6 +451,10 @@
  #define RX_DMA_VTAG_V2		BIT(0)
  #define RX_DMA_L4_VALID_V2	BIT(2)
  
@@ -304,7 +298,7 @@ index b18fc5f..cfa85e2 100644
  /* PHY Polling and SMI Master Control registers */
  #define MTK_PPSC		0x10000
  #define PPSC_MDC_CFG		GENMASK(29, 24)
-@@ -1165,6 +1221,7 @@ struct mtk_reg_map {
+@@ -1167,6 +1223,7 @@ struct mtk_reg_map {
  		u32	rx_ptr;		/* rx base pointer */
  		u32	rx_cnt_cfg;	/* rx max count configuration */
  		u32	pcrx_ptr;	/* rx cpu pointer */
@@ -312,7 +306,7 @@ index b18fc5f..cfa85e2 100644
  		u32	glo_cfg;	/* global configuration */
  		u32	rst_idx;	/* reset index */
  		u32	delay_irq;	/* delay interrupt */
-@@ -1179,14 +1236,18 @@ struct mtk_reg_map {
+@@ -1181,14 +1238,18 @@ struct mtk_reg_map {
  		u32	rx_ptr;		/* rx base pointer */
  		u32	rx_cnt_cfg;	/* rx max count configuration */
  		u32	qcrx_ptr;	/* rx cpu pointer */

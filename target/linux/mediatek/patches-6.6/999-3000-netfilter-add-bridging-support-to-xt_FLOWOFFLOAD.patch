@@ -14,11 +14,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  net/netfilter/xt_FLOWOFFLOAD.c | 211 +++++++++++++++++++++++++++++----
  4 files changed, 210 insertions(+), 36 deletions(-)
 
-diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
-index e50aa75..f620613 100644
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -3134,6 +3134,8 @@ int dev_get_iflink(const struct net_device *dev);
+@@ -3133,6 +3133,8 @@ int dev_get_iflink(const struct net_devi
  int dev_fill_metadata_dst(struct net_device *dev, struct sk_buff *skb);
  int dev_fill_forward_path(const struct net_device *dev, const u8 *daddr,
  			  struct net_device_path_stack *stack);
@@ -27,11 +25,9 @@ index e50aa75..f620613 100644
  struct net_device *__dev_get_by_flags(struct net *net, unsigned short flags,
  				      unsigned short mask);
  struct net_device *dev_get_by_name(struct net *net, const char *name);
-diff --git a/net/bridge/br_fdb.c b/net/bridge/br_fdb.c
-index a6d8cd9..0da839d 100644
 --- a/net/bridge/br_fdb.c
 +++ b/net/bridge/br_fdb.c
-@@ -272,6 +272,7 @@ struct net_bridge_fdb_entry *br_fdb_find_rcu(struct net_bridge *br,
+@@ -272,6 +272,7 @@ struct net_bridge_fdb_entry *br_fdb_find
  {
  	return fdb_find_rcu(&br->fdb_hash_tbl, addr, vid);
  }
@@ -39,11 +35,9 @@ index a6d8cd9..0da839d 100644
  
  /* When a static FDB entry is added, the mac address from the entry is
   * added to the bridge private HW address list and all required ports
-diff --git a/net/core/dev.c b/net/core/dev.c
-index 7a0d1be..7579a3f 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -723,44 +723,52 @@ static struct net_device_path *dev_fwd_path(struct net_device_path_stack *stack)
+@@ -723,44 +723,52 @@ static struct net_device_path *dev_fwd_p
  	return &stack->path[k];
  }
  
@@ -108,8 +102,6 @@ index 7a0d1be..7579a3f 100644
  EXPORT_SYMBOL_GPL(dev_fill_forward_path);
  
  /**
-diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
-index 08e0b94..6bf0d57 100644
 --- a/net/netfilter/xt_FLOWOFFLOAD.c
 +++ b/net/netfilter/xt_FLOWOFFLOAD.c
 @@ -15,6 +15,7 @@
@@ -120,7 +112,7 @@ index 08e0b94..6bf0d57 100644
  
  struct xt_flowoffload_hook {
  	struct hlist_node list;
-@@ -253,6 +254,45 @@ xt_flowoffload_skip(struct sk_buff *skb, int family)
+@@ -253,6 +254,45 @@ xt_flowoffload_skip(struct sk_buff *skb,
  	return false;
  }
  
@@ -166,7 +158,7 @@ index 08e0b94..6bf0d57 100644
  static enum flow_offload_xmit_type nf_xmit_type(struct dst_entry *dst)
  {
  	if (dst_xfrm(dst))
-@@ -292,12 +348,12 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+@@ -292,12 +332,12 @@ static void nf_dev_path_info(const struc
  
  	for (i = 0; i < stack->num_paths; i++) {
  		path = &stack->path[i];
@@ -180,7 +172,7 @@ index 08e0b94..6bf0d57 100644
  			if (is_zero_ether_addr(info->h_source))
  				memcpy(info->h_source, path->dev->dev_addr, ETH_ALEN);
  
-@@ -335,14 +391,14 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+@@ -335,14 +375,14 @@ static void nf_dev_path_info(const struc
  				info->num_encaps++;
  				break;
  			case DEV_PATH_BR_VLAN_UNTAG:
@@ -197,7 +189,7 @@ index 08e0b94..6bf0d57 100644
  			break;
  		}
  	}
-@@ -355,11 +411,12 @@ static void nf_dev_path_info(const struct net_device_path_stack *stack,
+@@ -355,11 +395,12 @@ static void nf_dev_path_info(const struc
  		info->xmit_type = FLOW_OFFLOAD_XMIT_DIRECT;
  }
  
@@ -215,7 +207,7 @@ index 08e0b94..6bf0d57 100644
  {
  	const void *daddr = &ct->tuplehash[!dir].tuple.src.u3;
  	struct net_device *dev = dst_cache->dev;
-@@ -369,6 +426,9 @@ static int nf_dev_fill_forward_path(const struct nf_flow_route *route,
+@@ -369,6 +410,9 @@ static int nf_dev_fill_forward_path(cons
  	if (!nf_is_valid_ether_device(dev))
  		goto out;
  
@@ -225,7 +217,7 @@ index 08e0b94..6bf0d57 100644
  	n = dst_neigh_lookup(dst_cache, daddr);
  	if (!n)
  		return -1;
-@@ -383,26 +443,67 @@ static int nf_dev_fill_forward_path(const struct nf_flow_route *route,
+@@ -383,26 +427,67 @@ static int nf_dev_fill_forward_path(cons
  		return -1;
  
  out:
@@ -300,7 +292,7 @@ index 08e0b94..6bf0d57 100644
  
  	route->tuple[!dir].in.ifindex = info.indev->ifindex;
  	for (i = 0; i < info.num_encaps; i++) {
-@@ -419,13 +520,15 @@ static void nf_dev_forward_path(struct nf_flow_route *route,
+@@ -419,13 +504,15 @@ static void nf_dev_forward_path(struct n
  		route->tuple[dir].out.hw_ifindex = info.hw_outdev->ifindex;
  		route->tuple[dir].xmit_type = info.xmit_type;
  	}
@@ -320,7 +312,7 @@ index 08e0b94..6bf0d57 100644
  {
  	struct dst_entry *this_dst = skb_dst(skb);
  	struct dst_entry *other_dst = NULL;
-@@ -456,15 +559,86 @@ xt_flowoffload_route(struct sk_buff *skb, const struct nf_conn *ct,
+@@ -456,15 +543,86 @@ xt_flowoffload_route(struct sk_buff *skb
  	nf_default_forward_path(route, this_dst, dir, devs);
  	nf_default_forward_path(route, other_dst, !dir, devs);
  
@@ -410,7 +402,7 @@ index 08e0b94..6bf0d57 100644
  static unsigned int
  flowoffload_tg(struct sk_buff *skb, const struct xt_action_param *par)
  {
-@@ -520,8 +701,13 @@ flowoffload_tg(struct sk_buff *skb, const struct xt_action_param *par)
+@@ -520,8 +678,13 @@ flowoffload_tg(struct sk_buff *skb, cons
  	if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status))
  		return XT_CONTINUE;
  
@@ -426,6 +418,3 @@ index 08e0b94..6bf0d57 100644
  
  	flow = flow_offload_alloc(ct);
  	if (!flow)
--- 
-2.45.2
-

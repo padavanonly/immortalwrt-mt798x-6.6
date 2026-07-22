@@ -14,8 +14,6 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
  drivers/pci/controller/pcie-mediatek-gen3.c | 99 +++++++++++++++++++++
  1 file changed, 99 insertions(+)
 
-diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
-index a868126..405b902 100644
 --- a/drivers/pci/controller/pcie-mediatek-gen3.c
 +++ b/drivers/pci/controller/pcie-mediatek-gen3.c
 @@ -200,6 +200,7 @@ struct mtk_gen3_pcie {
@@ -26,7 +24,7 @@ index a868126..405b902 100644
  	DECLARE_BITMAP(msi_irq_in_use, PCIE_MSI_IRQS_NUM);
  };
  
-@@ -269,6 +270,11 @@ static void __iomem *mtk_pcie_map_bus(struct pci_bus *bus, unsigned int devfn,
+@@ -269,6 +270,11 @@ static void __iomem *mtk_pcie_map_bus(st
  static int mtk_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
  				int where, int size, u32 *val)
  {
@@ -38,7 +36,7 @@ index a868126..405b902 100644
  	mtk_pcie_config_tlp_header(bus, devfn, where, size);
  
  	return pci_generic_config_read32(bus, devfn, where, size, val);
-@@ -277,6 +283,11 @@ static int mtk_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
+@@ -277,6 +283,11 @@ static int mtk_pcie_config_read(struct p
  static int mtk_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
  				 int where, int size, u32 val)
  {
@@ -50,7 +48,7 @@ index a868126..405b902 100644
  	mtk_pcie_config_tlp_header(bus, devfn, where, size);
  
  	if (size <= 2)
-@@ -1308,6 +1319,94 @@ static int mtk_pcie_turn_off_link(struct mtk_gen3_pcie *pcie)
+@@ -1308,6 +1319,94 @@ static int mtk_pcie_turn_off_link(struct
  				   50 * USEC_PER_MSEC);
  }
  
@@ -145,6 +143,3 @@ index a868126..405b902 100644
  static int mtk_pcie_suspend_noirq(struct device *dev)
  {
  	struct mtk_gen3_pcie *pcie = dev_get_drvdata(dev);
--- 
-2.46.0
-

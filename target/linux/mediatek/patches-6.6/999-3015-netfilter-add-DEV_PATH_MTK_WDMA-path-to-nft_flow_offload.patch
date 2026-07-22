@@ -13,11 +13,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  net/netfilter/nft_flow_offload.c | 4 ++++
  1 file changed, 4 insertions(+)
 
-diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
-index db5345a..253ef56 100644
 --- a/net/netfilter/nft_flow_offload.c
 +++ b/net/netfilter/nft_flow_offload.c
-@@ -178,6 +178,10 @@ static void nft_dev_path_info(const struct net_device_path_stack *stack,
+@@ -216,6 +216,10 @@ static void nft_dev_path_info(const stru
  			}
  			info->xmit_type = FLOW_OFFLOAD_XMIT_DIRECT;
  			break;
@@ -28,6 +26,3 @@ index db5345a..253ef56 100644
  		default:
  			break;
  		}
--- 
-2.45.2
-

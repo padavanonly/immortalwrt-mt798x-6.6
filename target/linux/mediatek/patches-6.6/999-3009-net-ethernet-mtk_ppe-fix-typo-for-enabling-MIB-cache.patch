@@ -11,11 +11,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_ppe.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index 3482147..5c5ba48 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -1117,7 +1117,7 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
+@@ -1120,7 +1120,7 @@ void mtk_ppe_start(struct mtk_ppe *ppe)
  		ppe_m32(ppe, MTK_PPE_MIB_CFG, MTK_PPE_MIB_CFG_RD_CLR,
  			MTK_PPE_MIB_CFG_RD_CLR);
  		ppe_m32(ppe, MTK_PPE_MIB_CACHE_CTL, MTK_PPE_MIB_CACHE_CTL_EN,
@@ -24,6 +22,3 @@ index 3482147..5c5ba48 100644
  	}
  }
  
--- 
-2.45.2
-

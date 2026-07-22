@@ -10,8 +10,6 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/pcs/pcs-mtk-lynxi.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/drivers/net/pcs/pcs-mtk-lynxi.c b/drivers/net/pcs/pcs-mtk-lynxi.c
-index 319cbb7..73b1611 100644
 --- a/drivers/net/pcs/pcs-mtk-lynxi.c
 +++ b/drivers/net/pcs/pcs-mtk-lynxi.c
 @@ -66,7 +66,7 @@
@@ -23,6 +21,3 @@ index 319cbb7..73b1611 100644
  
  /* Register to QPHY wrapper control */
  #define SGMSYS_QPHY_WRAP_CTRL		0xec
--- 
-2.45.2
-

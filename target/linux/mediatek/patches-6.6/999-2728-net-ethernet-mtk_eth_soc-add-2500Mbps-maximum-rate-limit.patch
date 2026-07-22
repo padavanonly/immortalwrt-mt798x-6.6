@@ -12,11 +12,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/ethernet/mediatek/mtk_eth_soc.c | 15 +++++++++++++++
  1 file changed, 15 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 867d354..0c38ebc 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -881,6 +881,9 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+@@ -918,6 +918,9 @@ static void mtk_set_queue_speed(struct m
  	if (mtk_is_netsys_v1(eth))
  		val |= MTK_QTX_SCH_LEAKY_BUCKET_EN;
  
@@ -26,7 +24,7 @@ index 867d354..0c38ebc 100644
  	if (IS_ENABLED(CONFIG_SOC_MT7621)) {
  		switch (speed) {
  		case SPEED_10:
-@@ -925,6 +928,12 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+@@ -962,6 +965,12 @@ static void mtk_set_queue_speed(struct m
  			       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_EXP_V3, 6) |
  			       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_WEIGHT_V3, 10);
  			break;
@@ -39,7 +37,7 @@ index 867d354..0c38ebc 100644
  		default:
  			break;
  		}
-@@ -948,6 +957,12 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+@@ -985,6 +994,12 @@ static void mtk_set_queue_speed(struct m
  			       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_EXP, 6) |
  			       FIELD_PREP(MTK_QTX_SCH_MAX_RATE_WEIGHT, 10);
  			break;
@@ -52,6 +50,3 @@ index 867d354..0c38ebc 100644
  		default:
  			break;
  		}
--- 
-2.45.2
-

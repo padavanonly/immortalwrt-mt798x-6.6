@@ -51,7 +51,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
-@@ -207,6 +207,19 @@
+@@ -207,6 +207,19 @@ static const enum gpiod_flags gpio_flags
  #define T_PROBE_RETRY_SLOW	msecs_to_jiffies(5000)
  #define R_PROBE_RETRY_SLOW	12
  
@@ -71,15 +71,18 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  /* SFP modules appear to always have their PHY configured for bus address
   * 0x56 (which with mdio-i2c, translates to a PHY address of 22).
   * RollBall SFPs access phy via SFP Enhanced Digital Diagnostic Interface
-@@ -290,3 +290,7 @@
- 	struct delayed_work poll;
- 	struct delayed_work timeout;
+@@ -289,6 +302,10 @@ struct sfp {
+ 	struct sfp_diag diag;
+ 	struct delayed_work hwmon_probe;
+ 	unsigned int hwmon_tries;
 +	struct delayed_work reprobe;
 +	unsigned char sm_reprobe_tries;
 +	bool sm_reprobing;
 +	bool sm_reprobe_enabled;
- 
-@@ -1976,7 +1993,7 @@
+ 	struct device *hwmon_dev;
+ 	char *hwmon_name;
+ #endif
+@@ -1893,7 +1910,7 @@ static int sfp_sm_probe_phy(struct sfp *
  static void sfp_sm_link_up(struct sfp *sfp)
  {
  	sfp_link_up(sfp->sfp_bus);
@@ -88,7 +91,8 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  }
  
  static void sfp_sm_link_down(struct sfp *sfp)
-@@ -2439,4 +2456,11 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+@@ -2477,6 +2494,13 @@ static int sfp_sm_mod_probe(struct sfp *
+ 
  	if (sfp->quirk && sfp->quirk->fixup)
  		sfp->quirk->fixup(sfp);
 +	/* Enable reprobe watchdog only for copper SFP+ modules (e.g.
@@ -100,7 +104,8 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 +
  	mutex_unlock(&sfp->st_mutex);
  
-@@ -2611,6 +2635,8 @@
+ 	return 0;
+@@ -2531,6 +2555,8 @@ static void sfp_sm_module(struct sfp *sf
  
  	/* Handle remove event globally, it resets this state machine */
  	if (event == SFP_E_REMOVE) {
@@ -109,7 +114,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  		sfp_sm_mod_remove(sfp);
  		sfp_sm_mod_next(sfp, SFP_MOD_EMPTY, 0);
  		return;
-@@ -2632,6 +2658,9 @@
+@@ -2552,6 +2578,9 @@ static void sfp_sm_module(struct sfp *sf
  			sfp_sm_mod_next(sfp, SFP_MOD_PROBE, T_SERIAL);
  			sfp->sm_mod_tries_init = R_PROBE_RETRY_INIT;
  			sfp->sm_mod_tries = R_PROBE_RETRY_SLOW;
@@ -119,7 +124,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  		}
  		break;
  
-@@ -2841,6 +2870,14 @@
+@@ -2765,6 +2794,14 @@ static void sfp_sm_main(struct sfp *sfp,
  			sfp_sm_next(sfp, SFP_S_FAIL, 0);
  			break;
  		}
@@ -134,7 +139,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  		sfp_sm_link_check_los(sfp);
  
  		/* Reset the fault retry count */
-@@ -2862,7 +2899,12 @@
+@@ -2786,7 +2823,12 @@ static void sfp_sm_main(struct sfp *sfp,
  		break;
  
  	case SFP_S_LINK_UP:
@@ -148,7 +153,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  			sfp_sm_link_down(sfp);
  			sfp_sm_fault(sfp, SFP_S_TX_FAULT, true);
  		} else if (sfp_los_event_active(sfp, event)) {
-@@ -3107,6 +3149,28 @@
+@@ -3036,6 +3078,28 @@ static void sfp_poll(struct work_struct
  		mod_delayed_work(system_wq, &sfp->poll, poll_jiffies);
  }
  
@@ -177,7 +182,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  static struct sfp *sfp_alloc(struct device *dev)
  {
  	struct sfp *sfp;
-@@ -3122,6 +3186,7 @@
+@@ -3051,6 +3115,7 @@ static struct sfp *sfp_alloc(struct devi
  	mutex_init(&sfp->st_mutex);
  	INIT_DELAYED_WORK(&sfp->poll, sfp_poll);
  	INIT_DELAYED_WORK(&sfp->timeout, sfp_timeout);
@@ -185,7 +190,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  
  	sfp_hwmon_init(sfp);
  
-@@ -3136,6 +3201,7 @@
+@@ -3065,6 +3130,7 @@ static void sfp_cleanup(void *data)
  
  	cancel_delayed_work_sync(&sfp->poll);
  	cancel_delayed_work_sync(&sfp->timeout);
@@ -193,7 +198,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  	if (sfp->i2c_mii) {
  		mdiobus_unregister(sfp->i2c_mii);
  		mdiobus_free(sfp->i2c_mii);
-@@ -3319,6 +3385,7 @@
+@@ -3252,6 +3318,7 @@ static void sfp_shutdown(struct platform
  
  	cancel_delayed_work_sync(&sfp->poll);
  	cancel_delayed_work_sync(&sfp->timeout);
@@ -201,5 +206,3 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  }
  
  static struct platform_driver sfp_driver = {
--- 
-2.45.0

@@ -1,5 +1,5 @@
---- a/drivers/net/bonding/bond_main.c	2025-05-22 20:12:26.000000000 +0800
-+++ b/drivers/net/bonding/bond_main.c	2025-06-16 00:33:48.071002753 +0800
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
 @@ -93,7 +93,10 @@
  #include <net/xdp.h>
  
@@ -12,7 +12,7 @@
  /*---------------------------- Module parameters ----------------------------*/
  
  /* monitor all links that often (in milliseconds). <=0 disables monitoring */
-@@ -5872,6 +5875,35 @@
+@@ -5883,6 +5886,35 @@ out:
  	return ret;
  }
  
@@ -48,7 +48,7 @@
  static const struct ethtool_ops bond_ethtool_ops = {
  	.get_drvinfo		= bond_ethtool_get_drvinfo,
  	.get_link		= ethtool_op_get_link,
-@@ -5913,6 +5945,9 @@
+@@ -5924,6 +5956,9 @@ static const struct net_device_ops bond_
  	.ndo_xdp_get_xmit_slave = bond_xdp_get_xmit_slave,
  	.ndo_hwtstamp_get	= bond_hwtstamp_get,
  	.ndo_hwtstamp_set	= bond_hwtstamp_set,
@@ -58,8 +58,8 @@
  };
  
  static const struct device_type bond_type = {
---- a/net/netfilter/nft_counter.c	2025-05-22 20:12:26.000000000 +0800
-+++ b/net/netfilter/nft_counter.c	2025-06-16 00:30:48.927002668 +0800
+--- a/net/netfilter/nft_counter.c
++++ b/net/netfilter/nft_counter.c
 @@ -15,6 +15,28 @@
  #include <net/netfilter/nf_tables.h>
  #include <net/netfilter/nf_tables_core.h>
@@ -89,7 +89,7 @@
  
  struct nft_counter {
  	u64_stats_t	bytes;
-@@ -38,6 +60,24 @@
+@@ -38,6 +60,24 @@ static inline void nft_counter_do_eval(s
  {
  	struct u64_stats_sync *nft_sync;
  	struct nft_counter *this_cpu;
@@ -114,7 +114,7 @@
  
  	local_bh_disable();
  	this_cpu = this_cpu_ptr(priv->counter);
-@@ -46,6 +86,8 @@
+@@ -46,6 +86,8 @@ static inline void nft_counter_do_eval(s
  	u64_stats_update_begin(nft_sync);
  	u64_stats_add(&this_cpu->bytes, pkt->skb->len);
  	u64_stats_inc(&this_cpu->packets);
@@ -123,9 +123,9 @@
  	u64_stats_update_end(nft_sync);
  
  	local_bh_enable();
---- a/include/net/netfilter/nf_flow_table.h	2024-09-13 16:35:08.862364500 +0800
-+++ b/include/net/netfilter/nf_flow_table.h	2024-09-14 10:28:23.716107006 +0800
-@@ -109,6 +109,7 @@
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -196,6 +196,7 @@ struct flow_offload_hw_path {
  	u16 vlan_id;
  	u16 pppoe_sid;
  	u16 dsa_port;
@@ -133,8 +133,8 @@
  };
  
  #define NF_FLOW_TIMEOUT (30 * HZ)
---- a/include/net/netfilter/nf_conntrack_acct.h	2024-01-04 22:35:10.790631711 +0800
-+++ b/include/net/netfilter/nf_conntrack_acct.h	2024-01-06 00:57:34.678787219 +0800
+--- a/include/net/netfilter/nf_conntrack_acct.h
++++ b/include/net/netfilter/nf_conntrack_acct.h
 @@ -14,6 +14,8 @@
  struct nf_conn_counter {
  	atomic64_t packets;
@@ -144,10 +144,9 @@
  };
  
  struct nf_conn_acct {
-
---- a/net/ipv4/netfilter/ip_tables.c	2024-01-01 02:04:02.972938000 +0800
-+++ b/net/ipv4/netfilter/ip_tables.c	2024-01-06 01:01:49.216454646 +0800
-@@ -27,6 +27,8 @@
+--- a/net/ipv4/netfilter/ip_tables.c
++++ b/net/ipv4/netfilter/ip_tables.c
+@@ -26,6 +26,8 @@
  #include <linux/netfilter_ipv4/ip_tables.h>
  #include <net/netfilter/nf_log.h>
  #include "../../netfilter/xt_repldata.h"
@@ -156,7 +155,7 @@
  
  MODULE_LICENSE("GPL");
  MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
-@@ -273,6 +275,25 @@
+@@ -271,6 +273,25 @@ ipt_handle_default_rule(struct ipt_entry
  	return true;
  }
  
@@ -181,8 +180,8 @@
 +#define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)
  /* Returns one of the generic firewall policies, like NF_ACCEPT. */
  unsigned int
- ipt_do_table(struct sk_buff *skb,
-@@ -291,7 +312,12 @@
+ ipt_do_table(void *priv,
+@@ -290,7 +311,12 @@ ipt_do_table(void *priv,
  	const struct xt_table_info *private;
  	struct xt_action_param acpar;
  	unsigned int addend;
@@ -196,7 +195,7 @@
  	/* Initialization */
  	WARN_ON(!(table->valid_hooks & (1 << hook)));
  	local_bh_disable();
-@@ -302,9 +328,22 @@
+@@ -301,9 +327,22 @@ ipt_do_table(void *priv,
  	e = get_entry(table_base, private->hook_entry[hook]);
  	if (ipt_handle_default_rule(e, &verdict)) {
  		struct xt_counters *counter;
@@ -220,7 +219,7 @@
  		local_bh_enable();
  		return verdict;
  	}
-@@ -360,6 +399,17 @@
+@@ -359,6 +398,17 @@ ipt_do_table(void *priv,
  
  		counter = xt_get_this_cpu_counter(&e->counters);
  		ADD_COUNTER(*counter, skb->len, 1);
@@ -238,10 +237,9 @@
  
  		t = ipt_get_target_c(e);
  		WARN_ON(!t->u.kernel.target);
-
---- a/net/ipv6/netfilter/ip6_tables.c	2023-08-30 22:27:28.000000000 +0800
-+++ b/net/ipv6/netfilter/ip6_tables.c	2024-01-06 01:03:01.874087644 +0800
-@@ -31,6 +31,8 @@
+--- a/net/ipv6/netfilter/ip6_tables.c
++++ b/net/ipv6/netfilter/ip6_tables.c
+@@ -30,6 +30,8 @@
  #include <linux/netfilter/x_tables.h>
  #include <net/netfilter/nf_log.h>
  #include "../../netfilter/xt_repldata.h"
@@ -250,7 +248,7 @@
  
  MODULE_LICENSE("GPL");
  MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
-@@ -245,6 +247,25 @@
+@@ -243,6 +245,25 @@ ip6t_next_entry(const struct ip6t_entry
  	return (void *)entry + entry->next_offset;
  }
  
@@ -275,8 +273,8 @@
 +#define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)
  /* Returns one of the generic firewall policies, like NF_ACCEPT. */
  unsigned int
- ip6t_do_table(struct sk_buff *skb,
-@@ -262,7 +283,12 @@
+ ip6t_do_table(void *priv, struct sk_buff *skb,
+@@ -260,7 +281,12 @@ ip6t_do_table(void *priv, struct sk_buff
  	const struct xt_table_info *private;
  	struct xt_action_param acpar;
  	unsigned int addend;
@@ -290,7 +288,7 @@
  	/* Initialization */
  	stackidx = 0;
  	indev = state->in ? state->in->name : nulldevname;
-@@ -285,6 +311,7 @@
+@@ -283,6 +309,7 @@ ip6t_do_table(void *priv, struct sk_buff
  	cpu        = smp_processor_id();
  	table_base = private->entries;
  	jumpstack  = (struct ip6t_entry **)private->jumpstack[cpu];
@@ -298,7 +296,7 @@
  
  	/* Switch to alternate jumpstack if we're being invoked via TEE.
  	 * TEE issues XT_CONTINUE verdict on original skb so we must not
-@@ -321,7 +348,20 @@
+@@ -319,7 +346,20 @@ ip6t_do_table(void *priv, struct sk_buff
  
  		counter = xt_get_this_cpu_counter(&e->counters);
  		ADD_COUNTER(*counter, skb->len, 1);
@@ -319,4 +317,3 @@
  		t = ip6t_get_target_c(e);
  		WARN_ON(!t->u.kernel.target);
  
-

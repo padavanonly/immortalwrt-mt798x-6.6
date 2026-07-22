@@ -11,11 +11,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  net/netfilter/nft_flow_offload.c | 10 ++++++++--
  1 file changed, 8 insertions(+), 2 deletions(-)
 
-diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
-index 66c9146..df529b4 100644
 --- a/net/netfilter/nft_flow_offload.c
 +++ b/net/netfilter/nft_flow_offload.c
-@@ -327,8 +327,11 @@ static int nft_flow_route_routing(const struct nft_pktinfo *pkt,
+@@ -370,8 +370,11 @@ static int nft_flow_route_routing(const
  	if (route->tuple[dir].xmit_type	== FLOW_OFFLOAD_XMIT_NEIGH &&
  	    route->tuple[!dir].xmit_type == FLOW_OFFLOAD_XMIT_NEIGH) {
  		if (nft_dev_forward_path(pkt, route, ct, dir, ft) ||
@@ -29,7 +27,7 @@ index 66c9146..df529b4 100644
  	}
  
  	return 0;
-@@ -555,6 +558,9 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+@@ -590,6 +593,9 @@ static void nft_flow_offload_eval(const
  	if (ret < 0)
  		goto err_flow_add;
  
@@ -39,6 +37,3 @@ index 66c9146..df529b4 100644
  	return;
  
  err_flow_add:
--- 
-2.45.2
-

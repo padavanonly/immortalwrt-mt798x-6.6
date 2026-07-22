@@ -14,8 +14,6 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
  drivers/pci/controller/pcie-mediatek-gen3.c | 29 +++++++++++++++++++++
  1 file changed, 29 insertions(+)
 
-diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
-index 49bb70f..a868126 100644
 --- a/drivers/pci/controller/pcie-mediatek-gen3.c
 +++ b/drivers/pci/controller/pcie-mediatek-gen3.c
 @@ -8,6 +8,8 @@
@@ -54,7 +52,7 @@ index 49bb70f..a868126 100644
  	int irq;
  	int num_irqs;
  	struct mtk_pcie_irq *irqs;
-@@ -447,6 +455,12 @@ static int mtk_pcie_startup_port(struct mtk_gen3_pcie *pcie)
+@@ -447,6 +455,12 @@ static int mtk_pcie_startup_port(struct
  	val |= PCIE_MAC_RSTB | PCIE_PHY_RSTB | PCIE_BRG_RSTB | PCIE_PE_RSTB;
  	writel_relaxed(val, pcie->base + PCIE_RST_CTRL_REG);
  
@@ -67,7 +65,7 @@ index 49bb70f..a868126 100644
  	/*
  	 * Described in PCIe CEM specification sections 2.2 (PERST# Signal)
  	 * and 2.2.1 (Initial Power-Up (G3 to S0)).
-@@ -1078,6 +1092,21 @@ static int mtk_pcie_parse_port(struct mtk_gen3_pcie *pcie)
+@@ -1078,6 +1092,21 @@ static int mtk_pcie_parse_port(struct mt
  		return ret;
  	}
  
@@ -89,6 +87,3 @@ index 49bb70f..a868126 100644
  	return 0;
  }
  
--- 
-2.46.0
-

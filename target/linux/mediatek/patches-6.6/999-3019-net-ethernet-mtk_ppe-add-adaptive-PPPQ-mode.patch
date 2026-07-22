@@ -18,11 +18,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  .../net/ethernet/mediatek/mtk_ppe_offload.c   |  2 +-
  5 files changed, 45 insertions(+), 3 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index d2cdcb1..d04b508 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-@@ -1922,6 +1922,11 @@ mtk_ppe_check_pppq_path(struct mtk_mac *mac, struct net_device *idev, int dsa_po
+@@ -1924,6 +1924,11 @@ mtk_ppe_check_pppq_path(struct mtk_mac *
  	    (dsa_port == 5 && wifi_rx))
  		return 1;
  
@@ -34,11 +32,9 @@ index d2cdcb1..d04b508 100644
  	return 0;
  }
  
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
-index d610d4b..61d11f1 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
-@@ -718,16 +718,29 @@ __mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+@@ -718,16 +718,29 @@ __mtk_foe_entry_clear(struct mtk_ppe *pp
  
  	if (entry->hash != 0xffff && set_state) {
  		struct mtk_foe_entry *hwe = mtk_foe_get_entry(ppe, entry->hash);
@@ -69,7 +65,7 @@ index d610d4b..61d11f1 100644
  
  	if (entry->type != MTK_FLOW_TYPE_L2_SUBFLOW)
  		return;
-@@ -848,7 +861,8 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
+@@ -848,7 +861,8 @@ __mtk_foe_entry_commit(struct mtk_ppe *p
  	struct mtk_eth *eth = ppe->eth;
  	u16 timestamp = mtk_eth_timestamp(eth);
  	struct mtk_foe_entry *hwe;
@@ -79,7 +75,7 @@ index d610d4b..61d11f1 100644
  
  	hwe = mtk_foe_get_entry(ppe, hash);
  
-@@ -865,6 +879,21 @@ __mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
+@@ -865,6 +879,21 @@ __mtk_foe_entry_commit(struct mtk_ppe *p
  					 timestamp);
  	}
  
@@ -101,11 +97,9 @@ index d610d4b..61d11f1 100644
  	memcpy(&hwe->data, &entry->data, eth->soc->foe_entry_size - sizeof(hwe->ib1));
  	wmb();
  	hwe->ib1 = entry->ib1;
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.h b/drivers/net/ethernet/mediatek/mtk_ppe.h
-index cca64f7..2ecf448 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
-@@ -379,6 +379,7 @@ mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash)
+@@ -379,6 +379,7 @@ mtk_ppe_check_skb(struct mtk_ppe *ppe, s
  	__mtk_ppe_check_skb(ppe, skb, hash);
  }
  
@@ -113,11 +107,9 @@ index cca64f7..2ecf448 100644
  int mtk_foe_entry_prepare(struct mtk_eth *eth, struct mtk_foe_entry *entry,
  			  int type, int l4proto, u8 pse_port, u8 *src_mac,
  			  u8 *dest_mac);
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-index 3c05af2..c35878c 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
-@@ -206,6 +206,8 @@ mtk_ppe_internal_debugfs_read_qos(struct seq_file *m, void *private)
+@@ -206,6 +206,8 @@ mtk_ppe_internal_debugfs_read_qos(struct
  		pr_info("HQoS is enabled now!\n");
  	else if (eth->qos_toggle == 2)
  		pr_info("Per-port-per-queue mode is enabled!\n");
@@ -126,7 +118,7 @@ index 3c05af2..c35878c 100644
  
  	return 0;
  }
-@@ -238,6 +240,11 @@ mtk_ppe_internal_debugfs_write_qos(struct file *file, const char __user *buffer,
+@@ -238,6 +240,11 @@ mtk_ppe_internal_debugfs_write_qos(struc
  		pr_info("Per-port-per-queue mode is going to be enabled !\n");
  		pr_info("PPPQ use qid 3~14 (scheduler 0).\n");
  		eth->qos_toggle = 2;
@@ -138,11 +130,9 @@ index 3c05af2..c35878c 100644
  	}
  
  	return len;
-diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-index cdb8c33..56e3b0f 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
-@@ -332,7 +332,7 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+@@ -332,7 +332,7 @@ mtk_flow_set_output_device(struct mtk_et
  		ct_mark = ct->mark;
  	}
  
@@ -151,6 +141,3 @@ index cdb8c33..56e3b0f 100644
  		if ((dsa_port >= 0) && ct && nf_ct_protonum(ct) == IPPROTO_TCP) {
  			/* Dispatch the IPv4/IPv6 TCP Ack packets to the high-priority
  			 * queue, assuming they are less than 64 bytes.
--- 
-2.45.2
-

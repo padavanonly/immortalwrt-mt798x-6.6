@@ -7,11 +7,9 @@ Subject: [PATCH 3/6] fix wdma rx hang on wed1 after SER
  drivers/net/ethernet/mediatek/mtk_wed.c | 17 ++++++++++++++++-
  1 file changed, 16 insertions(+), 1 deletion(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
-index 3db954d..c48fba8 100644
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
-@@ -250,7 +250,7 @@ mtk_wdma_rx_reset(struct mtk_wed_device *dev)
+@@ -250,7 +250,7 @@ mtk_wdma_rx_reset(struct mtk_wed_device
  	wdma_w32(dev, MTK_WDMA_RESET_IDX, 0);
  
  	for (i = 0; i < ARRAY_SIZE(dev->rx_wdma); i++) {
@@ -20,7 +18,7 @@ index 3db954d..c48fba8 100644
  			continue;
  
  		wdma_w32(dev,
-@@ -1785,6 +1785,21 @@ mtk_wed_reset_dma(struct mtk_wed_device *dev)
+@@ -1785,6 +1785,21 @@ mtk_wed_reset_dma(struct mtk_wed_device
  			wed_clr(dev, MTK_WED_WDMA_RX_PREF_CFG,
  				MTK_WED_WDMA_RX_PREF_DDONE2_EN);
  
@@ -42,6 +40,3 @@ index 3db954d..c48fba8 100644
  			/* 2. Reset dma index */
  			wed_w32(dev, MTK_WED_WDMA_RESET_IDX,
  				MTK_WED_WDMA_RESET_IDX_RX_ALL);
--- 
-2.45.2
-

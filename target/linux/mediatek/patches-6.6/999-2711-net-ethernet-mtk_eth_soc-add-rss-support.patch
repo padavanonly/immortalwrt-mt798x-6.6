@@ -8,8 +8,6 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: add rss support
  drivers/net/ethernet/mediatek/mtk_eth_soc.h |   93 ++++-
  2 files changed, 469 insertions(+), 136 deletions(-)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 96551c0..0c55ad9 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 @@ -1328,6 +1328,7 @@ static bool mtk_rx_get_desc(struct mtk_e
@@ -985,8 +983,6 @@ index 96551c0..0c55ad9 100644
  		.dma_l4_valid = RX_DMA_L4_VALID_PDMA,
  		.dma_max_len = MTK_TX_DMA_BUF_LEN,
  		.dma_len_offset = 16,
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
-index 8186453..011a489 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
 @@ -76,6 +76,8 @@
@@ -1217,6 +1213,3 @@ index 8186453..011a489 100644
  	void				*scratch_ring;
  	dma_addr_t			phy_scratch_ring;
  	void				*scratch_head[MTK_FQ_DMA_HEAD];
--- 
-2.45.2
-

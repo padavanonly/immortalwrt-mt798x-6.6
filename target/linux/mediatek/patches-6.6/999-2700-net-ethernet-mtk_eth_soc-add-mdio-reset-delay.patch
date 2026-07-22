@@ -7,11 +7,9 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: add mdio reset delay
  drivers/net/ethernet/mediatek/mtk_eth_soc.c | 11 +++++++++++
  1 file changed, 11 insertions(+)
 
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index 70dd8eb..0da39e7 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -484,6 +484,16 @@ static int mtk_mdio_read_c45(struct mii_bus *bus, int phy_addr, int devad,
+@@ -473,6 +473,16 @@ static int mtk_mdio_read_c45(struct mii_
  	return _mtk_mdio_read_c45(eth, phy_addr, devad, phy_reg);
  }
  
@@ -28,7 +26,7 @@ index 70dd8eb..0da39e7 100644
  static int mt7621_gmac0_rgmii_adjust(struct mtk_eth *eth,
  				     phy_interface_t interface)
  {
-@@ -1005,6 +1015,7 @@ static int mtk_mdio_init(struct mtk_eth *eth)
+@@ -994,6 +1004,7 @@ static int mtk_mdio_init(struct mtk_eth
  	eth->mii_bus->write = mtk_mdio_write_c22;
  	eth->mii_bus->read_c45 = mtk_mdio_read_c45;
  	eth->mii_bus->write_c45 = mtk_mdio_write_c45;
@@ -36,6 +34,3 @@ index 70dd8eb..0da39e7 100644
  	eth->mii_bus->priv = eth;
  	eth->mii_bus->parent = eth->dev;
  
--- 
-2.45.2
-

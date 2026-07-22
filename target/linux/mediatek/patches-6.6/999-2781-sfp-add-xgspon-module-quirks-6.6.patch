@@ -21,7 +21,10 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
-@@ -524,2 +524,10 @@
+@@ -504,6 +504,14 @@ static const struct sfp_quirk sfp_quirks
+ 	SFP_QUIRK("FS", "GPON-ONU-34-20BI", sfp_quirk_2500basex,
+ 		  sfp_fixup_ignore_tx_fault),
+ 
 +	/* Zaram ZXOS11NPI XGS-PON module (SFP+) */
 +	SFP_QUIRK_F("Zaram", "ZXOS11NPI", sfp_fixup_ignore_tx_fault),
 +	/* HSGQ NU-STICK1.0 XGS-PON module (SFP+) */
@@ -32,6 +35,4 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 +
  	SFP_QUIRK_F("HALNy", "HL-GSFP", sfp_fixup_halny_gsfp),
  
- 	SFP_QUIRK_F("H-COM", "SPP425H-GAB4", sfp_fixup_potron),
--- 
-2.45.0
+ 	// HG MXPD-483II-F 2.5G supports 2500Base-X, but incorrectly reports
