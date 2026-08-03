@@ -1,0 +1,69 @@
+---
+[v1] net: ethernet: mtk_ppe: Add source MAC rewrite for 3-address station egress
+
+A station-mode port without 4-address support carries only three MAC
+addresses, so every frame it transmits must use the port's own MAC as the
+source, regardless of the source MAC carried by the flow.
+
+Rewrite the FOE entry source MAC to the egress device's own address when
+the egress port is a 3-address station.
+---
+v1: Add source MAC rewrite for 3-address station egress.
+---
+
+From 14dd369391feb4fea87ba025afcf8e13c9733123 Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Mon, 03 Aug 2026 11:00:00 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: Add source MAC rewrite for 3-address
+ station egress
+
+A station-mode port without 4-address support carries only three MAC
+addresses, so every frame it transmits must use the port's own MAC as the
+source, regardless of the source MAC carried by the flow.
+
+Rewrite the FOE entry source MAC to the egress device's own address when
+the egress port is a 3-address station.
+---
+ drivers/net/ethernet/mediatek/mtk_ppe_offload.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index 5cbb584..04ff713 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -14,2 +14,3 @@
+ #include <net/dsa.h>
++#include <net/cfg80211.h>
+ #include "mtk_eth_soc.h"
+@@ -242,2 +243,17 @@
++/* Check whether @dev is a station-mode port without 4-address support, e.g. an
++ * apcli uplink.
++ */
++static bool
++mtk_flow_is_dev_3addr_sta(const struct net_device *dev)
++{
++#if IS_ENABLED(CONFIG_CFG80211_HEADERS)
++	struct wireless_dev *wdev = dev ? dev->ieee80211_ptr : NULL;
++
++	return wdev && wdev->iftype == NL80211_IFTYPE_STATION && !wdev->use_4addr;
++#else
++	return false;
++#endif
++}
++
+ static bool
+ mtk_flow_is_tcp_ack(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+@@ -510,6 +526,13 @@
+ 		}
+ 	}
+ 
++	/* Frames leaving a 3-address station-mode port must be sourced from the
++	 * port's own address, so rewrite the source MAC to @odev's.
++	 */
++	if (offload_type != MTK_PPE_PKT_TYPE_BRIDGE &&
++	    mtk_flow_is_dev_3addr_sta(odev))
++		ether_addr_copy(data.eth.h_source, odev->dev_addr);
++
+ 	if (!is_valid_ether_addr(data.eth.h_source) ||
+ 	    !is_valid_ether_addr(data.eth.h_dest))
+ 		return -EINVAL;
