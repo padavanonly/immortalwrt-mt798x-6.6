@@ -1,0 +1,58 @@
+From d8c5c05a5b646eb651a4258bd111df59316341ac Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Thu, 27 Aug 2026 11:31:49 +0800
+Subject: [PATCH] Add adjust TX_BM_PKT_CNT based on hw token
+
+Signed-off-by: Rex Lu <rex.lu@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index f157a99..dd7d5ce 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -46,8 +46,8 @@
+ #define MTK_WED_MIOD_ENTRY_CNT		128
+ 
+ #define MTK_WED_TX_BM_DMA_SIZE		65536
+-#define MTK_WED_TX_BM_PKT_CNT		32768
+-#define MTK_WED_TX_BM_PKT_CNT_V3_1	17408
++#define MTK_WED_TX_BM_PKT_CNT(dev)	((dev)->wlan.nbuf * 2)
++#define MTK_WED_TX_BM_PKT_CNT_V3_1(dev)	((dev)->wlan.nbuf + 1024)
+ 
+ static struct mtk_wed_hw *hw_list[3];
+ static DEFINE_MUTEX(hw_lock);
+@@ -687,9 +687,9 @@ mtk_wed_tx_buffer_alloc(struct mtk_wed_device *dev)
+ 	} else {
+ 		dev->tx_buf_ring.size = MTK_WED_TX_BM_DMA_SIZE;
+ 		if (mtk_wed_is_v3_1(dev->hw))
+-			ring_size = MTK_WED_TX_BM_PKT_CNT_V3_1;
++			ring_size = MTK_WED_TX_BM_PKT_CNT_V3_1(dev);
+ 		else
+-			ring_size = MTK_WED_TX_BM_PKT_CNT;
++			ring_size = MTK_WED_TX_BM_PKT_CNT(dev);
+ 	}
+ 	n_pages = dev->tx_buf_ring.size / MTK_WED_BUF_PER_PAGE;
+ 
+@@ -1731,14 +1731,14 @@ mtk_wed_hw_init(struct mtk_wed_device *dev)
+ 			MTK_WED_TX_TKID_CTRL_FREE_FORMAT);
+ 
+ 		wed_w32(dev, MTK_WED_TX_BM_INIT_PTR,
+-			MTK_WED_TX_BM_PKT_CNT |
++			MTK_WED_TX_BM_PKT_CNT(dev) |
+ 			MTK_WED_TX_BM_INIT_SW_TAIL_IDX);
+ 	} else if (mtk_wed_is_v3_1(dev->hw)) {
+ 		wed_w32(dev, MTK_WED_TX_BM_RANGE_CFG,
+-			MTK_WED_TX_BM_PKT_CNT_V3_1);
++			MTK_WED_TX_BM_PKT_CNT_V3_1(dev));
+ 
+ 		wed_w32(dev, MTK_WED_TX_BM_INIT_PTR,
+-			MTK_WED_TX_BM_PKT_CNT_V3_1 |
++			MTK_WED_TX_BM_PKT_CNT_V3_1(dev) |
+ 			MTK_WED_TX_BM_INIT_SW_TAIL_IDX);
+ 	}
+ 
+-- 
+2.45.2
+
