@@ -733,6 +733,7 @@ int binding_threshold(int threshold)
 	int i;
 
 	pr_info("Binding Threshold =%d\n", threshold);
+	hnat_priv->bind_threshold = threshold;
 
 	for (i = 0; i < CFG_PPE_NUM; i++)
 		writel(threshold, hnat_priv->ppe_base[i] + PPE_BNDR);
@@ -745,6 +746,7 @@ int tcp_bind_lifetime(int tcp_life)
 	int i;
 
 	pr_info("tcp_life = %d\n", tcp_life);
+	hnat_priv->tcp_dlta = tcp_life;
 
 	/* set Delta time for aging out an bind TCP FOE entry */
 	for (i = 0; i < CFG_PPE_NUM; i++)
@@ -759,6 +761,7 @@ int fin_bind_lifetime(int fin_life)
 	int i;
 
 	pr_info("fin_life = %d\n", fin_life);
+	hnat_priv->fin_dlta = fin_life;
 
 	/* set Delta time for aging out an bind TCP FIN FOE entry */
 	for (i = 0; i < CFG_PPE_NUM; i++)
@@ -773,6 +776,7 @@ int udp_bind_lifetime(int udp_life)
 	int i;
 
 	pr_info("udp_life = %d\n", udp_life);
+	hnat_priv->udp_dlta = udp_life;
 
 	/* set Delta time for aging out an bind UDP FOE entry */
 	for (i = 0; i < CFG_PPE_NUM; i++)
@@ -792,6 +796,7 @@ int tcp_keep_alive(int tcp_interval)
 	} else {
 		pr_info("tcp_interval = %d\n", tcp_interval);
 	}
+	hnat_priv->tcp_ka = tcp_interval;
 
 	/* Keep alive time for bind FOE TCP entry */
 	for (i = 0; i < CFG_PPE_NUM; i++)
@@ -811,6 +816,7 @@ int udp_keep_alive(int udp_interval)
 	} else {
 		pr_info("udp_interval = %d\n", udp_interval);
 	}
+	hnat_priv->udp_ka = udp_interval;
 
 	/* Keep alive timer for bind FOE UDP entry */
 	for (i = 0; i < CFG_PPE_NUM; i++)
@@ -871,12 +877,13 @@ int bind_rate_setting(int bind_rate)
 {
 	int i;
 
-	if ((bind_rate > 30) || (bind_rate <1)) {
+	if ((bind_rate > 30) || (bind_rate < 1)) {
 		bind_rate = 30;
 		pr_info("bind_rate max interval = 30\n");
 	} else {
 		pr_info("bind_rate = %d\n", bind_rate);
 	}
+	hnat_priv->bind_rate = bind_rate;
 
 	/* Keep alive timer for bind FOE UDP entry */
 	for (i = 0; i < CFG_PPE_NUM; i++)
