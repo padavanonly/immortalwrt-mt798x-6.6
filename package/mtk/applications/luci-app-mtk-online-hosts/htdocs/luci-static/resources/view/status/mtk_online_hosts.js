@@ -19,6 +19,12 @@ const callClientRates = rpc.declare({
 	expect: { '': {} }
 });
 
+const callClientWeb = rpc.declare({
+	object: 'luci.client-web',
+	method: 'get',
+	expect: { '': {} }
+});
+
 const callUfpList = rpc.declare({
 	object: 'fingerprint',
 	method: 'fingerprint',
@@ -85,6 +91,23 @@ return baseclass.extend({
 		}, value[1]) ];
 	},
 
+	clientURL(lease, data) {
+		const ip = validation.parseIPv4(lease.ipaddr || '')?.join('.');
+		const client = data?.clients?.[ip];
+		if (!ip || !client?.ready || client.mac != lease.macaddr?.toUpperCase())
+			return null;
+		const port = [80, 8080, 5666, 443, 4430, 5667].find(port => client.ports?.includes(port));
+		if (!port)
+			return null;
+		const scheme = [80, 8080, 5666].includes(port) ? 'http' : 'https';
+		return scheme + '://' + ip + (port == 80 || port == 443 ? '' : ':' + port) + '/';
+	},
+
+	renderClientIP(lease, data) {
+		const url = this.clientURL(lease, data);
+		return url ? E('a', { 'href': url, 'target': '_blank', 'rel': 'noopener noreferrer', 'style': 'text-decoration:underline', 'data-value': lease.ipaddr }, lease.ipaddr) : lease.ipaddr;
+	},
+
 	initLeaseTable(table) {
 		const widget = new L.ui.Table(table);
 		const update = widget.update;
@@ -119,7 +142,7 @@ return baseclass.extend({
 			const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.querySelector('.luci-client-rate'));
 			const key = row => {
 				const cell = row.children[sorting[0]];
-				return cell.hasAttribute('data-value') ? Number(cell.dataset.value) : widget.deriveSortKey(cell, sorting[0]);
+				return cell.hasAttribute('data-value') ? Number(cell.dataset.value) : widget.deriveSortKey(cell.querySelector('a[data-value]') || cell, sorting[0]);
 			};
 			const sorted = rows.slice().sort((a, b) => {
 				const av = key(a), bv = key(b);
@@ -154,17 +177,18 @@ return baseclass.extend({
 			callLuciDHCPLeases(),
 			network.getHostHints(),
 			L.hasSystemFeature('ufpd') ? callUfpList() : null,
-			L.resolveDefault(uci.load('dhcp'))
+			L.resolveDefault(uci.load('dhcp')),
+			L.resolveDefault(callClientWeb(), {})
 		]);
 	},
 
-	render([dhcp_leases, host_hints, ufp_list]) {
+	render([dhcp_leases, host_hints, ufp_list, dhcp_config, web]) {
 		if (!this.ratePoll) {
 			this.ratePoll = L.bind(this.refreshRates, this);
 			poll.add(this.ratePoll, 2);
 		}
 		if (L.hasSystemFeature('dnsmasq') || L.hasSystemFeature('odhcpd'))
-			return this.renderLeases(dhcp_leases, host_hints, ufp_list);
+			return this.renderLeases(dhcp_leases, host_hints, ufp_list, web);
 
 		return null;
 	},
@@ -211,7 +235,7 @@ return baseclass.extend({
 			.then(L.bind(L.ui.changes.displayChanges, L.ui.changes));
 	},
 
-	renderLeases(dhcp_leases, host_hints, macaddr) {
+	renderLeases(dhcp_leases, host_hints, macaddr, web) {
 		const leases = Array.isArray(dhcp_leases.dhcp_leases) ? dhcp_leases.dhcp_leases : [];
 		const leases6 = Array.isArray(dhcp_leases.dhcp6_leases) ? dhcp_leases.dhcp6_leases : [];
 		if (leases.length == 0 && leases6.length == 0)
@@ -264,7 +288,7 @@ return baseclass.extend({
 
 			const columns = [
 				this.renderHostname(host),
-				lease.ipaddr,
+				this.renderClientIP(lease, web),
 				vendor ? lease.macaddr + ` (${vendor})` : lease.macaddr,
 				this.rateCell(lease, host_hints, 'upload'),
 				this.rateCell(lease, host_hints, 'download'),
