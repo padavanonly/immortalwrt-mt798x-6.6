@@ -1,0 +1,22 @@
+{
+	"luci-app-mtk-online-hosts": {
+		"description": "Grant access to Online Hosts overview monitor, ARP table, client history, rates and webprobe",
+		"read": {
+			"file": {
+				"/usr/libexec/luci-arp": [ "exec" ],
+				"/tmp/luci-client-history.json": [ "read" ]
+			},
+			"ubus": {
+				"file": [ "exec", "read" ],
+				"luci-rpc": [ "getDHCPLeases", "getHostHints" ],
+				"luci.client-rates": [ "get" ],
+				"luci.client-web": [ "get" ],
+				"network.rrdns": [ "lookup" ]
+			},
+			"uci": [ "dhcp" ]
+		},
+		"write": {
+			"uci": [ "dhcp" ]
+		}
+	}
+}
