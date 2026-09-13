@@ -59,11 +59,15 @@ return baseclass.extend({
 		return this.rateValue(this.clientAddresses(lease, hints), data, direction);
 	},
 
-	rateValue(addresses, data, direction) {
+	rateValue(addresses, data, direction, mac) {
+		if (direction == 'total') {
+			const value = data?.totals?.[mac?.toUpperCase()];
+			return value != null ? [Number(value), '%1024.2mB'.format(value)] : [-1, '-'];
+		}
 		let total = 0;
 		for (const ip of addresses) {
 			const rate = data?.rates?.[ip];
-			if (!rate?.ready)
+			if (!rate?.ready || (mac && rate.mac && rate.mac != mac.toUpperCase()))
 				return [ -1, '-' ];
 			total += Number(rate[direction] || 0);
 		}
@@ -72,11 +76,12 @@ return baseclass.extend({
 
 	rateCell(lease, hints, direction) {
 		const addresses = this.clientAddresses(lease, hints);
-		const value = this.rateValue(addresses, this.rateData, direction);
+		const value = this.rateValue(addresses, this.rateData, direction, lease.macaddr);
 		return [ value[0], E('span', {
 			'class': 'luci-client-rate',
 			'data-addresses': JSON.stringify(addresses),
-			'data-direction': direction
+			'data-direction': direction,
+			'data-mac': lease.macaddr || ''
 		}, value[1]) ];
 	},
 
@@ -89,7 +94,7 @@ return baseclass.extend({
 			this.rateData = data;
 			// Query again: the normal overview refresh may have replaced the rows.
 			document.querySelectorAll('.luci-client-rate').forEach(cell => {
-				const value = this.rateValue(JSON.parse(cell.dataset.addresses), data, cell.dataset.direction);
+				const value = this.rateValue(JSON.parse(cell.dataset.addresses), data, cell.dataset.direction, cell.dataset.mac);
 				cell.textContent = value[1];
 				cell.closest('td')?.setAttribute('data-value', value[0]);
 			});
@@ -189,21 +194,13 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('MAC address')),
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
-				E('th', { 'class': 'th' }, _('Remaining time')),
+				E('th', { 'class': 'th' }, _('Total traffic')),
 				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions' }, _('Static Lease'))
 			])
 		]);
 
 		cbi_update_table(table, leases.map(L.bind(function(lease) {
-			let exp;
 			let vendor;
-
-			if (lease.expires === false)
-				exp = E('em', _('unlimited'));
-			else if (lease.expires <= 0)
-				exp = E('em', _('expired'));
-			else
-				exp = '%t'.format(lease.expires);
 
 			const hint = lease.macaddr ? machints.filter(function(h) { return h[0] == lease.macaddr })[0] : null;
 			let host = null;
@@ -222,7 +219,7 @@ return baseclass.extend({
 				vendor ? lease.macaddr + ` (${vendor})` : lease.macaddr,
 				this.rateCell(lease, host_hints, 'upload'),
 				this.rateCell(lease, host_hints, 'download'),
-				exp,
+				this.rateCell(lease, host_hints, 'total'),
 			];
 
 			if (L.hasSystemFeature('odhcpd', 'dhcpv4'))
@@ -247,20 +244,12 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('IPv6 addresses')),
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
-				E('th', { 'class': 'th' }, _('Remaining time')),
+				E('th', { 'class': 'th' }, _('Total traffic')),
 				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions' }, _('Static Lease'))
 			])
 		]);
 
 		cbi_update_table(table6, leases6.map(L.bind(function(lease) {
-			let exp;
-
-			if (lease.expires === false)
-				exp = E('em', _('unlimited'));
-			else if (lease.expires <= 0)
-				exp = E('em', _('expired'));
-			else
-				exp = '%t'.format(lease.expires);
 
 			const hint = lease.macaddr ? machints.filter(function(h) { return h[0] == lease.macaddr })[0] : null;
 			let host = null;
@@ -289,7 +278,7 @@ return baseclass.extend({
 				lease.ip6addrs ? lease.ip6addrs.join('<br />') : lease.ip6addr,
 				this.rateCell(lease, host_hints, 'upload'),
 				this.rateCell(lease, host_hints, 'download'),
-				exp
+				this.rateCell(lease, host_hints, 'total')
 			];
 
 			if (L.hasSystemFeature('odhcpd', 'dhcpv6'))

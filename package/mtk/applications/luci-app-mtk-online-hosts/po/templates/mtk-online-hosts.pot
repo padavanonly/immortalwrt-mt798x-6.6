@@ -1,0 +1,50 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Online Hosts"
+msgstr ""
+
+msgid "Online"
+msgstr ""
+
+msgid "Offline"
+msgstr ""
+
+msgid "Hostname"
+msgstr ""
+
+msgid "IPv4 address"
+msgstr ""
+
+msgid "IPv6 addresses"
+msgstr ""
+
+msgid "MAC address"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Total traffic"
+msgstr ""
+
+msgid "Connection count"
+msgstr ""
+
+msgid "Static Lease"
+msgstr ""
+
+msgid "Reserve IP"
+msgstr ""
+
+msgid "Reserve a specific IP address for this device"
+msgstr ""
+
+msgid "Expired"
+msgstr ""
+
+msgid "No active leases found"
+msgstr ""

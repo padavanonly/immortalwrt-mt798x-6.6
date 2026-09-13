@@ -10,6 +10,9 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <time.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <netinet/ether.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/netfilter/nfnetlink.h>
@@ -20,8 +23,13 @@
 
 #define SAMPLE_MS 2000
 #define WINDOW_SAMPLES 3
-#define IDLE_MS 30000
-#define MAX_CLIENTS 1024
+#define ADDRESS_IDLE_MS (24ULL * 60 * 60 * 1000)
+#define MAX_HOSTS 4096
+#ifndef STATE_FILE
+#define STATE_FILE "/tmp/luci-client-traffic.state"
+#endif
+#define MAX_CLIENTS 8192
+#define MAX_REQUEST 1024
 #define MAX_FLOWS 32768
 
 struct address { uint8_t family, bytes[16]; };
@@ -31,31 +39,41 @@ struct flow_key {
 	uint16_t sport, dport, zone;
 	uint8_t protocol;
 };
+struct host {
+	struct avl_node avl;
+	unsigned char mac[6];
+	uint64_t total[2];
+	bool available;
+};
 struct flow {
 	struct avl_node avl;
 	struct flow_key key;
 	uint64_t bytes[2];
+	unsigned char owner[2][6];
 	uint32_t generation;
 	bool destroyed;
 };
 struct client {
 	struct avl_node avl;
 	struct address address;
+	unsigned char mac[6];
 	uint64_t bytes[2], rate[2], touched;
 	uint64_t history[WINDOW_SAMPLES][2], duration[WINDOW_SAMPLES];
 	unsigned int next_sample;
 	bool warm, ready, missing;
 };
-static struct avl_tree clients, flows;
+static struct avl_tree clients, flows, hosts;
 static struct uloop_fd ct_fd = { .fd = -1 };
 static struct uloop_timeout timer;
 static uint32_t sequence, generation;
-static uint64_t dump_started, sampled, last_request;
+static uint64_t dump_started, sampled, started;
+static bool incomplete;
 static bool dumping, initialized;
 static const char *failure = "warming_up";
 static struct blob_buf result;
 
-int mtk_traffic_init(struct ubus_context *ctx);
+static void save_state(void);
+static void load_state(void);
 
 static uint64_t now_ms(void)
 {
@@ -88,6 +106,94 @@ static bool parse_address(const char *text, struct address *a)
 	return false;
 }
 
+static int mac_cmp(const void *a, const void *b, void *priv)
+{
+	return memcmp(a, b, 6);
+}
+
+static struct host *get_host(const unsigned char *mac, bool create)
+{
+	static const unsigned char zero[6];
+	struct host *h;
+	if (!memcmp(mac, zero, 6) || (mac[0] & 1))
+		return NULL;
+	h = avl_find_element(&hosts, mac, h, avl);
+	if (!h && create) {
+		if (hosts.count >= MAX_HOSTS || !(h = calloc(1, sizeof(*h)))) {
+			incomplete = true;
+			return NULL;
+		}
+		memcpy(h->mac, mac, 6);
+		h->avl.key = h->mac;
+		avl_insert(&hosts, &h->avl);
+	}
+	return h;
+}
+
+static void bind_client(int family, const void *bytes, const unsigned char *mac)
+{
+	struct address a = { .family = family };
+	struct client *c;
+	if ((family != AF_INET && family != AF_INET6) || !get_host(mac, true))
+		return;
+	memcpy(a.bytes, bytes, family == AF_INET ? 4 : 16);
+	c = avl_find_element(&clients, &a, c, avl);
+	if (!c) {
+		if (clients.count >= MAX_CLIENTS || !(c = calloc(1, sizeof(*c)))) {
+			incomplete = true;
+			return;
+		}
+		c->address = a;
+		c->avl.key = &c->address;
+		avl_insert(&clients, &c->avl);
+	}
+	if (memcmp(c->mac, mac, 6)) {
+		memcpy(c->mac, mac, 6);
+		c->warm = c->ready = false;
+		memset(c->bytes, 0, sizeof(c->bytes));
+		memset(c->history, 0, sizeof(c->history));
+		memset(c->duration, 0, sizeof(c->duration));
+		c->next_sample = 0;
+	}
+	c->touched = now_ms();
+}
+
+/* Apply one final binding per address: a stale neighbour and a current DHCP
+ * lease must not reset the same client's rate baseline twice per scan. */
+struct binding { struct avl_node avl; struct address address; unsigned char mac[6]; };
+static struct avl_tree bindings;
+
+static void stage_binding(int family, const void *bytes, const unsigned char *mac)
+{
+	struct address address = { .family = family };
+	struct binding *b;
+	if (family != AF_INET && family != AF_INET6) return;
+	memcpy(address.bytes, bytes, family == AF_INET ? 4 : 16);
+	b = avl_find_element(&bindings, &address, b, avl);
+	if (!b) {
+		if (bindings.count >= MAX_CLIENTS || !(b = calloc(1, sizeof(*b)))) {
+			incomplete = true;
+			return;
+		}
+		b->address = address;
+		b->avl.key = &b->address;
+		avl_insert(&bindings, &b->avl);
+	}
+	memcpy(b->mac, mac, 6);
+}
+
+static void discover_clients(void)
+{
+	struct binding *b, *next;
+	avl_init(&bindings, address_cmp, false, NULL);
+	mtk_traffic_discover(stage_binding);
+	avl_for_each_element_safe(&bindings, b, avl, next) {
+		bind_client(b->address.family, b->address.bytes, b->mac);
+		avl_delete(&bindings, &b->avl);
+		free(b);
+	}
+}
+
 static void clear_flows(void)
 {
 	struct flow *f, *tmp;
@@ -105,7 +211,7 @@ static void reset_sampler(const char *reason)
 		close(ct_fd.fd);
 		ct_fd.fd = -1;
 	}
-	clear_flows();
+	incomplete = true;
 	avl_for_each_element(&clients, c, avl) {
 		c->warm = c->ready = false;
 		c->bytes[0] = c->bytes[1] = 0;
@@ -116,6 +222,130 @@ static void reset_sampler(const char *reason)
 	dumping = false;
 	sampled = 0;
 	failure = reason;
+}
+
+/* A complete checkpoint lives in tmpfs, never on flash. Keep flow baselines
+ * together with totals so an rpcd reload cannot count live connections twice. */
+struct state_header {
+	char magic[8], boot[40];
+	uint64_t started;
+	uint32_t hosts, clients, flows, generation, incomplete;
+};
+struct host_record { unsigned char mac[6]; uint64_t total[2]; bool available; };
+struct client_record { struct address address; unsigned char mac[6]; uint64_t touched; };
+struct flow_record {
+	struct flow_key key;
+	uint64_t bytes[2];
+	unsigned char owner[2][6];
+	uint32_t generation;
+	bool destroyed;
+};
+
+static void boot_id(char *out, size_t len)
+{
+	FILE *f = fopen("/proc/sys/kernel/random/boot_id", "r");
+	if (f) { if (!fgets(out, len, f)) out[0] = 0; fclose(f); }
+}
+
+static void save_state(void)
+{
+	struct state_header header = { .magic = "LCTRAF1", .started = started,
+		.hosts = hosts.count, .clients = clients.count, .flows = flows.count,
+		.generation = generation, .incomplete = incomplete };
+	struct host *h;
+	struct client *c;
+	struct flow *flow;
+	bool ok = true;
+	boot_id(header.boot, sizeof(header.boot));
+	if (!header.boot[0]) return;
+	int fd = open(STATE_FILE ".new", O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
+	if (fd < 0) return;
+	FILE *f = fdopen(fd, "wb");
+	if (!f) { close(fd); return; }
+	ok = fwrite(&header, sizeof(header), 1, f) == 1;
+	avl_for_each_element(&hosts, h, avl) {
+		struct host_record r = {0};
+		memcpy(r.mac, h->mac, 6);
+		memcpy(r.total, h->total, sizeof(r.total));
+		r.available = h->available;
+		ok &= fwrite(&r, sizeof(r), 1, f) == 1;
+	}
+	avl_for_each_element(&clients, c, avl) {
+		struct client_record r = { .address = c->address, .touched = c->touched };
+		memcpy(r.mac, c->mac, 6);
+		ok &= fwrite(&r, sizeof(r), 1, f) == 1;
+	}
+	avl_for_each_element(&flows, flow, avl) {
+		struct flow_record r = { .key = flow->key, .generation = flow->generation,
+			.destroyed = flow->destroyed };
+		memcpy(r.bytes, flow->bytes, sizeof(r.bytes));
+		memcpy(r.owner, flow->owner, sizeof(r.owner));
+		ok &= fwrite(&r, sizeof(r), 1, f) == 1;
+	}
+	if (fclose(f)) ok = false;
+	if (ok) rename(STATE_FILE ".new", STATE_FILE);
+	else unlink(STATE_FILE ".new");
+}
+
+static void load_state(void)
+{
+	struct state_header header;
+	char boot[40] = {0};
+	struct stat st;
+	int fd = open(STATE_FILE, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+	if (fd < 0) return;
+	FILE *f = fdopen(fd, "rb");
+	if (!f) { close(fd); return; }
+	boot_id(boot, sizeof(boot));
+	if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
+	    fread(&header, sizeof(header), 1, f) != 1 ||
+	    memcmp(header.magic, "LCTRAF1", 8) || !boot[0] || memcmp(header.boot, boot, sizeof(boot)) ||
+	    header.hosts > MAX_HOSTS || header.clients > MAX_CLIENTS || header.flows > MAX_FLOWS ||
+	    header.started > now_ms() || st.st_size != sizeof(header) +
+	    header.hosts * sizeof(struct host_record) + header.clients * sizeof(struct client_record) +
+	    header.flows * sizeof(struct flow_record)) goto out;
+	for (uint32_t i = 0; i < header.hosts; i++) {
+		struct host_record r;
+		struct host *h;
+		if (fread(&r, sizeof(r), 1, f) != 1 || !(h = get_host(r.mac, true))) goto fail;
+		memcpy(h->total, r.total, sizeof(h->total));
+		h->available = r.available;
+	}
+	for (uint32_t i = 0; i < header.clients; i++) {
+		struct client_record r;
+		struct client *c;
+		if (fread(&r, sizeof(r), 1, f) != 1) goto fail;
+		bind_client(r.address.family, r.address.bytes, r.mac);
+		c = avl_find_element(&clients, &r.address, c, avl);
+		if (!c) goto fail;
+		c->touched = r.touched;
+	}
+	for (uint32_t i = 0; i < header.flows; i++) {
+		struct flow_record r;
+		struct flow *flow;
+		if (fread(&r, sizeof(r), 1, f) != 1 || !(flow = calloc(1, sizeof(*flow)))) goto fail;
+		flow->key = r.key;
+		flow->avl.key = &flow->key;
+		memcpy(flow->bytes, r.bytes, sizeof(flow->bytes));
+		memcpy(flow->owner, r.owner, sizeof(flow->owner));
+		flow->generation = r.generation;
+		flow->destroyed = r.destroyed;
+		if (avl_insert(&flows, &flow->avl)) { free(flow); goto fail; }
+	}
+	started = header.started;
+	generation = header.generation;
+	/* Connections ending while rpcd was stopped cannot be recovered. */
+	incomplete = true;
+	goto out;
+fail:;
+	struct client *c, *cn;
+	struct host *h, *hn;
+	clear_flows();
+	avl_for_each_element_safe(&clients, c, avl, cn) { avl_delete(&clients, &c->avl); free(c); }
+	avl_for_each_element_safe(&hosts, h, avl, hn) { avl_delete(&hosts, &h->avl); free(h); }
+	incomplete = true;
+out:
+	fclose(f);
 }
 
 /* All attributes come from the kernel, but validate lengths before reading. */
@@ -167,9 +397,15 @@ static bool counter_value(struct nlattr *a, uint64_t *value)
 	return true;
 }
 
-static void add_bytes(struct client *c, uint64_t up, uint64_t down)
+static void add_bytes(struct client *c, const unsigned char *owner, uint64_t up, uint64_t down, bool count)
 {
-	if (c && c->warm) {
+	struct host *h = get_host(owner, false);
+	if (h) h->available = true;
+	if (count && h) {
+		h->total[0] += up;
+		h->total[1] += down;
+	}
+	if (c && c->warm && !memcmp(c->mac, owner, 6)) {
 		c->bytes[0] += up;
 		c->bytes[1] += down;
 	}
@@ -182,6 +418,7 @@ static bool process_flow(struct nlmsghdr *nlh)
 	struct flow *f;
 	struct client *src, *dst;
 	uint64_t bytes[2], delta[2] = {0};
+	bool known;
 	bool destroyed = (nlh->nlmsg_type & 0xff) == IPCTNL_MSG_CT_DELETE;
 	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*msg)) ||
 	    (msg->nfgen_family != AF_INET && msg->nfgen_family != AF_INET6))
@@ -203,15 +440,17 @@ static bool process_flow(struct nlmsghdr *nlh)
 	src = avl_find_element(&clients, &key.src, src, avl);
 	/* reply.src identifies the internal destination of a DNAT connection. */
 	dst = avl_find_element(&clients, &key.reply_src, dst, avl);
-	if (!src && !dst)
+	f = avl_find_element(&flows, &key, f, avl);
+	known = f != NULL;
+	if (!src && !dst && !f)
 		return true;
 	if (!counter_value(attr_find(data, len, CTA_COUNTERS_ORIG), &bytes[0]) ||
 	    !counter_value(attr_find(data, len, CTA_COUNTERS_REPLY), &bytes[1])) {
 		if (src) src->missing = true;
 		if (dst) dst->missing = true;
+		incomplete = true;
 		return true;
 	}
-	f = avl_find_element(&flows, &key, f, avl);
 	if (!f) {
 		if (flows.count >= MAX_FLOWS)
 			return false;
@@ -219,6 +458,8 @@ static bool process_flow(struct nlmsghdr *nlh)
 		if (!f)
 			return false;
 		f->key = key;
+		if (src) memcpy(f->owner[0], src->mac, 6);
+		if (dst) memcpy(f->owner[1], dst->mac, 6);
 		f->avl.key = &f->key;
 		avl_insert(&flows, &f->avl);
 	}
@@ -232,9 +473,9 @@ static bool process_flow(struct nlmsghdr *nlh)
 			delta[i] = bytes[i] - f->bytes[i];
 		f->bytes[i] = bytes[i];
 	}
-	add_bytes(src, delta[0], delta[1]);
-	if (dst != src)
-		add_bytes(dst, delta[1], delta[0]);
+	add_bytes(src, f->owner[0], delta[0], delta[1], known || (src && src->warm));
+	if (memcmp(f->owner[0], f->owner[1], 6))
+		add_bytes(dst, f->owner[1], delta[1], delta[0], known || (dst && dst->warm));
 	f->generation = generation;
 	if (destroyed)
 		f->destroyed = true;
@@ -285,6 +526,7 @@ static void finish_dump(void)
 	sampled = now;
 	dumping = false;
 	failure = NULL;
+	save_state();
 }
 
 static void receive_conntrack(struct uloop_fd *fd, unsigned int events)
@@ -329,6 +571,9 @@ static void receive_conntrack(struct uloop_fd *fd, unsigned int events)
 			if (response || (nlh->nlmsg_type & 0xff) == IPCTNL_MSG_CT_DELETE) {
 				if (!process_flow(nlh)) {
 					reset_sampler("flow_limit");
+					/* Drop baselines only at capacity, allowing a later smaller dump
+					 * to recover. Cold clients will establish a fresh baseline. */
+					clear_flows();
 					return;
 				}
 			}
@@ -363,13 +608,11 @@ static void sample_timer(struct uloop_timeout *t)
 {
 	uint64_t now = now_ms();
 	struct client *c, *tmp;
-	if (now - last_request > IDLE_MS) {
-		reset_sampler("idle");
-		avl_for_each_element_safe(&clients, c, avl, tmp) {
+	avl_for_each_element_safe(&clients, c, avl, tmp) {
+		if (now - c->touched > ADDRESS_IDLE_MS) {
 			avl_delete(&clients, &c->avl);
 			free(c);
 		}
-		return;
 	}
 	uloop_timeout_set(&timer, SAMPLE_MS);
 	if (dumping) {
@@ -377,15 +620,18 @@ static void sample_timer(struct uloop_timeout *t)
 			reset_sampler("dump_timeout");
 		return;
 	}
+	discover_clients();
 	FILE *acct = fopen("/proc/sys/net/netfilter/nf_conntrack_acct", "r");
 	int enabled = 0;
 	if (acct) { enabled = fgetc(acct) == '1'; fclose(acct); }
 	if (!enabled) {
 		reset_sampler("accounting_disabled");
+		uloop_timeout_set(&timer, 10000);
 		return;
 	}
 	if (ct_fd.fd < 0 && !open_conntrack()) {
 		failure = "netlink_unavailable";
+		uloop_timeout_set(&timer, 10000);
 		return;
 	}
 	struct { struct nlmsghdr nlh; struct nfgenmsg nfg; } request = {
@@ -415,7 +661,7 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 {
 	struct blob_attr *tb[1], *a;
 	struct address address;
-	struct client *c, *tmp;
+	struct client *c;
 	uint64_t now = now_ms();
 	int rem, count = 0;
 	if (!msg)
@@ -424,36 +670,14 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 	if (!tb[0])
 		return UBUS_STATUS_INVALID_ARGUMENT;
 	blobmsg_for_each_attr(a, tb[0], rem) {
-		if (++count > MAX_CLIENTS || blobmsg_type(a) != BLOBMSG_TYPE_STRING ||
+		if (++count > MAX_REQUEST || blobmsg_type(a) != BLOBMSG_TYPE_STRING ||
 		    !parse_address(blobmsg_get_string(a), &address))
 			return UBUS_STATUS_INVALID_ARGUMENT;
 	}
-	avl_for_each_element_safe(&clients, c, avl, tmp) {
-		if (now - c->touched > IDLE_MS) {
-			avl_delete(&clients, &c->avl);
-			free(c);
-		}
-	}
-	blobmsg_for_each_attr(a, tb[0], rem) {
-		parse_address(blobmsg_get_string(a), &address);
-		c = avl_find_element(&clients, &address, c, avl);
-		if (!c) {
-			if (clients.count >= MAX_CLIENTS)
-				return UBUS_STATUS_NOT_SUPPORTED;
-			c = calloc(1, sizeof(*c));
-			if (!c)
-				return UBUS_STATUS_UNKNOWN_ERROR;
-			c->address = address;
-			c->avl.key = &c->address;
-			avl_insert(&clients, &c->avl);
-		}
-		c->touched = now;
-	}
-	last_request = now;
-	if (!timer.pending)
-		uloop_timeout_set(&timer, 1);
 	blob_buf_init(&result, 0);
 	blobmsg_add_string(&result, "source", "conntrack");
+	blobmsg_add_u64(&result, "started_ms", started);
+	blobmsg_add_u8(&result, "incomplete", incomplete);
 	blobmsg_add_u32(&result, "interval_ms", SAMPLE_MS);
 	blobmsg_add_u32(&result, "window_ms", SAMPLE_MS * WINDOW_SAMPLES);
 	blobmsg_add_u32(&result, "age_ms", sampled ? now - sampled : 0);
@@ -466,6 +690,13 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 		void *entry = blobmsg_open_table(&result, blobmsg_get_string(a));
 		bool ready = c && c->ready && sampled && now - sampled < 3 * SAMPLE_MS;
 		blobmsg_add_u8(&result, "ready", ready);
+		struct host *h = c ? get_host(c->mac, false) : NULL;
+		if (h) {
+			char mac[18];
+			snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+			         h->mac[0], h->mac[1], h->mac[2], h->mac[3], h->mac[4], h->mac[5]);
+			blobmsg_add_string(&result, "mac", mac);
+		}
 		if (ready) {
 			blobmsg_add_u64(&result, "upload", c->rate[0]);
 			blobmsg_add_u64(&result, "download", c->rate[1]);
@@ -473,6 +704,17 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 		blobmsg_close_table(&result, entry);
 	}
 	blobmsg_close_table(&result, table);
+	void *totals = blobmsg_open_table(&result, "totals");
+	struct host *host;
+	avl_for_each_element(&hosts, host, avl) {
+		if (!host->available && !sampled) continue;
+		char mac[18];
+		snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+		         host->mac[0], host->mac[1], host->mac[2], host->mac[3], host->mac[4], host->mac[5]);
+		blobmsg_add_u64(&result, mac, host->total[0] + host->total[1]);
+	}
+	blobmsg_close_table(&result, totals);
+
 	ubus_send_reply(ctx, req, result.head);
 	return 0;
 }
@@ -486,8 +728,12 @@ int mtk_traffic_init(struct ubus_context *ctx)
 	if (!initialized) {
 		avl_init(&clients, address_cmp, false, NULL);
 		avl_init(&flows, flow_cmp, false, NULL);
+		avl_init(&hosts, mac_cmp, false, NULL);
+		started = now_ms();
+		load_state();
 		timer.cb = sample_timer;
 		initialized = true;
+		uloop_timeout_set(&timer, 1);
 	}
 	return ubus_add_object(ctx, &obj);
 }
