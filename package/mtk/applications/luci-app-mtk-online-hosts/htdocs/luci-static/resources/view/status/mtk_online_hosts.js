@@ -85,6 +85,53 @@ return baseclass.extend({
 		}, value[1]) ];
 	},
 
+	initLeaseTable(table) {
+		const widget = new L.ui.Table(table);
+		const update = widget.update;
+		widget.update = function(...args) {
+			const result = update.apply(this, args);
+			this.node.querySelectorAll('.cbi-section-actions').forEach(cell => {
+				cell.style.setProperty('text-align', 'center', 'important');
+			});
+			return result;
+		};
+		const derive = widget.deriveSortKey;
+		widget.deriveSortKey = function(value, index) {
+			return Array.isArray(value) ? Number(value[0]) : derive.call(this, value, index);
+		};
+		const totalIndex = Array.from(table.querySelectorAll('th')).findIndex(th => th.dataset.totalTraffic);
+		if (!widget.getActiveSortState())
+			widget.sortState = [totalIndex, true];
+		L.dom.bindClassInstance(table, widget);
+	},
+
+	updateLeaseOrder(table) {
+		const widget = L.dom.findClassInstance(table);
+		if (!widget)
+			return;
+		// Keep the table widget's raw keys current for subsequent header clicks.
+		for (const row of widget.data || [])
+			for (const value of row)
+				if (Array.isArray(value) && value[1]?.matches?.('.luci-client-rate'))
+					value[0] = Number(value[1].closest('td')?.dataset.value ?? -1);
+		const sorting = widget.getActiveSortState();
+		if (sorting) {
+			const rows = Array.from(table.querySelectorAll('tr')).filter(row => row.querySelector('.luci-client-rate'));
+			const key = row => {
+				const cell = row.children[sorting[0]];
+				return cell.hasAttribute('data-value') ? Number(cell.dataset.value) : widget.deriveSortKey(cell, sorting[0]);
+			};
+			const sorted = rows.slice().sort((a, b) => {
+				const av = key(a), bv = key(b);
+				const cmp = typeof av == 'number' && typeof bv == 'number' ? av - bv : L.naturalCompare(av, bv);
+				return sorting[1] ? -cmp : cmp;
+			});
+			if (sorted.some((row, i) => row !== rows[i]))
+				for (const row of sorted)
+					row.parentElement.appendChild(row);
+		}
+	},
+
 	refreshRates() {
 		const cells = Array.from(document.querySelectorAll('.luci-client-rate'));
 		const addresses = Array.from(new Set(cells.flatMap(cell => JSON.parse(cell.dataset.addresses))));
@@ -98,6 +145,7 @@ return baseclass.extend({
 				cell.textContent = value[1];
 				cell.closest('td')?.setAttribute('data-value', value[0]);
 			});
+			document.querySelectorAll('#status_leases, #status_leases6').forEach(table => this.updateLeaseOrder(table));
 		});
 	},
 
@@ -194,11 +242,12 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('MAC address')),
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
-				E('th', { 'class': 'th' }, _('Total traffic')),
-				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions' }, _('Static Lease'))
+				E('th', { 'class': 'th', 'data-total-traffic': '1' }, _('Total traffic')),
+				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions center' }, _('Static Lease'))
 			])
 		]);
 
+		this.initLeaseTable(table);
 		cbi_update_table(table, leases.map(L.bind(function(lease) {
 			let vendor;
 
@@ -244,11 +293,12 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('IPv6 addresses')),
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
-				E('th', { 'class': 'th' }, _('Total traffic')),
-				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions' }, _('Static Lease'))
+				E('th', { 'class': 'th', 'data-total-traffic': '1' }, _('Total traffic')),
+				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions center' }, _('Static Lease'))
 			])
 		]);
 
+		this.initLeaseTable(table6);
 		cbi_update_table(table6, leases6.map(L.bind(function(lease) {
 
 			const hint = lease.macaddr ? machints.filter(function(h) { return h[0] == lease.macaddr })[0] : null;
@@ -296,6 +346,8 @@ return baseclass.extend({
 			return columns;
 		}, this)), E('em', _('No active leases found')));
 
+		this.updateLeaseOrder(table);
+		this.updateLeaseOrder(table6);
 		return E([
 			E('h3', _('Active DHCPv4 Leases')),
 			table,
