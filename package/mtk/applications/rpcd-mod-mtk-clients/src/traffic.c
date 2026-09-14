@@ -43,6 +43,7 @@ struct host {
 	struct avl_node avl;
 	unsigned char mac[6];
 	uint64_t total[2];
+	uint32_t connections, pending_connections;
 	bool available;
 };
 struct flow {
@@ -411,6 +412,28 @@ static void add_bytes(struct client *c, const unsigned char *owner, uint64_t up,
 	}
 }
 
+/* Count dump records independently of byte accounting and flow tombstones. */
+static void count_connection(struct nlmsghdr *nlh)
+{
+	struct nfgenmsg *msg = NLMSG_DATA(nlh);
+	struct address orig_src = {0}, reply_src = {0};
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*msg)) ||
+	    (msg->nfgen_family != AF_INET && msg->nfgen_family != AF_INET6))
+		return;
+	void *data = (char *)msg + NLMSG_ALIGN(sizeof(*msg));
+	size_t len = nlh->nlmsg_len - NLMSG_LENGTH(sizeof(*msg));
+	if (!tuple_address(attr_find(data, len, CTA_TUPLE_ORIG), msg->nfgen_family, true, &orig_src) ||
+	    !tuple_address(attr_find(data, len, CTA_TUPLE_REPLY), msg->nfgen_family, true, &reply_src))
+		return;
+	struct client *src = avl_find_element(&clients, &orig_src, src, avl);
+	struct client *dst = avl_find_element(&clients, &reply_src, dst, avl);
+	struct host *a = src ? get_host(src->mac, false) : NULL;
+	struct host *b = dst ? get_host(dst->mac, false) : NULL;
+	if (a) a->pending_connections++;
+	/* Hairpin and dual-address connections count once for the same MAC. */
+	if (b && b != a) b->pending_connections++;
+}
+
 static bool process_flow(struct nlmsghdr *nlh)
 {
 	struct nfgenmsg *msg = NLMSG_DATA(nlh);
@@ -508,6 +531,9 @@ static void update_rate(struct client *c, uint64_t elapsed)
 
 static void finish_dump(void)
 {
+	struct host *h;
+	avl_for_each_element(&hosts, h, avl)
+		h->connections = h->pending_connections;
 	uint64_t now = now_ms(), elapsed = now - sampled;
 	struct client *c;
 	struct flow *f, *tmp;
@@ -568,6 +594,8 @@ static void receive_conntrack(struct uloop_fd *fd, unsigned int events)
 			}
 			if ((nlh->nlmsg_type >> 8) != NFNL_SUBSYS_CTNETLINK)
 				continue;
+			if (response && (nlh->nlmsg_type & 0xff) == IPCTNL_MSG_CT_NEW)
+				count_connection(nlh);
 			if (response || (nlh->nlmsg_type & 0xff) == IPCTNL_MSG_CT_DELETE) {
 				if (!process_flow(nlh)) {
 					reset_sampler("flow_limit");
@@ -647,6 +675,9 @@ static void sample_timer(struct uloop_timeout *t)
 		reset_sampler("send_failed");
 		return;
 	}
+	struct host *h;
+	avl_for_each_element(&hosts, h, avl)
+		h->pending_connections = 0;
 	generation++;
 	dumping = true;
 	dump_started = now;
@@ -715,6 +746,16 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 	}
 	blobmsg_close_table(&result, totals);
 
+	void *connections = blobmsg_open_table(&result, "connections");
+	if (sampled && !failure && now - sampled < 3 * SAMPLE_MS) {
+		avl_for_each_element(&hosts, host, avl) {
+			char mac[18];
+			snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+			         host->mac[0], host->mac[1], host->mac[2], host->mac[3], host->mac[4], host->mac[5]);
+			blobmsg_add_u32(&result, mac, host->connections);
+		}
+	}
+	blobmsg_close_table(&result, connections);
 	ubus_send_reply(ctx, req, result.head);
 	return 0;
 }

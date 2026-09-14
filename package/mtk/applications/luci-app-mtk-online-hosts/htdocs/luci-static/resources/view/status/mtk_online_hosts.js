@@ -68,7 +68,13 @@ return baseclass.extend({
 		return this.rateValue(this.clientAddresses(lease, hints), data, direction);
 	},
 
-	rateValue(addresses, data, direction, mac) {
+	rateValue(addresses, data, direction, mac, online) {
+		if (direction == 'connections') {
+			if (online === false)
+				return [0, '0'];
+			const value = data?.connections?.[mac?.toUpperCase()];
+			return value != null ? [Number(value), String(value)] : [-1, '-'];
+		}
 		if (direction == 'total') {
 			const value = data?.totals?.[mac?.toUpperCase()];
 			return value != null ? [Number(value), '%1024.2mB'.format(value)] : [-1, '-'];
@@ -83,13 +89,14 @@ return baseclass.extend({
 		return addresses.length ? [ total, '%1024.1mB/s'.format(total) ] : [ -1, '-' ];
 	},
 
-	rateCell(lease, hints, direction) {
+	rateCell(lease, hints, direction, online) {
 		const addresses = this.clientAddresses(lease, hints);
-		const value = this.rateValue(addresses, this.rateData, direction, lease.macaddr);
+		const value = this.rateValue(addresses, this.rateData, direction, lease.macaddr, online);
 		return [ value[0], E('span', {
 			'class': 'luci-client-rate',
 			'data-addresses': JSON.stringify(addresses),
 			'data-direction': direction,
+			'data-online': online === false ? '0' : '1',
 			'data-mac': lease.macaddr || ''
 		}, value[1]) ];
 	},
@@ -168,7 +175,7 @@ return baseclass.extend({
 			this.rateData = data;
 			// Query again: the normal overview refresh may have replaced the rows.
 			document.querySelectorAll('.luci-client-rate').forEach(cell => {
-				const value = this.rateValue(JSON.parse(cell.dataset.addresses), data, cell.dataset.direction, cell.dataset.mac);
+				const value = this.rateValue(JSON.parse(cell.dataset.addresses), data, cell.dataset.direction, cell.dataset.mac, cell.dataset.online !== '0');
 				cell.textContent = value[1];
 				cell.closest('td')?.setAttribute('data-value', value[0]);
 			});
@@ -387,6 +394,7 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
 				E('th', { 'class': 'th', 'data-total-traffic': '1' }, _('Total traffic')),
+				E('th', { 'class': 'th' }, _('Connection count')),
 				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions center' }, _('Static Lease'))
 			])
 		]);
@@ -394,9 +402,7 @@ return baseclass.extend({
 		this.initLeaseTable(table);
 		cbi_update_table(table, clients.map(client => {
 			const hint = machints.find(h => h[0].toUpperCase() == client.macaddr);
-			let host = client.hostname || hint?.[1];
-			if (hint && client.hostname && client.hostname != hint[1])
-				host = '%s (%s)'.format(client.hostname, hint[1]);
+			const host = client.hostname || hint?.[1];
 			const vendor = macaddr?.[client.macaddr?.toLowerCase()]?.vendor;
 			const online = onlineMACs.has(client.macaddr);
 			const status = online ? _('Online') : _('Offline');
@@ -415,7 +421,8 @@ return baseclass.extend({
 				vendor ? `${client.macaddr} (${vendor})` : client.macaddr || '-',
 				this.rateCell(client, host_hints, 'upload'),
 				this.rateCell(client, host_hints, 'download'),
-				this.rateCell(client, host_hints, 'total')
+				this.rateCell(client, host_hints, 'total'),
+				this.rateCell(client, host_hints, 'connections', online)
 			];
 			if (!isReadonlyView)
 				columns.push(this.leaseActions(client));

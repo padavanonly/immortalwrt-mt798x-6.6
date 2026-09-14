@@ -47,3 +47,43 @@ export function update_history(previous, current, boot_id) {
 	}
 	return result;
 };
+
+// Cache both successful and unsuccessful PTR lookups. Bind results to MAC + IP
+// so an address handed to another client cannot inherit the former name.
+export function reverse_names(previous, current, active, boot_id, now, lookup) {
+	let old = type(previous) == 'object' && previous.boot_id == boot_id &&
+		type(previous.reverse_dns) == 'object' ? previous.reverse_dns : {};
+	let cache = {}, named = {}, pending = [];
+	for (let family in ['dhcp_leases', 'dhcp6_leases'])
+		for (let lease in current[family] || [])
+			if (type(lease.hostname) == 'string' && length(lease.hostname) &&
+			    lease.hostname != '*' && lease.hostname != lease.ipaddr && lease.macaddr)
+				named[uc(lease.macaddr)] = true;
+	for (let lease in active) {
+		if (named[lease.macaddr])
+			continue;
+		let key = lease.macaddr + '@' + lease.ipaddr;
+		let entry = type(old[key]) == 'object' ? old[key] : {};
+		cache[key] = entry;
+		if ((!entry.next || entry.next <= now) && length(pending) < 32) {
+			push(pending, lease.ipaddr);
+			entry.next = now + 300;
+		}
+	}
+	let answers = length(pending) ? lookup(pending) : {};
+	for (let lease in active) {
+		let entry = cache[lease.macaddr + '@' + lease.ipaddr];
+		if (!entry)
+			continue;
+		let name = answers?.[lease.ipaddr];
+		if (type(name) == 'string') {
+			name = replace(name, /\.$/, '');
+			if (length(name) <= 253 && match(name, /^[a-z0-9_][a-z0-9_.-]*$/i) &&
+			    !match(name, /^[0-9.]+$/))
+				entry.hostname = name;
+		}
+		if (entry.hostname)
+			lease.hostname = entry.hostname;
+	}
+	return cache;
+};

@@ -3,7 +3,8 @@
 'use strict';
 import { readfile, writefile, rename, chmod } from 'fs';
 import { connect } from 'ubus';
-import { arp_leases, update_history } from 'luci.client_history';
+import { netbios_names } from 'luci.client_names';
+import { arp_leases, update_history, reverse_names } from 'luci.client_history';
 
 const path = '/tmp/luci-client-history.json';
 const boot_id = trim(readfile('/proc/sys/kernel/random/boot_id') || '');
@@ -13,11 +14,24 @@ let previous = {};
 try { previous = json(readfile(path) || '{}'); } catch (e) {}
 const bus = connect();
 let current = bus ? bus.call('luci-rpc', 'getDHCPLeases', {}) : null;
+current ||= {};
+const active = arp_leases(readfile('/proc/net/arp'));
+const reverse_dns = reverse_names(previous, current, active, boot_id,
+	int(split(readfile('/proc/uptime'), ' ')[0]), function(addrs) {
+		let names = bus ? (bus.call('network.rrdns', 'lookup', { addrs, timeout: 1000, limit: 8 }) || {}) : {};
+		return { ...names, ...netbios_names(filter(addrs, ip => !names[ip])) };
+	});
 if (bus)
 	bus.disconnect();
-current ||= {};
-current.dhcp_leases = [ ...(current.dhcp_leases || []), ...arp_leases(readfile('/proc/net/arp')) ];
-const next = sprintf('%J', update_history(previous, current, boot_id));
+// Recheck ownership after the asynchronous DNS query.
+const owners = {};
+for (let lease in arp_leases(readfile('/proc/net/arp')))
+	owners[lease.ipaddr] = lease.macaddr;
+current.dhcp_leases = [ ...(current.dhcp_leases || []),
+	...filter(active, lease => owners[lease.ipaddr] == lease.macaddr) ];
+const result = update_history(previous, current, boot_id);
+result.reverse_dns = reverse_dns;
+const next = sprintf('%J', result);
 if (next != readfile(path)) {
 	if (writefile(path + '.new', next) != length(next))
 		exit(1);
