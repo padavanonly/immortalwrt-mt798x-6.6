@@ -32,7 +32,7 @@ const callUfpList = rpc.declare({
 });
 
 return baseclass.extend({
-	title: _('DHCP Leases'),
+	title: _('Online Hosts'),
 	deferFirstLoad: true,
 	disableCache: true,
 
