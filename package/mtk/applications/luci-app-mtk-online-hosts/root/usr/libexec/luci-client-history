@@ -1,0 +1,27 @@
+#!/usr/bin/ucode
+// SPDX-License-Identifier: Apache-2.0
+'use strict';
+import { readfile, writefile, rename, chmod } from 'fs';
+import { connect } from 'ubus';
+import { arp_leases, update_history } from 'luci.client_history';
+
+const path = '/tmp/luci-client-history.json';
+const boot_id = trim(readfile('/proc/sys/kernel/random/boot_id') || '');
+if (!length(boot_id))
+	exit(1);
+let previous = {};
+try { previous = json(readfile(path) || '{}'); } catch (e) {}
+const bus = connect();
+let current = bus ? bus.call('luci-rpc', 'getDHCPLeases', {}) : null;
+if (bus)
+	bus.disconnect();
+current ||= {};
+current.dhcp_leases = [ ...(current.dhcp_leases || []), ...arp_leases(readfile('/proc/net/arp')) ];
+const next = sprintf('%J', update_history(previous, current, boot_id));
+if (next != readfile(path)) {
+	if (writefile(path + '.new', next) != length(next))
+		exit(1);
+	chmod(path + '.new', 0600);
+	if (!rename(path + '.new', path))
+		exit(1);
+}
