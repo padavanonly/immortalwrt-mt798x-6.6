@@ -190,7 +190,7 @@ return baseclass.extend({
 			L.hasSystemFeature('ufpd') ? callUfpList() : null,
 			L.resolveDefault(uci.load('dhcp')),
 			L.resolveDefault(callClientWeb(), {}),
-			L.resolveDefault(fs.read('/proc/net/arp'), ''),
+			L.resolveDefault(fs.exec_direct('/usr/libexec/luci-arp'), ''),
 			L.resolveDefault(fs.read('/tmp/luci-client-history.json').then(JSON.parse), {})
 		]);
 	},
