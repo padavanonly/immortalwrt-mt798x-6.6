@@ -746,6 +746,19 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 	}
 	blobmsg_close_table(&result, totals);
 
+	void *traffic = blobmsg_open_table(&result, "traffic");
+	avl_for_each_element(&hosts, host, avl) {
+		if (!host->available && !sampled) continue;
+		char mac[18];
+		snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+		         host->mac[0], host->mac[1], host->mac[2], host->mac[3], host->mac[4], host->mac[5]);
+		void *entry = blobmsg_open_table(&result, mac);
+		blobmsg_add_u64(&result, "upload", host->total[0]);
+		blobmsg_add_u64(&result, "download", host->total[1]);
+		blobmsg_close_table(&result, entry);
+	}
+	blobmsg_close_table(&result, traffic);
+
 	void *connections = blobmsg_open_table(&result, "connections");
 	if (sampled && !failure && now - sampled < 3 * SAMPLE_MS) {
 		avl_for_each_element(&hosts, host, avl) {

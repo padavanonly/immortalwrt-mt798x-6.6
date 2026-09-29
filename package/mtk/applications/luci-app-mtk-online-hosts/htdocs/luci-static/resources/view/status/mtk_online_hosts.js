@@ -76,6 +76,13 @@ return baseclass.extend({
 			return value != null ? [Number(value), String(value)] : [-1, '-'];
 		}
 		if (direction == 'total') {
+			const traffic = data?.traffic?.[mac?.toUpperCase()];
+			if (traffic?.upload != null && traffic?.download != null) {
+				const upload = Number(traffic.upload), download = Number(traffic.download);
+				return [upload + download, upload || download
+					? '%1024.2mB'.format(upload) + ' / ' + '%1024.2mB'.format(download)
+					: '%1024.2mB'.format(0)];
+			}
 			const value = data?.totals?.[mac?.toUpperCase()];
 			return value != null ? [Number(value), '%1024.2mB'.format(value)] : [-1, '-'];
 		}
@@ -393,7 +400,7 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, _('MAC address')),
 				E('th', { 'class': 'th' }, _('Upload')),
 				E('th', { 'class': 'th' }, _('Download')),
-				E('th', { 'class': 'th', 'data-total-traffic': '1' }, _('Total traffic')),
+				E('th', { 'class': 'th', 'data-total-traffic': '1' }, _('Total traffic') + ' (↑ / ↓)'),
 				E('th', { 'class': 'th' }, _('Connection count')),
 				isReadonlyView ? E([]) : E('th', { 'class': 'th cbi-section-actions center' }, _('Static Lease'))
 			])
