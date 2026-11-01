@@ -13,6 +13,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <netinet/ether.h>
+#include <ifaddrs.h>
+#include <linux/netfilter/nf_conntrack_tcp.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/netfilter/nfnetlink.h>
@@ -44,6 +46,7 @@ struct host {
 	unsigned char mac[6];
 	uint64_t total[2];
 	uint32_t connections, pending_connections;
+	uint32_t routed_connections, pending_routed_connections;
 	bool available;
 };
 struct flow {
@@ -64,6 +67,7 @@ struct client {
 	bool warm, ready, missing;
 };
 static struct avl_tree clients, flows, hosts;
+static struct ifaddrs *router_addresses;
 static struct uloop_fd ct_fd = { .fd = -1 };
 static struct uloop_timeout timer;
 static uint32_t sequence, generation;
@@ -412,6 +416,30 @@ static void add_bytes(struct client *c, const unsigned char *owner, uint64_t up,
 	}
 }
 
+/* The reply source is the destination after DNAT, including hairpin NAT.
+ * Exclude traffic terminating on the router from the HQoS forward-hook count. */
+static bool router_destination(const struct address *address)
+{
+	if (address->family == AF_INET) {
+		uint32_t ip;
+		memcpy(&ip, address->bytes, sizeof(ip));
+		if (IN_MULTICAST(ntohl(ip)) || ip == INADDR_BROADCAST)
+			return true;
+	} else if (address->bytes[0] == 0xff) {
+		return true;
+	}
+	for (struct ifaddrs *ifa = router_addresses; ifa; ifa = ifa->ifa_next) {
+		if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != address->family)
+			continue;
+		const void *bytes = address->family == AF_INET ?
+			(void *)&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr :
+			(void *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+		if (!memcmp(address->bytes, bytes, address->family == AF_INET ? 4 : 16))
+			return true;
+	}
+	return false;
+}
+
 /* Count dump records independently of byte accounting and flow tombstones. */
 static void count_connection(struct nlmsghdr *nlh)
 {
@@ -432,6 +460,12 @@ static void count_connection(struct nlmsghdr *nlh)
 	if (a) a->pending_connections++;
 	/* Hairpin and dual-address connections count once for the same MAC. */
 	if (b && b != a) b->pending_connections++;
+	struct nlattr *info = nested(attr_find(data, len, CTA_PROTOINFO), CTA_PROTOINFO_TCP);
+	uint8_t state = 0;
+	attr_copy(nested(info, CTA_PROTOINFO_TCP_STATE), &state, sizeof(state));
+	if (a && state != TCP_CONNTRACK_TIME_WAIT && state != TCP_CONNTRACK_CLOSE &&
+	    !router_destination(&reply_src))
+		a->pending_routed_connections++;
 }
 
 static bool process_flow(struct nlmsghdr *nlh)
@@ -532,8 +566,10 @@ static void update_rate(struct client *c, uint64_t elapsed)
 static void finish_dump(void)
 {
 	struct host *h;
-	avl_for_each_element(&hosts, h, avl)
+	avl_for_each_element(&hosts, h, avl) {
 		h->connections = h->pending_connections;
+		h->routed_connections = h->pending_routed_connections;
+	}
 	uint64_t now = now_ms(), elapsed = now - sampled;
 	struct client *c;
 	struct flow *f, *tmp;
@@ -649,6 +685,9 @@ static void sample_timer(struct uloop_timeout *t)
 		return;
 	}
 	discover_clients();
+	freeifaddrs(router_addresses);
+	router_addresses = NULL;
+	getifaddrs(&router_addresses);
 	FILE *acct = fopen("/proc/sys/net/netfilter/nf_conntrack_acct", "r");
 	int enabled = 0;
 	if (acct) { enabled = fgetc(acct) == '1'; fclose(acct); }
@@ -676,8 +715,10 @@ static void sample_timer(struct uloop_timeout *t)
 		return;
 	}
 	struct host *h;
-	avl_for_each_element(&hosts, h, avl)
+	avl_for_each_element(&hosts, h, avl) {
 		h->pending_connections = 0;
+		h->pending_routed_connections = 0;
+	}
 	generation++;
 	dumping = true;
 	dump_started = now;
@@ -769,6 +810,16 @@ static int get_rates(struct ubus_context *ctx, struct ubus_object *obj,
 		}
 	}
 	blobmsg_close_table(&result, connections);
+	void *routed = blobmsg_open_table(&result, "routed_connections");
+	if (router_addresses && sampled && !failure && now - sampled < 3 * SAMPLE_MS) {
+		avl_for_each_element(&hosts, host, avl) {
+			char mac[18];
+			snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+			         host->mac[0], host->mac[1], host->mac[2], host->mac[3], host->mac[4], host->mac[5]);
+			blobmsg_add_u32(&result, mac, host->routed_connections);
+		}
+	}
+	blobmsg_close_table(&result, routed);
 	ubus_send_reply(ctx, req, result.head);
 	return 0;
 }
