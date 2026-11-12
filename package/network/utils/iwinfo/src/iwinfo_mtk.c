@@ -11,23 +11,32 @@ static inline int mtk_ioctl(const char *ifname, int cmd, struct iwreq *wrq)
 	return iwinfo_ioctl(cmd, wrq);
 }
 
-static const char *mtk_dev2phy(const char *devname)
+static int mtk_dev2phy(const char *devname, char *phy, size_t len)
 {
-	const char *phy = NULL;
 	struct uci_section *s;
+	const char *value;
+	int ret = -1;
 
-	if (strstr(devname,"ra") || strstr(devname,"apcli"))
-		return devname;
+	if (!devname || !phy || !len)
+		return -1;
+
+	if (strstr(devname,"ra") || strstr(devname,"apcli")) {
+		snprintf(phy, len, "%s", devname);
+		return 0;
+	}
 
 	s = iwinfo_uci_get_radio(devname, "mtwifi");
-	if (!s)
-		goto out;
-	
-	phy = uci_lookup_option_string(uci_ctx, s, "phy");
+	if (s) {
+		value = uci_lookup_option_string(uci_ctx, s, "phy");
+		if (value && value[0]) {
+			snprintf(phy, len, "%s", value);
+			ret = 0;
+		}
+	}
 
-out:
 	iwinfo_uci_free();
-	return phy;
+
+	return ret;
 }
 
 static int mtk_probe(const char *dev)
@@ -76,10 +85,9 @@ static int mtk_is_ifup(const char *ifname)
 static int mtk_get_mode(const char *dev, int *buf)
 {
 	struct iwreq wrq;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if(mtk_ioctl(ifname, SIOCGIWMODE, &wrq) >= 0)
@@ -116,10 +124,9 @@ static int mtk_get_mode(const char *dev, int *buf)
 static int mtk_get_ssid(const char *dev, char *buf)
 {
 	struct iwreq wrq = {};
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	wrq.u.essid.pointer = buf;
@@ -134,10 +141,9 @@ static int mtk_get_ssid(const char *dev, char *buf)
 static int mtk_get_bssid(const char *dev, char *buf)
 {
 	struct iwreq wrq;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if(mtk_ioctl(ifname, SIOCGIWAP, &wrq) >= 0)
@@ -156,10 +162,9 @@ static int mtk_get_bssid(const char *dev, char *buf)
 static int mtk_get_bitrate(const char *dev, int *buf)
 {
 	struct iwreq wrq;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if(mtk_ioctl(ifname, SIOCGIWRATE, &wrq) >= 0)
@@ -174,10 +179,9 @@ static int mtk_get_bitrate(const char *dev, int *buf)
 static int mtk_get_channel(const char *dev, int *buf)
 {
 	struct iwreq wrq;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) >= 0)
@@ -205,10 +209,9 @@ static int mtk_get_frequency(const char *dev, int *buf)
 {
 	int channel;
 	struct iwreq wrq;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) >= 0)
@@ -239,10 +242,9 @@ static int mtk_get_frequency(const char *dev, int *buf)
 static int mtk_get_txpower(const char *dev, int *buf)
 {
 	struct iwreq wrq;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	wrq.u.txpower.flags = 0;
@@ -410,10 +412,9 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
 	struct iwreq wrq = {};
 	RT_802_11_MAC_TABLE *table;
 	int i;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	table = calloc(1, sizeof(RT_802_11_MAC_TABLE));
@@ -493,10 +494,9 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 	int index = 0;
 	int total = -1;
 	char *pos;
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	*len = 0;
@@ -511,7 +511,7 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 
 	while (1) {
 		memset(data, 0, data_len);
-		if (mtk_get_scanlist_dump(ifname, index, data, sizeof(data))) {
+		if (mtk_get_scanlist_dump(ifname, index, data, data_len)) {
 			free(data);
 			return -1;
 		}
@@ -632,11 +632,10 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
 	struct iwreq wrq;
 	struct iw_range range;
 	struct iwinfo_freqlist_entry entry;
-	const char* ifname;
+	char ifname[IFNAMSIZ];
 	int i, bl;
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (!mtk_is_ifup(ifname))
@@ -669,12 +668,11 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
 
 static int mtk_get_country(const char *dev, char *buf)
 {
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 	char data[4] = {0};
 	struct iwreq wrq;
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	wrq.u.data.length = sizeof(data);
@@ -706,7 +704,7 @@ static int mtk_get_countrylist(const char *dev, char *buf, int *len)
 
 static int mtk_get_hwmodelist(const char *dev, int *buf)
 {
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 	char chans[IWINFO_BUFSIZE] = { 0 };
 	struct iwinfo_freqlist_entry *e = NULL;
 	struct uci_section *s;
@@ -717,25 +715,22 @@ static int mtk_get_hwmodelist(const char *dev, int *buf)
 
 	/* get hwmode base on uci band config */
 	s = iwinfo_uci_get_radio(dev, "mtwifi");
-	if (!s)
-		goto uciout;
-	
-	band = uci_lookup_option_string(uci_ctx, s, "band");
-
-uciout:
+	if (s) {
+		band = uci_lookup_option_string(uci_ctx, s, "band");
+		if (band) {
+			if (!strcmp(band,"2g"))
+				*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
+			else if (!strcmp(band,"5g"))
+				*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
+			
+			iwinfo_uci_free();
+			return 0;
+		}
+	}
 	iwinfo_uci_free();
 
-	if (band) {
-		if (!strcmp(band,"2g"))
-			*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
-		else if (!strcmp(band,"5g"))
-			*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
-		return 0;
-	}
-
 	/* get hwmode base on iwrange */
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (!mtk_get_freqlist(ifname, chans, &len))
@@ -760,7 +755,7 @@ uciout:
 
 static int mtk_get_htmodelist(const char *dev, int *buf)
 {
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 	char chans[IWINFO_BUFSIZE] = { 0 };
 	struct iwinfo_freqlist_entry *e = NULL;
 	struct uci_section *s;
@@ -771,27 +766,24 @@ static int mtk_get_htmodelist(const char *dev, int *buf)
 
 	/* get htmode base on uci band config */
 	s = iwinfo_uci_get_radio(dev, "mtwifi");
-	if (!s)
-		goto uciout;
-	
-	band = uci_lookup_option_string(uci_ctx, s, "band");
-
-uciout:
+	if (s) {
+		band = uci_lookup_option_string(uci_ctx, s, "band");
+		if (band) {
+			if (!strcmp(band,"2g"))
+				*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
+			else if (!strcmp(band,"5g"))
+				*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
+				| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+				| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
+			
+			iwinfo_uci_free();
+			return 0;
+		}
+	}
 	iwinfo_uci_free();
 
-	if (band) {
-		if (!strcmp(band,"2g"))
-			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
-		else if (!strcmp(band,"5g"))
-			*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
-			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
-			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
-		return 0;
-	}
-
 	/* get htmode base on iwrange */
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (!mtk_get_freqlist(ifname, chans, &len))
@@ -818,13 +810,12 @@ uciout:
 
 static int mtk_get_htmode(const char *dev, int *buf)
 {
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 	struct iwreq wrq;
 	unsigned char bw = 0;
 	unsigned long wmode = 0;
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (!mtk_is_ifup(ifname))
@@ -884,14 +875,13 @@ static int mtk_get_htmode(const char *dev, int *buf)
 
 static int mtk_get_encryption(const char *dev, char *buf)
 {
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 	struct iwreq wrq;
 	struct security_info secinfo;
 	unsigned int authMode, encryMode;
 	struct iwinfo_crypto_entry *c = (struct iwinfo_crypto_entry *)buf;
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	if (!mtk_is_ifup(ifname))
@@ -975,10 +965,9 @@ static int mtk_get_encryption(const char *dev, char *buf)
 
 static int mtk_get_phyname(const char *dev, char *buf)
 {
-	const char *ifname;
+	char ifname[IFNAMSIZ];
 
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
+	if (mtk_dev2phy(dev, ifname, sizeof(ifname)) < 0)
 		return -1;
 
 	strcpy(buf, ifname);
