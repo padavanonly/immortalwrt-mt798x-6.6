@@ -1,0 +1,75 @@
+Index: linux-6.6.133/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+===================================================================
+--- linux-6.6.133.orig/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ linux-6.6.133/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -1140,7 +1140,7 @@ static void mtk_gdm_mac_link_up(struct m
+ 	mcr |= MAC_MCR_TX_EN | MAC_MCR_RX_EN | MAC_MCR_FORCE_LINK;
+ 	mtk_w32(mac->hw, mcr, MTK_MAC_MCR(mac->id));
+ 
+-	if (mode == MLO_AN_PHY && phy)
++	if (mode == MLO_AN_PHY && phy && speed == SPEED_1000)
+ 		mtk_gdm_mac_setup_eee(mac, phy_init_eee(phy, false) >= 0);
+ }
+ 
+Index: linux-6.6.133/drivers/net/phy/mediatek/mtk-ge-soc.c
+===================================================================
+--- linux-6.6.133.orig/drivers/net/phy/mediatek/mtk-ge-soc.c
++++ linux-6.6.133/drivers/net/phy/mediatek/mtk-ge-soc.c
+@@ -827,6 +827,11 @@ static void mt7981_phy_finetune(struct p
+ 		       0x0013, 0x0005 };
+ 	int i, k;
+ 
++	/* Enable HW auto downshift */
++	phy_modify_paged(phydev, MTK_PHY_PAGE_EXTENDED_1,
++			 MTK_PHY_AUX_CTRL_AND_STATUS,
++			 0, MTK_PHY_ENABLE_DOWNSHIFT);
++
+ 	/* 100M eye finetune:
+ 	 * Keep middle level of TX MLT3 shapper as default.
+ 	 * Only change TX MLT3 overshoot level here.
+Index: linux-6.6.133/drivers/net/phy/mediatek/mtk-phy-lib.c
+===================================================================
+--- linux-6.6.133.orig/drivers/net/phy/mediatek/mtk-phy-lib.c
++++ linux-6.6.133/drivers/net/phy/mediatek/mtk-phy-lib.c
+@@ -363,40 +363,7 @@ EXPORT_SYMBOL_GPL(mtk_phy_leds_state_ini
+ 
+ int mtk_gphy_cl22_read_status(struct phy_device *phydev)
+ {
+-	int ret;
+-
+-	ret = genphy_read_status(phydev);
+-	if (ret)
+-		return ret;
+-
+-	if (phydev->autoneg == AUTONEG_ENABLE && !phydev->autoneg_complete) {
+-		ret = phy_read_paged(phydev, MTK_PHY_PAGE_EXTENDED_1,
+-				     MTK_PHY_AUX_CTRL_AND_STATUS);
+-		if (ret < 0)
+-			return ret;
+-
+-		/* Once LP_DETECTED is set, it means that"ability_match" in
+-		 * IEEE 802.3 Figure 28-18 is set. This happens after we plug in
+-		 * cable. Also, LP_DETECTED will be cleared after AN complete.
+-		 */
+-		if (!FIELD_GET(MTK_PHY_LP_DETECTED_MASK, ret)){
+-			if (phydev->link !=1){
+-                        	phydev->link = 1;
+-                        	phydev->speed = SPEED_1000;
+-                        	phydev->duplex = DUPLEX_FULL;
+-			}
+-			return 0;
+-		}
+-
+-		ret = phy_read(phydev, MII_CTRL1000);
+-		//if (ret & (ADVERTISE_1000FULL | ADVERTISE_1000HALF)) {
+-		//	ret = extend_an_new_lp_cnt_limit(phydev);
+-		//	if (ret < 0)
+-		//		return ret;
+-		//	}
+-	}
+-
+-	return 0;
++	return genphy_read_status(phydev);
+ }
+ EXPORT_SYMBOL_GPL(mtk_gphy_cl22_read_status);
+ 
