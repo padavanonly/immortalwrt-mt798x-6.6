@@ -1,0 +1,8 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Redirect NTP requests"
+msgstr "重定向局域网 NTP 请求"
+
+msgid "Redirect LAN NTP requests (UDP 123) to this device. Available only when NTP server is unbound (all interfaces) or bound to the lan interface."
+msgstr "将局域网 NTP 请求（UDP 123）重定向到本机。仅在未绑定特定接口或绑定到 lan 接口时可用。"

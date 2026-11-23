@@ -1,0 +1,8 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Redirect NTP requests"
+msgstr ""
+
+msgid "Redirect LAN NTP requests (UDP 123) to this device. Available only when NTP server is unbound (all interfaces) or bound to the lan interface."
+msgstr ""

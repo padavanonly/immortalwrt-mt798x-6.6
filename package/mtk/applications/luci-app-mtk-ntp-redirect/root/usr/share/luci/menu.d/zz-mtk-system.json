@@ -1,0 +1,13 @@
+{
+	"admin/system/system": {
+		"title": "System",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "system/mtk_system"
+		},
+		"depends": {
+			"acl": [ "luci-mod-system-config", "luci-app-mtk-ntp-redirect" ]
+		}
+	}
+}
