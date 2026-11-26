@@ -4,12 +4,32 @@ START=99
 USE_PROCD=1
 NAME=pppq_ebl
 
+PPPQ_UCI_BIN="${PPPQ_UCI_BIN:-uci}"
+PPPQ_DEBUGFS_ROOT="${PPPQ_DEBUGFS_ROOT:-/sys/kernel/debug}"
+
 #if hnat is not exist, switch module to mtk_ppe
 module=hnat
-[ -d /sys/kernel/debug/${module} ] || {
+[ -d "${PPPQ_DEBUGFS_ROOT}/${module}" ] || {
 	module=mtk_ppe
 }
 
+qos_controller_enabled() {
+	local key val
+	for key in \
+		mtk_qos.global.enabled \
+		eqos.config.enabled \
+		'eqos.@eqos[0].enabled' \
+		mtkhqos.global.hqos \
+		'mtkhqos.@global[0].hqos'
+	do
+		val="$("$PPPQ_UCI_BIN" -q get "$key" 2>/dev/null)"
+		[ "$val" = "1" ] && return 0
+	done
+	return 1
+}
+
 start_service() {
-	echo 2 > /sys/kernel/debug/${module}/qos_toggle
+	qos_controller_enabled && return 0
+	[ -w "${PPPQ_DEBUGFS_ROOT}/${module}/qos_toggle" ] || return 0
+	echo 2 > "${PPPQ_DEBUGFS_ROOT}/${module}/qos_toggle"
 }

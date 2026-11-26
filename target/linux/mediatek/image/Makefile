@@ -12,6 +12,9 @@ loadaddr-$(CONFIG_TARGET_mediatek_mt7622) := 0x44000000
 loadaddr-$(CONFIG_TARGET_mediatek_mt7623) := 0x80008000
 loadaddr-$(CONFIG_TARGET_mediatek_mt7629) := 0x40008000
 loadaddr-$(CONFIG_TARGET_mediatek_filogic) := 0x48000000
+loadaddr-$(CONFIG_TARGET_mediatek_filogic_mtwifi) := 0x48000000
+loadaddr-$(CONFIG_TARGET_mediatek_filogic_hwifi) := 0x48000000
+loadaddr-$(CONFIG_TARGET_mediatek_filogic_hwifi_a73) := 0x48000000
 
 # default all platform image(fit) build
 define Device/Default
@@ -31,6 +34,11 @@ define Device/Default
   IMAGES := sysupgrade.bin
   IMAGE/sysupgrade.bin := append-kernel | pad-to 128k | append-rootfs | \
 	pad-rootfs | append-metadata
+endef
+
+define Build/asus-trx
+	$(STAGING_DIR_HOST)/bin/asusuimage $(wordlist 1,$(words $(1)),$(1)) -i $@ -o $@.new
+	mv $@.new $@
 endef
 
 define Image/get_fw_ar_ver
@@ -112,4 +120,3 @@ define Build/secure-boot-initramfs
 endef
 
 $(eval $(call BuildImage))
-

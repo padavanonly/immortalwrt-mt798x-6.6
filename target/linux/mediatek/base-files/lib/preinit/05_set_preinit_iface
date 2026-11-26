@@ -1,13 +1,18 @@
 set_preinit_iface() {
 	case $(board_name) in
 	cudy,m3000-v1|\
+	cudy,tr3000-256mb-v1|\
 	cudy,tr3000-v1|\
+	cudy,tr3000-v1-ubootmod|\
+	glinet,gl-mt2500|\
+	glinet,gl-mt2500-airoha|\
 	glinet,gl-mt3000|\
 	openembed,som7981|\
 	wavlink,wl-wn573hx3)
 		ip link set eth1 up
 		ifname=eth1
 		;;
+	cudy,ap3000-v1|\
 	cudy,ap3000outdoor-v1|\
 	cudy,re3000-v1|\
 	ubnt,unifi-6-lr|\
@@ -23,6 +28,7 @@ set_preinit_iface() {
 		ifname=lan
 		;;
 	xiaomi,mi-router-ax3000t|\
+	xiaomi,mi-router-ax3000t-mtkuboot|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,mi-router-wr30u-stock|\
 	xiaomi,mi-router-wr30u-ubootmod|\

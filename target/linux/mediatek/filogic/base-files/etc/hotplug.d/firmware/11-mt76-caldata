@@ -13,9 +13,6 @@ case "$FIRMWARE" in
 		ln -sf /tmp/tp_data/MT7981_EEPROM.bin \
 			/lib/firmware/$FIRMWARE
 		;;
-	sl,3000-emmc|\
-	sn,r1|\
-	umi,uax3000e|\
 	ubnt,unifi-6-plus)
 		caldata_extract_mmc "factory" 0x0 0x1000
 		;;
@@ -25,6 +22,14 @@ case "$FIRMWARE" in
 	case "$board" in
 	mercusys,mr90x-v1|\
 	tplink,re6000xd)
+		ln -sf /tmp/tp_data/MT7986_EEPROM.bin \
+			/lib/firmware/$FIRMWARE
+		;;
+	esac
+	;;
+"mediatek/mt7986_eeprom_mt7976_dual.bin")
+	case "$board" in
+	tplink,archer-ax80-v1)
 		ln -sf /tmp/tp_data/MT7986_EEPROM.bin \
 			/lib/firmware/$FIRMWARE
 		;;

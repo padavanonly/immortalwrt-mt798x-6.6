@@ -1,0 +1,371 @@
+REQUIRE_IMAGE_METADATA=1
+RAMFS_COPY_BIN='fitblk blkid dmsetup'
+
+asus_initial_setup()
+{
+	# initialize UBI if it's running on initramfs
+	[ "$(rootfs_type)" = "tmpfs" ] || return 0
+
+	ubirmvol /dev/ubi0 -N rootfs
+	ubirmvol /dev/ubi0 -N rootfs_data
+	ubirmvol /dev/ubi0 -N jffs2
+	ubimkvol /dev/ubi0 -N jffs2 -s 0x3e000
+}
+
+xiaomi_initial_setup()
+{
+	# initialize UBI and setup uboot-env if it's running on initramfs
+	[ "$(rootfs_type)" = "tmpfs" ] || return 0
+
+	local mtdnum="$( find_mtd_index ubi )"
+	if [ ! "$mtdnum" ]; then
+		echo "unable to find mtd partition ubi"
+		return 1
+	fi
+
+	local kern_mtdnum="$( find_mtd_index ubi_kernel )"
+	if [ ! "$kern_mtdnum" ]; then
+		echo "unable to find mtd partition ubi_kernel"
+		return 1
+	fi
+
+	ubidetach -m "$mtdnum"
+	ubiformat /dev/mtd$mtdnum -y
+
+	ubidetach -m "$kern_mtdnum"
+	ubiformat /dev/mtd$kern_mtdnum -y
+
+	if ! fw_printenv -n flag_try_sys2_failed &>/dev/null; then
+		echo "failed to access u-boot-env. skip env setup."
+		return 0
+	fi
+
+	fw_setenv -s - <<-EOF
+		boot_wait on
+		uart_en 1
+		flag_boot_rootfs 0
+		flag_last_success 1
+		flag_boot_success 1
+		flag_try_sys1_failed 8
+		flag_try_sys2_failed 8
+	EOF
+
+	local board=$(board_name)
+	case "$board" in
+	xiaomi,mi-router-ax3000t|\
+	xiaomi,mi-router-wr30u-stock)
+		fw_setenv mtdparts "nmbm0:1024k(bl2),256k(Nvram),256k(Bdata),2048k(factory),2048k(fip),256k(crash),256k(crash_log),34816k(ubi),34816k(ubi1),32768k(overlay),12288k(data),256k(KF)"
+		;;
+	xiaomi,redmi-router-ax6000-stock)
+		fw_setenv mtdparts "nmbm0:1024k(bl2),256k(Nvram),256k(Bdata),2048k(factory),2048k(fip),256k(crash),256k(crash_log),30720k(ubi),30720k(ubi1),51200k(overlay)"
+		;;
+	esac
+}
+
+platform_do_upgrade() {
+	local board=$(board_name)
+
+	case "$board" in
+	mediatek,mt7981-rfb|\
+	mediatek,mt7988a-rfb)
+		[ -e /dev/dm-0 ] && dmsetup remove_all
+		[ -e /dev/fit0 ] && fitblk /dev/fit0
+		[ -e /dev/fitrw ] && fitblk /dev/fitrw
+		export_fitblk_bootdev
+		case "$CI_METHOD" in
+		emmc)
+			mmc_do_upgrade "$1"
+			;;
+		default)
+			default_do_upgrade "$1"
+			;;
+		ubi)
+			CI_KERNPART="firmware"
+			ubi_do_upgrade "$1"
+			;;
+		*)
+			if grep \"rootfs_data\" /proc/mtd; then
+				default_do_upgrade "$1"
+			fi
+			;;
+		esac
+		;;
+	abt,asr3000|\
+	bananapi,bpi-r3|\
+	bananapi,bpi-r3-mini|\
+	bananapi,bpi-r4|\
+	bananapi,bpi-r4-poe|\
+	bananapi,bpi-r4-pro|\
+	cetron,ct3003-ubootmod|\
+	cmcc,a10-ubootmod|\
+	cmcc,rax3000m|\
+	cmcc,rax3000me|\
+	cudy,tr3000-v1-ubootmod|\
+	gatonetworks,gdsp|\
+	h3c,magic-nx30-pro|\
+	imou,lc-hx3001|\
+	jcg,q30-pro|\
+	jdcloud,re-cp-03|\
+	konka,komi-a31|\
+	livinet,zr-3020-ubootmod|\
+	mercusys,mr90x-v1-ubi|\
+	netis,nx31|\
+	nokia,ea0326gmp|\
+	openwrt,one|\
+	netcore,n60|\
+	netcore,n60-pro|\
+	qihoo,360t7|\
+	routerich,ax3000-ubootmod|\
+	tplink,tl-7dr7230-rev1.0-sp2|\
+	tplink,tl-7dr7230-v1|\
+	tplink,tl-7dr7230-v2|\
+	tplink,tl-7dr7250-v1|\
+	tplink,tl-7dr7299-v1|\
+	tplink,tl-7dr7299-v1-dsa|\
+	tplink,tl-xdr4288|\
+	tplink,tl-xdr6086|\
+	tplink,tl-xdr6088|\
+	tplink,tl-xtr8488|\
+	xiaomi,mi-router-ax3000t-ubootmod|\
+	xiaomi,redmi-router-ax6000-ubootmod|\
+	xiaomi,mi-router-wr30u-ubootmod|\
+	zyxel,ex5601-t0-ubootmod)
+		fit_do_upgrade "$1"
+		;;
+	acer,predator-w6|\
+	acer,predator-w6d|\
+	acer,vero-w6m|\
+	arcadyan,mozart|\
+	glinet,gl-mt2500|\
+	glinet,gl-mt2500-airoha|\
+	glinet,gl-mt6000|\
+	glinet,gl-x3000|\
+	glinet,gl-xe3000|\
+	hiveton,h5000m|\
+	huasifei,wh3000|\
+	mediatek,mt7987a|\
+	huasifei,wh3000-emmc|\
+	huasifei,wh3000-pro|\
+	smartrg,sdg-8612|\
+	smartrg,sdg-8614|\
+	smartrg,sdg-8622|\
+	smartrg,sdg-8632|\
+	smartrg,sdg-8733|\
+	smartrg,sdg-8733a|\
+	smartrg,sdg-8734)
+		CI_KERNPART="kernel"
+		CI_ROOTPART="rootfs"
+		emmc_do_upgrade "$1"
+		;;
+	asus,rt-ax52|\
+	asus,rt-ax59u|\
+	asus,tuf-ax4200|\
+	asus,tuf-ax4200q|\
+	asus,tuf-ax6000)
+		CI_UBIPART="UBI_DEV"
+		CI_KERNPART="linux"
+		nand_do_upgrade "$1"
+		;;
+	cudy,wr3000h-v1|\
+	cudy,wr3000p-v1)
+		CI_UBIPART="ubi"
+		nand_do_upgrade "$1"
+		;;
+	cudy,re3000-v1|\
+	cudy,wr3000-v1|\
+	yuncore,ax835|\
+	wavlink,wl-wn573hx3|\
+	totolink,x6000r)
+		default_do_upgrade "$1"
+		;;
+	dlink,aquila-pro-ai-m30-a1|\
+	dlink,aquila-pro-ai-m60-a1)
+		fw_setenv sw_tryactive 0
+		nand_do_upgrade "$1"
+		;;
+	mercusys,mr80x-v3|\
+	mercusys,mr90x-v1|\
+	tplink,archer-ax80-v1|\
+	tplink,re6000xd)
+		CI_UBIPART="ubi0"
+		nand_do_upgrade "$1"
+		;;
+	ubnt,unifi-6-plus)
+		CI_KERNPART="kernel0"
+		EMMC_ROOT_DEV="$(cmdline_get_var root)"
+		emmc_do_upgrade "$1"
+		;;
+	unielec,u7981-01*)
+		local rootdev="$(cmdline_get_var root)"
+		rootdev="${rootdev##*/}"
+		rootdev="${rootdev%p[0-9]*}"
+		case "$rootdev" in
+		mmc*)
+			CI_ROOTDEV="$rootdev"
+			CI_KERNPART="kernel"
+			CI_ROOTPART="rootfs"
+			emmc_do_upgrade "$1"
+			;;
+		*)
+			CI_KERNPART="fit"
+			nand_do_upgrade "$1"
+			;;
+		esac
+		;;
+	xiaomi,mi-router-ax3000t|\
+	xiaomi,mi-router-wr30u-stock|\
+	xiaomi,redmi-router-ax6000-stock)
+		CI_KERN_UBIPART=ubi_kernel
+		CI_ROOT_UBIPART=ubi
+		nand_do_upgrade "$1"
+		;;
+	*)
+		nand_do_upgrade "$1"
+		;;
+	esac
+}
+
+PART_NAME=firmware
+
+platform_check_image() {
+	local board=$(board_name)
+	local magic="$(get_magic_long "$1")"
+
+	[ "$#" -gt 1 ] && return 1
+
+	case "$board" in
+	hiveton,h5000m|\
+	mediatek,mt7987a)
+		magic="$(dd if="$1" bs=1 skip=257 count=5 2>/dev/null)"
+		[ "$magic" != "ustar" ] && {
+			echo "Invalid image type."
+			return 1
+		}
+		return 0
+		;;
+	mediatek,mt7981-rfb|\
+	cmcc,rax3000m|\
+	cmcc,rax3000me)
+		[ "$magic" != "d00dfeed" ] && {
+			echo "Invalid image type."
+			return 1
+		}
+		return 0
+		;;
+	bananapi,bpi-r3|\
+	bananapi,bpi-r3-mini|\
+	bananapi,bpi-r4|\
+	bananapi,bpi-r4-poe|\
+	bananapi,bpi-r4-pro|\
+	mediatek,mt7988a-rfb|\
+	tplink,tl-7dr7230-rev1.0-sp2|\
+	tplink,tl-7dr7299-v1|\
+	tplink,tl-7dr7299-v1-dsa)
+		[ "$(identify_magic_long "$magic")" != "fit" ] && {
+			echo "Invalid image type."
+			return 1
+		}
+		return 0
+		;;
+	*)
+		nand_do_platform_check "$board" "$1"
+		return $?
+		;;
+	esac
+
+	return 0
+}
+
+platform_copy_config() {
+	case "$(board_name)" in
+	acer,predator-w6|\
+	acer,predator-w6d|\
+	acer,vero-w6m|\
+	arcadyan,mozart|\
+	glinet,gl-mt2500|\
+	glinet,gl-mt2500-airoha|\
+	glinet,gl-mt6000|\
+	glinet,gl-x3000|\
+	glinet,gl-xe3000|\
+	hiveton,h5000m|\
+	huasifei,wh3000|\
+	mediatek,mt7987a|\
+	huasifei,wh3000-emmc|\
+	huasifei,wh3000-pro|\
+	jdcloud,re-cp-03|\
+	smartrg,sdg-8612|\
+	smartrg,sdg-8614|\
+	smartrg,sdg-8622|\
+	smartrg,sdg-8632|\
+	smartrg,sdg-8733|\
+	smartrg,sdg-8733a|\
+	smartrg,sdg-8734|\
+	ubnt,unifi-6-plus)
+		emmc_copy_config
+		;;
+	mediatek,mt7981-rfb|\
+	mediatek,mt7988a-rfb|\
+	bananapi,bpi-r3|\
+	bananapi,bpi-r3-mini|\
+	bananapi,bpi-r4|\
+	bananapi,bpi-r4-poe|\
+	bananapi,bpi-r4-pro|\
+	cmcc,rax3000m|\
+	cmcc,rax3000me)
+		if [ "$CI_METHOD" = "emmc" ]; then
+			emmc_copy_config
+		fi
+		;;
+	esac
+}
+
+_qmodem_soft_reboot_dev() {
+	local cfg="$1"
+	local soft_reboot state at_port i resp
+
+	config_get soft_reboot "$cfg" soft_reboot
+	[ "$soft_reboot" = "1" ] || return 0
+	config_get state "$cfg" state
+	[ "$state" = "disabled" ] && return 0
+	config_get at_port "$cfg" at_port
+	[ -n "$at_port" ] && [ -c "$at_port" ] || return 0
+
+	for i in 1 2 3; do
+		resp="$(tom_modem -d "$at_port" -o a -c "AT+CFUN=1,1" 2>/dev/null)"
+		echo "$resp" | grep -qi "ok" && break
+		sleep 1
+	done
+}
+
+qmodem_pre_upgrade_soft_reboot() {
+	local qmodem_cfg="${QMODEM_CONFIG_FILE:-/etc/config/qmodem}"
+	[ -f "$qmodem_cfg" ] || return 0
+	command -v tom_modem >/dev/null 2>&1 || return 0
+
+	config_load qmodem
+	config_foreach _qmodem_soft_reboot_dev modem-device
+}
+
+platform_pre_upgrade() {
+	local board=$(board_name)
+
+	ifconfig rai0 down 2>/dev/null || true
+	ifconfig ra0 down 2>/dev/null || true
+	qmodem_pre_upgrade_soft_reboot 2>/dev/null || true
+	rmmod xhci-mtk-hcd 2>/dev/null || true
+
+	case "$board" in
+	asus,rt-ax52|\
+	asus,rt-ax59u|\
+	asus,tuf-ax4200|\
+	asus,tuf-ax4200q|\
+	asus,tuf-ax6000)
+		asus_initial_setup
+		;;
+	xiaomi,mi-router-ax3000t|\
+	xiaomi,mi-router-wr30u-stock|\
+	xiaomi,redmi-router-ax6000-stock)
+		xiaomi_initial_setup
+		;;
+	esac
+}

@@ -10,7 +10,7 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=uboot-envtools
 PKG_DISTNAME:=u-boot
 PKG_VERSION:=2024.07
-PKG_RELEASE:=1
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_DISTNAME)-$(PKG_VERSION).tar.bz2
 PKG_SOURCE_URL:= \
@@ -80,9 +80,13 @@ define Package/uboot-envtools/install
 	$(if $(wildcard ./files/$(BOARD)_$(SUBTARGET)), \
 		$(INSTALL_DATA) ./files/$(BOARD)_$(SUBTARGET) \
 		$(1)/etc/uci-defaults/30_uboot-envtools, \
-		$(if $(wildcard ./files/$(BOARD)), \
-			$(INSTALL_DATA) ./files/$(BOARD) \
-			$(1)/etc/uci-defaults/30_uboot-envtools \
+		$(if $(filter mediatek_filogic%,$(BOARD)_$(SUBTARGET)), \
+			$(INSTALL_DATA) ./files/mediatek_filogic \
+			$(1)/etc/uci-defaults/30_uboot-envtools, \
+			$(if $(wildcard ./files/$(BOARD)), \
+				$(INSTALL_DATA) ./files/$(BOARD) \
+				$(1)/etc/uci-defaults/30_uboot-envtools \
+			) \
 		) \
 	)
 endef

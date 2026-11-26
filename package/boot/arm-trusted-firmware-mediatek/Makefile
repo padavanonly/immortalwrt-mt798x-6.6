@@ -23,6 +23,9 @@ include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/trusted-firmware-a.mk
 include $(INCLUDE_DIR)/package.mk
 
+FILOGIC_A53 := filogic filogic_mtwifi filogic_hwifi
+FILOGIC_A73 := filogic filogic_hwifi filogic_hwifi_a73
+
 define Trusted-Firmware-A/Default
   BUILD_TARGET:=mediatek
   TFA_IMAGE:=bl2.img bl31.bin
@@ -141,18 +144,18 @@ endef
 define Trusted-Firmware-A/mt7981-ram-ddr4
   NAME:=MediaTek MT7981 (RAM, DDR4)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr4
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi
 endef
 
 define Trusted-Firmware-A/mt7981-emmc-ddr4
   NAME:=MediaTek MT7981 (eMMC, DDR4)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr4
 endef
@@ -160,7 +163,7 @@ endef
 define Trusted-Firmware-A/mt7981-spim-nand-ddr4
   NAME:=MediaTek MT7981 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr4
 endef
@@ -168,7 +171,7 @@ endef
 define Trusted-Firmware-A/mt7981-nor-ddr3
   NAME:=MediaTek MT7981 (SPI-NOR, DDR3)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
 endef
@@ -176,19 +179,19 @@ endef
 define Trusted-Firmware-A/mt7981-ram-ddr3
   NAME:=MediaTek MT7981 (RAM, DDR3)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
   RAM_BOOT_UART_DL:=1
   DDR3_FREQ:=1866
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi
 endef
 
 define Trusted-Firmware-A/mt7981-nor-ddr4
   NAME:=MediaTek MT7981 (SPI-NOR, DDR4)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr4
 endef
@@ -196,7 +199,7 @@ endef
 define Trusted-Firmware-A/mt7981-emmc-ddr3
   NAME:=MediaTek MT7981 (eMMC, DDR3)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
 endef
@@ -204,7 +207,7 @@ endef
 define Trusted-Firmware-A/mt7981-emmc-ddr3-1866mhz
   NAME:=Mediatek MT7981 (eMMC, DDR3-1866MHz)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
   DDR3_FREQ:=1866
@@ -213,7 +216,7 @@ endef
 define Trusted-Firmware-A/mt7981-sdmmc-ddr3
   NAME:=MediaTek MT7981 (SD card, DDR3)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
 endef
@@ -221,7 +224,7 @@ endef
 define Trusted-Firmware-A/mt7981-snand-ddr3
   NAME:=MediaTek MT7981 (SPI-NAND via SNFI, DDR3)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
 endef
@@ -229,7 +232,7 @@ endef
 define Trusted-Firmware-A/mt7981-spim-nand-ddr3
   NAME:=MediaTek MT7981 (SPI-NAND via SPIM, DDR3)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
 endef
@@ -237,7 +240,7 @@ endef
 define Trusted-Firmware-A/mt7981-spim-nand-ddr3-1866mhz
   NAME:=Mediatek MT7981 (SPI-NAND via SPIM, DDR3-1866MHz)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
   DDR3_FREQ:=1866
@@ -246,7 +249,7 @@ endef
 define Trusted-Firmware-A/mt7981-cudy-tr3000-v1
   NAME:=Cudy TR3000 v1 (SPI-NAND via SPIM, DDR3)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr3
   FIP_OFFSET:=0x3c0000
@@ -256,18 +259,18 @@ endef
 define Trusted-Firmware-A/mt7986-ram-ddr4
   NAME:=MediaTek MT7986 (RAM, DDR4)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi
 endef
 
 define Trusted-Firmware-A/mt7981-spim-nand-ubi-ddr4
   NAME:=MediaTek MT7981 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7981
   DDR_TYPE:=ddr4
   USE_UBI:=1
@@ -276,7 +279,7 @@ endef
 define Trusted-Firmware-A/mt7986-nor-ddr4
   NAME:=MediaTek MT7986 (SPI-NOR, DDR4)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
 endef
@@ -284,7 +287,7 @@ endef
 define Trusted-Firmware-A/mt7986-emmc-ddr4
   NAME:=MediaTek MT7986 (eMMC, DDR4)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
 endef
@@ -292,7 +295,7 @@ endef
 define Trusted-Firmware-A/mt7986-sdmmc-ddr4
   NAME:=MediaTek MT7986 (SD card, DDR4)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
 endef
@@ -300,7 +303,7 @@ endef
 define Trusted-Firmware-A/mt7986-snand-ddr4
   NAME:=MediaTek MT7986 (SPI-NAND via SNFI, DDR4)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
 endef
@@ -308,7 +311,7 @@ endef
 define Trusted-Firmware-A/mt7986-spim-nand-ddr4
   NAME:=MediaTek MT7986 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
   NAND_TYPE:=spim:2k+64
@@ -317,7 +320,7 @@ endef
 define Trusted-Firmware-A/mt7986-spim-nand-ubi-ddr4
   NAME:=MediaTek MT7986 (SPI-NAND via SPIM using UBI, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
   NAND_TYPE:=spim:2k+64
@@ -327,7 +330,7 @@ endef
 define Trusted-Firmware-A/mt7986-spim-nand-4k-ddr4
   NAME:=MediaTek MT7986 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr4
   NAND_TYPE:=spim:4k+256
@@ -336,18 +339,18 @@ endef
 define Trusted-Firmware-A/mt7986-ram-ddr3
   NAME:=MediaTek MT7986 (RAM, DDR3)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi
 endef
 
 define Trusted-Firmware-A/mt7986-nor-ddr3
   NAME:=MediaTek MT7986 (SPI-NOR, DDR3)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
 endef
@@ -355,7 +358,7 @@ endef
 define Trusted-Firmware-A/mt7986-emmc-ddr3
   NAME:=MediaTek MT7986 (eMMC, DDR3)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
 endef
@@ -363,7 +366,7 @@ endef
 define Trusted-Firmware-A/mt7986-sdmmc-ddr3
   NAME:=MediaTek MT7986 (SD card, DDR3)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
 endef
@@ -371,7 +374,7 @@ endef
 define Trusted-Firmware-A/mt7986-snand-ddr3
   NAME:=MediaTek MT7986 (SPI-NAND via SNFI, DDR3)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
 endef
@@ -379,7 +382,7 @@ endef
 define Trusted-Firmware-A/mt7986-spim-nand-ddr3
   NAME:=MediaTek MT7986 (SPI-NAND via SPIM, DDR3)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
 endef
@@ -387,7 +390,7 @@ endef
 define Trusted-Firmware-A/mt7986-spim-nand-ubi-ddr3
   NAME:=MediaTek MT7986 (SPI-NAND via SPIM using UBI, DDR3)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
   PLAT:=mt7986
   DDR_TYPE:=ddr3
   USE_UBI:=1
@@ -396,7 +399,7 @@ endef
 define Trusted-Firmware-A/mt7988-nor-ddr3
   NAME:=MediaTek MT7988 (SPI-NOR, DDR3)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -404,7 +407,7 @@ endef
 define Trusted-Firmware-A/mt7988-emmc-ddr3
   NAME:=MediaTek MT7988 (eMMC, DDR3)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -412,7 +415,7 @@ endef
 define Trusted-Firmware-A/mt7988-sdmmc-ddr3
   NAME:=MediaTek MT7988 (SD card, DDR3)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -420,7 +423,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-ddr3
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI, DDR3)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -428,7 +431,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ddr3
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, DDR3)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr3
 endef
@@ -436,7 +439,7 @@ endef
 define Trusted-Firmware-A/mt7988-nor-ddr4
   NAME:=MediaTek MT7988 (SPI-NOR, DDR4)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -444,7 +447,7 @@ endef
 define Trusted-Firmware-A/mt7988-emmc-ddr4
   NAME:=MediaTek MT7988 (eMMC, DDR4)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -452,7 +455,7 @@ endef
 define Trusted-Firmware-A/mt7988-sdmmc-ddr4
   NAME:=MediaTek MT7988 (SD card, DDR4)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -460,7 +463,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-ddr4
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI, DDR4)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -468,7 +471,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ddr4
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr4
 endef
@@ -476,40 +479,40 @@ endef
 define Trusted-Firmware-A/mt7988-ram-comb
   NAME:=MediaTek MT7988 (RAM)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_hwifi_a73
 endef
 
 define Trusted-Firmware-A/mt7988-ram-ddr3
   NAME:=MediaTek MT7988 (RAM/ddr3)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_hwifi_a73
   DDR_TYPE:=ddr3
 endef
 
 define Trusted-Firmware-A/mt7988-ram-ddr4
   NAME:=MediaTek MT7988 (RAM/ddr4)
   BOOT_DEVICE:=ram
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   RAM_BOOT_UART_DL:=1
   HIDDEN:=
-  DEFAULT:=TARGET_mediatek_filogic
+  DEFAULT:=TARGET_mediatek_filogic || TARGET_mediatek_filogic_hwifi_a73
   DDR_TYPE:=ddr4
 endef
 
 define Trusted-Firmware-A/mt7988-nor-comb
   NAME:=MediaTek MT7988 (SPI-NOR)
   BOOT_DEVICE:=nor
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -517,7 +520,7 @@ endef
 define Trusted-Firmware-A/mt7988-emmc-comb
   NAME:=MediaTek MT7988 (eMMC)
   BOOT_DEVICE:=emmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -525,7 +528,7 @@ endef
 define Trusted-Firmware-A/mt7988-sdmmc-comb
   NAME:=MediaTek MT7988 (SD card)
   BOOT_DEVICE:=sdmmc
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -533,7 +536,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -541,7 +544,7 @@ endef
 define Trusted-Firmware-A/mt7988-snand-ubi-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SNFI, UBI)
   BOOT_DEVICE:=snand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
   USE_UBI:=1
@@ -550,7 +553,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
 endef
@@ -558,7 +561,7 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ubi-comb
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, UBI)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DRAM_USE_COMB:=1
   USE_UBI:=1
@@ -567,10 +570,20 @@ endef
 define Trusted-Firmware-A/mt7988-spim-nand-ubi-ddr4
   NAME:=MediaTek MT7988 (SPI-NAND via SPIM, DDR4)
   BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A73)
   PLAT:=mt7988
   DDR_TYPE:=ddr4
   USE_UBI:=1
+endef
+
+define Trusted-Firmware-A/mt7981-cudy-wbr3000uax-v1
+  NAME:=Cudy WBR3000UAX v1 (SPI-NAND via SPIM, DDR3)
+  BOOT_DEVICE:=spim-nand
+  BUILD_SUBTARGET_LIST:=$(FILOGIC_A53)
+  PLAT:=mt7981
+  DDR_TYPE:=ddr3
+  FIP_OFFSET:=0x3c0000
+  FIP_SIZE:=0x200000
 endef
 
 TFA_TARGETS:= \
@@ -600,6 +613,7 @@ TFA_TARGETS:= \
 	mt7981-emmc-ddr4 \
 	mt7981-spim-nand-ddr4 \
 	mt7981-cudy-tr3000-v1 \
+	mt7981-cudy-wbr3000uax-v1 \
 	mt7986-ram-ddr3 \
 	mt7986-emmc-ddr3 \
 	mt7986-nor-ddr3 \

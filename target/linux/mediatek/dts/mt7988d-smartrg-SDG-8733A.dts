@@ -155,3 +155,13 @@
 &xphy {
 	status = "disabled";
 };
+
+&cpu_thermal {
+	cooling-maps {
+		cpu-active-hot {
+			cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+					 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+					 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+		};
+	};
+};

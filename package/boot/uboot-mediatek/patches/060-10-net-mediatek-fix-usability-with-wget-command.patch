@@ -25,7 +25,7 @@ Signed-off-by: Weijie Gao <weijie.gao@mediatek.com>
  #define TX_TOTAL_BUF_SIZE	(NUM_TX_DESC * PKTSIZE_ALIGN)
  #define RX_TOTAL_BUF_SIZE	(NUM_RX_DESC * PKTSIZE_ALIGN)
  #define TOTAL_PKT_BUF_SIZE	(TX_TOTAL_BUF_SIZE + RX_TOTAL_BUF_SIZE)
-@@ -1897,6 +1897,9 @@ static int mtk_eth_free_pkt(struct udevi
+@@ -1790,6 +1790,9 @@ static int mtk_eth_free_pkt(struct udevi
  
  	rxd = priv->rx_ring_noc + idx * priv->soc->rxd_size;
  

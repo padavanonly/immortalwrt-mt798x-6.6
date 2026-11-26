@@ -1,0 +1,231 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+
+START=10
+
+USB3_RECOVER_SYSFS_ROOT="${USB3_RECOVER_SYSFS_ROOT:-/sys}"
+USB3_RECOVER_MOUNTS="${USB3_RECOVER_MOUNTS:-/proc/mounts}"
+USB3_RECOVER_STATE_FILE="${USB3_RECOVER_STATE_FILE:-/tmp/run/usb3-fallback-recover.done}"
+USB3_RECOVER_SLEEP_SEC="${USB3_RECOVER_SLEEP_SEC:-1}"
+USB3_RECOVER_SETTLE_SEC="${USB3_RECOVER_SETTLE_SEC:-1}"
+USB3_RECOVER_LSUSB="${USB3_RECOVER_LSUSB:-lsusb}"
+
+_usb3_trim() {
+	tr -d ' \t\r\n' < "$1" 2>/dev/null
+}
+
+_usb3_ctrl_roothubs() {
+	local ctrl_dir="$1"
+	local want="$2"
+	local hub spd
+
+	for hub in "$ctrl_dir"/usb[0-9]*; do
+		[ -d "$hub" ] || continue
+		spd="$(_usb3_trim "$hub/speed")"
+		case "${want}:${spd}" in
+		u2:480)
+			echo "$hub"
+			;;
+		u3:5000|u3:10000|u3:20000)
+			echo "$hub"
+			;;
+		esac
+	done
+}
+
+_usb3_hub_has_children() {
+	local hub_dir="$1"
+	local hub_name="${hub_dir##*/}"
+	local bus="${hub_name#usb}"
+	local dev dev_name
+
+	for dev in "$hub_dir"/"${bus}"-[0-9]*; do
+		[ -d "$dev" ] || continue
+		dev_name="${dev##*/}"
+		case "$dev_name" in
+		*:*|*.*) continue ;;
+		esac
+		[ -f "$dev/speed" ] && return 0
+	done
+	return 1
+}
+
+_usb3_ctrl_has_ss_device() {
+	local ctrl_dir="$1"
+	local hub
+
+	for hub in $(_usb3_ctrl_roothubs "$ctrl_dir" u3); do
+		if _usb3_hub_has_children "$hub"; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+_usb3_ctrl_has_u2_device() {
+	local ctrl_dir="$1"
+	local hub
+
+	for hub in $(_usb3_ctrl_roothubs "$ctrl_dir" u2); do
+		if _usb3_hub_has_children "$hub"; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+_usb3_ctrl_has_mounted_block() {
+	local ctrl_dir="$1"
+	local ctrl_real blk blk_real blk_name
+
+	ctrl_real="$(readlink -f "$ctrl_dir" 2>/dev/null)"
+	[ -n "$ctrl_real" ] || return 1
+
+	for blk in "$USB3_RECOVER_SYSFS_ROOT"/block/*; do
+		[ -e "$blk" ] || continue
+		blk_real="$(readlink -f "$blk" 2>/dev/null)"
+		case "$blk_real" in
+		"${ctrl_real}"/*)
+			blk_name="${blk##*/}"
+			if grep -Eq "^/dev/${blk_name}([0-9p]| )" "$USB3_RECOVER_MOUNTS" 2>/dev/null; then
+				return 0
+			fi
+			;;
+		esac
+	done
+	return 1
+}
+
+_usb3_dev_is_ss_capable() {
+	local dev_dir="$1"
+	local ver busnum devnum lsusb_out
+
+	ver="$(_usb3_trim "$dev_dir/version")"
+	if command -v "$USB3_RECOVER_LSUSB" >/dev/null 2>&1; then
+		case "$ver" in
+		2.10|2.01) ;;
+		*) return 1 ;;
+		esac
+		busnum="$(_usb3_trim "$dev_dir/busnum")"
+		devnum="$(_usb3_trim "$dev_dir/devnum")"
+		[ -n "$busnum" ] && [ -n "$devnum" ] || return 1
+		lsusb_out="$("$USB3_RECOVER_LSUSB" -s "${busnum}:${devnum}" -v 2>/dev/null)"
+		printf '%s\n' "$lsusb_out" | grep -q "SuperSpeed USB Device Capability:"
+		return $?
+	fi
+
+	[ "$ver" = "2.10" ]
+}
+
+_usb3_find_fallback_device() {
+	local ctrl_dir="$1"
+	local hub hub_name bus dev dev_name spd
+
+	for hub in $(_usb3_ctrl_roothubs "$ctrl_dir" u2); do
+		hub_name="${hub##*/}"
+		bus="${hub_name#usb}"
+		for dev in "$hub"/"${bus}"-[0-9]*; do
+			[ -d "$dev" ] || continue
+			dev_name="${dev##*/}"
+			case "$dev_name" in
+			*:*|*.*) continue ;;
+			esac
+			spd="$(_usb3_trim "$dev/speed")"
+			[ "$spd" = "480" ] || continue
+			if _usb3_dev_is_ss_capable "$dev"; then
+				echo "$dev"
+				return 0
+			fi
+		done
+	done
+	return 1
+}
+
+_usb3_mark_done() {
+	mkdir -p "${USB3_RECOVER_STATE_FILE%/*}" 2>/dev/null || true
+	: > "$USB3_RECOVER_STATE_FILE" 2>/dev/null || true
+}
+
+usb3_fallback_recover_run() {
+	local drv_dir="${USB3_RECOVER_SYSFS_ROOT}/bus/platform/drivers/xhci-mtk"
+	local ctrl_dir ctrl u3_hubs fallback_dev dev_name vid pid ver spd try
+
+	[ -f "$USB3_RECOVER_STATE_FILE" ] && return 0
+	if [ ! -d "$drv_dir" ]; then
+		_usb3_mark_done
+		return 0
+	fi
+
+	for ctrl_dir in "$drv_dir"/*; do
+		[ -d "$ctrl_dir" ] || continue
+		ctrl="${ctrl_dir##*/}"
+		case "$ctrl" in
+		module|uevent|bind|unbind) continue ;;
+		esac
+
+		u3_hubs="$(_usb3_ctrl_roothubs "$ctrl_dir" u3)"
+		[ -n "$u3_hubs" ] || continue
+
+		if _usb3_ctrl_has_ss_device "$ctrl_dir"; then
+			continue
+		fi
+
+		if ! _usb3_ctrl_has_u2_device "$ctrl_dir"; then
+			[ "$USB3_RECOVER_SETTLE_SEC" -gt 0 ] 2>/dev/null && sleep "$USB3_RECOVER_SETTLE_SEC"
+			_usb3_ctrl_has_ss_device "$ctrl_dir" && continue
+		fi
+
+		fallback_dev="$(_usb3_find_fallback_device "$ctrl_dir")"
+		[ -n "$fallback_dev" ] || continue
+
+		if _usb3_ctrl_has_mounted_block "$ctrl_dir"; then
+			logger -t usb3-recover "Skip resetting ${ctrl}: USB block device is currently mounted"
+			continue
+		fi
+
+		dev_name="${fallback_dev##*/}"
+		vid="$(_usb3_trim "$fallback_dev/idVendor")"
+		pid="$(_usb3_trim "$fallback_dev/idProduct")"
+		ver="$(_usb3_trim "$fallback_dev/version")"
+		spd="$(_usb3_trim "$fallback_dev/speed")"
+
+		_usb3_mark_done
+		logger -t usb3-recover "Detected SuperSpeed-capable device ${dev_name} (${vid:-????}:${pid:-????}, version=${ver}, speed=${spd}) on USB2; resetting controller ${ctrl}"
+
+		printf '%s' "$ctrl" > "$drv_dir/unbind" 2>/dev/null || continue
+		[ "$USB3_RECOVER_SLEEP_SEC" -gt 0 ] 2>/dev/null && sleep "$USB3_RECOVER_SLEEP_SEC"
+		printf '%s' "$ctrl" > "$drv_dir/bind" 2>/dev/null || continue
+
+		try=0
+		while [ "$try" -lt 3 ]; do
+			[ "$USB3_RECOVER_SETTLE_SEC" -gt 0 ] 2>/dev/null && sleep "$USB3_RECOVER_SETTLE_SEC"
+			if _usb3_ctrl_has_ss_device "$ctrl_dir"; then
+				logger -t usb3-recover "Controller ${ctrl} recovered SuperSpeed link"
+				break
+			fi
+			try=$((try + 1))
+		done
+		if [ "$try" -eq 3 ]; then
+			logger -t usb3-recover "Controller ${ctrl} did not enumerate a SuperSpeed device after host reset"
+		fi
+	done
+
+	_usb3_mark_done
+	return 0
+}
+
+boot() {
+	usb3_fallback_recover_run
+}
+
+start() {
+	usb3_fallback_recover_run
+}
+
+stop() {
+	return 0
+}
+
+reload() {
+	return 0
+}

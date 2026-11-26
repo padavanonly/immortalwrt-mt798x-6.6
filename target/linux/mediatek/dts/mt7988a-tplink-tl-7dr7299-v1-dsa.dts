@@ -1,0 +1,140 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Copyright (C) 2026 Tianling Shen <cnsztl@immortalwrt.org>
+ */
+
+/dts-v1/;
+#include "mt7988a-tplink-tl-7dr7299-v1.dts"
+
+/ {
+	model = "TP-Link TL-7DR7299 v1 (DSA)";
+	compatible = "tplink,tl-7dr7299-v1-dsa", "mediatek,mt7988a";
+};
+
+&switch {
+	dsa,member = <0 0>;
+};
+
+&mdio_bus {
+	/delete-node/ rtl837x-gsw@1d;
+
+	switch1: switch@1d {
+		compatible = "realtek,rtl8372n";
+		reg = <29>;
+		reset-gpios = <&pio 57 GPIO_ACTIVE_HIGH>;
+		dsa,member = <1 0>;
+
+		extra-init =
+			/* LED_RLDP_CTRL_3~8_P2_LED3_0_RLDP */
+			<0x65FC 0xffffffff 0x33333000>, /* RTL8373_LED_RLDP_CTRL_2_ADDR */
+			<0x6600 0xf        0x3       >, /* RTL8373_LED_RLDP_CTRL_3_ADDR */
+			/* 10m/100m/500m/1g/2p5g/link/act */
+			<0x6548 0xffff     0x17D     >, /* RTL8373_LED1_0_SET0_CTRL0_ADDR */
+			/* LED_GLB_MUX_1_CFG_PAD_LED3_MUX */
+			<0x65E0 0xfc0000   0x10      >, /* RTL8373_LED_GLB_MUX_1_ADDR */
+			/* LED_GLB_MUX_2_CFG_PAD_LED6_MUX */
+			<0x65E4 0xfc0      0x14      >, /* RTL8373_LED_GLB_MUX_2_ADDR */
+			/* LED_GLB_MUX_3_CFG_PAD_LED10_MUX */
+			<0x65E8 0x3f       0x18      >, /* RTL8373_LED_GLB_MUX_3_ADDR */
+			/* LED_GLB_MUX_4_CFG_PAD_LED18_MUX */
+			<0x65EC 0xfc0000   0x1C      >, /* RTL8373_LED_GLB_MUX_4_ADDR */
+			/* LED_GLB_ACTIVE_CFG_PAD_LED3_ACTIVE_LOW */
+			<0x65D8 0x8        0         >, /* RTL8373_LED_GLB_ACTIVE_ADDR */
+			/* LED_GLB_ACTIVE_CFG_PAD_LED6_ACTIVE_LOW */
+			<0x65D8 0x6        0         >, /* RTL8373_LED_GLB_ACTIVE_ADDR */
+			/* LED_GLB_ACTIVE_CFG_PAD_LED10_ACTIVE_LOW */
+			<0x65D8 0xA        0         >, /* RTL8373_LED_GLB_ACTIVE_ADDR */
+			/* LED_GLB_ACTIVE_CFG_PAD_LED18_ACTIVE_LOW */
+			<0x65D8 0x12       0         >, /* RTL8373_LED_GLB_ACTIVE_ADDR */
+			/* LED_GLB_IO_EN_CFG_PARA_LED3/6/10/18/28/29_IO_EN */
+			<0x65DC 0x3fffffff 0x30040448>, /* RTL8373_LED_GLB_IO_EN_ADDR */
+			/* IO_MUX_SEL_0_GPIO_LED3/6/10/18 */
+			<0x7F8C 0x3fffffff 0x3FFBFBB7>, /* RTL8373_IO_MUX_SEL_0_ADDR */
+			/* LED_GLB_CTRL_STP1_PWR_ON_LED */
+			<0x6520 0x1E0      1         >, /* RTL8373_LED_GLB_CTRL_ADDR */
+			/* LED_GLB_CTRL_STP2_PWR_ON_LED */
+			<0x6520 0x1E00     0         >, /* RTL8373_LED_GLB_CTRL_ADDR */
+			/* LED_GLB_CTRL_PWR_ON_BLINK_SEL */
+			<0x6520 0x18       1         >; /* RTL8373_LED_GLB_CTRL_ADDR */
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@3 {
+				reg = <3>;
+				label = "cpu";
+				ethernet = <&gmac2>;
+				phy-mode = "10gbase-r";
+
+				fixed-link {
+					speed = <10000>;
+					full-duplex;
+					pause;
+					asym-pause;
+				};
+			};
+
+			port@4 {
+				reg = <4>;
+				label = "lan3";
+				phy-mode = "internal";
+				phy-handle = <&internal_phy1>;
+			};
+
+			port@5 {
+				reg = <5>;
+				label = "lan4";
+				phy-mode = "internal";
+				phy-handle = <&internal_phy2>;
+			};
+
+			port@6 {
+				reg = <6>;
+				label = "lan5";
+				phy-mode = "internal";
+				phy-handle = <&internal_phy3>;
+			};
+
+			port@7 {
+				reg = <7>;
+				label = "lan6";
+				phy-mode = "internal";
+				phy-handle = <&internal_phy4>;
+			};
+
+			port@8 {
+				reg = <8>;
+				label = "lan7";
+				sfp = <&sfp0>;
+				phy-mode = "10gbase-r";
+				managed = "in-band-status";
+			};
+		};
+
+		mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			internal_phy1: phy@4 {
+				compatible = "ethernet-phy-ieee802.3-c45";
+				reg = <4>;
+			};
+
+			internal_phy2: phy@5 {
+				compatible = "ethernet-phy-ieee802.3-c45";
+				reg = <5>;
+			};
+
+			internal_phy3: phy@6 {
+				compatible = "ethernet-phy-ieee802.3-c45";
+				reg = <6>;
+			};
+
+			internal_phy4: phy@7 {
+				compatible = "ethernet-phy-ieee802.3-c45";
+				reg = <7>;
+			};
+		};
+	};
+};

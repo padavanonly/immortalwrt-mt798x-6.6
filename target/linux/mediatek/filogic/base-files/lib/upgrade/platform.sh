@@ -263,8 +263,38 @@ platform_copy_config() {
 	esac
 }
 
+_qmodem_soft_reboot_dev() {
+	local cfg="$1"
+	local soft_reboot state at_port i resp
+
+	config_get soft_reboot "$cfg" soft_reboot
+	[ "$soft_reboot" = "1" ] || return 0
+	config_get state "$cfg" state
+	[ "$state" = "disabled" ] && return 0
+	config_get at_port "$cfg" at_port
+	[ -n "$at_port" ] && [ -c "$at_port" ] || return 0
+
+	for i in 1 2 3; do
+		resp="$(tom_modem -d "$at_port" -o a -c "AT+CFUN=1,1" 2>/dev/null)"
+		echo "$resp" | grep -qi "ok" && break
+		sleep 1
+	done
+}
+
+qmodem_pre_upgrade_soft_reboot() {
+	local qmodem_cfg="${QMODEM_CONFIG_FILE:-/etc/config/qmodem}"
+	[ -f "$qmodem_cfg" ] || return 0
+	command -v tom_modem >/dev/null 2>&1 || return 0
+
+	config_load qmodem
+	config_foreach _qmodem_soft_reboot_dev modem-device
+}
+
 platform_pre_upgrade() {
 	local board=$(board_name)
+
+	qmodem_pre_upgrade_soft_reboot 2>/dev/null || true
+	rmmod xhci-mtk-hcd 2>/dev/null || true
 
 	case "$board" in
 	asus,rt-ax52|\
