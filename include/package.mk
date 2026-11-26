@@ -24,9 +24,43 @@ PKG_JOBS?=$(if $(PKG_BUILD_PARALLEL),$(MAKE_J),-j1)
 endif
 
 PKG_BUILD_FLAGS?=
-__unknown_flags=$(filter-out no-iremap no-mips16 gc-sections no-gc-sections lto no-lto no-mold,$(PKG_BUILD_FLAGS))
+__unknown_flags=$(filter-out no-iremap no-mips16 gc-sections no-gc-sections lto no-lto no-mold sem-interp no-sem-interp,$(PKG_BUILD_FLAGS))
 ifneq ($(__unknown_flags),)
   $(error unknown PKG_BUILD_FLAGS: $(__unknown_flags))
+endif
+
+FILOGIC_A53_TARGET := $(or $(CONFIG_TARGET_mediatek_filogic),$(CONFIG_TARGET_mediatek_filogic_mtwifi),$(CONFIG_TARGET_mediatek_filogic_hwifi))
+FILOGIC_A73_TARGET := $(CONFIG_TARGET_mediatek_filogic_hwifi_a73)
+FILOGIC_OPT_TARGET := $(or $(FILOGIC_A53_TARGET),$(FILOGIC_A73_TARGET))
+FILOGIC_PKG_NAME := $(strip $(PKG_NAME))
+
+# Tiered optimization overrides and third-party/feed compatibility lists (keeps feeds/* untouched)
+FILOGIC_A53_O2_PKGS := dnsmasq nettle gmp ucode libubox
+FILOGIC_A73_OS_PKGS := glib2 nftables modemmanager
+FILOGIC_NO_LTO_PKGS := glib2 modemmanager
+FILOGIC_NO_GC_SECTIONS_PKGS :=
+FILOGIC_NO_SEM_INTERP_PKGS := ppp
+
+ifneq ($(FILOGIC_OPT_TARGET),)
+  ifneq ($(filter $(FILOGIC_PKG_NAME),$(FILOGIC_NO_LTO_PKGS)),)
+    PKG_BUILD_FLAGS += no-lto
+  endif
+  ifneq ($(filter $(FILOGIC_PKG_NAME),$(FILOGIC_NO_GC_SECTIONS_PKGS)),)
+    PKG_BUILD_FLAGS += no-gc-sections
+  endif
+  ifneq ($(filter $(FILOGIC_PKG_NAME),$(FILOGIC_NO_SEM_INTERP_PKGS)),)
+    PKG_BUILD_FLAGS += no-sem-interp
+  endif
+  ifneq ($(FILOGIC_A53_TARGET),)
+    ifneq ($(filter $(FILOGIC_PKG_NAME),$(FILOGIC_A53_O2_PKGS)),)
+      TARGET_CFLAGS := $(filter-out -O%,$(TARGET_CFLAGS)) -O2 -falign-functions=4 -falign-loops=4 -falign-jumps=4
+    endif
+  endif
+  ifneq ($(FILOGIC_A73_TARGET),)
+    ifneq ($(filter $(FILOGIC_PKG_NAME),$(FILOGIC_A73_OS_PKGS)),)
+      TARGET_CFLAGS := $(filter-out -O% -falign-functions=% -falign-loops=% -falign-jumps=%,$(TARGET_CFLAGS)) -Os
+    endif
+  endif
 endif
 
 # $1=flagname, $2=default (0/1)
@@ -45,15 +79,19 @@ ifdef CONFIG_USE_MIPS16
     TARGET_CXXFLAGS += -mips16 -minterlink-mips16
   endif
 endif
+ifneq ($(FILOGIC_OPT_TARGET),)
+  ifeq ($(call pkg_build_flag,sem-interp,1),1)
+    TARGET_CFLAGS += -fno-semantic-interposition
+  endif
+endif
 ifeq ($(call pkg_build_flag,gc-sections,$(if $(CONFIG_USE_GC_SECTIONS),1,0)),1)
   TARGET_CFLAGS+= -ffunction-sections -fdata-sections
-  TARGET_CXXFLAGS+= -ffunction-sections -fdata-sections
   TARGET_LDFLAGS+= -Wl,--gc-sections
 endif
 ifeq ($(call pkg_build_flag,lto,$(if $(CONFIG_USE_LTO),1,0)),1)
-  TARGET_CFLAGS+= -flto=auto -fno-fat-lto-objects
-  TARGET_CXXFLAGS+= -flto=auto -fno-fat-lto-objects
-  TARGET_LDFLAGS+= -flto=auto -fuse-linker-plugin
+  LTO_PARTITION_FLAG := $(if $(call qstrip,$(CONFIG_LTO_PARTITION)),-flto-partition=$(call qstrip,$(CONFIG_LTO_PARTITION)))
+  TARGET_CFLAGS+= -flto=auto $(LTO_PARTITION_FLAG) -fno-fat-lto-objects
+  TARGET_LDFLAGS+= -flto=auto $(LTO_PARTITION_FLAG) -fuse-linker-plugin
 endif
 ifdef CONFIG_USE_MOLD
   ifeq ($(call pkg_build_flag,mold,1),1)

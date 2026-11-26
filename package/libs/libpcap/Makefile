@@ -54,7 +54,7 @@ define Package/rpcapd
   CATEGORY:=Network
   TITLE:=Capture daemon to be controlled by a remote libpcap application
   URL:=http://www.tcpdump.org/
-  DEPENDS+= +USE_GLIBC:libcrypt-compat +libpcap
+  DEPENDS+= +libpcap
 endef
 
 ifdef CONFIG_PACKAGE_rpcapd

@@ -35,6 +35,7 @@ Package/trusted-firmware-a/install = $(Package/trusted-firmware-a/install/defaul
 define Trusted-Firmware-A/Init
   BUILD_TARGET:=
   BUILD_SUBTARGET:=
+  BUILD_SUBTARGET_LIST:=
   BUILD_DEVICES:=
   NAME:=
   DEPENDS:=
@@ -46,6 +47,15 @@ define Trusted-Firmware-A/Init
 endef
 
 TARGET_DEP = TARGET_$(BUILD_TARGET)$(if $(BUILD_SUBTARGET),_$(BUILD_SUBTARGET))
+TARGET_DEPS_LIST = $(strip \
+  $(if $(BUILD_SUBTARGET_LIST),\
+    $(foreach st,$(BUILD_SUBTARGET_LIST),TARGET_$(BUILD_TARGET)_$(st)),\
+    $(TARGET_DEP)))
+TARGET_DEFAULT_SYMS = $(strip \
+  $(foreach td,$(TARGET_DEPS_LIST),\
+    $(td)_Default \
+    $(patsubst %,$(td)_DEVICE_%,$(BUILD_DEVICES)) \
+    $(patsubst %,$(patsubst TARGET_%,TARGET_DEVICE_%,$(td))_DEVICE_%,$(BUILD_DEVICES))))
 
 define Build/Trusted-Firmware-A/Target
   $(eval $(call Trusted-Firmware-A/Init,$(1)))
@@ -60,11 +70,9 @@ define Build/Trusted-Firmware-A/Target
     DEPENDS:=@!IN_SDK $(DEPENDS)
     HIDDEN:=$(HIDDEN)
     ifneq ($(BUILD_TARGET),)
-      DEPENDS += @$(TARGET_DEP)
+      DEPENDS += @$(if $(BUILD_SUBTARGET_LIST),($(subst $(space),||,$(TARGET_DEPS_LIST))),$(TARGET_DEP))
       ifneq ($(BUILD_DEVICES),)
-        DEFAULT := y if ($(TARGET_DEP)_Default \
-		$(patsubst %,|| $(TARGET_DEP)_DEVICE_%,$(BUILD_DEVICES)) \
-		$(patsubst %,|| $(patsubst TARGET_%,TARGET_DEVICE_%,$(TARGET_DEP))_DEVICE_%,$(BUILD_DEVICES)))
+        DEFAULT := y if ($(subst $(space), || ,$(TARGET_DEFAULT_SYMS)))
       endif
     endif
     $(if $(DEFAULT),DEFAULT:=$(DEFAULT))

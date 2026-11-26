@@ -3,6 +3,7 @@ menu "Configuration"
 
 config ZLIB_OPTIMIZE_SPEED
 	bool "Optimize for speed"
+	default y if TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi || TARGET_mediatek_filogic_hwifi_a73
 	help
 		This enables additional optimization and 
 		increases performance considerably at 

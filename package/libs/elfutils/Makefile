@@ -85,8 +85,8 @@ CONFIGURE_VARS += \
 
 TARGET_CFLAGS += \
 	-D_GNU_SOURCE \
-	-Wno-unused-result \
-	-Wno-format-nonliteral
+	-Wno-error=unused-result \
+	-Wno-error=format-nonliteral
 
 ifneq ($(CONFIG_GCC_USE_VERSION_11),y)
 TARGET_CFLAGS += \

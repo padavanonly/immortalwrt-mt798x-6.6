@@ -1,0 +1,19 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] zip: guard quote_arg strdup allocation failure
+
+Route NULL strdup allocation returns through ZE_MEM instead of dereferencing NULL.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/zip.c
++++ b/zip.c
+@@ -1448,6 +1448,9 @@
+   /* outstring = string_dup(tempstring, "quote_arg", NO_FLUFF); */
+   outstring = strdup(tempstring);
+   free(tempstring);
++  if (outstring == NULL) {
++    ZIPERR(ZE_MEM, "quote_arg");
++  }
+ 
+   return outstring;
+ }

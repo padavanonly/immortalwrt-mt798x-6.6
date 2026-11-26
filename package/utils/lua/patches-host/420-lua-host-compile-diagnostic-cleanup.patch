@@ -1,0 +1,43 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] lua: silence dead pointer check and clarify host build statements
+
+Remove ineffective NULL pointer checks and clarify statement scope for strict modern host GCC.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff --git a/src/ldump.c b/src/ldump.c
+--- a/src/ldump.c
++++ b/src/ldump.c
+@@ -65,7 +65,7 @@
+ 
+ static void DumpString(const TString* s, DumpState* D)
+ {
+- if (s==NULL || getstr(s)==NULL)
++ if (s==NULL)
+  {
+   unsigned int size=0;
+   DumpVar(size,D);
+diff --git a/src/lauxlib.c b/src/lauxlib.c
+--- a/src/lauxlib.c
++++ b/src/lauxlib.c
+@@ -584,7 +584,7 @@
+     lf.f = freopen(filename, "rb", lf.f);  /* reopen in binary mode */
+     if (lf.f == NULL) return errfile(L, "reopen", fnameindex);
+     /* skip eventual `#!...' */
+-   while ((c = getc(lf.f)) != EOF && c != LUA_SIGNATURE[0]) ;
++    while ((c = getc(lf.f)) != EOF && c != LUA_SIGNATURE[0]) ;
+     lf.extraline = 0;
+   }
+   ungetc(c, lf.f);
+diff --git a/src/ltablib.c b/src/ltablib.c
+--- a/src/ltablib.c
++++ b/src/ltablib.c
+@@ -137,7 +137,7 @@
+   if (!lua_isstring(L, -1))
+     luaL_error(L, "invalid value (%s) at index %d in table for "
+                   LUA_QL("concat"), luaL_typename(L, -1), i);
+-    luaL_addvalue(b);
++  luaL_addvalue(b);
+ }
+ 
+ 

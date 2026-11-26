@@ -90,7 +90,7 @@ define Build/Patch/Default
 	$(if $(QUILT),touch $(PKG_BUILD_DIR)/.quilt_used)
 endef
 
-kernel_files=$(foreach fdir,$(GENERIC_FILES_DIR) $(FILES_DIR),$(fdir)/.)
+kernel_files=$(foreach fdir,$(GENERIC_FILES_DIR) $(FILES_DIR) $(SUBTARGET_FILES_DIR),$(fdir)/.)
 define Kernel/Patch/Default
 	$(if $(QUILT),rm -rf $(LINUX_DIR)/patches; mkdir -p $(LINUX_DIR)/patches)
 	$(if $(kernel_files),$(CP) $(kernel_files) $(LINUX_DIR)/)
@@ -103,6 +103,7 @@ define Kernel/Patch/Default
 	$(call PatchDir,$(LINUX_DIR),$(GENERIC_PATCH_DIR),generic/)
 	$(call PatchDir,$(LINUX_DIR),$(GENERIC_HACK_DIR),generic-hack/)
 	$(call PatchDir,$(LINUX_DIR),$(PATCH_DIR),platform/)
+	$(if $(SUBTARGET_PATCH_DIR),$(call PatchDir,$(LINUX_DIR),$(SUBTARGET_PATCH_DIR),subtarget/))
 endef
 
 define Quilt/RefreshDir
@@ -125,14 +126,15 @@ define Quilt/Refresh/Package
 endef
 
 define Quilt/Refresh/Kernel
-	@[ -z "$$(grep -v '^generic/' $(PKG_BUILD_DIR)/patches/series | grep -v '^platform/')" ] || { \
-		echo "All kernel patches must start with either generic/ or platform/"; \
+	@[ -z "$$(grep -v '^generic/' $(PKG_BUILD_DIR)/patches/series | grep -v '^platform/' | grep -v '^subtarget/')" ] || { \
+		echo "All kernel patches must start with either generic/, platform/, or subtarget/"; \
 		false; \
 	}
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(GENERIC_BACKPORT_DIR),generic-backport/)
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(GENERIC_PATCH_DIR),generic/)
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(GENERIC_HACK_DIR),generic-hack/)
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(PATCH_DIR),platform/)
+	$(if $(SUBTARGET_PATCH_DIR),$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(SUBTARGET_PATCH_DIR),subtarget/))
 endef
 
 define Quilt/Template
