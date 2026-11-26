@@ -18,7 +18,7 @@ define KernelPackage/mt_wifi_cmn
   SUBMENU:=Drivers
   MENU:=1
   AUTOLOAD:=$(call AutoLoad,60,$(if $(CONFIG_MTK_WIFI7_CFG80211_SUPPORT), cfg80211) mt_wifi_cmn)
-  DEPENDS:=+MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211
+  DEPENDS:=@(TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) +MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211
 endef
 
 NOSTDINC_FLAGS :=

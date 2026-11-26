@@ -1,0 +1,231 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: harden WEXT site survey limits and interface-bound
+ ioctls
+
+Fix WEXT site survey buffer sizing and page-limit rollback, and reject unmatched APCLI/WDS/security/band ioctl queries cleanly.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/ap/ap_cfg.c        | 89 ++++++++++++++++++++++++++------------
+ mt_wifi/common/cmm_info.c  | 15 ++++---
+ mt_wifi/os/linux/mt_data.c | 21 ++++-----
+ 3 files changed, 83 insertions(+), 42 deletions(-)
+
+diff --git a/mt_wifi/ap/ap_cfg.c b/mt_wifi/ap/ap_cfg.c
+index 6397356..02d34d3 100644
+--- a/mt_wifi/ap/ap_cfg.c
++++ b/mt_wifi/ap/ap_cfg.c
+@@ -8368,6 +8368,28 @@ INT RTMPAPQueryInformation(
+ 		return -EFAULT;
+ 	}
+ 
++	/* Validate this OID before the shared MBSS setup below. */
++	if (cmd == OID_802_11_SECURITY_TYPE) {
++		switch (pObj->ioctl_if_type) {
++		case INT_APCLI:
++			if (ifIndex >= MAX_APCLI_NUM)
++				return -EINVAL;
++			break;
++		case INT_MAIN:
++			if ((ifIndex != MAIN_MBSSID) || !VALID_MBSS(pAd, ifIndex) ||
++				(ifIndex >= pAd->ApCfg.BssidNum) || (ifIndex >= MAX_BEACON_NUM))
++				return -EINVAL;
++			break;
++		case INT_MBSSID:
++			if (!VALID_MBSS(pAd, ifIndex) ||
++				(ifIndex >= pAd->ApCfg.BssidNum) || (ifIndex >= MAX_BEACON_NUM))
++				return -EINVAL;
++			break;
++		default:
++			return -EOPNOTSUPP;
++		}
++	}
++
+ 	if ((pObj->ioctl_if_type == INT_MBSSID) || (pObj->ioctl_if_type == INT_MAIN)) {
+ 		if ((ifIndex >= pAd->ApCfg.BssidNum) || (ifIndex >= MAX_BEACON_NUM))
+ 			return -EFAULT;
+@@ -10117,18 +10139,8 @@ INT RTMPAPQueryInformation(
+ 		PUCHAR pType;
+ 		struct security_type_new *SecurityType;
+ 
+-		if (!VALID_MBSS(pAd, ifIndex)) {
+-			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "error index\n");
+-			Status = -EINVAL;
+-			return FALSE;
+-		}
+ 		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
+ 				 "Query:OID_802_11_SECURITY_TYPE\n");
+-		if (pObj->ioctl_if_type == INT_APCLI && ifIndex >= MAX_APCLI_NUM) 
+-		{	
+-			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "error station index\n");
+-			return FALSE;
+-		}
+ 		os_alloc_mem(NULL, &pType, sizeof(*SecurityType));
+ 		if (pType == NULL) {
+ 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR,
+@@ -10137,19 +10149,46 @@ INT RTMPAPQueryInformation(
+ 		} else {
+ 			SecurityType = (struct security_type_new *)pType;
+ 			if (pObj->ioctl_if_type == INT_APCLI) {
+-				pApCliEntry = &pAd->StaCfg[ifIndex];
+-				SecurityType->ifindex = ifIndex;
+-				SecurityType->auth_mode = pApCliEntry->wdev.SecConfig.AKMMap;
+-				SecurityType->encryp_type = pApCliEntry->wdev.SecConfig.PairwiseCipher;
++				/* Keep the bound next to the StaCfg access. */
++				if (ifIndex < 0 || ifIndex >= MAX_APCLI_NUM) {
++					Status = -EINVAL;
++				} else {
++					pApCliEntry = &pAd->StaCfg[ifIndex];
++					SecurityType->ifindex = ifIndex;
++					SecurityType->auth_mode = pApCliEntry->wdev.SecConfig.AKMMap;
++					SecurityType->encryp_type = pApCliEntry->wdev.SecConfig.PairwiseCipher;
++				}
++			} else if (pObj->ioctl_if_type == INT_MAIN) {
++				/* MAIN uses the primary MBSSID slot; recheck at the access. */
++				if (ifIndex < 0 || ifIndex != MAIN_MBSSID || !VALID_MBSS(pAd, ifIndex) ||
++					ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_BEACON_NUM) {
++					Status = -EINVAL;
++				} else {
++					pMbss = &pAd->ApCfg.MBSSID[ifIndex];
++					SecurityType->ifindex = ifIndex;
++					SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
++					SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
++				}
++			} else if (pObj->ioctl_if_type == INT_MBSSID) {
++				/* MBSSID has its own bounds immediately before the array access. */
++				if (ifIndex < 0 || !VALID_MBSS(pAd, ifIndex) ||
++					ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_BEACON_NUM) {
++					Status = -EINVAL;
++				} else {
++					pMbss = &pAd->ApCfg.MBSSID[ifIndex];
++					SecurityType->ifindex = ifIndex;
++					SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
++					SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
++				}
++			} else {
++				/* Keep the output contract closed if a new type is added. */
++				Status = -EOPNOTSUPP;
++			}
++
++			if (Status == NDIS_STATUS_SUCCESS) {
+ 				wrq->u.data.length = sizeof(*SecurityType);
+-				Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
+-		} else if(pObj->ioctl_if_type == INT_MAIN || pObj->ioctl_if_type == INT_MBSSID) {
+-			pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+-			SecurityType->ifindex = ifIndex;
+-			SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
+-			SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
+-			wrq->u.data.length = sizeof(*SecurityType);
+-			Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
++				if (copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType)))
++					Status = -EFAULT;
+ 			}
+ 			os_free_mem(pType);
+ 		}
+@@ -11106,11 +11145,7 @@ INT RTMPAPQueryInformation(
+ 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
+ 				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
+ 		} else {
+-			wireless_band = wlan_config_get_ch_band(wdev);
+-			wrq->u.data.length = sizeof(wireless_band);
+-			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
+-			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
+-				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
++			Status = -EINVAL;
+ 		}
+ 		break;
+ 	}
+diff --git a/mt_wifi/common/cmm_info.c b/mt_wifi/common/cmm_info.c
+index fa7dae6..e2afb8a 100644
+--- a/mt_wifi/common/cmm_info.c
++++ b/mt_wifi/common/cmm_info.c
+@@ -6338,7 +6338,7 @@ VOID RTMPCommSiteSurveyData(
+ 	UINT        Rssi_Quality = 0;
+ 	NDIS_802_11_NETWORK_TYPE    wireless_mode;
+ 	CHAR		Ssid[100] = {0};
+-	RTMP_STRING SecurityStr[32] = {0};
++	RTMP_STRING SecurityStr[64] = {0};
+ 	INT ret;
+ 	UINT LeftBufSize;
+ 	//UCHAR max_bw;
+@@ -6403,10 +6403,9 @@ VOID RTMPCommSiteSurveyData(
+ 		return;
+ 	}
+ 	/*Security*/
+-	RTMPZeroMemory(SecurityStr, 32);
+-	LeftBufSize = MsgLen - strlen(msg);
+-	ret = snprintf(SecurityStr, LeftBufSize, "%s/%s", GetAuthModeStr(pBss->AKMMap), GetEncryModeStr(pBss->PairwiseCipher));
+-	if (os_snprintf_error(LeftBufSize, ret)) {
++	RTMPZeroMemory(SecurityStr, sizeof(SecurityStr));
++	ret = snprintf(SecurityStr, sizeof(SecurityStr), "%s/%s", GetAuthModeStr(pBss->AKMMap), GetEncryModeStr(pBss->PairwiseCipher));
++	if (os_snprintf_error(sizeof(SecurityStr), ret)) {
+ 		MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 					"Snprintf failed!\n");
+ 		return;
+@@ -7122,6 +7121,7 @@ VOID RTMPIoctlGetSiteSurvey(
+ 	UINT32		bss_start_idx;
+ 	BSS_ENTRY *pBss;
+ 	UINT32 TotalLen, BufLen = IW_SCAN_MAX_DATA;
++	UINT32 row_start;
+ 	POS_COOKIE pObj = (POS_COOKIE)pAdapter->OS_Cookie;
+ 	UINT32 IfIdx = pObj->ioctl_if;
+ 	struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAdapter, pObj->ioctl_if, pObj->ioctl_if_type);
+@@ -7310,6 +7310,7 @@ VOID RTMPIoctlGetSiteSurvey(
+ 
+ 		if ((strlen(msg) + max_len) >= BufLen)
+ 			break;
++		row_start = strlen(msg);
+ 
+ 		/*No*/
+ 		LeftBufSize = TotalLen - strlen(msg);
+@@ -7460,6 +7461,10 @@ VOID RTMPIoctlGetSiteSurvey(
+ 
+ #endif /* DOT11R_FT_SUPPORT */
+ #endif /* CONFIG_STA_SUPPORT */
++		if (strlen(msg) >= BufLen) {
++			msg[row_start] = '\0';
++			break;
++		}
+ 	}
+ 
+ #ifdef CONFIG_STA_SUPPORT
+diff --git a/mt_wifi/os/linux/mt_data.c b/mt_wifi/os/linux/mt_data.c
+index 37b15d9..ebaeffe 100644
+--- a/mt_wifi/os/linux/mt_data.c
++++ b/mt_wifi/os/linux/mt_data.c
+@@ -1439,12 +1439,12 @@ INT RTMP_AP_IoctlPrepare(RTMP_ADAPTER *pAd, VOID *pCB)
+ 				pObj->pSecConfig = &pAd->WdsTab.WdsEntry[index].wdev.SecConfig;
+ 				break;
+ 			}
++		}
+ 
+-			if (index == MAX_WDS_ENTRY) {
+-				MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_ERROR,
+-					"can not find wds I/F\n");
+-				return -ENETDOWN;
+-			}
++		if (index == MAX_WDS_ENTRY) {
++			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_ERROR,
++				"can not find wds I/F\n");
++			return -ENETDOWN;
+ 		}
+ 	}
+ 
+@@ -1459,12 +1459,13 @@ INT RTMP_AP_IoctlPrepare(RTMP_ADAPTER *pAd, VOID *pCB)
+ 				pObj->pSecConfig = &pAd->StaCfg[index].wdev.SecConfig;
+ 				break;
+ 			}
++		}
+ 
+-			if (index == MAX_APCLI_NUM) {
+-				MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_ERROR,
+-					"can not find Apcli I/F\n");
+-				return -ENETDOWN;
+-			}
++		/* Reject a missing interface after the bounded search. */
++		if (index == MAX_APCLI_NUM) {
++			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_ERROR,
++				"can not find Apcli I/F\n");
++			return -ENETDOWN;
+ 		}
+ 
+ 		APCLI_MR_APIDX_SANITY_CHECK(pObj->ioctl_if);

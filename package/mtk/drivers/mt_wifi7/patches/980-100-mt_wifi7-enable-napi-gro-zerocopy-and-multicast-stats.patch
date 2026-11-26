@@ -1,0 +1,246 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: enable NAPI GRO zero-copy, VLAN/A4 mcast clone, and TX/RX stats
+
+Enable NAPI GRO and TX headroom zero-copy, preserve VLAN/A4 multicast
+packet cloning safety, and accurately account AP/APCLI interface
+TX/RX multicast packet statistics.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/ap/ap_data.c           | 16 +++++++++++++--
+ mt_wifi/common/a4_conn.c       |  2 +-
+ mt_wifi/common/cmm_data.c      | 32 ++++++++++++------------------
+ mt_wifi/hw_ctrl/hwifi_main.c   | 17 ++++++++++++++++
+ mt_wifi/include/os/hwifi_mac.h |  6 ++++++
+ mt_wifi/os/linux/mt_data.c     | 45 ++++++++++++++++++++++++++++++++++++++++--
+ mt_wifi/os/linux/rt_linux.c    |  6 +++++-
+ 7 files changed, 99 insertions(+), 25 deletions(-)
+
+diff --git a/mt_wifi/ap/ap_data.c b/mt_wifi/ap/ap_data.c
+index 669f143..b7ef708 100644
+--- a/mt_wifi/ap/ap_data.c
++++ b/mt_wifi/ap/ap_data.c
+@@ -123,8 +123,20 @@ static VOID ap_tx_ok_update(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, str
+ 	UCHAR  pUserPriority, QIdx;
+ 	struct hdev_ctrl *ctrl = (struct hdev_ctrl *)ad->hdev_ctrl;
+ #endif
+-	BSS_STRUCT * mbss = (txblk->pMbss == NULL && txblk->wdev) ?
+-		&ad->ApCfg.MBSSID[txblk->wdev->wdev_idx] : txblk->pMbss;
++	BSS_STRUCT *mbss = txblk->pMbss;
++
++	if (!mbss && txblk->wdev && txblk->wdev->wdev_type == WDEV_TYPE_AP &&
++	    (UCHAR)txblk->wdev->func_idx < MAX_MBSSID_NUM(ad))
++		mbss = &ad->ApCfg.MBSSID[(UCHAR)txblk->wdev->func_idx];
++
++	if (mbss && txblk->TxFrameType == TX_BMC_FRAME) {
++		mbss->TxCount++;
++		mbss->TransmittedByteCount += txblk->SrcBufLen;
++		if (!entry && txblk->pSrcBufHeader &&
++		    is_multicast_ether_addr(txblk->pSrcBufHeader) &&
++		    !is_broadcast_ether_addr(txblk->pSrcBufHeader))
++			mbss->mcPktsTx++;
++	}
+ 
+ 	if (!entry) {
+ #ifdef TXRX_STAT_SUPPORT
+diff --git a/mt_wifi/common/a4_conn.c b/mt_wifi/common/a4_conn.c
+index b1c54e9..52d0bf1 100644
+--- a/mt_wifi/common/a4_conn.c
++++ b/mt_wifi/common/a4_conn.c
+@@ -468,7 +468,7 @@ PNDIS_PACKET a4_clone_packet(
+ 	struct sk_buff *skb = NULL;
+ 	PNDIS_PACKET pkt_clone = NULL;
+ 
+-	skb = skb_copy(RTPKT_TO_OSPKT(pkt), GFP_ATOMIC);
++	skb = skb_clone(RTPKT_TO_OSPKT(pkt), GFP_ATOMIC);
+ 
+ 	if (skb) {
+ 		skb->dev = if_dev;
+diff --git a/mt_wifi/common/cmm_data.c b/mt_wifi/common/cmm_data.c
+index e8ff700..6664fde 100644
+--- a/mt_wifi/common/cmm_data.c
++++ b/mt_wifi/common/cmm_data.c
+@@ -324,25 +324,20 @@ BOOLEAN check_copy_pkt_needed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PA
+ 
+ PNDIS_PACKET RtmpVlanPktCopy(PRTMP_ADAPTER pAd, struct wifi_dev *wdev, PNDIS_PACKET pkt)
+ {
+-	struct sk_buff *skb = NULL;
+-	PNDIS_PACKET pkt_copy = NULL;
+-	struct net_device *net_dev = wdev->if_dev;
+-
+-	/*why change skb_unshare to skb_copy:*/
+-	/*if skb_copy allocate skb buffer fail, skb_unshare still kfree_skb(old_pkt) and return NULL.*/
+-	/*the old pkt may be free double times.*/
+-	skb = skb_copy(RTPKT_TO_OSPKT(pkt), GFP_ATOMIC);
+-
+-	if (skb) {
+-		skb->dev = net_dev;
+-		pkt_copy = OSPKT_TO_RTPKT(skb);
+-		RTMP_SET_PACKET_WDEV(pkt_copy, wdev->wdev_idx);
+-		RTMP_SET_PACKET_WCID(pkt_copy, WTBL_MAX_NUM(pAd));
+-		/*if copy skb success, should free the old skb.*/
+-		RELEASE_NDIS_PACKET(pAd, pkt, NDIS_STATUS_FAILURE);
+-	}
++	struct sk_buff *skb = RTPKT_TO_OSPKT(pkt);
++	unsigned int hdr_len;
++
++	if (!skb)
++		return NULL;
++
++	hdr_len = min_t(unsigned int, skb->len, LENGTH_802_3 + 8U);
++	if (skb_ensure_writable(skb, hdr_len))
++		return NULL;
+ 
+-	return pkt_copy;
++	skb->dev = wdev->if_dev;
++	RTMP_SET_PACKET_WDEV(pkt, wdev->wdev_idx);
++	RTMP_SET_PACKET_WCID(pkt, WTBL_MAX_NUM(pAd));
++	return pkt;
+ }
+ 
+ static int ap_fp_tx_pkt_vlan_tag_handle(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET *pPkt)
+@@ -5500,7 +5495,6 @@ VOID rx_data_frm_announce(
+ 						pAd->WlanCounters.bcPktsRx.QuadPart++;
+ #endif
+ 					} else {
+-						mbss->mcPktsRx++;
+ #ifdef TR181_SUPPORT
+ 						pAd->WlanCounters.mcPktsRx.QuadPart++;
+ #endif
+diff --git a/mt_wifi/hw_ctrl/hwifi_main.c b/mt_wifi/hw_ctrl/hwifi_main.c
+index d45b9d4..5dd5d4b 100644
+--- a/mt_wifi/hw_ctrl/hwifi_main.c
++++ b/mt_wifi/hw_ctrl/hwifi_main.c
+@@ -2745,3 +2745,20 @@ mtk_rx_ser_event(
+ #endif
+ }
+ EXPORT_SYMBOL(mtk_rx_ser_event);
++
++static DEFINE_PER_CPU(struct napi_struct *, mtk_mac_active_rx_napi);
++
++void mtk_mac_set_active_rx_napi(struct napi_struct *napi)
++{
++	__this_cpu_write(mtk_mac_active_rx_napi, napi);
++}
++EXPORT_SYMBOL(mtk_mac_set_active_rx_napi);
++
++struct napi_struct *mtk_mac_get_active_rx_napi(void)
++{
++	/* Only expose the NAPI context inside active BH/softirq poll execution. */
++	if (unlikely(!in_serving_softirq()))
++		return NULL;
++	return __this_cpu_read(mtk_mac_active_rx_napi);
++}
++EXPORT_SYMBOL(mtk_mac_get_active_rx_napi);
+diff --git a/mt_wifi/include/os/hwifi_mac.h b/mt_wifi/include/os/hwifi_mac.h
+index 398fb1f..b193ca2 100644
+--- a/mt_wifi/include/os/hwifi_mac.h
++++ b/mt_wifi/include/os/hwifi_mac.h
+@@ -681,4 +681,10 @@ static inline void *mtk_find_physical_device(void *hw_dev)
+ 	return physical_device_find_physical_dev(hw_dev);
+ }
+ 
++struct napi_struct;
++
++/* Per-CPU active NAPI context helpers exported for mt_hwifi softirq poll. */
++void mtk_mac_set_active_rx_napi(struct napi_struct *napi);
++struct napi_struct *mtk_mac_get_active_rx_napi(void);
++
+ #endif
+diff --git a/mt_wifi/os/linux/mt_data.c b/mt_wifi/os/linux/mt_data.c
+index ebaeffe..5400a42 100644
+--- a/mt_wifi/os/linux/mt_data.c
++++ b/mt_wifi/os/linux/mt_data.c
+@@ -24,6 +24,9 @@
+  */
+ 
+ #include "rt_config.h"
++#ifdef CONFIG_FAST_NAT_SUPPORT
++#include <net/ra_nat.h>
++#endif /* CONFIG_FAST_NAT_SUPPORT */
+ 
+ /* We assume the s1 is a sting, s2 is a memory space with 6 bytes.
+  * and content of s1 will be changed.
+@@ -353,6 +356,11 @@ void announce_802_3_packet(
+ 
+ 	pAd =  (RTMP_ADAPTER *)pAdSrc;
+ 	napi = pAd->tr_ctl.napi;
++#ifdef HWIFI_SUPPORT
++	/* Use the current CPU NAPI context set by mt_hwifi softirq poll. */
++	if (!napi)
++		napi = mtk_mac_get_active_rx_napi();
++#endif /* HWIFI_SUPPORT */
+ 	ASSERT(pAd);
+ 	ASSERT(pPacket);
+ 
+@@ -360,6 +368,29 @@ void announce_802_3_packet(
+ 		return;
+ 	MEM_DBG_PKT_FREE_INC(pPacket);
+ 
++#ifdef STATS_COUNT_SUPPORT
++	{
++		struct sk_buff *pOSPkt = RTPKT_TO_OSPKT(pRxPkt);
++		struct wifi_dev *wdev = pOSPkt->dev ?
++			RTMP_OS_NETDEV_GET_WDEV(pOSPkt->dev) : NULL;
++
++		if (wdev && pOSPkt->len >= ETH_HLEN &&
++		    is_multicast_ether_addr(pOSPkt->data) &&
++		    !is_broadcast_ether_addr(pOSPkt->data)) {
++#ifdef CONFIG_AP_SUPPORT
++			if (wdev->wdev_type == WDEV_TYPE_AP &&
++			    (UCHAR)wdev->func_idx < MAX_MBSSID_NUM(pAd))
++				pAd->ApCfg.MBSSID[(UCHAR)wdev->func_idx].mcPktsRx++;
++#endif /* CONFIG_AP_SUPPORT */
++#ifdef CONFIG_STA_SUPPORT
++			if (wdev->wdev_type == WDEV_TYPE_STA &&
++			    (UCHAR)wdev->func_idx < MAX_MULTI_STA)
++				pAd->StaCfg[(UCHAR)wdev->func_idx].StaStatistic.mcPktsRx++;
++#endif /* CONFIG_STA_SUPPORT */
++		}
++	}
++#endif /* STATS_COUNT_SUPPORT */
++
+ #ifdef CONFIG_WIFI_PREFETCH_RXDATA
+ 	prefetch(GET_OS_PKT_DATAPTR(pPacket));
+ #endif /* CONFIG_WIFI_PREFETCH_RXDATA */
+@@ -501,10 +532,20 @@ void announce_802_3_packet(
+ 				if (ra_sw_nat_hook_rx(pRxPkt))
+ 					RtmpOsPktRcvHandle(pRxPkt, napi);
+ 			} else {
++				VOID *deliver_napi = napi;
++
+ 				if (RTMP_GET_PACKET_TYPE(pRxPkt)
+-						== RX_PPE_VALID)
++						== RX_PPE_VALID) {
+ 					ra_sw_nat_hook_rx(pRxPkt);
+-				RtmpOsPktRcvHandle(pRxPkt, napi);
++					/*
++					 * Keep PPE bind-learning packets uncoalesced so mtk_hnat
++					 * never receives GRO frag_list SKBs during flow admission.
++					 */
++					if (IS_SPACE_AVAILABLE_HEAD(RTPKT_TO_OSPKT(pRxPkt)) &&
++					    FOE_AI(RTPKT_TO_OSPKT(pRxPkt)) == HIT_UNBIND_RATE_REACH)
++						deliver_napi = NULL;
++				}
++				RtmpOsPktRcvHandle(pRxPkt, deliver_napi);
+ 			}
+ 
+ 			return;
+diff --git a/mt_wifi/os/linux/rt_linux.c b/mt_wifi/os/linux/rt_linux.c
+index c3973bb..61d7cdd 100644
+--- a/mt_wifi/os/linux/rt_linux.c
++++ b/mt_wifi/os/linux/rt_linux.c
+@@ -1707,8 +1707,12 @@ INT RtmpOSNetDevAlloc(
+ 	*new_dev_p = alloc_etherdev(privDataSize);
+ #endif /* LINUX_VERSION_CODE */
+ 
+-	if (*new_dev_p)
++	if (*new_dev_p) {
++		/* Reserve headroom for HNAT FOE metadata, VLAN tag, and tunnel headers. */
++		(*new_dev_p)->needed_headroom =
++			max_t(unsigned short, (*new_dev_p)->needed_headroom, 64);
+ 		return NDIS_STATUS_SUCCESS;
++	}
+ 	else
+ 		return NDIS_STATUS_FAILURE;
+ }

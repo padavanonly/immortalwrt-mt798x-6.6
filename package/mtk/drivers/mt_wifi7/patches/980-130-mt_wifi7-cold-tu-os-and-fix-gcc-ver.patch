@@ -1,0 +1,67 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: compile cold control TUs with -Os and fix gcc check
+
+Compile large cold control/ioctl/WSC/ATE/cfg80211/MCU-command translation
+units with -Os while keeping hot TX/RX/HWIFI data-path units at -O2, and
+replace broken expr CONFIG_GCC_VERSION check with cc-option. Retain
+-DDBG_ENHANCE so MTWF_DBG keeps structured pr_err/pr_warn logging and avoids
+activating latent upstream vendor -Werror=format= mismatches under MTWF_PRINT.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/mt_wifi_ap/Makefile
++++ b/mt_wifi_ap/Makefile
+@@ -44,14 +44,7 @@
+ 
+ TARGET ?= LINUX
+ 
+-ifneq ($(CONFIG_GCC_VERSION), )
+-ifeq ($(shell expr $(CONFIG_GCC_VERSION) \>= 8.4.0), 1)
+-# this option only have after 8.x.x
+-# workaround of bin compare on preflight will get the .rodata.str1.8 and it's abs path of __FILE__
+-# will false the compare due to build server folder is not the same
+-ccflags-y += -fmacro-prefix-map=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))=
+-endif
+-endif
++ccflags-y += $(call cc-option,-fmacro-prefix-map=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))=)
+ 
+ #Using Driver Native feature configuration or not
+ ifneq ($(CONFIG_SUPPORT_OPENWRT),y)
+@@ -284,6 +277,37 @@
+ ccflags-y += -Wframe-larger-than=4096
+ endif
+ 
++# Compile large cold control-plane, configuration, ioctl, ATE, WSC, and MCU command TUs with -Os
++CFLAGS_$(PARENT_DIR)/chip/mcu/cmm_fw_uni_cmd.o += -Os
++CFLAGS_$(PARENT_DIR)/ap/ap_cfg.o += -Os
++CFLAGS_$(PARENT_DIR)/common/cmm_info.o += -Os
++CFLAGS_$(PARENT_DIR)/hw_ctrl/sr_cmd.o += -Os
++CFLAGS_$(PARENT_DIR)/feature/wps/wsc.o += -Os
++CFLAGS_$(PARENT_DIR)/common/cmm_cfg.o += -Os
++CFLAGS_$(PARENT_DIR)/ate/wlan_service/agent/agent.o += -Os
++CFLAGS_$(PARENT_DIR)/profiles/cmm_profile.o += -Os
++CFLAGS_$(PARENT_DIR)/sta/sta_cfg.o += -Os
++CFLAGS_$(PARENT_DIR)/common/cmm_rdm_mt.o += -Os
++CFLAGS_$(PARENT_DIR)/chip/mcu/mt_cmd.o += -Os
++CFLAGS_$(PARENT_DIR)/feature/vow/ap_vow.o += -Os
++CFLAGS_$(PARENT_DIR)/chip/mt7992/mt7992_dbg.o += -Os
++CFLAGS_$(PARENT_DIR)/chip/mt7990/mt7990_dbg.o += -Os
++CFLAGS_$(PARENT_DIR)/ate/ate_agent.o += -Os
++CFLAGS_$(PARENT_DIR)/ap/ap_muru.o += -Os
++CFLAGS_$(PARENT_DIR)/feature/txbf/ap_mumimo.o += -Os
++CFLAGS_$(PARENT_DIR)/chip/mcu/fw_cmd.o += -Os
++CFLAGS_$(PARENT_DIR)/feature/wps/wsc_tlv.o += -Os
++CFLAGS_$(PARENT_DIR)/feature/hs_r2/wnm.o += -Os
++CFLAGS_$(PARENT_DIR)/dvt/pre_cfg.o += -Os
++CFLAGS_$(PARENT_DIR)/profiles/ap_profile.o += -Os
++CFLAGS_$(PARENT_DIR)/ap/ap_autoChSel.o += -Os
++CFLAGS_$(PARENT_DIR)/os/linux/cfg80211/cfg80211.o += -Os
++CFLAGS_$(PARENT_DIR)/os/linux/cfg80211/cfg80211_ap.o += -Os
++CFLAGS_$(PARENT_DIR)/os/linux/cfg80211/cfg80211_util.o += -Os
++CFLAGS_$(PARENT_DIR)/os/linux/ap_ioctl.o += -Os
++CFLAGS_$(PARENT_DIR)/os/linux/sta_ioctl.o += -Os
++CFLAGS_$(PARENT_DIR)/os/linux/rt_profile.o += -Os
++
+ PHONY := clean install uninstall
+ 
+ # Declare the contents of the .PHONY variable as phony.  We keep that

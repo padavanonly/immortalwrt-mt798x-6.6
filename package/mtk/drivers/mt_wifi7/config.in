@@ -56,6 +56,8 @@ endif
 
 choice
 	prompt "Choose First WiFi7 Interface"
+	default MTK_WIFI7_FIRST_IF_MT7992
+
 	config MTK_WIFI7_FIRST_IF_NONE
 	bool "None"
 
@@ -96,6 +98,8 @@ endchoice
 
 choice
 	prompt "Choose Second WiFi7 Interface"
+	default MTK_WIFI7_SECOND_IF_MT7992
+
 	config MTK_WIFI7_SECOND_IF_NONE
 	bool "None"
 
@@ -185,8 +189,13 @@ config  MTK_WIIF7_THIRD_IF_RF_OFFSET
 	hex
 	default 0xd0000 if !MTK_WIFI7_THIRD_IF_NONE
 
+config MTK_WIFI7_THIRD_IF_MT7990
+	bool
+	default y if MTK_THIRD_IF_MT7990
+
 config MTK_WIFI7_MT_WIFI
 	tristate "MT WIFI7 Driver"
+	default m
 	select MTK_WIFI7_BASIC_FUNC if MTK_WIFI7_MT_WIFI
 
 config MTK_WIFI7_MT_WIFI_PATH
@@ -453,19 +462,19 @@ config MTK_WIFI7_TXBF_SUPPORT
 config MTK_WIFI7_FAST_NAT_SUPPORT
        bool "Fast-NAT support"
        depends on MTK_WIFI7_DRIVER
-       default n
+       default y
 
 config MTK_WIFI7_WHNAT_SUPPORT
 	tristate "Wifi Hardware NAT support"
 	depends on MTK_WIFI7_WLAN_HOOK
 	depends on MTK_WIFI7_FAST_NAT_SUPPORT
 	depends on PACKAGE_kmod-hw_nat || PACKAGE_kmod-mediatek_hnat
-	default n
+	default m
 
 config MTK_WIFI7_WARP_V2
 	bool "Warp driver version 2 support"
-	depends on PACKAGE_kmod-warp && MTK_WIFI7_WHNAT_SUPPORT
-	default n
+	depends on (PACKAGE_kmod-warp || PACKAGE_kmod-warp-mt7987 || PACKAGE_kmod-warp-mt7988) && MTK_WIFI7_WHNAT_SUPPORT
+	default y
 
 config MTK_WIFI7_DEBUGGER_SUPPORT
 	tristate "driver tx/rx debugger"
@@ -634,7 +643,7 @@ config MTK_WIFI7_HIGH_PRIO_QUEUE_SUPPORT
 config MTK_WIFI7_RED_SUPPORT
         bool "RED(Random Early Drop) support"
 	depends on MTK_WIFI7_DRIVER
-        default y
+        default n
 
 config MTK_WIFI7_FQ_SCH_SUPPORT
         bool "Fair Queueing support"
@@ -711,12 +720,14 @@ config MTK_WIFI7_FW_BIN_LOAD
 config MTK_WIFI7_SKU_TYPE
        depends on MTK_WIFI7_DRIVER
        string "SKU Type Eagle: BE19000 or BE13000_255, Kite: BE7200, BE6500, BE5040, BE3600SDB"
+       default "BE5040" if TARGET_mediatek_filogic_hwifi
+       default "BE7200" if TARGET_mediatek_filogic_hwifi_a73
        default "BE19000"
 
 config MTK_WIFI7_FW_LOG_TYPE
        depends on MTK_WIFI7_DRIVER
        string "FW log type: string_log or idx_log"
-       default "string_log"
+       default "idx_log"
 
 config MTK_WIFI7_FW_CASAN_SUPPORT
        depends on MTK_WIFI7_DRIVER
@@ -850,6 +861,7 @@ endchoice
 
 config MTK_WIFI7_MT_AP_SUPPORT
 	tristate "Mediatek AP support"
+	default m
 	select MTK_WIFI7_WIRELESS_EXT
 	select MTK_WIFI7_WEXT_SPY
 	select MTK_WIFI7_WEXT_PRIV
@@ -1153,7 +1165,7 @@ config MTK_WIFI7_LED_CONTROL_SUPPORT
 config MTK_WIFI7_WLAN_HOOK
        bool "WLAN hook Support"
        depends on MTK_WIFI7_DRIVER
-       default n
+       default y
 
 config MTK_WIFI7_RADIUS_ACCOUNTING_SUPPORT
 	bool "Radius Accounting Support"
@@ -1218,12 +1230,12 @@ config MTK_WIFI7_LINUX_NET_TXQ_SUPPORT
 config  MTK_WIFI7_WPA3_SUPPORT
         bool "WPA3 Support"
         depends on MTK_WIFI7_MT_AP_SUPPORT
-        default n
+        default y
 
 config  MTK_WIFI7_OWE_SUPPORT
         bool "Enhanced Open Support"
         depends on MTK_WIFI7_MT_AP_SUPPORT
-        default n
+        default y
 
 config  MTK_WIFI7_RSNO_SUPPORT
         bool "RSN Override Support"
@@ -1233,7 +1245,7 @@ config  MTK_WIFI7_RSNO_SUPPORT
 config  MTK_WIFI7_SINGLE_SKU
         bool "Single SKU Support"
         depends on MTK_WIFI7_MT_AP_SUPPORT
-        default n
+        default y
 
 config MTK_WIFI7_PROFILING_SUPPORT
         bool "WIFI Profiling Support"
