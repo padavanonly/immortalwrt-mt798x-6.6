@@ -1,0 +1,185 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "5G Modem Chip Temperature (AT+QTEMP / AT^CHIPTEMP)"
+msgstr ""
+
+msgid "5G Modem Temperature"
+msgstr ""
+
+msgid "Active Sensor Source"
+msgstr ""
+
+msgid "Active Temperature"
+msgstr ""
+
+msgid "Allow the WPS hardware button to toggle between Turbo Mode and Smart Thermal Mode."
+msgstr ""
+
+msgid "Auto Detect (Devicetree Cooling Levels)"
+msgstr ""
+
+msgid "CPU Temperature"
+msgstr ""
+
+msgid "CPU Thermal Zone (thermal_zone0)"
+msgstr ""
+
+msgid "Configuration has been applied."
+msgstr ""
+
+msgid "Configuration was applied, but status refresh failed: %s"
+msgstr ""
+
+msgid "Configure cooling fan operating mode, temperature sensor source, and hardware thermal curve."
+msgstr ""
+
+msgid "Controller Status"
+msgstr ""
+
+msgid "Cooling Policy Settings"
+msgstr ""
+
+msgid "Deadband margin to suppress rapid fan speed oscillation (0 - 20)."
+msgstr ""
+
+msgid "Failed to apply configuration: %s"
+msgstr ""
+
+msgid "Fan Control"
+msgstr ""
+
+msgid "Fan RPM"
+msgstr ""
+
+msgid "Fan Speed"
+msgstr ""
+
+msgid "Fan status refresh failed: %s"
+msgstr ""
+
+msgid "Full Speed Temperature (°C)"
+msgstr ""
+
+msgid "Full Speed Temperature must be greater than Start Temperature."
+msgstr ""
+
+msgid "Hardware Driver"
+msgstr ""
+
+msgid "Hysteresis (°C)"
+msgstr ""
+
+msgid "Inverted"
+msgstr ""
+
+msgid "Inverted (0 = Full Speed, 255 = Off)"
+msgstr ""
+
+msgid "Kernel Thermal Mode"
+msgstr ""
+
+msgid "Kernel Thermal Mode (Native Driver)"
+msgstr ""
+
+msgid "Low Speed Mode"
+msgstr ""
+
+msgid "Low Speed Mode (PWM 128 / 50%)"
+msgstr ""
+
+msgid "Max (CPU & 5G Modem)"
+msgstr ""
+
+msgid "Max (CPU & 5G Modem, fallback to CPU)"
+msgstr ""
+
+msgid "Maximum PWM (0 - 255)"
+msgstr ""
+
+msgid "Maximum PWM change per smart thermal control cycle (1 - 255)."
+msgstr ""
+
+msgid "Maximum PWM must be greater than or equal to Minimum PWM."
+msgstr ""
+
+msgid "Minimum PWM (0 - 255)"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
+
+msgid "Normal (0 = Off, 255 = Full Speed)"
+msgstr ""
+
+msgid "Normal Mode"
+msgstr ""
+
+msgid "Normal Mode (PWM 192 / 75%)"
+msgstr ""
+
+msgid "Operating Mode"
+msgstr ""
+
+msgid "PWM Polarity"
+msgstr ""
+
+msgid "Realtime Status"
+msgstr ""
+
+msgid "Set fixed PWM value between 0 (0%) and 255 (100%)."
+msgstr ""
+
+msgid "Silent Mode"
+msgstr ""
+
+msgid "Silent Mode (PWM 64 / 25%)"
+msgstr ""
+
+msgid "Slew Rate (PWM Step / Cycle)"
+msgstr ""
+
+msgid "Smart Thermal Mode"
+msgstr ""
+
+msgid "Smart Thermal Mode (Auto)"
+msgstr ""
+
+msgid "Start Temperature (°C)"
+msgstr ""
+
+msgid "Stepless Custom PWM Mode"
+msgstr ""
+
+msgid "Stepless Mode"
+msgstr ""
+
+msgid "Stepless PWM Duty (0 - 255)"
+msgstr ""
+
+msgid "Temperature Sensor Source"
+msgstr ""
+
+msgid "Temperature threshold where smart fan ramp begins (20 - 95 °C)."
+msgstr ""
+
+msgid "Temperature threshold where smart fan reaches Maximum PWM (must exceed Start Temperature)."
+msgstr ""
+
+msgid "Thermal Curve & Hardware Settings"
+msgstr ""
+
+msgid "Turbo Mode"
+msgstr ""
+
+msgid "Turbo Mode (PWM 255 / 100%)"
+msgstr ""
+
+msgid "WPS Button Turbo Toggle"
+msgstr ""
+
+msgid "WPS button pressed: Restored to Smart Thermal Mode."
+msgstr ""
+
+msgid "WPS button pressed: Turbo cooling mode enabled."
+msgstr ""

@@ -1,0 +1,20 @@
+#!/bin/sh /etc/rc.common
+START=99
+EXTRA_COMMANDS="worker_event running"
+
+run_ctl() {
+	local script="/usr/libexec/rpcd/luci.fancontrol"
+	if [ -n "$FANCTRL_ROOT" ] && [ -f "${FANCTRL_ROOT}/usr/libexec/rpcd/luci.fancontrol" ]; then
+		script="${FANCTRL_ROOT}/usr/libexec/rpcd/luci.fancontrol"
+	fi
+	ucode "$script" ctl "$@" >/dev/null
+}
+
+start()        { run_ctl start; }
+stop()         { run_ctl stop; }
+restart()      { run_ctl restart; }
+reload()       { run_ctl restart; }
+worker_event() { run_ctl worker_event "$1"; }
+running()      { return 0; }
+
+[ -z "$initscript" ] && [ -n "$1" ] && { "$@"; exit $?; }

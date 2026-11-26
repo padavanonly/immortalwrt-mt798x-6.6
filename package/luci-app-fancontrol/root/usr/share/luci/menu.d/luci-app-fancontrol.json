@@ -1,13 +1,16 @@
 {
-	"admin/services/fancontrol": {
+	"admin/system/fancontrol": {
 		"title": "Fan Control",
-		"order": 90,
+		"order": 60,
 		"action": {
 			"type": "view",
 			"path": "fancontrol"
 		},
 		"depends": {
-			"acl": [ "luci-app-fancontrol" ]
+			"acl": [ "luci-app-fancontrol" ],
+			"ubus": {
+				"luci.fancontrol": [ "getStatus" ]
+			}
 		}
 	}
 }

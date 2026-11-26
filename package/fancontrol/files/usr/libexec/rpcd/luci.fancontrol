@@ -1,0 +1,1455 @@
+#!/usr/bin/env ucode
+// Copyright (C) 2026 ImmortalWrt.org
+// Native ucode rpcd backend and transactional lifecycle controller for unified fancontrol
+
+'use strict';
+
+import * as fs from 'fs';
+
+unshift(REQUIRE_SEARCH_PATH, '/usr/share/ucode/*.uc');
+let __sp = sourcepath(0, true);
+if (__sp)
+	unshift(REQUIRE_SEARCH_PATH, __sp + '/../../share/ucode/*.uc');
+let __fc_lib = getenv('FANCTRL_UCODE_DIR');
+if (__fc_lib)
+	unshift(REQUIRE_SEARCH_PATH, __fc_lib + '/*.uc');
+
+let fc = require('fancontrol.common');
+
+let libubus = null;
+try {
+	libubus = require('ubus');
+}
+catch (e) {
+	libubus = null;
+}
+
+let bus = libubus ? libubus.connect(null, 5) : null;
+
+const CONTROL_LOCK_PATH = '/var/run/fancontrol.control.lock';
+const JOURNAL_PATH = '/var/run/fancontrol.journal.json';
+let gen_seq = 0;
+
+function service_call(method, args) {
+	if (!libubus)
+		return { ok: false, reply: null, error: 'ubus_unavailable' };
+	if (!bus)
+		bus = libubus.connect(null, 5);
+	if (!bus)
+		return { ok: false, reply: null, error: 'ubus_connect_failed' };
+	let reply = bus.call('service', method, args);
+	let error = libubus.error();
+	if (error == 'Connection is closed' || error == 'Connection failed')
+		bus = null;
+	return {
+		ok: error == null,
+		reply: reply,
+		error: error
+	};
+}
+
+function acquire_control_lock(timeout_ms) {
+	if (timeout_ms == null)
+		timeout_ms = int(getenv('FANCTRL_LOCK_TIMEOUT_MS') || 3000);
+	let lock_path = fc.rpath(CONTROL_LOCK_PATH);
+	fc.ensure_parent_dir(lock_path);
+	let fh = null;
+	try {
+		fh = fs.open(lock_path, 'ae', 0600);
+	}
+	catch (e) {
+		return null;
+	}
+	if (!fh)
+		return null;
+
+	let elapsed = 0;
+	while (true) {
+		if (fh.lock('xn'))
+			return fh;
+		if (elapsed >= timeout_ms)
+			break;
+		sleep(50);
+		elapsed += 50;
+	}
+	fh.close();
+	return null;
+}
+
+function release_control_lock(fh) {
+	if (!fh)
+		return;
+	try { fh.lock('u'); } catch (e) {}
+	try { fh.close(); } catch (e) {}
+}
+
+function resolve_worker_script() {
+	let target = fc.rpath('/usr/libexec/fancontrol/worker.uc');
+	if (fs.access(target, 'r'))
+		return target;
+	if (__sp) {
+		let sib = fs.realpath(__sp + '/../fancontrol/worker.uc');
+		if (sib && fs.access(sib, 'r'))
+			return sib;
+	}
+	return '/usr/libexec/fancontrol/worker.uc';
+}
+
+function resolve_rpcd_script() {
+	let target = fc.rpath('/usr/libexec/rpcd/luci.fancontrol');
+	if (fs.access(target, 'r'))
+		return target;
+	if (__sp && fs.access(__sp + '/luci.fancontrol', 'r'))
+		return __sp + '/luci.fancontrol';
+	return '/usr/libexec/rpcd/luci.fancontrol';
+}
+
+function resolve_ucode_bin() {
+	if (fs.access('/usr/bin/ucode', 'x'))
+		return '/usr/bin/ucode';
+	return 'ucode';
+}
+
+function read_owner_locked() {
+	let op = fc.rpath(fc.OWNER_PATH);
+	if (!fs.access(op, 'r'))
+		return null;
+	let raw = fs.readfile(op);
+	if (raw == null || trim(raw) == '')
+		return null;
+	try {
+		let obj = json(raw);
+		return (type(obj) == 'object') ? obj : null;
+	}
+	catch (e) {
+		return null;
+	}
+}
+
+function new_generation(prefix) {
+	let pfx = (prefix && prefix != '') ? prefix : 'gen';
+	let mono = clock(true);
+	let sec = mono ? mono[0] : time();
+	let nsec = mono ? mono[1] : 0;
+	let self_pid = fc.read_self_pid() || '0';
+	gen_seq += 1;
+	return `${pfx}-${sec}-${nsec}-${self_pid}-${gen_seq}`;
+}
+
+function query_instance_locked() {
+	let res = service_call('list', { name: 'fancontrol' });
+	if (!res.ok || type(res.reply) != 'object')
+		return { ok: false, present: false, running: false, pid: null, respawn: false };
+
+	let srv = res.reply.fancontrol;
+	if (srv == null)
+		return { ok: true, present: false, running: false, pid: null, respawn: false };
+	if (type(srv) != 'object')
+		return { ok: false, present: false, running: false, pid: null, respawn: false };
+
+	if (srv.instances == null)
+		return { ok: true, present: false, running: false, pid: null, respawn: false };
+	if (type(srv.instances) != 'object')
+		return { ok: false, present: false, running: false, pid: null, respawn: false };
+
+	let inst = srv.instances.worker;
+	if (inst == null)
+		return { ok: true, present: false, running: false, pid: null, respawn: false };
+	if (type(inst) != 'object')
+		return { ok: false, present: false, running: false, pid: null, respawn: false };
+
+	let running = (inst.running === true);
+	let pid = null;
+	if (running) {
+		if (inst.pid == null || !match(`${inst.pid}`, /^\d+$/))
+			return { ok: false, present: true, running: true, pid: null, respawn: false };
+		pid = `${inst.pid}`;
+	}
+
+	return {
+		ok: true,
+		present: true,
+		running: running,
+		pid: pid,
+		respawn: (type(inst.respawn) == 'object')
+	};
+}
+
+function start_smart_locked(generation) {
+	if (!generation || type(generation) != 'string' || trim(generation) == '')
+		generation = new_generation('smart');
+
+	let worker_path = resolve_worker_script();
+	let rpcd_path = resolve_rpcd_script();
+	let ucode_bin = resolve_ucode_bin();
+
+	fc.unlink_safe(fc.READY_PATH);
+	fc.unlink_safe(fc.OWNER_PATH);
+
+	let req = {
+		name: 'fancontrol',
+		autostart: true,
+		instances: {
+			worker: {
+				command: [ucode_bin, worker_path, generation],
+				respawn: ['3600', '2', '5'],
+				stdout: false,
+				stderr: true
+			}
+		},
+		triggers: [
+			[
+				'instance.stop',
+				[
+					'if',
+					['and', ['eq', 'service', 'fancontrol'], ['eq', 'instance', 'worker']],
+					['run_script', rpcd_path, 'ctl', 'worker_event', 'stop']
+				],
+				1000
+			],
+			[
+				'instance.fail',
+				[
+					'if',
+					['and', ['eq', 'service', 'fancontrol'], ['eq', 'instance', 'worker']],
+					['run_script', rpcd_path, 'ctl', 'worker_event', 'fail']
+				],
+				1000
+			]
+		]
+	};
+	let res = service_call('set', req);
+	return res.ok;
+}
+
+function is_target_alive(t) {
+	if (!t || !t.pid || t.start_ticks == null)
+		return false;
+	if (!fc.is_confirmed_worker_pid(t.pid))
+		return false;
+	let cur_ticks = fc.proc_start_ticks(t.pid);
+	return cur_ticks != null && cur_ticks == `${t.start_ticks}`;
+}
+
+function any_target_alive(targets) {
+	for (let t in targets) {
+		if (is_target_alive(t))
+			return true;
+	}
+	return false;
+}
+
+function send_signal_to_pid(pid, sig) {
+	system(['kill', `-${sig}`, `${pid}`]);
+}
+
+function add_stop_target(targets, pid_raw, expected_ticks) {
+	let pid_str = (pid_raw != null) ? trim(`${pid_raw}`) : '';
+	if (!match(pid_str, /^[1-9][0-9]*$/))
+		return;
+	let ticks1 = fc.proc_start_ticks(pid_str);
+	if (ticks1 == null)
+		return;
+	if (!fc.is_confirmed_worker_pid(pid_str))
+		return;
+	let ticks2 = fc.proc_start_ticks(pid_str);
+	if (ticks2 == null || ticks2 != ticks1)
+		return;
+	if (expected_ticks != null) {
+		let exp = trim(`${expected_ticks}`);
+		if (!match(exp, /^[0-9]+$/) || ticks1 != exp)
+			return;
+	}
+	for (let existing in targets) {
+		if (existing.pid == pid_str && existing.start_ticks == ticks1)
+			return;
+	}
+	push(targets, { pid: pid_str, start_ticks: ticks1 });
+}
+
+function collect_live_worker_targets(targets) {
+	let self_pid = fc.read_self_pid();
+	let paths = fs.glob('/proc/[0-9]*/cmdline');
+	if (type(paths) != 'array' || length(paths) == 0)
+		return { ok: false, live: 0 };
+
+	let script = resolve_worker_script();
+	let live = 0;
+	for (let p in paths) {
+		let m = match(p, /^\/proc\/([1-9][0-9]*)\/cmdline$/);
+		if (!m)
+			continue;
+		let pid = m[1];
+		if (self_pid != null && pid == self_pid)
+			continue;
+
+		let raw = fs.readfile(p);
+		if (raw == null || raw == '')
+			continue;
+
+		let args = split(raw, chr(0));
+		if (length(args) == 0)
+			continue;
+
+		let is_match = (args[0] == script) ||
+			(length(args) >= 2 && (args[1] == script || index(args[1], 'worker.uc') >= 0) &&
+			 (args[0] == 'ucode' || args[0] == '/usr/bin/ucode' || index(args[0], '/ucode') >= 0)) ||
+			(index(args[0], 'fancontrol/worker.uc') >= 0);
+		if (!is_match)
+			continue;
+
+		let ticks = fc.proc_start_ticks(pid);
+		if (ticks == null) {
+			if (fc.is_confirmed_worker_pid(pid))
+				return { ok: false, live: live };
+			continue;
+		}
+
+		add_stop_target(targets, pid, ticks);
+		if (is_target_alive({ pid: pid, start_ticks: ticks }))
+			live += 1;
+	}
+	return { ok: true, live: live };
+}
+
+function stop_clock_ms() {
+	let mono = clock(true);
+	if (mono && length(mono) >= 2)
+		return (mono[0] * 1000) + int(mono[1] / 1000000);
+	return time() * 1000;
+}
+
+function collect_recorded_worker_targets(targets, st) {
+	if (st && st.running && st.pid != null)
+		add_stop_target(targets, st.pid, null);
+
+	let owner = read_owner_locked();
+	let owner_pid = (owner && owner.pid != null) ? trim(`${owner.pid}`) : null;
+	let owner_ticks = (owner && owner.start_ticks != null && match(`${owner.start_ticks}`, /^[0-9]+$/))
+		? trim(`${owner.start_ticks}`) : null;
+	if (owner_pid != null && owner_ticks != null)
+		add_stop_target(targets, owner_pid, owner_ticks);
+
+	let pid_str = fc.readfile_trim(fc.PID_PATH);
+	if (pid_str && match(pid_str, /^[1-9][0-9]*$/)) {
+		if (owner_pid != null && owner_pid == pid_str) {
+			if (owner_ticks != null)
+				add_stop_target(targets, pid_str, owner_ticks);
+		}
+		else {
+			add_stop_target(targets, pid_str, null);
+		}
+	}
+
+	let ready_str = fc.readfile_trim(fc.READY_PATH);
+	if (ready_str && match(ready_str, /^[1-9][0-9]*$/)) {
+		if (owner_pid != null && owner_pid == ready_str) {
+			if (owner_ticks != null)
+				add_stop_target(targets, ready_str, owner_ticks);
+		}
+		else {
+			add_stop_target(targets, ready_str, null);
+		}
+	}
+}
+
+function clear_worker_markers_locked() {
+	let ok = fc.unlink_verified(fc.PID_PATH) &&
+		 fc.unlink_verified(fc.OWNER_PATH);
+	if (!ok)
+		return false;
+
+	let ready_fp = fc.rpath(fc.READY_PATH);
+	if (!fc.path_absent_verified(ready_fp)) {
+		let ready_val = fc.readfile_trim(fc.READY_PATH);
+		if (ready_val == 'manual' || ready_val == 'kernel')
+			fc.unlink_safe(fc.READY_PATH);
+		else if (!fc.unlink_verified(fc.READY_PATH))
+			return false;
+	}
+	return true;
+}
+
+function stop_worker_locked() {
+	let initial = query_instance_locked();
+	if (!initial.ok)
+		return false;
+
+	let targets = [];
+	collect_recorded_worker_targets(targets, initial);
+
+	let del_sent = false;
+	if (initial.present) {
+		let del = service_call('delete', { name: 'fancontrol', instance: 'worker' });
+		del_sent = true;
+		if (!del.ok) {
+			let q_chk = query_instance_locked();
+			if (!q_chk.ok || q_chk.present)
+				return false;
+		}
+	}
+
+	let deadline = stop_clock_ms() + 7000;
+	let quiet_rounds = 0;
+	let term_at = {};
+	let killed = {};
+	let procd_running_since = null;
+	let procd_killed = false;
+
+	while (stop_clock_ms() < deadline) {
+		let now = stop_clock_ms();
+		let q = query_instance_locked();
+		if (!q.ok)
+			return false;
+
+		if (q.present && !del_sent) {
+			let del = service_call('delete', { name: 'fancontrol', instance: 'worker' });
+			del_sent = true;
+			if (!del.ok) {
+				q = query_instance_locked();
+				if (!q.ok || q.present)
+					return false;
+			}
+		}
+
+		collect_recorded_worker_targets(targets, q);
+		let collected = collect_live_worker_targets(targets);
+		if (!collected.ok)
+			return false;
+
+		if (!q.present && collected.live == 0 && !any_target_alive(targets)) {
+			quiet_rounds += 1;
+			if (quiet_rounds >= 2)
+				return clear_worker_markers_locked();
+		}
+		else {
+			quiet_rounds = 0;
+			if (q.present && q.running) {
+				if (procd_running_since == null)
+					procd_running_since = now;
+				else if (!procd_killed && (now - procd_running_since >= 500)) {
+					service_call('signal', { name: 'fancontrol', instance: 'worker', signal: 9 });
+					procd_killed = true;
+				}
+			}
+			else {
+				procd_running_since = null;
+				procd_killed = false;
+			}
+
+			for (let t in targets) {
+				if (!is_target_alive(t))
+					continue;
+				let key = `${t.pid}:${t.start_ticks}`;
+				if (term_at[key] == null) {
+					send_signal_to_pid(t.pid, 'TERM');
+					term_at[key] = now;
+				}
+				else if (!killed[key] && (now - term_at[key] >= 500)) {
+					send_signal_to_pid(t.pid, '9');
+					killed[key] = true;
+				}
+			}
+		}
+
+		sleep(50);
+	}
+
+	return false;
+}
+
+function wait_ready_locked(generation, fan) {
+	if (type(generation) != 'string' || generation == '' || !fan || !fan.ok)
+		return { ready: false, pwm: null };
+
+	let deadline = stop_clock_ms() + 5000;
+	while (stop_clock_ms() < deadline) {
+		sleep(50);
+		let ready_pid = fc.readfile_trim(fc.READY_PATH);
+		if (!ready_pid || !match(ready_pid, /^[0-9]+$/))
+			continue;
+
+		let pid_str = fc.readfile_trim(fc.PID_PATH);
+		if (pid_str != ready_pid)
+			continue;
+
+		let owner = read_owner_locked();
+		if (!owner || type(owner) != 'object')
+			continue;
+		if (owner.pid == null || `${owner.pid}` != ready_pid)
+			continue;
+		if (type(owner.generation) != 'string' || owner.generation != generation)
+			continue;
+		if (owner.start_ticks == null || !match(`${owner.start_ticks}`, /^[0-9]+$/))
+			continue;
+
+		let actual_ticks = fc.proc_start_ticks(ready_pid);
+		if (actual_ticks == null || `${owner.start_ticks}` != actual_ticks)
+			continue;
+
+		let st_inst = query_instance_locked();
+		if (!st_inst.ok || !st_inst.present || !st_inst.running || st_inst.pid == null ||
+		    `${st_inst.pid}` != ready_pid || !fc.is_confirmed_worker_pid(ready_pid))
+			continue;
+
+		let tm_mode = fc.readfile_trim('/sys/class/thermal/thermal_zone0/mode');
+		let cur_pwm = fc.read_fan_logical(fan, null);
+		let pwm_ok = fan.writable_only ? true : (cur_pwm != null && cur_pwm >= 0 && cur_pwm <= 255);
+
+		if (tm_mode == 'disabled' && pwm_ok)
+			return { ready: true, pwm: cur_pwm };
+	}
+	return { ready: false, pwm: null };
+}
+
+function latch_emergency_full_speed_locked(fan, cfg) {
+	if (!fan || !fan.ok) {
+		let c = cfg || fc.load_config().cfg;
+		let d = fc.discover_fan(c);
+		if (d.ok)
+			fan = d;
+	}
+	let ok_dis = fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'disabled\n');
+	if (fan && fan.enable_path)
+		fc.write_verified(fan.enable_path, '1\n');
+	let ok_pwm = (fan && fan.ok) ? fc.write_fan_logical(fan, 255) : false;
+	let ok_en = fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'enabled\n');
+	return { ok_tm: ok_dis && ok_en, ok_pwm: ok_pwm };
+}
+
+function apply_manual_locked(cfg, target_pwm) {
+	let fan = fc.discover_fan(cfg);
+	if (!fan.ok || !fc.check_thermal_rw() || fc.read_cpu_temp_mC() == null)
+		return { ok: false, error: fan.error || 'Hardware or thermal sensor validation failed' };
+
+	if (!fc.write_fan_logical(fan, target_pwm))
+		return { ok: false, error: 'Failed to write initial target PWM' };
+
+	if (!fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'disabled\n'))
+		return { ok: false, error: 'Failed to disable kernel thermal mode' };
+
+	if (fan.enable_path) {
+		if (!fc.write_verified(fan.enable_path, '1\n'))
+			return { ok: false, error: 'Failed to enable manual PWM mode' };
+	}
+
+	if (!fc.write_fan_logical(fan, target_pwm))
+		return { ok: false, error: 'Failed to verify PWM readback after thermal handover' };
+
+	if (!fc.write_atomic_verified(fc.CONFIG_PATH, fc.format_config(cfg)))
+		return { ok: false, error: 'Failed to persist /etc/config/fancontrol' };
+
+	if (cfg.mode == 'turbo') {
+		if (!fc.write_atomic_verified(fc.WPS_ACTIVE_PATH, '1\n'))
+			return { ok: false, error: 'Failed to write WPS turbo marker' };
+	}
+	else {
+		fc.unlink_safe(fc.WPS_ACTIVE_PATH);
+	}
+
+	if (!fc.write_atomic_verified(fc.READY_PATH, 'manual\n'))
+		return { ok: false, error: 'Failed to write ready marker' };
+
+	if (fc.readfile_trim(fc.READY_PATH) != 'manual')
+		return { ok: false, error: 'Manual fan control readiness verification failed' };
+
+	fc.unlink_safe(fc.PID_PATH);
+	fc.unlink_safe(fc.OWNER_PATH);
+	return { ok: true, error: null, fan: fan };
+}
+
+function apply_kernel_locked(cfg) {
+	let fan = fc.discover_fan(cfg);
+	if (!fc.check_thermal_rw())
+		return { ok: false, error: 'Kernel thermal mode sysfs is not writable' };
+
+	if (!fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'enabled\n'))
+		return { ok: false, error: 'Failed to enable kernel thermal control' };
+
+	if (fan.ok && fan.enable_path) {
+		if (!fc.write_verified(fan.enable_path, '2\n'))
+			return { ok: false, error: 'Failed to set pwm1_enable to automatic kernel control' };
+	}
+
+	if (!fc.write_atomic_verified(fc.CONFIG_PATH, fc.format_config(cfg)))
+		return { ok: false, error: 'Failed to persist /etc/config/fancontrol' };
+
+	fc.unlink_safe(fc.WPS_ACTIVE_PATH);
+	if (!fc.write_atomic_verified(fc.READY_PATH, 'kernel\n'))
+		return { ok: false, error: 'Failed to write ready marker' };
+
+	fc.unlink_safe(fc.PID_PATH);
+	fc.unlink_safe(fc.OWNER_PATH);
+	return { ok: true, error: null, fan: fan };
+}
+
+function recovery_failed_locked(reason) {
+	let msg = (reason && reason != '')
+		? `journal_recovery_failed: ${reason}\n`
+		: 'journal_recovery_failed\n';
+	fc.write_atomic_verified(fc.ERROR_PATH, msg);
+	return false;
+}
+
+function restore_smart_locked(cfg, fan) {
+	if (!stop_worker_locked())
+		return recovery_failed_locked('worker_stop_timeout');
+
+	if (!fan || !fan.ok)
+		fan = fc.discover_fan(cfg);
+	if (!fan.ok) {
+		fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'enabled\n');
+		return false;
+	}
+
+	let gen = new_generation('rollback');
+	if (!start_smart_locked(gen)) {
+		stop_worker_locked();
+		latch_emergency_full_speed_locked(fan, cfg);
+		return false;
+	}
+
+	let st = wait_ready_locked(gen, fan);
+	if (!st.ready) {
+		stop_worker_locked();
+		latch_emergency_full_speed_locked(fan, cfg);
+		return false;
+	}
+
+	return true;
+}
+
+function restore_snapshot_locked(snap) {
+	if (!snap || type(snap) != 'object')
+		return false;
+
+	if (!stop_worker_locked())
+		return recovery_failed_locked('worker_stop_timeout');
+
+	let restore_ok = true;
+	let tm_en_ok = fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'enabled\n');
+
+	let cfg_ok = true;
+	if (!fc.restore_file_or_unlink(fc.CONFIG_PATH, snap.old_config))
+		cfg_ok = false;
+	if (!fc.restore_file_or_unlink(fc.WPS_ACTIVE_PATH, snap.old_wps))
+		cfg_ok = false;
+
+	let old_cfg = fc.load_config().cfg;
+	if (!cfg_ok) {
+		latch_emergency_full_speed_locked(null, old_cfg);
+		return recovery_failed_locked('configuration_restore_failed');
+	}
+
+	let prev_mode = old_cfg.mode || 'smart';
+	let pwm_restore_required = (prev_mode == 'smart' && snap.was_worker_running) ||
+				   (prev_mode != 'smart' && prev_mode != 'kernel' && snap.old_thermal_mode == 'disabled');
+	let fan = fc.discover_fan(old_cfg);
+
+	if (pwm_restore_required && !fan.ok) {
+		fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'enabled\n');
+		return recovery_failed_locked('fan_hardware_unavailable');
+	}
+
+	if (prev_mode == 'kernel') {
+		if (!tm_en_ok)
+			restore_ok = false;
+		if (fan.ok && fan.enable_path && !fc.write_verified(fan.enable_path, '2\n'))
+			restore_ok = false;
+		if (!fc.restore_file_or_unlink(fc.READY_PATH, snap.old_ready))
+			restore_ok = false;
+		fc.unlink_safe(fc.PID_PATH);
+		fc.unlink_safe(fc.OWNER_PATH);
+	}
+	else if (prev_mode != 'smart') {
+		fc.unlink_safe(fc.PID_PATH);
+		fc.unlink_safe(fc.OWNER_PATH);
+		if (snap.old_thermal_mode == 'disabled') {
+			let old_raw = (snap.old_raw_pwm != null) ? trim(`${snap.old_raw_pwm}`) : '';
+			if (!match(old_raw, /^-?\d+$/)) {
+				latch_emergency_full_speed_locked(fan, old_cfg);
+				fc.unlink_safe(fc.READY_PATH);
+				return recovery_failed_locked('invalid_snapshot_pwm');
+			}
+			let ok_init = fc.write_fan_raw_exact(fan, int(old_raw));
+			let ok_tm = fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'disabled\n');
+			let ok_en = !fan.enable_path || fc.write_verified(fan.enable_path, '1\n');
+			let ok_rb = ok_init && fc.write_fan_raw_exact(fan, int(old_raw));
+			if (ok_tm && ok_en && ok_rb) {
+				if (!fc.restore_file_or_unlink(fc.READY_PATH, snap.old_ready))
+					restore_ok = false;
+			}
+			else {
+				latch_emergency_full_speed_locked(fan, old_cfg);
+				fc.unlink_safe(fc.READY_PATH);
+				restore_ok = false;
+			}
+		}
+		else {
+			if (!tm_en_ok)
+				restore_ok = false;
+			if (fan.ok && fan.enable_path && !fc.write_verified(fan.enable_path, '2\n'))
+				restore_ok = false;
+			if (!fc.unlink_verified(fc.READY_PATH))
+				restore_ok = false;
+		}
+	}
+	else if (snap.was_worker_running) {
+		if (!restore_smart_locked(old_cfg, fan))
+			restore_ok = false;
+	}
+	else {
+		if (!tm_en_ok)
+			restore_ok = false;
+		fc.unlink_safe(fc.PID_PATH);
+		fc.unlink_safe(fc.OWNER_PATH);
+		if (fan.ok && fan.enable_path && !fc.write_verified(fan.enable_path, '2\n'))
+			restore_ok = false;
+		if (!fc.unlink_verified(fc.READY_PATH))
+			restore_ok = false;
+	}
+
+	if (!restore_ok)
+		return recovery_failed_locked(null);
+
+	return true;
+}
+
+function recover_uncommitted_journal_locked() {
+	let jpath = fc.rpath(JOURNAL_PATH);
+	if (fc.path_absent_verified(jpath))
+		return true;
+
+	let st = fs.lstat(jpath);
+	let raw = (st && st.type == 'file') ? fs.readfile(jpath) : null;
+	let snap = null;
+	if (raw != null) {
+		try { snap = json(raw); } catch (e) { snap = null; }
+	}
+
+	if (!snap || type(snap) != 'object') {
+		if (!stop_worker_locked())
+			return recovery_failed_locked('worker_stop_timeout');
+		latch_emergency_full_speed_locked(null, null);
+		return recovery_failed_locked(null);
+	}
+
+	let ok = restore_snapshot_locked(snap);
+	if (ok) {
+		if (!fc.unlink_verified(JOURNAL_PATH))
+			return recovery_failed_locked('journal_clear_failed');
+		return true;
+	}
+
+	if (!match(fc.readfile_trim(fc.ERROR_PATH) || '', /^journal_recovery_failed/))
+		recovery_failed_locked(null);
+	return false;
+}
+
+function recover_locked() {
+	let had_journal = !fc.path_absent_verified(fc.rpath(JOURNAL_PATH));
+	if (!recover_uncommitted_journal_locked())
+		return false;
+	if (had_journal)
+		fc.unlink_safe(fc.ERROR_PATH);
+	return true;
+}
+
+function capture_snapshot_locked(cfg) {
+	let st = query_instance_locked();
+	if (!st.ok)
+		return null;
+
+	let old_pid = fc.readfile_trim(fc.PID_PATH);
+	let owner = read_owner_locked();
+	let owner_pid = (owner && owner.pid != null) ? trim(`${owner.pid}`) : null;
+	let owner_ticks = (owner && owner.start_ticks != null) ? trim(`${owner.start_ticks}`) : null;
+	let owner_alive = (owner_pid != null && owner_ticks != null && match(owner_ticks, /^\d+$/) &&
+			   fc.is_confirmed_worker_pid(owner_pid) && fc.proc_start_ticks(owner_pid) == owner_ticks);
+	let pid_alive = (old_pid != null && fc.is_confirmed_worker_pid(old_pid) &&
+			 (owner_pid == null || owner_pid != old_pid || owner_alive));
+	let fan = fc.discover_fan(cfg);
+	let old_raw = fan.ok ? fc.read_fan_raw(fan) : null;
+
+	return {
+		old_config: fs.readfile(fc.rpath(fc.CONFIG_PATH)),
+		old_wps: fs.readfile(fc.rpath(fc.WPS_ACTIVE_PATH)),
+		old_ready: fs.readfile(fc.rpath(fc.READY_PATH)),
+		old_thermal_mode: fc.readfile_trim('/sys/class/thermal/thermal_zone0/mode'),
+		old_pid: old_pid,
+		was_worker_running: pid_alive || owner_alive || st.present,
+		old_raw_pwm: (old_raw != null) ? `${old_raw}` : null
+	};
+}
+
+function abort_transaction_locked(err_msg) {
+	if (!fc.path_absent_verified(fc.rpath(JOURNAL_PATH)))
+		recover_uncommitted_journal_locked();
+	return { code: 1, error: err_msg || 'internal_error' };
+}
+
+function complete_transaction_locked(snapshot, result) {
+	if (!fc.unlink_verified(JOURNAL_PATH)) {
+		let restored = restore_snapshot_locked(snapshot);
+		if (restored)
+			recovery_failed_locked('journal_clear_failed');
+		else if (!match(fc.readfile_trim(fc.ERROR_PATH) || '', /^journal_recovery_failed/))
+			recovery_failed_locked('journal_clear_failed_and_rollback_failed');
+		return {
+			code: 1,
+			error: restored
+				? 'Transaction commit failed; previous state restored'
+				: 'Transaction commit and rollback failed'
+		};
+	}
+
+	fc.unlink_safe(fc.ERROR_PATH);
+	return result;
+}
+
+function rollback_policy_transaction_locked(snapshot, err_msg) {
+	let rec_ok = restore_snapshot_locked(snapshot);
+	if (rec_ok) {
+		if (!fc.unlink_verified(JOURNAL_PATH))
+			recovery_failed_locked('journal_clear_failed');
+	}
+	else if (!match(fc.readfile_trim(fc.ERROR_PATH) || '', /^journal_recovery_failed/))
+		recovery_failed_locked('rollback_failed');
+
+	return { code: 1, error: err_msg };
+}
+
+function apply_cfg_state_locked(next_cfg) {
+	let fan = fc.discover_fan(next_cfg);
+	if (next_cfg.mode != 'kernel' && (!fan.ok || !fc.check_thermal_rw() || fc.read_cpu_temp_mC() == null))
+		return { code: 1, error: fan.error || 'Hardware or thermal sensor validation failed' };
+
+	if (!stop_worker_locked()) {
+		recovery_failed_locked('worker_stop_timeout');
+		return { code: 1, error: 'Failed to stop existing fancontrol worker', no_rollback: true };
+	}
+
+	if (next_cfg.mode == 'kernel') {
+		let kres = apply_kernel_locked(next_cfg);
+		if (!kres.ok)
+			return { code: 1, error: kres.error };
+		let cur_pwm = kres.fan.ok ? fc.read_fan_logical(kres.fan, 0) : 0;
+		return {
+			code: 0,
+			mode: 'kernel',
+			mode_label: fc.MODE_TABLE.kernel.label,
+			pwm: cur_pwm,
+			speed_pct: fc.pwm_to_percent(cur_pwm),
+			temp_source: next_cfg.temp_source
+		};
+	}
+
+	if (next_cfg.mode == 'smart') {
+		if (!fc.write_atomic_verified(fc.CONFIG_PATH, fc.format_config(next_cfg)))
+			return { code: 1, error: 'Failed to persist /etc/config/fancontrol' };
+
+		fc.unlink_safe(fc.WPS_ACTIVE_PATH);
+		fc.unlink_safe(fc.READY_PATH);
+		fc.unlink_safe(fc.OWNER_PATH);
+
+		let gen = new_generation('smart');
+		if (!start_smart_locked(gen))
+			return { code: 1, error: 'Failed to register smart fancontrol service with procd' };
+
+		let st = wait_ready_locked(gen, fan);
+		if (!st.ready)
+			return { code: 1, error: 'Smart fancontrol worker failed readiness verification' };
+
+		return {
+			code: 0,
+			mode: 'smart',
+			mode_label: fc.MODE_TABLE.smart.label,
+			pwm: st.pwm,
+			speed_pct: fc.pwm_to_percent(st.pwm),
+			temp_source: next_cfg.temp_source
+		};
+	}
+
+	let target_pwm = (next_cfg.mode == 'stepless') ? next_cfg.stepless_pwm : fc.MODE_TABLE[next_cfg.mode].pwm;
+	let mres = apply_manual_locked(next_cfg, target_pwm);
+	if (!mres.ok)
+		return { code: 1, error: mres.error };
+
+	return {
+		code: 0,
+		mode: next_cfg.mode,
+		mode_label: fc.MODE_TABLE[next_cfg.mode].label,
+		pwm: target_pwm,
+		stepless_pwm: next_cfg.stepless_pwm,
+		speed_pct: fc.pwm_to_percent(target_pwm),
+		temp_source: next_cfg.temp_source
+	};
+}
+
+function apply_policy_transaction_locked(patch, force_restart) {
+	let loaded = fc.load_config();
+	let cur_cfg = loaded.cfg;
+	let next_cfg_in = {};
+	for (let k, v in cur_cfg)
+		next_cfg_in[k] = v;
+	for (let k, v in patch) {
+		if (v != null)
+			next_cfg_in[k] = v;
+	}
+	let next_cfg = fc.normalize_config(next_cfg_in);
+
+	let uninitialized = !loaded.exists || !fs.access(fc.rpath(fc.READY_PATH));
+	let changed = force_restart || uninitialized;
+	if (!changed) {
+		for (let k, v in next_cfg) {
+			if (`${cur_cfg[k]}` != `${v}`) {
+				changed = true;
+				break;
+			}
+		}
+	}
+
+	if (!changed) {
+		return {
+			code: 0,
+			mode: cur_cfg.mode,
+			mode_label: fc.MODE_TABLE[cur_cfg.mode].label,
+			temp_source: cur_cfg.temp_source
+		};
+	}
+
+	let snapshot = capture_snapshot_locked(cur_cfg);
+	if (!snapshot)
+		return { code: 1, error: 'Failed to query procd service instance state' };
+	if (!fc.write_atomic_verified(JOURNAL_PATH, sprintf('%J\n', snapshot)))
+		return { code: 1, error: 'Failed to initialize transaction journal' };
+
+	let result = apply_cfg_state_locked(next_cfg);
+	if (result.code != 0) {
+		if (result.no_rollback) {
+			delete result.no_rollback;
+			return result;
+		}
+		return rollback_policy_transaction_locked(snapshot, result.error);
+	}
+
+	return complete_transaction_locked(snapshot, result);
+}
+
+function start_service_locked() {
+	let cfg = fc.load_config().cfg;
+	if (!stop_worker_locked())
+		return { code: 1, error: 'Failed to stop existing fancontrol worker' };
+
+	if (cfg.mode == 'kernel') {
+		let kres = apply_kernel_locked(cfg);
+		if (!kres.ok)
+			return { code: 1, error: kres.error };
+		fc.unlink_safe(fc.ERROR_PATH);
+		return { code: 0, mode: 'kernel' };
+	}
+
+	if (cfg.mode != 'smart') {
+		let target_pwm = (cfg.mode == 'stepless') ? cfg.stepless_pwm : fc.MODE_TABLE[cfg.mode].pwm;
+		let mres = apply_manual_locked(cfg, target_pwm);
+		if (!mres.ok) {
+			latch_emergency_full_speed_locked(null, cfg);
+			fc.unlink_safe(fc.READY_PATH);
+			return { code: 1, error: mres.error };
+		}
+		fc.unlink_safe(fc.ERROR_PATH);
+		return { code: 0, mode: cfg.mode, pwm: target_pwm };
+	}
+
+	fc.unlink_safe(fc.WPS_ACTIVE_PATH);
+	fc.unlink_safe(fc.READY_PATH);
+	fc.unlink_safe(fc.OWNER_PATH);
+
+	let fan = fc.discover_fan(cfg);
+	if (!fan.ok || !fc.check_thermal_rw() || fc.read_cpu_temp_mC() == null) {
+		latch_emergency_full_speed_locked(fan, cfg);
+		return { code: 1, error: fan.error || 'Hardware or thermal sensor validation failed' };
+	}
+
+	let gen = new_generation('smart');
+	if (!start_smart_locked(gen)) {
+		latch_emergency_full_speed_locked(fan, cfg);
+		return { code: 1, error: 'Failed to register smart fancontrol service with procd' };
+	}
+
+	let st = wait_ready_locked(gen, fan);
+	if (!st.ready) {
+		stop_worker_locked();
+		latch_emergency_full_speed_locked(fan, cfg);
+		return { code: 1, error: 'Smart fancontrol worker failed readiness verification' };
+	}
+
+	fc.unlink_safe(fc.ERROR_PATH);
+	return { code: 0, mode: 'smart', pwm: st.pwm };
+}
+
+function stop_service_locked() {
+	let cfg = fc.load_config().cfg;
+	let stopped = stop_worker_locked();
+	let thermal_ok = fc.write_verified('/sys/class/thermal/thermal_zone0/mode', 'enabled\n');
+	let fan = fc.discover_fan(cfg);
+	let pwm_ok = true;
+	if (fan.ok && fan.enable_path)
+		pwm_ok = fc.write_verified(fan.enable_path, '2\n');
+
+	if (stopped && thermal_ok && pwm_ok) {
+		fc.unlink_safe(fc.ERROR_PATH);
+		return { code: 0, error: null };
+	}
+	if (!thermal_ok || !pwm_ok)
+		latch_emergency_full_speed_locked(fan, cfg);
+
+	let err_code = !stopped ? 'worker_stop_failed\n' : 'thermal_restore_failed\n';
+	let err_msg = !stopped
+		? 'Failed to stop existing fancontrol worker'
+		: 'Failed to restore kernel thermal fan control';
+	fc.write_atomic_verified(fc.ERROR_PATH, err_code);
+	return { code: 1, error: err_msg };
+}
+
+function restart_service_locked() {
+	let sres = stop_service_locked();
+	if (sres.code != 0)
+		return sres;
+	return start_service_locked();
+}
+
+function worker_event_locked() {
+	let cfg = fc.load_config().cfg;
+	let ready_val = fc.readfile_trim(fc.READY_PATH);
+
+	if (cfg.mode != 'smart' || ready_val == 'manual' || ready_val == 'kernel')
+		return { code: 0 };
+
+	let pid_str = fc.readfile_trim(fc.PID_PATH);
+	let owner = read_owner_locked();
+	let owner_pid = (owner && owner.pid != null) ? trim(`${owner.pid}`) : null;
+	let owner_ticks = (owner && owner.start_ticks != null) ? trim(`${owner.start_ticks}`) : null;
+	let owner_alive = (owner_pid != null && owner_ticks != null && match(owner_ticks, /^\d+$/) &&
+			   fc.is_confirmed_worker_pid(owner_pid) && fc.proc_start_ticks(owner_pid) == owner_ticks);
+	let pid_alive = (pid_str != null && fc.is_confirmed_worker_pid(pid_str) &&
+			 (owner_pid == null || owner_pid != pid_str || owner_alive));
+	let st = query_instance_locked();
+
+	if (pid_alive || owner_alive ||
+	    (st.ok && st.present && st.running && st.pid != null && fc.is_confirmed_worker_pid(st.pid)))
+		return { code: 0 };
+
+	let em = latch_emergency_full_speed_locked(null, cfg);
+	if (!st.ok) {
+		let err_code = (!em.ok_pwm || !em.ok_tm) ? 'thermal_restore_failed' : 'procd_query_failed';
+		fc.write_atomic_verified(fc.ERROR_PATH, `${err_code}\n`);
+		return { code: 1, error: err_code };
+	}
+
+	if (!em.ok_pwm || !em.ok_tm) {
+		fc.write_atomic_verified(fc.ERROR_PATH, 'thermal_restore_failed\n');
+		return { code: 1, error: 'thermal_restore_failed' };
+	}
+
+	fc.unlink_safe(fc.PID_PATH);
+	fc.unlink_safe(fc.OWNER_PATH);
+	fc.unlink_safe(fc.READY_PATH);
+	fc.unlink_safe(fc.ERROR_PATH);
+	return { code: 0 };
+}
+
+function wps_locked() {
+	let cfg = fc.load_config().cfg;
+	if (cfg.wps_turbo != 1)
+		return { code: 0, ignored: true };
+
+	let wps_present = fs.access(fc.rpath(fc.WPS_ACTIVE_PATH));
+	let target_mode = wps_present ? 'smart' : 'turbo';
+	let log_msg = wps_present
+		? 'User manually restored smart cooling mode'
+		: 'User manually enabled turbo cooling mode';
+	let luci_msg = wps_present
+		? 'WPS button pressed: Restored to Smart Thermal Mode.\n'
+		: 'WPS button pressed: Turbo cooling mode enabled.\n';
+
+	system(['logger', '-t', 'wps', log_msg]);
+	let res = apply_policy_transaction_locked({ mode: target_mode }, true);
+	if (res && res.code == 0) {
+		if (!fc.write_atomic_verified(fc.LUCIMSG_PATH, luci_msg))
+			return { code: 1, error: 'Failed to write WPS message' };
+	}
+	return res;
+}
+
+function migrate_locked(board) {
+	let loaded = fc.load_config();
+	let cfg = {};
+	for (let k, v in loaded.cfg)
+		cfg[k] = v;
+
+	let modified = false;
+
+	// 1. Migrate legacy Airpifanctrl flat files if present
+	if (cfg.migrated != 1 && fs.access(fc.rpath('/etc/fanvall'), 'r')) {
+		let fv = fc.readfile_trim('/etc/fanvall');
+		if (fv == '0') cfg.mode = 'stop';
+		else if (fv == '1') cfg.mode = 'low';
+		else if (fv == '2') cfg.mode = 'normal';
+		else if (fv == '3') cfg.mode = 'turbo';
+		else if (fv == '999') cfg.mode = 'stepless';
+		else cfg.mode = 'smart';
+
+		let spd = fc.readfile_trim('/usr/bin/fanspeed.conf');
+		if (spd != null && match(spd, /^-?\d+$/))
+			cfg.stepless_pwm = fc.clamp_int(spd, 0, 255, 192);
+
+		let fv_src = lc(fc.readfile_trim('/etc/fanvallv.conf') || '');
+		if (fv_src == 'modem')
+			cfg.temp_source = 'modem';
+
+		fc.unlink_safe('/etc/fanvall');
+		fc.unlink_safe('/etc/fanvallv.conf');
+		fc.unlink_safe('/usr/bin/fanspeed.conf');
+		fc.unlink_safe('/tmp/wpsbt.conf');
+		cfg.migrated = 1;
+		modified = true;
+	}
+
+	// 2. Migrate legacy OpenFi fan thresholds if present in /etc/config/openfi
+	let openfi_p = fc.rpath('/etc/config/openfi');
+	if (fs.access(openfi_p, 'r')) {
+		let openfi_txt = fs.readfile(openfi_p);
+		if (openfi_txt && match(openfi_txt, /config[ \t]+fan([ \t]|$)/)) {
+			let new_lines = [];
+			let in_fan = false;
+			for (let line in split(openfi_txt, /\r?\n/)) {
+				let t = trim(line);
+				if (match(t, /^config[ \t]+/)) {
+					in_fan = (match(t, /^config[ \t]+fan([ \t]|$)/) != null);
+					if (!in_fan)
+						push(new_lines, line);
+					continue;
+				}
+				if (in_fan) {
+					let om = match(t, /^option[ \t]+([A-Za-z0-9_]+)[ \t]+['"]?([^'" \t]+)['"]?/);
+					if (om) {
+						if (om[1] == 'cpu_temp_low')
+							cfg.start_temp = fc.clamp_int(om[2], 20, 95, cfg.start_temp);
+						else if (om[1] == 'cpu_temp_high')
+							cfg.full_temp = fc.clamp_int(om[2], 30, 115, cfg.full_temp);
+						else if (om[1] == 'level' && !fs.access(fc.rpath('/etc/fanvall'))) {
+							if (om[2] == '0') cfg.slew_rate = 8;
+							else if (om[2] == '2') cfg.slew_rate = 24;
+						}
+					}
+					continue;
+				}
+				push(new_lines, line);
+			}
+			fc.write_atomic_verified('/etc/config/openfi', join('\n', new_lines) + '\n');
+			cfg.migrated = 1;
+			modified = true;
+		}
+	}
+
+	// 3. Apply per-board hardware defaults once
+	if (cfg.board_init != 1) {
+		let b = lc(trim(board || ''));
+		if (match(b, /^hiveton,h5000m/) || match(b, /^airpi,/)) {
+			cfg.wps_turbo = 1;
+			if (cfg.temp_source == 'cpu')
+				cfg.temp_source = 'max';
+		}
+		else if (match(b, /^huasifei,wh3000-pro/) || match(b, /^glinet,gl-xe?3000/)) {
+			if (cfg.temp_source == 'cpu')
+				cfg.temp_source = 'max';
+		}
+		else if (match(b, /^openfi,6c/)) {
+			cfg.inverted = '1';
+			if (cfg.temp_source == 'cpu')
+				cfg.temp_source = 'max';
+		}
+		cfg.board_init = 1;
+		modified = true;
+	}
+
+	if (modified) {
+		if (!fc.write_atomic_verified(fc.CONFIG_PATH, fc.format_config(cfg)))
+			return { code: 1, error: 'Failed to persist migrated fancontrol config' };
+	}
+
+	return { code: 0, board: board || 'unknown' };
+}
+
+function run_control_locked(action) {
+	if (action.type == 'migrate')
+		return migrate_locked(action.board);
+
+	if (!recover_locked()) {
+		return {
+			code: 1,
+			error: 'Failed to recover prior uncommitted transaction journal'
+		};
+	}
+
+	if (action.type == 'recover')
+		return { code: 0 };
+	if (action.type == 'start')
+		return start_service_locked();
+	if (action.type == 'stop')
+		return stop_service_locked();
+	if (action.type == 'restart')
+		return restart_service_locked();
+	if (action.type == 'worker_event')
+		return worker_event_locked();
+	if (action.type == 'wps')
+		return wps_locked();
+	if (action.type == 'setMode') {
+		let patch = { mode: action.mode };
+		if (action.pwm != null)
+			patch.stepless_pwm = action.pwm;
+		return apply_policy_transaction_locked(patch, true);
+	}
+	if (action.type == 'setTempSource')
+		return apply_policy_transaction_locked({ temp_source: action.source }, false);
+	if (action.type == 'applyConfig')
+		return apply_policy_transaction_locked(action.patch, false);
+
+	return { code: 1, error: 'Unsupported control action' };
+}
+
+function control(action) {
+	let lock_fh = acquire_control_lock();
+	if (!lock_fh)
+		return { code: 1, error: 'busy' };
+
+	let result;
+	try {
+		result = run_control_locked(action);
+	}
+	catch (e) {
+		result = abort_transaction_locked(`${e}`);
+	}
+
+	release_control_lock(lock_fh);
+	return result;
+}
+
+const methods = {
+	getStatus: {
+		args: {},
+		call: function() {
+			let loaded = fc.load_config();
+			let cfg = loaded.cfg;
+			let fan = fc.discover_fan(cfg);
+			let cur_pwm = fan.ok ? fc.read_fan_logical(fan, cfg.stepless_pwm) : cfg.stepless_pwm;
+			let rpm = fan.ok ? fc.read_fan_rpm(fan) : null;
+			let temps = fc.read_temps(cfg);
+			let err_state = fc.readfile_trim(fc.ERROR_PATH) || '';
+			let uninitialized = !loaded.exists || !fs.access(fc.rpath(fc.READY_PATH));
+
+			let lucimsg = '';
+			if (fs.access(fc.rpath(fc.LUCIMSG_PATH))) {
+				lucimsg = fc.readfile_trim(fc.LUCIMSG_PATH) || '';
+				fc.unlink_safe(fc.LUCIMSG_PATH);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				mode: cfg.mode,
+				mode_label: fc.MODE_TABLE[cfg.mode].label,
+				pwm: cur_pwm,
+				pwm1: cur_pwm,
+				speed_pct: fc.pwm_to_percent(cur_pwm),
+				stepless_pwm: cfg.stepless_pwm,
+				temp_source: cfg.temp_source,
+				source_used: temps.source_used,
+				temp: temps.active_temp,
+				cpu_temp: temps.cpu_temp,
+				modem_temp: temps.modem_temp,
+				rpm: rpm,
+				driver: fan.ok ? fan.kind : 'none',
+				driver_label: fan.ok ? fan.driver_label : (fan.error || 'Unavailable'),
+				inverted_effective: fan.ok ? fan.inverted : false,
+				inverted_cfg: cfg.inverted,
+				start_temp: cfg.start_temp,
+				full_temp: cfg.full_temp,
+				min_pwm: cfg.min_pwm,
+				max_pwm: cfg.max_pwm,
+				hysteresis: cfg.hysteresis,
+				slew_rate: cfg.slew_rate,
+				wps_turbo: cfg.wps_turbo,
+				uninitialized: uninitialized,
+				lucimsg: lucimsg,
+				error: err_state
+			}));
+		}
+	},
+
+	setMode: {
+		args: { mode: 'str', pwm: 0 },
+		call: function(args) {
+			let mode = args ? args.mode : null;
+			if (type(mode) != 'string' || !(mode in fc.MODE_TABLE)) {
+				print(sprintf('%J\n', {
+					code: 1,
+					error: 'Invalid mode: must be stop, low, normal, turbo, smart, kernel, or stepless'
+				}));
+				return;
+			}
+			if (args.pwm != null) {
+				if (type(args.pwm) != 'int' || args.pwm < 0 || args.pwm > 255) {
+					print(sprintf('%J\n', {
+						code: 1,
+						error: 'Invalid pwm: must be an integer in [0, 255]'
+					}));
+					return;
+				}
+			}
+			else if (mode == 'stepless') {
+				print(sprintf('%J\n', {
+					code: 1,
+					error: 'Missing pwm integer in [0, 255] for stepless mode'
+				}));
+				return;
+			}
+
+			print(sprintf('%J\n', control({ type: 'setMode', mode: mode, pwm: args.pwm })));
+		}
+	},
+
+	setTempSource: {
+		args: { source: 'str' },
+		call: function(args) {
+			let source = args ? args.source : null;
+			if (type(source) != 'string' || !(source in fc.VALID_SOURCES)) {
+				print(sprintf('%J\n', {
+					code: 1,
+					error: 'Invalid source: must be cpu, modem, or max'
+				}));
+				return;
+			}
+			print(sprintf('%J\n', control({ type: 'setTempSource', source: source })));
+		}
+	},
+
+	applyConfig: {
+		args: {
+			mode: 'str', pwm: 0, source: 'str',
+			inverted: 'str', start_temp: 0, full_temp: 0,
+			min_pwm: 0, max_pwm: 0, hysteresis: 0,
+			slew_rate: 0, wps_turbo: 0
+		},
+		call: function(args) {
+			let a = args || {};
+			let patch = {};
+
+			if (a.mode != null) {
+				if (type(a.mode) != 'string' || !(a.mode in fc.MODE_TABLE)) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid mode' }));
+					return;
+				}
+				patch.mode = a.mode;
+			}
+			if (a.pwm != null) {
+				if (type(a.pwm) != 'int' || a.pwm < 0 || a.pwm > 255) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid pwm: must be in [0, 255]' }));
+					return;
+				}
+				patch.stepless_pwm = a.pwm;
+			}
+			else if (patch.mode == 'stepless') {
+				print(sprintf('%J\n', { code: 1, error: 'Missing pwm integer in [0, 255] for stepless mode' }));
+				return;
+			}
+
+			if (a.source != null) {
+				if (type(a.source) != 'string' || !(a.source in fc.VALID_SOURCES)) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid source: must be cpu, modem, or max' }));
+					return;
+				}
+				patch.temp_source = a.source;
+			}
+
+			if (a.inverted != null) {
+				if (!( `${a.inverted}` in fc.VALID_INVERTED)) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid inverted: must be auto, 0, or 1' }));
+					return;
+				}
+				patch.inverted = `${a.inverted}`;
+			}
+
+			if (a.start_temp != null) patch.start_temp = a.start_temp;
+			if (a.full_temp != null) patch.full_temp = a.full_temp;
+			if (a.min_pwm != null) patch.min_pwm = a.min_pwm;
+			if (a.max_pwm != null) patch.max_pwm = a.max_pwm;
+			if (a.hysteresis != null) patch.hysteresis = a.hysteresis;
+			if (a.slew_rate != null) patch.slew_rate = a.slew_rate;
+			if (a.wps_turbo != null) patch.wps_turbo = a.wps_turbo ? 1 : 0;
+
+			if (patch.start_temp != null && patch.full_temp != null && int(patch.full_temp) <= int(patch.start_temp)) {
+				print(sprintf('%J\n', { code: 1, error: 'full_temp must be greater than start_temp' }));
+				return;
+			}
+
+			print(sprintf('%J\n', control({ type: 'applyConfig', patch: patch })));
+		}
+	}
+};
+
+function parseInput() {
+	let raw = '';
+	while (true) {
+		let chunk = fs.stdin.read(4096);
+		if (!chunk || chunk == '')
+			break;
+		raw += chunk;
+	}
+	if (trim(raw) == '')
+		return {};
+	try {
+		let parsed = json(raw);
+		if (type(parsed) != 'object')
+			return {};
+		delete parsed.ubus_rpc_session;
+		return parsed;
+	}
+	catch (e) {
+		print(sprintf('%J\n', { code: 1, error: `Invalid JSON input: ${e}` }));
+		exit(0);
+	}
+}
+
+if (ARGV[0] == 'list') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+}
+else if (ARGV[0] == 'call') {
+	let func = ARGV[1];
+	let method = methods[func];
+	if (!method) {
+		print(sprintf('%J\n', { code: 1, error: 'Method not found' }));
+		exit(1);
+	}
+	let args = parseInput();
+	method.call(args);
+	exit(0);
+}
+else if (ARGV[0] == 'ctl') {
+	let action = ARGV[1];
+	if (action != 'start' && action != 'stop' && action != 'restart' &&
+	    action != 'worker_event' && action != 'recover' && action != 'wps' && action != 'migrate') {
+		print(sprintf('%J\n', { code: 1, error: 'Usage: luci.fancontrol ctl {start|stop|restart|worker_event [stop|fail]|recover|wps|migrate [board]}' }));
+		exit(1);
+	}
+	let res = control({
+		type: action,
+		board: (action == 'migrate') ? (ARGV[2] || '') : null,
+		event: (action == 'worker_event') ? ((ARGV[2] && ARGV[2] != '') ? ARGV[2] : 'fail') : null
+	});
+	print(sprintf('%J\n', res));
+	exit((res && res.code == 0) ? 0 : 1);
+}
