@@ -1,0 +1,95 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: net: cdc_ncm: add rx_frag_thresh and xmit_more idle-pipe TX flush
+
+Expose runtime-tunable rx_frag_thresh (default 2048; min 144, 0 disables)
+in cdc_ncm_rx_fixup() so header-split zero-copy RX can be tuned while
+satisfying MTK HNAT ext-to-ge linearization bounds.
+
+Replace the experimental TX frag_list SG aggregation path with
+scheduler-driven netdev_xmit_more() + idle-pipe (txq.qlen == 0) flush in
+cdc_ncm_fill_tx_frame(): interactive packets and the tail of a qdisc
+batch transmit immediately without waiting for the 150 us coalescing
+timer, while busy-pipe bursts continue full multi-packet linear NTB
+aggregation. Export tx_reason_xmit_flush via ethtool stats.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -ruN a/drivers/net/usb/cdc_ncm.c b/drivers/net/usb/cdc_ncm.c
+--- a/drivers/net/usb/cdc_ncm.c	2026-11-24 22:04:56.129036994 +0800
++++ b/drivers/net/usb/cdc_ncm.c	2026-11-24 22:04:56.150288126 +0800
+@@ -62,6 +62,11 @@
+ module_param(prefer_mbim, bool, 0644);
+ MODULE_PARM_DESC(prefer_mbim, "Prefer MBIM setting on dual NCM/MBIM functions");
+ 
++static uint __read_mostly rx_frag_thresh = 2048;
++module_param(rx_frag_thresh, uint, 0644);
++MODULE_PARM_DESC(rx_frag_thresh,
++		 "Minimum packet length for NCM RX page-frag header split (default 2048; min 144, 0=off)");
++
+ static void cdc_ncm_txpath_bh(struct tasklet_struct *t);
+ static void cdc_ncm_tx_timeout_start(struct cdc_ncm_ctx *ctx);
+ static enum hrtimer_restart cdc_ncm_tx_timer_cb(struct hrtimer *hr_timer);
+@@ -84,6 +89,7 @@
+ 	CDC_NCM_SIMPLE_STAT(tx_reason_ndp_full),
+ 	CDC_NCM_SIMPLE_STAT(tx_reason_timeout),
+ 	CDC_NCM_SIMPLE_STAT(tx_reason_max_datagram),
++	CDC_NCM_SIMPLE_STAT(tx_reason_xmit_flush),
+ 	CDC_NCM_SIMPLE_STAT(tx_overhead),
+ 	CDC_NCM_SIMPLE_STAT(tx_ntbs),
+ 	CDC_NCM_SIMPLE_STAT(rx_overhead),
+@@ -1228,6 +1234,7 @@
+ 	u8 ready2send = 0;
+ 	u32 delayed_ndp_size;
+ 	size_t padding_count;
++	bool xmit_more = skb ? netdev_xmit_more() : false;
+ 
+ 	/* When our NDP gets written in cdc_ncm_ndp(), then skb_out->len gets updated
+ 	 * accordingly. Otherwise, we should check here.
+@@ -1402,13 +1409,17 @@
+ 		goto exit_no_skb;
+ 
+ 	} else if ((n < ctx->tx_max_datagrams) && (ready2send == 0) && (ctx->timer_interval > 0)) {
+-		/* wait for more frames */
+-		/* push variables */
+-		ctx->tx_curr_skb = skb_out;
+-		/* set the pending count */
+-		if (n < CDC_NCM_RESTART_TIMER_DATAGRAM_CNT)
+-			ctx->tx_timer_pending = CDC_NCM_TIMER_PENDING_CNT;
+-		goto exit_no_skb;
++		if (!xmit_more && READ_ONCE(dev->txq.qlen) == 0) {
++			ctx->tx_reason_xmit_flush++;
++		} else {
++			/* wait for more frames */
++			/* push variables */
++			ctx->tx_curr_skb = skb_out;
++			/* set the pending count */
++			if (n < CDC_NCM_RESTART_TIMER_DATAGRAM_CNT)
++				ctx->tx_timer_pending = CDC_NCM_TIMER_PENDING_CNT;
++			goto exit_no_skb;
++		}
+ 
+ 	} else {
+ 		if (n == ctx->tx_max_datagrams)
+@@ -1828,8 +1839,10 @@
+ 
+ 		} else {
+ 			const u8 *pkt_ptr = skb_in->data + offset;
++			unsigned int thresh = READ_ONCE(rx_frag_thresh);
+ 
+-			if (skb_in->head_frag && !skb_is_nonlinear(skb_in) && len > 2048) {
++			if (skb_in->head_frag && !skb_is_nonlinear(skb_in) &&
++			    thresh >= 144 && len > thresh) {
+ 				struct page *head_page = virt_to_head_page(skb_in->head);
+ 				unsigned int headroom = 48 + NET_IP_ALIGN;
+ 				unsigned int frag_len = len - 128;
+diff -ruN a/include/linux/usb/cdc_ncm.h b/include/linux/usb/cdc_ncm.h
+--- a/include/linux/usb/cdc_ncm.h	2026-11-24 22:04:56.128682050 +0800
++++ b/include/linux/usb/cdc_ncm.h	2026-11-24 22:04:56.149821987 +0800
+@@ -147,6 +147,7 @@
+ 	u32 tx_reason_ndp_full;
+ 	u32 tx_reason_timeout;
+ 	u32 tx_reason_max_datagram;
++	u32 tx_reason_xmit_flush;
+ 	u64 tx_overhead;
+ 	u64 tx_ntbs;
+ 	u64 rx_overhead;

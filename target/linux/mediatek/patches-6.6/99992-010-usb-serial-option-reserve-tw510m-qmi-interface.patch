@@ -1,0 +1,23 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: serial: option: leave TW510M QMI interface to qmi_wwan
+
+Reserve USB interface 4 on 0x2077:0x2004 TW510M modems for qmi_wwan.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/usb/serial/option.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/serial/option.c b/drivers/usb/serial/option.c
+index b0f9075..cf86413 100644
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -2501,7 +2501,8 @@ static const struct usb_device_id option_ids[] = {
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1421, 0xff) },			/* GosunCn GM800 (rmnet) */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1422, 0xff) },			/* GosunCn GM800 (EAP) */
+ 	{ USB_DEVICE(0x2077, 0x2001) }, /* T&W RNDIS */
+-	{ USB_DEVICE(0x2077, 0x2004) }, /* T&W QMI */
++	{ USB_DEVICE(0x2077, 0x2004), /* T&W QMI */
++	  .driver_info = RSVD(4) },
+ 	{ USB_DEVICE(0x2077, 0x2007) }, /* T&W MBIM */
+ 	{ USB_DEVICE(0x2077, 0x2008) }, /* T&W ECM */
+ 	{ USB_DEVICE(0x33f8, 0x0104),						/* Rolling RW101-GL (laptop RMNET) */

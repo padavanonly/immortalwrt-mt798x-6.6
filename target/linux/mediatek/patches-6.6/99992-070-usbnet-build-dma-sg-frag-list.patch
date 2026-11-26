@@ -1,0 +1,137 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: net: usbnet: support bounded frag_list mapping in build_dma_sg()
+
+Extend build_dma_sg() to map paged fragments and one level of frag_list
+SKBs (used by zero-copy QMAP uplink aggregation) up to USBNET_MAX_TX_SGS
+segments, falling back cleanly to skb_linearize() on -E2BIG without
+dropping frames.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/net/usb/usbnet.c	2026-11-23 09:17:53.044148526 +0800
++++ b/drivers/net/usb/usbnet.c	2026-11-23 09:17:53.044318949 +0800
+@@ -1368,34 +1368,92 @@
+ 
+ /*-------------------------------------------------------------------------*/
+ 
++#define USBNET_MAX_TX_SGS 64
++
++static int usbnet_count_cur_skb_sgs(const struct sk_buff *skb)
++{
++	unsigned int count = skb_headlen(skb) ? 1 : 0;
++	int i;
++
++	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
++		if (skb_frag_size(&skb_shinfo(skb)->frags[i]))
++			count++;
++	}
++
++	return count;
++}
++
++static int usbnet_count_skb_sgs(const struct sk_buff *skb)
++{
++	struct sk_buff *iter;
++	int num_sgs;
++
++	num_sgs = usbnet_count_cur_skb_sgs(skb);
++	if (num_sgs > USBNET_MAX_TX_SGS)
++		return -E2BIG;
++
++	skb_walk_frags(skb, iter) {
++		if (skb_has_frag_list(iter))
++			return -E2BIG;
++		num_sgs += usbnet_count_cur_skb_sgs(iter);
++		if (num_sgs > USBNET_MAX_TX_SGS)
++			return -E2BIG;
++	}
++
++	return num_sgs;
++}
++
++static void usbnet_fill_cur_skb_sgs(const struct sk_buff *skb,
++				    struct scatterlist *sg, int *idx,
++				    unsigned int *total_len)
++{
++	unsigned int headlen = skb_headlen(skb);
++	int i;
++
++	if (headlen) {
++		sg_set_buf(&sg[(*idx)++], skb->data, headlen);
++		*total_len += headlen;
++	}
++
++	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
++		const skb_frag_t *f = &skb_shinfo(skb)->frags[i];
++		unsigned int fsize = skb_frag_size(f);
++
++		if (!fsize)
++			continue;
++
++		sg_set_page(&sg[(*idx)++], skb_frag_page(f), fsize,
++			    skb_frag_off(f));
++		*total_len += fsize;
++	}
++}
++
+ static int build_dma_sg(const struct sk_buff *skb, struct urb *urb)
+ {
+-	unsigned num_sgs, total_len = 0;
+-	int i, s = 0;
++	struct sk_buff *iter;
++	unsigned int total_len = 0;
++	int num_sgs, s = 0;
+ 
+-	num_sgs = skb_shinfo(skb)->nr_frags + 1;
+-	if (num_sgs == 1)
++	if (!skb_is_nonlinear(skb))
+ 		return 0;
+ 
++	num_sgs = usbnet_count_skb_sgs(skb);
++	if (num_sgs <= 0)
++		return num_sgs;
++
+ 	/* reserve one for zero packet */
+ 	urb->sg = kmalloc_array(num_sgs + 1, sizeof(struct scatterlist),
+ 				GFP_ATOMIC);
+ 	if (!urb->sg)
+ 		return -ENOMEM;
+ 
+-	urb->num_sgs = num_sgs;
+-	sg_init_table(urb->sg, urb->num_sgs + 1);
++	sg_init_table(urb->sg, num_sgs + 1);
+ 
+-	sg_set_buf(&urb->sg[s++], skb->data, skb_headlen(skb));
+-	total_len += skb_headlen(skb);
+-
+-	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+-		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
++	usbnet_fill_cur_skb_sgs(skb, urb->sg, &s, &total_len);
++	skb_walk_frags(skb, iter)
++		usbnet_fill_cur_skb_sgs(iter, urb->sg, &s, &total_len);
+ 
+-		total_len += skb_frag_size(f);
+-		sg_set_page(&urb->sg[i + s], skb_frag_page(f), skb_frag_size(f),
+-			    skb_frag_off(f));
+-	}
++	urb->num_sgs = s;
+ 	urb->transfer_buffer_length = total_len;
+ 
+ 	return 1;
+@@ -1440,8 +1498,15 @@
+ 	usb_fill_bulk_urb (urb, dev->udev, dev->out,
+ 			skb->data, skb->len, tx_complete, skb);
+ 	if (dev->can_dma_sg) {
+-		if (build_dma_sg(skb, urb) < 0)
++		retval = build_dma_sg(skb, urb);
++		if (retval == -E2BIG) {
++			if (skb_linearize(skb))
++				goto drop;
++			urb->transfer_buffer = skb->data;
++			urb->transfer_buffer_length = skb->len;
++		} else if (retval < 0) {
+ 			goto drop;
++		}
+ 	}
+ 	length = urb->transfer_buffer_length;
+ 

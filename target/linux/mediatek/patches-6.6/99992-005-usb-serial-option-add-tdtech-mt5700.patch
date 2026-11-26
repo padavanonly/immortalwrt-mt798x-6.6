@@ -1,12 +1,6 @@
-From 9f08ee7f19ed8ab3f749810535a3f07d82ab41fe Mon Sep 17 00:00:00 2001
-From: gfuzan <gfuzan@163.com>
-Date: Tue, 29 Jul 2025 22:21:22 +0800
-
-diff --git a/drivers/usb/serial/option.c b/drivers/usb/serial/option.c
-index 6c6387d39db8..406cab6d8c92 100644
 --- a/drivers/usb/serial/option.c
 +++ b/drivers/usb/serial/option.c
-@@ -48,6 +48,7 @@ static void option_release(struct usb_serial *serial);
+@@ -48,6 +48,7 @@ static void option_release(struct usb_se
  static void option_instat_callback(struct urb *urb);
  
  /* Vendor and product IDs */
@@ -14,7 +8,7 @@ index 6c6387d39db8..406cab6d8c92 100644
  #define OPTION_VENDOR_ID			0x0AF0
  #define OPTION_PRODUCT_COLT			0x5000
  #define OPTION_PRODUCT_RICOLA			0x6000
-@@ -639,6 +640,12 @@ static void option_instat_callback(struct urb *urb);
+@@ -639,6 +640,12 @@ static void option_instat_callback(struc
  
  
  static const struct usb_device_id option_ids[] = {
@@ -27,6 +21,3 @@ index 6c6387d39db8..406cab6d8c92 100644
  	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_COLT) },
  	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA) },
  	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA_LIGHT) },
--- 
-2.50.1
-

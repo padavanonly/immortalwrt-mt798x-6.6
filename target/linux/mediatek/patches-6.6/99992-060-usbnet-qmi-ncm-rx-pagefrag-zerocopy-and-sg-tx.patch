@@ -1,0 +1,207 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: net: enable page-frag zero-copy RX and nonlinear SG TX
+ for QMI/NCM
+
+Allocate page-frag header-split skbs in qmi_wwan/cdc_ncm/usbnet RX fixups and preserve paged fragments across SG TX without skb_linearize().
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/usb/cdc_ncm.c  | 29 +++++++++++++++----
+ drivers/net/usb/qmi_wwan.c | 59 ++++++++++++++++++++++++++++----------
+ drivers/net/usb/usbnet.c   | 36 +++++++++++++++++++----
+ 3 files changed, 99 insertions(+), 25 deletions(-)
+
+diff --git a/drivers/net/usb/cdc_ncm.c b/drivers/net/usb/cdc_ncm.c
+index 0c28301..a14a76f 100644
+--- a/drivers/net/usb/cdc_ncm.c
++++ b/drivers/net/usb/cdc_ncm.c
+@@ -1808,11 +1808,30 @@ int cdc_ncm_rx_fixup(struct usbnet *dev, struct sk_buff *skb_in)
+ 			break;
+ 
+ 		} else {
+-			/* create a fresh copy to reduce truesize */
+-			skb = netdev_alloc_skb_ip_align(dev->net,  len);
+-			if (!skb)
+-				goto error;
+-			skb_put_data(skb, skb_in->data + offset, len);
++			const u8 *pkt_ptr = skb_in->data + offset;
++
++			if (skb_in->head_frag && !skb_is_nonlinear(skb_in) && len > 2048) {
++				struct page *head_page = virt_to_head_page(skb_in->head);
++				unsigned int headroom = 48 + NET_IP_ALIGN;
++				unsigned int frag_len = len - 128;
++
++				skb = __netdev_alloc_skb(dev->net, headroom + 128, GFP_ATOMIC);
++				if (!skb)
++					goto error;
++				skb_reserve(skb, headroom);
++				skb_put_data(skb, pkt_ptr, 128);
++				page_ref_inc(head_page);
++				skb_add_rx_frag(skb, 0, head_page,
++						(const u8 *)(pkt_ptr + 128) -
++						(const u8 *)page_address(head_page),
++						frag_len, SKB_DATA_ALIGN(frag_len));
++			} else {
++				/* create a fresh copy to reduce truesize */
++				skb = netdev_alloc_skb_ip_align(dev->net, len);
++				if (!skb)
++					goto error;
++				skb_put_data(skb, pkt_ptr, len);
++			}
+ 			usbnet_skb_return(dev, skb);
+ 			payload += len;	/* count payload bytes in this NTB */
+ 		}
+diff --git a/drivers/net/usb/qmi_wwan.c b/drivers/net/usb/qmi_wwan.c
+index 2978a72..efad020 100644
+--- a/drivers/net/usb/qmi_wwan.c
++++ b/drivers/net/usb/qmi_wwan.c
+@@ -175,6 +175,10 @@ static int qmimux_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
+ 	u8 qmimux_hdr_sz = sizeof(*hdr);
+ 
+ 	while (offset + qmimux_hdr_sz < skb->len) {
++		const u8 *pkt_ptr;
++		__be16 proto;
++		unsigned int headroom;
++
+ 		hdr = (struct qmimux_hdr *)(skb->data + offset);
+ 		len = be16_to_cpu(hdr->pkt_len);
+ 
+@@ -195,31 +199,49 @@ static int qmimux_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
+ 		net = qmimux_find_dev(dev, hdr->mux_id);
+ 		if (!net)
+ 			goto skip;
+-		skbn = netdev_alloc_skb(net, pkt_len + LL_MAX_HEADER);
+-		if (!skbn)
+-			return 0;
+ 
+-		/* Raw IP packets don't have a MAC header, but other subsystems
+-		 * (like xfrm) may still access MAC header offsets, so they must
+-		 * be initialized.
+-		 */
+-		skb_reset_mac_header(skbn);
+-
+-		switch (skb->data[offset + qmimux_hdr_sz] & 0xf0) {
++		pkt_ptr = skb->data + offset + qmimux_hdr_sz;
++		switch (*pkt_ptr & 0xf0) {
+ 		case 0x40:
+-			skbn->protocol = htons(ETH_P_IP);
++			proto = htons(ETH_P_IP);
+ 			break;
+ 		case 0x60:
+-			skbn->protocol = htons(ETH_P_IPV6);
++			proto = htons(ETH_P_IPV6);
+ 			break;
+ 		default:
+ 			/* not ip - do not know what to do */
+-			kfree_skb(skbn);
+ 			goto skip;
+ 		}
+ 
+-		skb_reserve(skbn, LL_MAX_HEADER);
+-		skb_put_data(skbn, skb->data + offset + qmimux_hdr_sz, pkt_len);
++		headroom = max_t(unsigned int, LL_MAX_HEADER, 48U);
++		if (skb->head_frag && !skb_is_nonlinear(skb) && pkt_len > 2048) {
++			struct page *head_page = virt_to_head_page(skb->head);
++			unsigned int frag_len = pkt_len - 128;
++
++			skbn = __netdev_alloc_skb(net, headroom + 128, GFP_ATOMIC);
++			if (!skbn)
++				return 0;
++			skb_reserve(skbn, headroom);
++			skb_put_data(skbn, pkt_ptr, 128);
++			page_ref_inc(head_page);
++			skb_add_rx_frag(skbn, 0, head_page,
++					(const u8 *)(pkt_ptr + 128) -
++					(const u8 *)page_address(head_page),
++					frag_len, SKB_DATA_ALIGN(frag_len));
++		} else {
++			skbn = netdev_alloc_skb(net, pkt_len + headroom);
++			if (!skbn)
++				return 0;
++			skb_reserve(skbn, headroom);
++			skb_put_data(skbn, pkt_ptr, pkt_len);
++		}
++
++		/* Raw IP packets don't have a MAC header, but other subsystems
++		 * (like xfrm) may still access MAC header offsets, so they must
++		 * be initialized.
++		 */
++		skb_reset_mac_header(skbn);
++		skbn->protocol = proto;
+ 		if (netif_rx(skbn) != NET_RX_SUCCESS) {
+ 			net->stats.rx_errors++;
+ 			return 0;
+@@ -270,6 +292,8 @@ static int qmimux_register_device(struct net_device *real_dev, u8 mux_id)
+ 	priv = netdev_priv(new_dev);
+ 	priv->mux_id = mux_id;
+ 	priv->real_dev = real_dev;
++	new_dev->hw_features |= (real_dev->hw_features & NETIF_F_SG);
++	new_dev->features |= (real_dev->features & NETIF_F_SG);
+ 
+ 	new_dev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
+ 	if (!new_dev->tstats) {
+@@ -859,6 +883,11 @@ static int qmi_wwan_bind(struct usbnet *dev, struct usb_interface *intf)
+ 	dev->net->netdev_ops = &qmi_wwan_netdev_ops;
+ 	dev->net->sysfs_groups[0] = &qmi_wwan_sysfs_attr_group;
+ 	dev->rx_urb_size = 32*1024;
++	if (!status && usb_device_no_sg_constraint(dev->udev)) {
++		dev->can_dma_sg = 1;
++		dev->net->features |= NETIF_F_SG;
++		dev->net->hw_features |= NETIF_F_SG;
++	}
+ err:
+ 	return status;
+ }
+diff --git a/drivers/net/usb/usbnet.c b/drivers/net/usb/usbnet.c
+index a26a743..582caa2 100644
+--- a/drivers/net/usb/usbnet.c
++++ b/drivers/net/usb/usbnet.c
+@@ -493,7 +493,7 @@ static void rx_complete (struct urb *urb);
+ 
+ static int rx_submit (struct usbnet *dev, struct urb *urb, gfp_t flags)
+ {
+-	struct sk_buff		*skb;
++	struct sk_buff		*skb = NULL;
+ 	struct skb_data		*entry;
+ 	int			retval = 0;
+ 	unsigned long		lockflags;
+@@ -505,10 +505,36 @@ static int rx_submit (struct usbnet *dev, struct urb *urb, gfp_t flags)
+ 		return -ENOLINK;
+ 	}
+ 
+-	if (test_bit(EVENT_NO_IP_ALIGN, &dev->flags))
+-		skb = __netdev_alloc_skb(dev->net, size, flags);
+-	else
+-		skb = __netdev_alloc_skb_ip_align(dev->net, size, flags);
++	if (size > SKB_WITH_OVERHEAD(PAGE_SIZE) &&
++	    size <= (PAGE_SIZE << (PAGE_ALLOC_COSTLY_ORDER + 1))) {
++		unsigned int pad = NET_SKB_PAD +
++			(test_bit(EVENT_NO_IP_ALIGN, &dev->flags) ? 0 : NET_IP_ALIGN);
++		size_t alloc_size = SKB_DATA_ALIGN(size + pad) +
++			SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
++		unsigned int order = get_order(alloc_size);
++
++		/* 32 KiB 5G RX URBs plus skb overhead exceed 32 KiB (order 4 on 4K pages). */
++		if (order <= PAGE_ALLOC_COSTLY_ORDER + 1) {
++			struct page *page = alloc_pages(flags | __GFP_COMP | __GFP_NOWARN, order);
++
++			if (page) {
++				skb = build_skb(page_address(page), PAGE_SIZE << order);
++				if (likely(skb)) {
++					skb_reserve(skb, pad);
++					skb->dev = dev->net;
++				} else {
++					__free_pages(page, order);
++				}
++			}
++		}
++	}
++
++	if (!skb) {
++		if (test_bit(EVENT_NO_IP_ALIGN, &dev->flags))
++			skb = __netdev_alloc_skb(dev->net, size, flags);
++		else
++			skb = __netdev_alloc_skb_ip_align(dev->net, size, flags);
++	}
+ 	if (!skb) {
+ 		netif_dbg(dev, rx_err, dev->net, "no rx skb\n");
+ 		usbnet_defer_kevent (dev, EVENT_RX_MEMORY);

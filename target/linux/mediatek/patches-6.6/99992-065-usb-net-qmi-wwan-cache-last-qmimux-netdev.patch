@@ -1,0 +1,41 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: usb: qmi_wwan: cache last mux_id netdev per qmimux_rx_fixup batch
+
+Avoid repeating rcu_read_lock and upper-device list traversal for
+consecutive subframes carrying the same mux_id inside a single aggregated
+QMAP RX buffer.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/net/usb/qmi_wwan.c
++++ b/drivers/net/usb/qmi_wwan.c
+@@ -171,8 +171,10 @@
+ 	unsigned int len, offset = 0, pad_len, pkt_len;
+ 	struct qmimux_hdr *hdr;
+ 	struct net_device *net;
++	struct net_device *last_net = NULL;
+ 	struct sk_buff *skbn;
+ 	u8 qmimux_hdr_sz = sizeof(*hdr);
++	u8 last_mux_id = 0;
+ 
+ 	while (offset + qmimux_hdr_sz < skb->len) {
+ 		const u8 *pkt_ptr;
+@@ -196,9 +198,15 @@
+ 			goto skip;
+ 		pkt_len = len - pad_len;
+ 
+-		net = qmimux_find_dev(dev, hdr->mux_id);
+-		if (!net)
+-			goto skip;
++		if (likely(last_net && hdr->mux_id == last_mux_id)) {
++			net = last_net;
++		} else {
++			net = qmimux_find_dev(dev, hdr->mux_id);
++			if (!net)
++				goto skip;
++			last_mux_id = hdr->mux_id;
++			last_net = net;
++		}
+ 
+ 		pkt_ptr = skb->data + offset + qmimux_hdr_sz;
+ 		switch (*pkt_ptr & 0xf0) {
