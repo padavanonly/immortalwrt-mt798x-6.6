@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config DAE_KERNEL_SUPPORT
+	bool "Enable kernel support for dae (eBPF / BTF / XDP)"
+	depends on !HOST_OS_MACOS && !TARGET_uml
+	select KERNEL_CGROUPS
+	select KERNEL_CGROUP_BPF
+	select KERNEL_BPF_STREAM_PARSER
+	select KERNEL_KPROBES
+	select KERNEL_KPROBE_EVENTS
+	select KERNEL_BPF_EVENTS
+	select KERNEL_DEBUG_INFO
+	select KERNEL_DEBUG_INFO_BTF
+	select KERNEL_XDP_SOCKETS
+	select PACKAGE_kmod-sched-core
+	select PACKAGE_kmod-sched-bpf
+	select PACKAGE_kmod-xdp-sockets-diag
+	select PACKAGE_kmod-veth
+	help
+	  Enable Linux kernel eBPF, BTF, kprobes, BPF stream parser, cgroups,
+	  XDP sockets, and required tc/BPF/XDP/veth kernel modules for running
+	  dae / daed transparent proxy.
