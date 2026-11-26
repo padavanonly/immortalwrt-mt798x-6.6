@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || [ "$ACTION" = "ifdown" ] || exit 0
+case "$INTERFACE" in
+	loopback|lan|ZeroTier*|vpn*) exit 0 ;;
+esac
+
+UCI_BIN="${MTK_QOS_UCI_BIN:-uci}"
+UCI_DIR="${MTK_QOS_UCI_DIR:-/etc/config}"
+QOS_BIN="${MTK_QOS_BIN:-/usr/sbin/mtk-qos}"
+
+[ "$("$UCI_BIN" -c "$UCI_DIR" -q get mtk_qos.global.enabled 2>/dev/null)" = "1" ] || exit 0
+"$QOS_BIN" sync >/dev/null 2>&1 || true

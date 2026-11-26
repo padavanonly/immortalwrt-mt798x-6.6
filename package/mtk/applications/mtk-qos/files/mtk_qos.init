@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+
+START=55
+STOP=15
+USE_PROCD=1
+
+start_service() {
+	/usr/sbin/mtk-qos start
+}
+
+stop_service() {
+	/usr/sbin/mtk-qos stop
+}
+
+reload_service() {
+	/usr/sbin/mtk-qos reload
+}
+
+service_triggers() {
+	procd_add_reload_trigger "mtk_qos"
+}

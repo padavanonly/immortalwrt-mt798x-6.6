@@ -1,0 +1,137 @@
+#!/usr/bin/env ucode
+// SPDX-License-Identifier: Apache-2.0
+// Native ucode rpcd backend for luci-app-mtk-qos
+
+'use strict';
+
+import * as fs from 'fs';
+
+function run_capture(cmd) {
+	let pipe = fs.popen(cmd, 'r');
+	if (!pipe)
+		return '';
+	let out = pipe.read('all') || '';
+	pipe.close();
+	return out;
+}
+
+function read_status_json() {
+	let raw = trim(run_capture('/usr/sbin/mtk-qos json 2>/dev/null'));
+	if (raw == '')
+		return { error: 'empty status output' };
+	try {
+		return json(raw);
+	}
+	catch (e) {
+		return { error: `invalid status json: ${e}`, raw: raw };
+	}
+}
+
+function read_host_hints() {
+	let hosts = [];
+	let seen = {};
+
+	let lf = fs.open('/tmp/dhcp.leases', 'r');
+	if (lf) {
+		for (let line = lf.read('line'); line != null; line = lf.read('line')) {
+			let f = split(trim(line), /\s+/);
+			if (length(f) >= 4) {
+				let mac = lc(trim(f[1]));
+				let ip = trim(f[2]);
+				let name = trim(f[3]);
+				if (mac != '' && ip != '') {
+					seen[ip] = true;
+					push(hosts, { ip: ip, mac: mac, name: (name != '*' ? name : '') });
+				}
+			}
+		}
+		lf.close();
+	}
+
+	let af = fs.open('/proc/net/arp', 'r');
+	if (af) {
+		af.read('line');
+		for (let line = af.read('line'); line != null; line = af.read('line')) {
+			let f = split(trim(line), /\s+/);
+			if (length(f) >= 4 && f[2] != '0x0') {
+				let ip = trim(f[0]);
+				let mac = lc(trim(f[3]));
+				if (ip != '' && mac != '' && mac != '00:00:00:00:00:00' && !seen[ip]) {
+					seen[ip] = true;
+					push(hosts, { ip: ip, mac: mac, name: '' });
+				}
+			}
+		}
+		af.close();
+	}
+
+	return { hosts: hosts };
+}
+
+const methods = {
+	getStatus: {
+		args: {},
+		call: function() {
+			print(sprintf('%J\n', read_status_json()));
+		}
+	},
+	getHints: {
+		args: {},
+		call: function() {
+			print(sprintf('%J\n', read_host_hints()));
+		}
+	}
+};
+
+function parseInput() {
+	let raw = '';
+	while (true) {
+		let chunk = fs.stdin.read(4096);
+		if (!chunk || chunk == '')
+			break;
+		raw += chunk;
+	}
+	if (raw == '')
+		return {};
+	try {
+		return json(raw);
+	}
+	catch (e) {
+		print(sprintf('%J\n', { error: `${e}` }));
+		exit(1);
+	}
+}
+
+function validateArgs(func, uargs) {
+	let method = methods[func];
+	if (!method) {
+		print(sprintf('%J\n', { error: 'Method not found' }));
+		exit(1);
+	}
+	if (type(uargs) != 'object') {
+		print(sprintf('%J\n', { error: 'Invalid arguments' }));
+		exit(1);
+	}
+	delete uargs.ubus_rpc_session;
+	let margs = method.args || {};
+	for (let k, v in uargs) {
+		if (!(k in margs) || (v != null && type(v) != type(margs[k]))) {
+			print(sprintf('%J\n', { error: 'Invalid arguments' }));
+			exit(1);
+		}
+	}
+	return method;
+}
+
+if (ARGV[0] == 'list') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+}
+else if (ARGV[0] == 'call') {
+	let args = parseInput();
+	let method = validateArgs(ARGV[1], args);
+	method.call(args);
+	exit(0);
+}

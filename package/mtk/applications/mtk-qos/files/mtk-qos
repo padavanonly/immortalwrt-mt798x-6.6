@@ -1,0 +1,1083 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# MediaTek NETSYS v3 4-Coprocessor Unified QoS Controller (PCE + PPE + QDMA + WED)
+
+UCI_BIN="${MTK_QOS_UCI_BIN:-uci}"
+TC_BIN="${MTK_QOS_TC_BIN:-tc}"
+NFT_BIN="${MTK_QOS_NFT_BIN:-nft}"
+UBUS_BIN="${MTK_QOS_UBUS_BIN:-ubus}"
+IP_BIN="${MTK_QOS_IP_BIN:-ip}"
+SYSCTL_BIN="${MTK_QOS_SYSCTL_BIN:-sysctl}"
+MODPROBE_BIN="${MTK_QOS_MODPROBE_BIN:-modprobe}"
+UCODE_BIN="${MTK_QOS_UCODE_BIN:-ucode}"
+RENDER_UC="${MTK_QOS_RENDER_UC:-/usr/share/mtk-qos/render-nft.uc}"
+UCI_DIR="${MTK_QOS_UCI_DIR:-/etc/config}"
+LEASES_FILE="${MTK_QOS_LEASES_FILE:-/tmp/dhcp.leases}"
+ARP_FILE="${MTK_QOS_ARP_FILE:-/proc/net/arp}"
+QDMA_DIR="${MTK_QOS_QDMA_DIR:-/sys/kernel/debug/mtketh}"
+HNAT_DIR="${MTK_QOS_HNAT_DIR:-/sys/kernel/debug/hnat}"
+PCE_DIR="${MTK_QOS_PCE_DIR:-/sys/kernel/debug/pce}"
+PPE_STATUS="${MTK_QOS_PPE_STATUS:-/proc/net/stat/mtk_flow_multitier}"
+DT_COMPAT="${MTK_QOS_DT_COMPAT:-/proc/device-tree/compatible}"
+SYS_NET="${MTK_QOS_SYS_NET:-/sys/class/net}"
+SYS_MOD="${MTK_QOS_SYS_MOD:-/sys/module}"
+RUN_DIR="${MTK_QOS_RUN_DIR:-/var/run/mtk_qos}"
+STATE_FILE="${MTK_QOS_STATE_FILE:-$RUN_DIR/state}"
+LAST_APPLY_FILE="${MTK_QOS_LAST_APPLY_FILE:-$RUN_DIR/last_apply}"
+IFB_DEV="${MTK_QOS_IFB_DEV:-ifb4mtkqos}"
+
+log_msg() {
+	logger -t mtk-qos "$*" 2>/dev/null || true
+}
+
+log_err() {
+	printf 'mtk-qos: %s\n' "$*" >&2
+	log_msg "ERROR: $*"
+}
+
+uci_get() {
+	"$UCI_BIN" -c "$UCI_DIR" -q get "$1" 2>/dev/null
+}
+
+is_uint() {
+	case "${1:-}" in
+		''|*[!0-9]*) return 1 ;;
+		*) return 0 ;;
+	esac
+}
+
+in_range() {
+	local val="$1" min="$2" max="$3"
+	is_uint "$val" || return 1
+	[ "$val" -ge "$min" ] && [ "$val" -le "$max" ]
+}
+
+debugfs_write() {
+	local path="$1" val="$2"
+	[ -w "$path" ] || return 0
+	echo "$val" > "$path" 2>/dev/null
+}
+
+debugfs_write_required() {
+	local path="$1" val="$2"
+	[ -w "$path" ] || return 1
+	printf '%s\n' "$val" > "$path" 2>/dev/null
+}
+
+qdma_sch_write() {
+	local sch="$1" val="$2"
+	debugfs_write "$QDMA_DIR/qdma_sch$sch" "$val"
+}
+
+qdma_txq_write() {
+	local q="$1" val="$2"
+	debugfs_write "$QDMA_DIR/qdma_txq$q" "$val"
+}
+
+qdma_sch_write_required() {
+	local sch="$1" val="$2"
+	debugfs_write_required "$QDMA_DIR/qdma_sch$sch" "$val"
+}
+
+qdma_txq_write_required() {
+	local q="$1" val="$2"
+	debugfs_write_required "$QDMA_DIR/qdma_txq$q" "$val"
+}
+
+conflict_qos_active() {
+	local key v
+	for key in eqos.config.enabled eqos.@eqos[0].enabled mtkhqos.@global[0].hqos mtkhqos.global.hqos; do
+		v="$(uci_get "$key")"
+		[ "$v" = "1" ] && return 0
+	done
+	return 1
+}
+
+read_hook_toggle() {
+	local raw=""
+	[ -r "$HNAT_DIR/hook_toggle" ] || { printf '0\n'; return 0; }
+	raw="$(tr -d ' \t\r\n' < "$HNAT_DIR/hook_toggle" 2>/dev/null)"
+	case "$raw" in
+		1|enabled|enable|on|true) printf '1\n' ;;
+		*) printf '0\n' ;;
+	esac
+}
+
+is_ignored_wan_if() {
+	case "$1" in
+		''|lo|br-*|zt*|tun*|tap*|wg*|docker*|veth*|ifb*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+append_unique_dev() {
+	local cur="$1" add="$2" item
+	[ -n "$add" ] || { printf '%s\n' "$cur"; return 0; }
+	is_ignored_wan_if "$add" && { printf '%s\n' "$cur"; return 0; }
+	for item in $cur; do
+		[ "$item" = "$add" ] && { printf '%s\n' "$cur"; return 0; }
+	done
+	if [ -n "$cur" ]; then
+		printf '%s %s\n' "$cur" "$add"
+	else
+		printf '%s\n' "$add"
+	fi
+}
+
+resolve_pppoe_lower_dev() {
+	local dev="$1" lower="" link
+	case "$dev" in
+		pppoe-*)
+			link="$SYS_NET/$dev/lower_*"
+			for p in $link; do
+				if [ -e "$p" ]; then
+					lower="$(basename "$p" | sed 's/^lower_//')"
+					[ -n "$lower" ] && printf '%s\n' "$lower"
+				fi
+			done
+			;;
+	esac
+}
+
+detect_wan_devs() {
+	local cfg_if="${1:-auto}" out="" dev lower d iface status
+
+	if [ -n "$cfg_if" ] && [ "$cfg_if" != "auto" ]; then
+		for d in $(printf '%s' "$cfg_if" | tr ',' ' '); do
+			out="$(append_unique_dev "$out" "$d")"
+			for lower in $(resolve_pppoe_lower_dev "$d"); do
+				out="$(append_unique_dev "$out" "$lower")"
+			done
+		done
+		[ -n "$out" ] || out="eth1"
+		printf '%s\n' "$out"
+		return 0
+	fi
+
+	if command -v "$IP_BIN" >/dev/null 2>&1; then
+		for d in $("$IP_BIN" -4 route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1)}'); do
+			out="$(append_unique_dev "$out" "$d")"
+			for lower in $(resolve_pppoe_lower_dev "$d"); do
+				out="$(append_unique_dev "$out" "$lower")"
+			done
+		done
+		for d in $("$IP_BIN" -6 route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") print $(i+1)}'); do
+			out="$(append_unique_dev "$out" "$d")"
+			for lower in $(resolve_pppoe_lower_dev "$d"); do
+				out="$(append_unique_dev "$out" "$lower")"
+			done
+		done
+	fi
+
+	if [ -z "$out" ] && command -v "$UBUS_BIN" >/dev/null 2>&1; then
+		for iface in wan wan6 USB USBv6 wan_5g wan6_5g 1_1 2_1 modem modem6; do
+			status="$("$UBUS_BIN" -t 2 call "network.interface.$iface" status 2>/dev/null)" || continue
+			dev="$(printf '%s\n' "$status" | sed -n 's/.*"l3_device"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+			[ -n "$dev" ] || dev="$(printf '%s\n' "$status" | sed -n 's/.*"device"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+			out="$(append_unique_dev "$out" "$dev")"
+			lower="$(printf '%s\n' "$status" | sed -n 's/.*"device"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+			out="$(append_unique_dev "$out" "$lower")"
+		done
+	fi
+
+	if [ -z "$out" ]; then
+		for d in wwan0_1 usb0 rmnet_data0 eth1 wan; do
+			if [ -d "$SYS_NET/$d" ]; then
+				local st=""
+				[ -r "$SYS_NET/$d/operstate" ] && st="$(cat "$SYS_NET/$d/operstate" 2>/dev/null)"
+				if [ "$st" = "up" ] || [ "$st" = "unknown" ]; then
+					out="$(append_unique_dev "$out" "$d")"
+				fi
+			fi
+		done
+	fi
+
+	[ -n "$out" ] || out="eth1"
+	printf '%s\n' "$out"
+}
+
+detect_lan_devs() {
+	local out="br-lan" path name
+	if [ -d "$SYS_NET" ]; then
+		for path in "$SYS_NET"/br-* "$SYS_NET"/lan*; do
+			[ -d "$path" ] || continue
+			name="$(basename "$path")"
+			out="$(append_unique_dev_any "$out" "$name")"
+		done
+	fi
+	printf '%s\n' "$out"
+}
+
+append_unique_dev_any() {
+	local cur="$1" add="$2" item
+	[ -n "$add" ] || { printf '%s\n' "$cur"; return 0; }
+	for item in $cur; do
+		[ "$item" = "$add" ] && { printf '%s\n' "$cur"; return 0; }
+	done
+	printf '%s %s\n' "$cur" "$add"
+}
+
+classify_wan_kind() {
+	local devs="$1" has_cell=0 has_wired=0 d
+	for d in $devs; do
+		case "$d" in
+			wwan*|usb*|rmnet*|qmimux*|ccmni*) has_cell=1 ;;
+			*) has_wired=1 ;;
+		esac
+	done
+	if [ "$has_cell" -eq 1 ] && [ "$has_wired" -eq 1 ]; then
+		printf 'dual_wan\n'
+	elif [ "$has_cell" -eq 1 ]; then
+		printf 'cellular_5g\n'
+	else
+		printf 'wired\n'
+	fi
+}
+
+csv_from_words() {
+	printf '%s' "$*" | tr ' ' ','
+}
+
+clamp_rate() {
+	local v="$1" min_v="$2" max_v="$3"
+	[ "$v" -lt "$min_v" ] && v="$min_v"
+	[ "$max_v" -gt 0 ] && [ "$v" -gt "$max_v" ] && v="$max_v"
+	printf '%s\n' "$v"
+}
+
+calc_effective_bw() {
+	local rate="$1" oh="$2"
+	if [ "$rate" -le 0 ] || [ "$oh" -le 0 ]; then
+		printf '%s\n' "$rate"
+		return 0
+	fi
+	printf '%s\n' $((rate * 1500 / (1500 + oh)))
+}
+
+reset_all_qdma() {
+	local q=1
+	qdma_sch_write 2 "0 wrr 1000000"
+	qdma_sch_write 3 "0 wrr 1000000"
+	while [ "$q" -le 31 ]; do
+		qdma_txq_write "$q" "0 0 0 0 0 4 4"
+		q=$((q + 1))
+	done
+	q=32
+	while [ "$q" -le 63 ]; do
+		qdma_txq_write "$q" "0 0 0 0 0 4 4"
+		q=$((q + 1))
+	done
+}
+
+soc_supports_pce() {
+	if [ -r "$DT_COMPAT" ]; then
+		if tr '\0' '\n' < "$DT_COMPAT" 2>/dev/null | grep -q '^mediatek,mt7987'; then
+			return 1
+		fi
+		if tr '\0' '\n' < "$DT_COMPAT" 2>/dev/null | grep -q '^mediatek,mt7988'; then
+			return 0
+		fi
+	fi
+	[ -e "$PCE_DIR/cls_entry" ] && return 0
+	return 1
+}
+
+clear_pce_cls() {
+	local idx=24
+	[ -w "$PCE_DIR/cls_entry" ] || return 0
+	while [ "$idx" -le 31 ]; do
+		debugfs_write "$PCE_DIR/cls_entry" "$idx"
+		idx=$((idx + 1))
+	done
+}
+
+program_pce_cls() {
+	local wan_kind="$1"
+	clear_pce_cls
+	[ "$CFG_PCE" = "1" ] || return 0
+	soc_supports_pce || return 0
+	if [ ! -e "$PCE_DIR/cls_entry" ]; then
+		"$MODPROBE_BIN" pce 2>/dev/null || true
+	fi
+	[ -w "$PCE_DIR/cls_entry" ] || return 0
+
+	# High CLS slots 24..31 avoid crypto-eip slots 1..23; explicit sport bitmaps never match lo/zt*
+	# GDM1 (LAN, sport=0x2) -> PPE0 (fport=3, tport=0)
+	debugfs_write "$PCE_DIR/cls_entry" "24 sport 2 2 tag 3 1 l4_protocol ff 11 l4_valid 4 4 l4_dport ffff 35 fport 3 tport 0"
+	debugfs_write "$PCE_DIR/cls_entry" "25 sport 2 2 tag 3 1 l4_protocol ff 11 l4_valid 4 4 l4_dport ffff 7b fport 3 tport 0"
+	debugfs_write "$PCE_DIR/cls_entry" "26 sport 2 2 tag 3 1 l4_protocol ff 11 l4_valid 4 4 l4_dport ffff 1bb fport 3 tport 0"
+	debugfs_write "$PCE_DIR/cls_entry" "27 sport 2 2 tag 3 2 udplite_l4_hdr_nez 1 1 l4_valid 3 3 l4_data ffffffff 13426974 fport 3 tport 0"
+
+	# GDM2 (Wired WAN, sport=0x4) -> PPE1 (fport=4, tport=0)
+	if [ "$wan_kind" != "cellular_5g" ]; then
+		debugfs_write "$PCE_DIR/cls_entry" "28 sport 4 4 tag 3 1 l4_protocol ff 11 l4_valid 4 4 l4_dport ffff 35 fport 4 tport 0"
+		debugfs_write "$PCE_DIR/cls_entry" "29 sport 4 4 tag 3 1 l4_protocol ff 11 l4_valid 4 4 l4_dport ffff 1bb fport 4 tport 0"
+		debugfs_write "$PCE_DIR/cls_entry" "30 sport 4 4 tag 3 2 udplite_l4_hdr_nez 1 1 l4_valid 3 3 l4_data ffffffff 13426974 fport 4 tport 0"
+		debugfs_write "$PCE_DIR/cls_entry" "31 sport 4 4 tag 3 1 l4_protocol ff 11 l4_valid 4 4 l4_dport ffff d96 fport 4 tport 0"
+	fi
+}
+
+tc_cleanup_dev() {
+	local dev="$1"
+	[ -n "$dev" ] || return 0
+	command -v "$TC_BIN" >/dev/null 2>&1 || return 0
+	[ -d "$SYS_NET/$dev" ] || return 0
+	"$TC_BIN" qdisc del dev "$dev" root 2>/dev/null || true
+	"$TC_BIN" qdisc del dev "$dev" ingress 2>/dev/null || true
+}
+
+tc_cleanup_all() {
+	local devs="$1" d
+	for d in $devs "$IFB_DEV"; do
+		tc_cleanup_dev "$d"
+	done
+	if command -v "$IP_BIN" >/dev/null 2>&1 && [ -d "$SYS_NET/$IFB_DEV" ]; then
+		"$IP_BIN" link set dev "$IFB_DEV" down 2>/dev/null || true
+		"$IP_BIN" link del dev "$IFB_DEV" 2>/dev/null || true
+	fi
+}
+
+read_state_var() {
+	local var="$1"
+	[ -r "$STATE_FILE" ] || return 0
+	sed -n "s/^${var}=//p" "$STATE_FILE" 2>/dev/null | head -n 1
+}
+
+save_state() {
+	mkdir -p "$RUN_DIR" 2>/dev/null || true
+	cat > "$STATE_FILE" <<EOF
+active=$1
+mode=$2
+wan_kind=$3
+wan_devs=$4
+download_kbps=$5
+upload_kbps=$6
+scheduler=$7
+cake_dev=$8
+hw_sig=$9
+EOF
+}
+
+eqos_rates_sig_from_file() {
+	local slots_tsv="$1"
+	[ -r "$slots_tsv" ] || return 0
+	awk -F'|' '($1 ~ /^[0-9]+$/) { printf "%s:%s:%s;", $1, $2, $3 }' "$slots_tsv" 2>/dev/null
+}
+
+compute_qos_plan_from_slots() {
+	local slots_tsv="$1" wan_kind="$2" dl_eff="$3" ul_eff="$4"
+	local slot ul_r dl_r max_c ip mac cmt
+	MTK_QOS_HAS_UL_EQOS=0
+	MTK_QOS_HAS_DL_EQOS=0
+	if [ -r "$slots_tsv" ]; then
+		while IFS='|' read -r slot ul_r dl_r max_c ip mac cmt; do
+			is_uint "$slot" || continue
+			[ "$slot" -ge 1 ] && [ "$slot" -le 15 ] || continue
+			is_uint "$ul_r" && [ "$ul_r" -gt 0 ] && MTK_QOS_HAS_UL_EQOS=1
+			is_uint "$dl_r" && [ "$dl_r" -gt 0 ] && MTK_QOS_HAS_DL_EQOS=1
+		done < "$slots_tsv"
+	fi
+	if { [ "$ul_eff" -gt 0 ] && [ "$CFG_SQM" = "1" ]; } || [ "$MTK_QOS_HAS_UL_EQOS" = "1" ]; then
+		MTK_QOS_UL_ACTIVE=1
+	else
+		MTK_QOS_UL_ACTIVE=0
+	fi
+	if { [ "$dl_eff" -gt 0 ] && [ "$CFG_SQM" = "1" ]; } || [ "$MTK_QOS_HAS_DL_EQOS" = "1" ]; then
+		MTK_QOS_DL_ACTIVE=1
+	else
+		MTK_QOS_DL_ACTIVE=0
+	fi
+	if [ ! -e "$HNAT_DIR/qos_dpi" ] && [ "$wan_kind" = "cellular_5g" ]; then
+		if [ "$MTK_QOS_UL_ACTIVE" = "1" ]; then
+			MTK_QOS_QOS_CMD="1 uplink"
+		else
+			MTK_QOS_QOS_CMD="0"
+		fi
+	elif [ "$MTK_QOS_UL_ACTIVE" = "1" ] && [ "$MTK_QOS_DL_ACTIVE" = "1" ]; then
+		MTK_QOS_QOS_CMD="1"
+	elif [ "$MTK_QOS_DL_ACTIVE" = "1" ]; then
+		MTK_QOS_QOS_CMD="1 downlink"
+	elif [ "$MTK_QOS_UL_ACTIVE" = "1" ]; then
+		MTK_QOS_QOS_CMD="1 uplink"
+	else
+		MTK_QOS_QOS_CMD="0"
+	fi
+}
+
+compute_hw_sig() {
+	local mode="$1" wan_kind="$2" wan_devs="$3" lan_devs="$4" primary_wan="$5" qos_cmd="$6" eqos_rates="$7"
+	printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+		"$mode" "$wan_kind" "$wan_devs" "$lan_devs" "$primary_wan" \
+		"$CFG_DL" "$CFG_UL" "$CFG_SCH" "$CFG_OVERHEAD" \
+		"$CFG_SQM" "$CFG_EQOS" "$CFG_DPI" "$CFG_PCE" "$CFG_FAST_BIND" \
+		"$CFG_RT_PCT" "$CFG_VID_PCT" "$CFG_P2P_PCT" "$CFG_ACK_PRIO" \
+		"$CFG_CAKE_DS" "$CFG_CAKE_ACK" "${qos_cmd};${eqos_rates}"
+}
+
+live_hw_matches() {
+	local hook_on="$1" dl_eff="$2" ul_eff="$3" qos_cmd="$4"
+	local sqm_raw live_sqm live_qos live_ul live_dl
+	local exp_sqm=0 exp_qos=0 exp_ul=0 exp_dl=0
+
+	[ "$hook_on" = "1" ] || return 0
+	[ -r "$HNAT_DIR/sqm_toggle" ] || return 1
+
+	if [ "$CFG_SQM" = "1" ] && { [ "$dl_eff" -gt 0 ] || [ "$ul_eff" -gt 0 ]; }; then
+		exp_sqm=1
+	fi
+	case "$qos_cmd" in
+		"1") exp_qos=1; exp_ul=1; exp_dl=1 ;;
+		"1 uplink") exp_qos=1; exp_ul=1; exp_dl=0 ;;
+		"1 downlink") exp_qos=1; exp_ul=0; exp_dl=1 ;;
+		*) exp_qos=0; exp_ul=0; exp_dl=0 ;;
+	esac
+
+	sqm_raw="$(cat "$HNAT_DIR/sqm_toggle" 2>/dev/null)"
+	if printf '%s\n' "$sqm_raw" | grep -q 'qos_toggle='; then
+		live_sqm="$(printf '%s\n' "$sqm_raw" | sed -n 's/.*enabled=\([0-9]*\).*/\1/p' | head -n 1)"
+		live_qos="$(printf '%s\n' "$sqm_raw" | sed -n 's/.*qos_toggle=\([0-9]*\).*/\1/p' | head -n 1)"
+		live_ul="$(printf '%s\n' "$sqm_raw" | sed -n 's/.*ul=\([0-9]*\).*/\1/p' | head -n 1)"
+		live_dl="$(printf '%s\n' "$sqm_raw" | sed -n 's/.*dl=\([0-9]*\).*/\1/p' | head -n 1)"
+		[ "$live_sqm" = "$exp_sqm" ] && [ "$live_qos" = "$exp_qos" ] && \
+			[ "$live_ul" = "$exp_ul" ] && [ "$live_dl" = "$exp_dl" ]
+		return $?
+	fi
+
+	live_sqm="$(printf '%s' "$sqm_raw" | tr -d ' \t\r\n')"
+	[ "$live_sqm" = "$exp_sqm" ] || return 1
+	if [ -r "$HNAT_DIR/qos_toggle" ]; then
+		live_qos="$(tr -d '\r\n' < "$HNAT_DIR/qos_toggle" 2>/dev/null)"
+		[ "$live_qos" = "$qos_cmd" ] || return 1
+	fi
+	return 0
+}
+
+load_config() {
+	CFG_ENABLED="$(uci_get mtk_qos.global.enabled)"
+	CFG_SQM="$(uci_get mtk_qos.global.sqm_enabled)"
+	CFG_EQOS="$(uci_get mtk_qos.global.eqos_enabled)"
+	CFG_DPI="$(uci_get mtk_qos.global.dpi_enabled)"
+	CFG_PCE="$(uci_get mtk_qos.global.pce_enabled)"
+	CFG_FAST_BIND="$(uci_get turboacc.config.fastpath_mh_eth_hnat_bind_rate)"
+	CFG_WAN_MODE="$(uci_get mtk_qos.global.wan_mode)"
+	CFG_IFACE="$(uci_get mtk_qos.global.interface)"
+	CFG_DL="$(uci_get mtk_qos.global.download_kbps)"
+	CFG_UL="$(uci_get mtk_qos.global.upload_kbps)"
+	CFG_SCH="$(uci_get mtk_qos.global.scheduler)"
+	CFG_OVERHEAD="$(uci_get mtk_qos.global.overhead)"
+	CFG_RT_PCT="$(uci_get mtk_qos.global.realtime_pct)"
+	CFG_VID_PCT="$(uci_get mtk_qos.global.video_pct)"
+	CFG_P2P_PCT="$(uci_get mtk_qos.global.p2p_pct)"
+	CFG_ACK_PRIO="$(uci_get mtk_qos.global.ack_prio)"
+	CFG_CAKE_DS="$(uci_get mtk_qos.global.cake_diffserv)"
+	CFG_CAKE_ACK="$(uci_get mtk_qos.global.cake_ack_filter)"
+
+	: "${CFG_ENABLED:=0}"
+	: "${CFG_SQM:=1}"
+	: "${CFG_EQOS:=1}"
+	: "${CFG_DPI:=1}"
+	: "${CFG_PCE:=1}"
+	in_range "$CFG_FAST_BIND" 1 30 || CFG_FAST_BIND=5
+	: "${CFG_WAN_MODE:=auto}"
+	: "${CFG_IFACE:=auto}"
+	: "${CFG_DL:=0}"
+	: "${CFG_UL:=0}"
+	: "${CFG_SCH:=wrr}"
+	: "${CFG_OVERHEAD:=0}"
+	: "${CFG_RT_PCT:=25}"
+	: "${CFG_VID_PCT:=45}"
+	: "${CFG_P2P_PCT:=15}"
+	: "${CFG_ACK_PRIO:=1}"
+	: "${CFG_CAKE_DS:=diffserv4}"
+	: "${CFG_CAKE_ACK:=1}"
+}
+
+validate_config() {
+	in_range "$CFG_DL" 0 10000000 || { log_err "invalid download_kbps: $CFG_DL"; return 1; }
+	in_range "$CFG_UL" 0 10000000 || { log_err "invalid upload_kbps: $CFG_UL"; return 1; }
+	in_range "$CFG_OVERHEAD" 0 128 || { log_err "invalid overhead: $CFG_OVERHEAD"; return 1; }
+	in_range "$CFG_FAST_BIND" 1 30 || { log_err "invalid fast_bind_pkt: $CFG_FAST_BIND"; return 1; }
+	in_range "$CFG_RT_PCT" 5 100 || { log_err "invalid realtime_pct: $CFG_RT_PCT"; return 1; }
+	in_range "$CFG_VID_PCT" 5 100 || { log_err "invalid video_pct: $CFG_VID_PCT"; return 1; }
+	in_range "$CFG_P2P_PCT" 1 100 || { log_err "invalid p2p_pct: $CFG_P2P_PCT"; return 1; }
+	case "$CFG_ACK_PRIO" in
+		0|1) ;;
+		*) log_err "invalid ack_prio: $CFG_ACK_PRIO"; return 1 ;;
+	esac
+	case "$CFG_SCH" in
+		wrr|sp) ;;
+		*) log_err "invalid scheduler: $CFG_SCH"; return 1 ;;
+	esac
+	case "$CFG_CAKE_DS" in
+		diffserv4|diffserv3|diffserv8|besteffort) ;;
+		*) CFG_CAKE_DS="diffserv4" ;;
+	esac
+	return 0
+}
+
+program_eqos_queues() {
+	local ul_eff="$1" dl_eff="$2" slots_tsv="$RUN_DIR/eqos_slots.tsv"
+	local seen_ul=" " seen_dl=" " slot ul_r dl_r max_c ip mac cmt s cap_r
+
+	if [ -r "$slots_tsv" ]; then
+		while IFS='|' read -r slot ul_r dl_r max_c ip mac cmt; do
+			is_uint "$slot" || continue
+			[ "$slot" -ge 1 ] && [ "$slot" -le 15 ] || continue
+			if is_uint "$ul_r" && [ "$ul_r" -gt 0 ]; then
+				cap_r="$ul_r"
+				[ "$ul_eff" -gt 0 ] && [ "$cap_r" -gt "$ul_eff" ] && cap_r="$ul_eff"
+				qdma_txq_write_required "$slot" "2 0 0 1 $cap_r 4 4" || return 1
+				seen_ul="${seen_ul}${slot} "
+			fi
+			if is_uint "$dl_r" && [ "$dl_r" -gt 0 ]; then
+				cap_r="$dl_r"
+				[ "$dl_eff" -gt 0 ] && [ "$cap_r" -gt "$dl_eff" ] && cap_r="$dl_eff"
+				qdma_txq_write_required "$((32 + slot))" "3 0 0 1 $cap_r 4 4" || return 1
+				seen_dl="${seen_dl}${slot} "
+			fi
+		done < "$slots_tsv"
+	fi
+
+	s=1
+	while [ "$s" -le 15 ]; do
+		case "$seen_ul" in
+			*" $s "*) ;;
+			*) qdma_txq_write_required "$s" "0 0 0 0 0 4 4" || return 1 ;;
+		esac
+		case "$seen_dl" in
+			*" $s "*) ;;
+			*) qdma_txq_write_required "$((32 + s))" "0 0 0 0 0 4 4" || return 1 ;;
+		esac
+		s=$((s + 1))
+	done
+
+	case "$seen_ul" in
+		*[0-9]*) MTK_QOS_HAS_UL_EQOS=1 ;;
+		*) MTK_QOS_HAS_UL_EQOS=0 ;;
+	esac
+	case "$seen_dl" in
+		*[0-9]*) MTK_QOS_HAS_DL_EQOS=1 ;;
+		*) MTK_QOS_HAS_DL_EQOS=0 ;;
+	esac
+}
+
+program_sqm_queues() {
+	local sch="$1" base="$2" eff="$3"
+	local rt_min vid_max p2p_max q
+
+	if [ "$eff" -gt 0 ] && [ "$CFG_SQM" = "1" ]; then
+		rt_min="$(clamp_rate $((eff * CFG_RT_PCT / 100)) 100 "$eff")"
+		vid_max="$(clamp_rate $((eff * CFG_VID_PCT / 100)) 100 "$eff")"
+		p2p_max="$(clamp_rate $((eff * CFG_P2P_PCT / 100)) 100 "$eff")"
+
+		# Q16/Q48: Realtime/Gaming/DNS/ACK (min rate guarantee + highest weight 15)
+		qdma_txq_write_required "$base" "$sch 1 $rt_min 1 $eff 15 4" || return 1
+		# Q17..Q29 / Q49..Q61: 13-queue 5-tuple flow-fair SQM
+		q=$((base + 1))
+		while [ "$q" -le $((base + 13)) ]; do
+			qdma_txq_write_required "$q" "$sch 0 0 1 $eff 8 4" || return 1
+			q=$((q + 1))
+		done
+		# Q30/Q62: Video/Streaming/QUIC
+		qdma_txq_write_required "$((base + 14))" "$sch 0 0 1 $vid_max 6 4" || return 1
+		# Q31/Q63: P2P/BitTorrent scavenger cap
+		qdma_txq_write_required "$((base + 15))" "$sch 0 0 1 $p2p_max 1 4" || return 1
+	else
+		q="$base"
+		while [ "$q" -le $((base + 15)) ]; do
+			qdma_txq_write_required "$q" "0 0 0 0 0 4 4" || return 1
+			q=$((q + 1))
+		done
+	fi
+}
+
+render_nft_to_paths() {
+	local wan_csv="$1" lan_csv="$2" out_nft="$3" out_slots="$4" connlimit_ok=0
+	mkdir -p "$RUN_DIR" 2>/dev/null || true
+
+	if [ -d "$SYS_MOD/nft_connlimit" ] || "$MODPROBE_BIN" nft_connlimit 2>/dev/null; then
+		connlimit_ok=1
+	fi
+
+	"$UCODE_BIN" "$RENDER_UC" \
+		--uci-dir "$UCI_DIR" \
+		--leases "$LEASES_FILE" \
+		--arp "$ARP_FILE" \
+		--out-nft "$out_nft" \
+		--out-slots "$out_slots" \
+		--wan-devs "$wan_csv" \
+		--lan-devs "$lan_csv" \
+		--with-connlimit "$connlimit_ok" \
+		--mtu-fix 1 || return 1
+}
+
+render_and_apply_nft() {
+	local wan_csv="$1" lan_csv="$2"
+	render_nft_to_paths "$wan_csv" "$lan_csv" "$RUN_DIR/mtk_qos.nft" "$RUN_DIR/eqos_slots.tsv" || return 1
+	"$NFT_BIN" -f "$RUN_DIR/mtk_qos.nft" || return 1
+}
+
+apply_cake_fallback() {
+	local wan_dev="$1" dl_eff="$2" ul_eff="$3" ack_arg="no-ack-filter"
+	[ "$CFG_CAKE_ACK" = "1" ] && ack_arg="ack-filter"
+
+	"$MODPROBE_BIN" sch_cake 2>/dev/null || true
+	"$MODPROBE_BIN" ifb 2>/dev/null || true
+	tc_cleanup_all "$wan_dev"
+
+	if [ "$ul_eff" -gt 0 ]; then
+		[ -d "$SYS_NET/$wan_dev" ] || { log_err "WAN interface $wan_dev is unavailable for CAKE upload shaping"; return 1; }
+		"$TC_BIN" qdisc replace dev "$wan_dev" root cake \
+			bandwidth "${ul_eff}kbit" "$CFG_CAKE_DS" nat wash split-gso "$ack_arg" || return 1
+	fi
+
+	if [ "$dl_eff" -gt 0 ]; then
+		[ -d "$SYS_NET/$wan_dev" ] || { log_err "WAN interface $wan_dev is unavailable for CAKE download shaping"; return 1; }
+		command -v "$IP_BIN" >/dev/null 2>&1 || { log_err "ip is required for CAKE download shaping"; return 1; }
+		"$IP_BIN" link add name "$IFB_DEV" type ifb 2>/dev/null || true
+		"$IP_BIN" link set dev "$IFB_DEV" up || return 1
+		"$TC_BIN" qdisc add dev "$wan_dev" handle ffff: ingress || return 1
+		"$TC_BIN" filter add dev "$wan_dev" parent ffff: protocol all matchall \
+			action mirred egress redirect dev "$IFB_DEV" || return 1
+		"$TC_BIN" qdisc replace dev "$IFB_DEV" root cake \
+			bandwidth "${dl_eff}kbit" "$CFG_CAKE_DS" ingress nat wash || return 1
+	fi
+}
+
+do_stop() {
+	local prev_devs cur_devs prev_cake restore_bind
+	load_config
+	prev_devs="$(read_state_var wan_devs)"
+	prev_cake="$(read_state_var cake_dev)"
+	cur_devs="$(detect_wan_devs "$CFG_IFACE")"
+
+	if command -v "$NFT_BIN" >/dev/null 2>&1; then
+		"$NFT_BIN" delete table inet mtk_qos 2>/dev/null || true
+	fi
+
+	clear_pce_cls
+
+	if ! conflict_qos_active; then
+		debugfs_write "$HNAT_DIR/sqm_toggle" "0"
+		debugfs_write "$HNAT_DIR/qos_ack_prio" "1"
+		debugfs_write "$HNAT_DIR/qos_toggle" "0"
+		restore_bind="$(uci_get turboacc.config.fastpath_mh_eth_hnat_bind_rate)"
+		in_range "$restore_bind" 1 30 || restore_bind=5
+		debugfs_write "$HNAT_DIR/hnat_setting" "11 $restore_bind"
+		reset_all_qdma
+	fi
+
+	tc_cleanup_all "$prev_devs $cur_devs $prev_cake"
+	rm -f "$STATE_FILE" "$RUN_DIR/mtk_qos.nft" "$RUN_DIR/eqos_slots.tsv"
+	return 0
+}
+
+do_start_impl() {
+	local wan_devs lan_devs wan_csv lan_csv wan_kind primary_wan prev_devs
+	local hook_on dl_eff ul_eff sch2_rate sch3_rate qos_cmd="0" eqos_rates hw_sig
+
+	if conflict_qos_active; then
+		log_err "conflict: eqos or mtkhqos is enabled; disable it before enabling mtk-qos"
+		return 1
+	fi
+
+	load_config
+	if [ "$CFG_ENABLED" != "1" ]; then
+		do_stop
+		return $?
+	fi
+	validate_config || return 1
+
+	prev_devs="$(read_state_var wan_devs)"
+	wan_devs="$(detect_wan_devs "$CFG_IFACE")"
+	lan_devs="$(detect_lan_devs)"
+	wan_csv="$(csv_from_words $wan_devs)"
+	lan_csv="$(csv_from_words $lan_devs)"
+	primary_wan="$(printf '%s' "$wan_devs" | awk '{print $1}')"
+	if [ "$CFG_WAN_MODE" != "auto" ]; then
+		wan_kind="$CFG_WAN_MODE"
+	else
+		wan_kind="$(classify_wan_kind "$wan_devs")"
+	fi
+
+	dl_eff="$(calc_effective_bw "$CFG_DL" "$CFG_OVERHEAD")"
+	ul_eff="$(calc_effective_bw "$CFG_UL" "$CFG_OVERHEAD")"
+	hook_on="$(read_hook_toggle)"
+
+	"$SYSCTL_BIN" -qw net.netfilter.nf_conntrack_tcp_be_liberal=1 2>/dev/null || true
+
+	render_and_apply_nft "$wan_csv" "$lan_csv" || {
+		log_err "failed rendering or applying nftables rules"
+		return 1
+	}
+
+	if [ "$hook_on" = "1" ]; then
+		tc_cleanup_all "$prev_devs $wan_devs"
+
+		MTK_QOS_HAS_UL_EQOS=0
+		MTK_QOS_HAS_DL_EQOS=0
+		program_eqos_queues "$ul_eff" "$dl_eff" || {
+			log_err "failed programming mandatory QDMA EQoS queues"
+			return 1
+		}
+
+		if { [ "$ul_eff" -gt 0 ] && [ "$CFG_SQM" = "1" ]; } || [ "$MTK_QOS_HAS_UL_EQOS" = "1" ]; then
+			sch2_rate="$ul_eff"
+			[ "$sch2_rate" -le 0 ] && sch2_rate=1000000
+			qdma_sch_write_required 2 "1 $CFG_SCH $sch2_rate" || { log_err "failed writing qdma_sch2"; return 1; }
+			program_sqm_queues 2 16 "$ul_eff" || { log_err "failed programming mandatory QDMA SQM queues for scheduler 2"; return 1; }
+			MTK_QOS_UL_ACTIVE=1
+		else
+			qdma_sch_write_required 2 "0 wrr 1000000" || { log_err "failed disabling qdma_sch2"; return 1; }
+			program_sqm_queues 2 16 0 || { log_err "failed clearing mandatory QDMA queues for scheduler 2"; return 1; }
+			MTK_QOS_UL_ACTIVE=0
+		fi
+
+		if { [ "$dl_eff" -gt 0 ] && [ "$CFG_SQM" = "1" ]; } || [ "$MTK_QOS_HAS_DL_EQOS" = "1" ]; then
+			sch3_rate="$dl_eff"
+			[ "$sch3_rate" -le 0 ] && sch3_rate=1000000
+			qdma_sch_write_required 3 "1 $CFG_SCH $sch3_rate" || { log_err "failed writing qdma_sch3"; return 1; }
+			program_sqm_queues 3 48 "$dl_eff" || { log_err "failed programming mandatory QDMA SQM queues for scheduler 3"; return 1; }
+			MTK_QOS_DL_ACTIVE=1
+		else
+			qdma_sch_write_required 3 "0 wrr 1000000" || { log_err "failed disabling qdma_sch3"; return 1; }
+			program_sqm_queues 3 48 0 || { log_err "failed clearing mandatory QDMA queues for scheduler 3"; return 1; }
+			MTK_QOS_DL_ACTIVE=0
+		fi
+
+		if [ ! -e "$HNAT_DIR/qos_dpi" ] && [ "$wan_kind" = "cellular_5g" ]; then
+			# Pre-rebuild mtkhnat loops FROM_EXT 5G->WED through QDMA twice if qos_dl_toggle=1
+			if [ "$MTK_QOS_UL_ACTIVE" = "1" ]; then
+				qos_cmd="1 uplink"
+			else
+				qos_cmd="0"
+			fi
+		elif [ "$MTK_QOS_UL_ACTIVE" = "1" ] && [ "$MTK_QOS_DL_ACTIVE" = "1" ]; then
+			qos_cmd="1"
+		elif [ "$MTK_QOS_DL_ACTIVE" = "1" ]; then
+			qos_cmd="1 downlink"
+		elif [ "$MTK_QOS_UL_ACTIVE" = "1" ]; then
+			qos_cmd="1 uplink"
+		else
+			qos_cmd="0"
+		fi
+
+		debugfs_write_required "$HNAT_DIR/hnat_setting" "11 $CFG_FAST_BIND" || { log_err "failed writing mandatory HNAT fast-bind setting"; return 1; }
+		debugfs_write_required "$HNAT_DIR/qos_toggle" "$qos_cmd" || { log_err "failed writing mandatory HNAT QoS mode"; return 1; }
+		if [ -e "$HNAT_DIR/qos_dpi" ]; then
+			debugfs_write_required "$HNAT_DIR/qos_dpi" "$CFG_DPI" || { log_err "failed writing HNAT DPI setting"; return 1; }
+		fi
+		if [ -e "$HNAT_DIR/qos_ack_prio" ]; then
+			debugfs_write_required "$HNAT_DIR/qos_ack_prio" "$CFG_ACK_PRIO" || { log_err "failed writing HNAT ACK priority setting"; return 1; }
+		fi
+		if [ "$CFG_SQM" = "1" ] && { [ "$dl_eff" -gt 0 ] || [ "$ul_eff" -gt 0 ]; }; then
+			debugfs_write_required "$HNAT_DIR/sqm_toggle" "1" || { log_err "failed enabling mandatory HNAT SQM"; return 1; }
+		else
+			debugfs_write_required "$HNAT_DIR/sqm_toggle" "0" || { log_err "failed disabling HNAT SQM"; return 1; }
+		fi
+		program_pce_cls "$wan_kind"
+
+		eqos_rates="$(eqos_rates_sig_from_file "$RUN_DIR/eqos_slots.tsv")"
+		hw_sig="$(compute_hw_sig "coprocessor_4x" "$wan_kind" "$wan_devs" "$lan_devs" "$primary_wan" "$qos_cmd" "$eqos_rates")"
+		save_state "1" "coprocessor_4x" "$wan_kind" "$wan_devs" "$CFG_DL" "$CFG_UL" "$CFG_SCH" "" "$hw_sig"
+		log_msg "applied mode=coprocessor_4x kind=$wan_kind devs='$wan_devs' dl=${dl_eff}k ul=${ul_eff}k sch=$CFG_SCH qos='$qos_cmd' dpi=$CFG_DPI pce=$CFG_PCE"
+	else
+		reset_all_qdma
+		clear_pce_cls
+		debugfs_write "$HNAT_DIR/sqm_toggle" "0"
+		debugfs_write "$HNAT_DIR/qos_ack_prio" "1"
+		debugfs_write "$HNAT_DIR/qos_toggle" "0"
+		apply_cake_fallback "$primary_wan" "$dl_eff" "$ul_eff" || {
+			log_err "failed applying CAKE fallback on $primary_wan"
+			return 1
+		}
+		eqos_rates="$(eqos_rates_sig_from_file "$RUN_DIR/eqos_slots.tsv")"
+		hw_sig="$(compute_hw_sig "cake_fallback" "$wan_kind" "$wan_devs" "$lan_devs" "$primary_wan" "0" "$eqos_rates")"
+		save_state "1" "cake_fallback" "$wan_kind" "$wan_devs" "$CFG_DL" "$CFG_UL" "$CFG_SCH" "$primary_wan" "$hw_sig"
+		log_msg "applied mode=cake_fallback dev=$primary_wan dl=${dl_eff}k ul=${ul_eff}k"
+	fi
+	return 0
+}
+
+do_start() {
+	local rc
+	do_start_impl
+	rc=$?
+	mkdir -p "$RUN_DIR" 2>/dev/null || true
+	if [ "$rc" -eq 0 ]; then
+		printf 'success\n' > "$LAST_APPLY_FILE" 2>/dev/null || true
+	else
+		printf 'failed\n' > "$LAST_APPLY_FILE" 2>/dev/null || true
+	fi
+	return "$rc"
+}
+
+do_sync() {
+	local st_active st_mode wan_devs lan_devs wan_csv lan_csv wan_kind primary_wan
+	local hook_on dl_eff ul_eff eqos_rates new_hw_sig old_hw_sig
+	local tmp_nft="$RUN_DIR/mtk_qos.nft.tmp" tmp_slots="$RUN_DIR/eqos_slots.tsv.tmp" rc
+
+	if conflict_qos_active; then
+		log_err "conflict: eqos or mtkhqos is enabled; disable it before enabling mtk-qos"
+		return 1
+	fi
+
+	load_config
+	st_active="$(read_state_var active)"
+	if [ "$CFG_ENABLED" != "1" ]; then
+		[ "$st_active" = "1" ] && { do_stop; return $?; }
+		return 0
+	fi
+	validate_config || return 1
+
+	st_mode="$(read_state_var mode)"
+	old_hw_sig="$(read_state_var hw_sig)"
+	if [ "$st_active" != "1" ] || [ -z "$old_hw_sig" ] || \
+	   [ ! -r "$RUN_DIR/mtk_qos.nft" ] || [ ! -r "$RUN_DIR/eqos_slots.tsv" ]; then
+		do_start
+		return $?
+	fi
+
+	wan_devs="$(detect_wan_devs "$CFG_IFACE")"
+	lan_devs="$(detect_lan_devs)"
+	wan_csv="$(csv_from_words $wan_devs)"
+	lan_csv="$(csv_from_words $lan_devs)"
+	primary_wan="$(printf '%s' "$wan_devs" | awk '{print $1}')"
+	if [ "$CFG_WAN_MODE" != "auto" ]; then
+		wan_kind="$CFG_WAN_MODE"
+	else
+		wan_kind="$(classify_wan_kind "$wan_devs")"
+	fi
+
+	dl_eff="$(calc_effective_bw "$CFG_DL" "$CFG_OVERHEAD")"
+	ul_eff="$(calc_effective_bw "$CFG_UL" "$CFG_OVERHEAD")"
+	hook_on="$(read_hook_toggle)"
+
+	if [ "$hook_on" = "1" ] && [ "$st_mode" != "coprocessor_4x" ]; then
+		do_start
+		return $?
+	fi
+	if [ "$hook_on" != "1" ] && [ "$st_mode" != "cake_fallback" ]; then
+		do_start
+		return $?
+	fi
+
+	render_nft_to_paths "$wan_csv" "$lan_csv" "$tmp_nft" "$tmp_slots" || {
+		rm -f "$tmp_nft" "$tmp_slots"
+		return 1
+	}
+
+	if [ "$hook_on" = "1" ]; then
+		compute_qos_plan_from_slots "$tmp_slots" "$wan_kind" "$dl_eff" "$ul_eff"
+		eqos_rates="$(eqos_rates_sig_from_file "$tmp_slots")"
+		new_hw_sig="$(compute_hw_sig "coprocessor_4x" "$wan_kind" "$wan_devs" "$lan_devs" "$primary_wan" "$MTK_QOS_QOS_CMD" "$eqos_rates")"
+		if [ "$new_hw_sig" = "$old_hw_sig" ] && live_hw_matches "$hook_on" "$dl_eff" "$ul_eff" "$MTK_QOS_QOS_CMD"; then
+			if cmp -s "$tmp_nft" "$RUN_DIR/mtk_qos.nft" && cmp -s "$tmp_slots" "$RUN_DIR/eqos_slots.tsv"; then
+				rm -f "$tmp_nft" "$tmp_slots"
+				return 0
+			fi
+			mv -f "$tmp_nft" "$RUN_DIR/mtk_qos.nft"
+			mv -f "$tmp_slots" "$RUN_DIR/eqos_slots.tsv"
+			"$NFT_BIN" -f "$RUN_DIR/mtk_qos.nft"
+			rc=$?
+			mkdir -p "$RUN_DIR" 2>/dev/null || true
+			[ "$rc" -eq 0 ] && printf 'success\n' > "$LAST_APPLY_FILE" 2>/dev/null || printf 'failed\n' > "$LAST_APPLY_FILE" 2>/dev/null
+			return "$rc"
+		fi
+	else
+		eqos_rates="$(eqos_rates_sig_from_file "$tmp_slots")"
+		new_hw_sig="$(compute_hw_sig "cake_fallback" "$wan_kind" "$wan_devs" "$lan_devs" "$primary_wan" "0" "$eqos_rates")"
+		if [ "$new_hw_sig" = "$old_hw_sig" ]; then
+			if cmp -s "$tmp_nft" "$RUN_DIR/mtk_qos.nft" && cmp -s "$tmp_slots" "$RUN_DIR/eqos_slots.tsv"; then
+				rm -f "$tmp_nft" "$tmp_slots"
+				return 0
+			fi
+			mv -f "$tmp_nft" "$RUN_DIR/mtk_qos.nft"
+			mv -f "$tmp_slots" "$RUN_DIR/eqos_slots.tsv"
+			"$NFT_BIN" -f "$RUN_DIR/mtk_qos.nft"
+			rc=$?
+			mkdir -p "$RUN_DIR" 2>/dev/null || true
+			[ "$rc" -eq 0 ] && printf 'success\n' > "$LAST_APPLY_FILE" 2>/dev/null || printf 'failed\n' > "$LAST_APPLY_FILE" 2>/dev/null
+			return "$rc"
+		fi
+	fi
+
+	rm -f "$tmp_nft" "$tmp_slots"
+	do_start
+}
+
+read_sch_summary() {
+	local path="$QDMA_DIR/qdma_sch$1" line
+	[ -r "$path" ] || { printf '0 WRR 0\n'; return 0; }
+	line="$(awk 'NR==2 {printf "%s %s %s", $1, $2, $3; exit}' "$path" 2>/dev/null)"
+	[ -n "$line" ] && printf '%s\n' "$line" || printf '0 WRR 0\n'
+}
+
+sum_queue_range() {
+	local q="$1" end="$2" pkt_sum=0 drop_sum=0 pc pd path stats
+	while [ "$q" -le "$end" ]; do
+		path="$QDMA_DIR/qdma_txq$q"
+		if [ -r "$path" ]; then
+			stats="$(awk -F': ' '
+				/^packet count:/ { pkt = $2 + 0 }
+				/^packet drop:/ { drop = $2 + 0 }
+				END { printf "%.0f %.0f\n", pkt, drop }
+			' "$path" 2>/dev/null)"
+			pc="${stats%% *}"
+			pd="${stats#* }"
+			is_uint "$pc" && pkt_sum=$((pkt_sum + pc))
+			is_uint "$pd" && drop_sum=$((drop_sum + pd))
+		fi
+		q=$((q + 1))
+	done
+	printf '%s %s\n' "$pkt_sum" "$drop_sum"
+}
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '
+}
+
+do_json() {
+	local wan_devs wan_kind primary_wan st_active st_mode hook_on sqm_raw sqm_en qos_mode
+	local last_apply=unknown ppe_stats
+	local dpi_raw dpi_on rt_pkts=0 fair_pkts=0 vid_pkts=0 p2p_pkts=0 eqos_flows=0
+	local ppe_bound=null ppe_total=0 pce_supported=0 pce_loaded=0 pce_active=0 wed_present=0 conflict_flag=0
+	local sch2 s2_en s2_alg s2_rate sch3 s3_en s3_alg s3_rate cake_line=""
+	local u_eqos u_rt u_fair u_vid u_p2p d_eqos d_rt d_fair d_vid d_p2p
+	local slots_json="" slot ul_r dl_r max_c ip mac cmt
+
+	load_config
+	wan_devs="$(detect_wan_devs "$CFG_IFACE")"
+	primary_wan="$(printf '%s' "$wan_devs" | awk '{print $1}')"
+	if [ "$CFG_WAN_MODE" != "auto" ]; then
+		wan_kind="$CFG_WAN_MODE"
+	else
+		wan_kind="$(classify_wan_kind "$wan_devs")"
+	fi
+
+	st_active="$(read_state_var active)"; : "${st_active:=0}"
+	st_mode="$(read_state_var mode)"
+	last_apply="$(cat "$LAST_APPLY_FILE" 2>/dev/null)"
+	case "$last_apply" in success|failed) ;; *) last_apply=unknown ;; esac
+	hook_on="$(read_hook_toggle)"
+	[ -n "$st_mode" ] || st_mode="$( [ "$hook_on" = "1" ] && echo coprocessor_4x || echo cake_fallback )"
+	conflict_qos_active && conflict_flag=1
+
+	sqm_en=0; qos_mode=0
+	if [ -r "$HNAT_DIR/sqm_toggle" ]; then
+		sqm_raw="$(cat "$HNAT_DIR/sqm_toggle" 2>/dev/null)"
+		sqm_en="$(printf '%s\n' "$sqm_raw" | sed -n 's/.*enabled=\([0-9]*\).*/\1/p' | head -n 1)"
+		qos_mode="$(printf '%s\n' "$sqm_raw" | sed -n 's/.*qos_toggle=\([0-9]*\).*/\1/p' | head -n 1)"
+	fi
+	: "${sqm_en:=0}"; : "${qos_mode:=0}"
+
+	dpi_on="$CFG_DPI"
+	if [ -r "$HNAT_DIR/qos_dpi" ]; then
+		dpi_raw="$(cat "$HNAT_DIR/qos_dpi" 2>/dev/null)"
+		dpi_on="$(printf '%s\n' "$dpi_raw" | sed -n 's/.*enabled=\([0-9]*\).*/\1/p' | head -n 1)"
+		rt_pkts="$(printf '%s\n' "$dpi_raw" | sed -n 's/.*realtime_pkts=\([0-9]*\).*/\1/p' | head -n 1)"
+		fair_pkts="$(printf '%s\n' "$dpi_raw" | sed -n 's/.*fair_pkts=\([0-9]*\).*/\1/p' | head -n 1)"
+		vid_pkts="$(printf '%s\n' "$dpi_raw" | sed -n 's/.*video_pkts=\([0-9]*\).*/\1/p' | head -n 1)"
+		p2p_pkts="$(printf '%s\n' "$dpi_raw" | sed -n 's/.*p2p_pkts=\([0-9]*\).*/\1/p' | head -n 1)"
+		eqos_flows="$(printf '%s\n' "$dpi_raw" | sed -n 's/.*eqos_flows=\([0-9]*\).*/\1/p' | head -n 1)"
+	fi
+	: "${dpi_on:=0}"; : "${rt_pkts:=0}"; : "${fair_pkts:=0}"; : "${vid_pkts:=0}"; : "${p2p_pkts:=0}"; : "${eqos_flows:=0}"
+
+	if [ -r "$PPE_STATUS" ]; then
+		ppe_stats="$(awk '
+			$1 == "tier1_ppe_bind" { bind = $2 }
+			$1 == "tier1_ppe_total" { total = $2 }
+			END {
+				if (bind ~ /^[0-9]+$/ && total ~ /^[0-9]+$/)
+					printf "%s %s\n", bind, total
+				else
+					printf "null 0\n"
+			}
+		' "$PPE_STATUS" 2>/dev/null)"
+		ppe_bound="${ppe_stats%% *}"
+		ppe_total="${ppe_stats#* }"
+		if ! is_uint "$ppe_bound" || ! is_uint "$ppe_total" ||
+		   [ "$ppe_total" -eq 0 ] || [ "$ppe_bound" -gt "$ppe_total" ]; then
+			ppe_bound=null
+			ppe_total=0
+		fi
+	fi
+	soc_supports_pce && pce_supported=1
+	[ -e "$PCE_DIR/cls_entry" ] && pce_loaded=1
+	if [ -r "$PCE_DIR/cls_entry" ]; then
+		pce_active="$(awk '/enabled: 1/ { count++ } END { print count + 0 }' "$PCE_DIR/cls_entry" 2>/dev/null)"
+	fi
+	{ [ -d "$SYS_MOD/mtk_wed" ] || [ -d "$SYS_MOD/mtk_warp" ] || [ -d "$SYS_NET/ra0" ] || [ -d "$SYS_NET/rai0" ]; } && wed_present=1
+
+	sch2="$(read_sch_summary 2)"; s2_en="$(echo "$sch2" | awk '{print $1}')"; s2_alg="$(echo "$sch2" | awk '{print $2}')"; s2_rate="$(echo "$sch2" | awk '{print $3}')"
+	sch3="$(read_sch_summary 3)"; s3_en="$(echo "$sch3" | awk '{print $1}')"; s3_alg="$(echo "$sch3" | awk '{print $2}')"; s3_rate="$(echo "$sch3" | awk '{print $3}')"
+
+	u_eqos="$(sum_queue_range 1 15)"
+	u_rt="$(sum_queue_range 16 16)"
+	u_fair="$(sum_queue_range 17 29)"
+	u_vid="$(sum_queue_range 30 30)"
+	u_p2p="$(sum_queue_range 31 31)"
+
+	d_eqos="$(sum_queue_range 33 47)"
+	d_rt="$(sum_queue_range 48 48)"
+	d_fair="$(sum_queue_range 49 61)"
+	d_vid="$(sum_queue_range 62 62)"
+	d_p2p="$(sum_queue_range 63 63)"
+
+	if command -v "$TC_BIN" >/dev/null 2>&1 && [ -d "$SYS_NET/$primary_wan" ]; then
+		cake_line="$("$TC_BIN" qdisc show dev "$primary_wan" 2>/dev/null | grep 'qdisc cake ' | head -n 1)"
+	fi
+
+	if [ -r "$RUN_DIR/eqos_slots.tsv" ]; then
+		while IFS='|' read -r slot ul_r dl_r max_c ip mac cmt; do
+			is_uint "$slot" || continue
+			[ -n "$slots_json" ] && slots_json="${slots_json},"
+			slots_json="${slots_json}{\"slot\":${slot},\"ul_kbps\":${ul_r:-0},\"dl_kbps\":${dl_r:-0},\"max_conn\":${max_c:-0},\"ip\":\"$(json_escape "$ip")\",\"mac\":\"$(json_escape "$mac")\",\"comment\":\"$(json_escape "$cmt")\"}"
+		done < "$RUN_DIR/eqos_slots.tsv"
+	fi
+
+	printf '{"enabled":%d,"active":%d,"conflict":%d,"mode":"%s","last_apply":"%s","wan_kind":"%s","wan_dev":"%s","wan_devs":"%s","download_kbps":%d,"upload_kbps":%d,"hook_toggle":%d,"qos_toggle":%d,"sqm_toggle":%d,"dpi_enabled":%d,"fast_bind_pkt":%d,"ppe_bound":%s,"ppe_total":%d,"pce":{"supported":%d,"loaded":%d,"active_cls":%d},"wed_present":%d,"sch2":{"enabled":%d,"alg":"%s","rate":%d},"sch3":{"enabled":%d,"alg":"%s","rate":%d},"dpi_stats":{"realtime_pkts":%s,"fair_pkts":%s,"video_pkts":%s,"p2p_pkts":%s,"eqos_flows":%s},"queues":{"ul_eqos":[%s],"ul_rt":[%s],"ul_fair":[%s],"ul_video":[%s],"ul_p2p":[%s],"dl_eqos":[%s],"dl_rt":[%s],"dl_fair":[%s],"dl_video":[%s],"dl_p2p":[%s]},"eqos_slots":[%s],"cake":"%s"}\n' \
+		"$([ "$CFG_ENABLED" = "1" ] && echo 1 || echo 0)" \
+		"$st_active" "$conflict_flag" \
+		"$(json_escape "$st_mode")" "$(json_escape "$last_apply")" "$(json_escape "$wan_kind")" \
+		"$(json_escape "$primary_wan")" "$(json_escape "$wan_devs")" \
+		"$CFG_DL" "$CFG_UL" "$hook_on" "$qos_mode" "$sqm_en" "$dpi_on" "$CFG_FAST_BIND" \
+		"$ppe_bound" "$ppe_total" "$pce_supported" "$pce_loaded" "$pce_active" "$wed_present" \
+		"${s2_en:-0}" "$(json_escape "$s2_alg")" "${s2_rate:-0}" \
+		"${s3_en:-0}" "$(json_escape "$s3_alg")" "${s3_rate:-0}" \
+		"$rt_pkts" "$fair_pkts" "$vid_pkts" "$p2p_pkts" "$eqos_flows" \
+		"$(echo "$u_eqos" | tr ' ' ',')" "$(echo "$u_rt" | tr ' ' ',')" "$(echo "$u_fair" | tr ' ' ',')" "$(echo "$u_vid" | tr ' ' ',')" "$(echo "$u_p2p" | tr ' ' ',')" \
+		"$(echo "$d_eqos" | tr ' ' ',')" "$(echo "$d_rt" | tr ' ' ',')" "$(echo "$d_fair" | tr ' ' ',')" "$(echo "$d_vid" | tr ' ' ',')" "$(echo "$d_p2p" | tr ' ' ',')" \
+		"$slots_json" "$(json_escape "$cake_line")"
+}
+
+do_status() {
+	do_json
+	[ -r "$QDMA_DIR/qdma_sch2" ] && printf -- '--- qdma_sch2 ---\n' && cat "$QDMA_DIR/qdma_sch2"
+	[ -r "$QDMA_DIR/qdma_sch3" ] && printf -- '--- qdma_sch3 ---\n' && cat "$QDMA_DIR/qdma_sch3"
+	[ -r "$HNAT_DIR/sqm_toggle" ] && printf -- '--- sqm_toggle ---\n' && cat "$HNAT_DIR/sqm_toggle"
+	[ -r "$HNAT_DIR/qos_dpi" ] && printf -- '--- qos_dpi ---\n' && cat "$HNAT_DIR/qos_dpi"
+	[ -r "$PCE_DIR/cls_entry" ] && printf -- '--- pce cls_entry (24..31) ---\n' && grep -A 3 -E '^CLS Entry(2[4-9]|3[01])' "$PCE_DIR/cls_entry"
+}
+
+case "${1:-status}" in
+	start|apply|reload)
+		do_start
+		;;
+	sync)
+		do_sync
+		;;
+	stop)
+		do_stop
+		;;
+	json)
+		do_json
+		;;
+	status)
+		do_status
+		;;
+	*)
+		printf 'Usage: %s {start|stop|reload|apply|sync|status|json}\n' "$0" >&2
+		exit 1
+		;;
+esac

@@ -1,0 +1,14 @@
+{
+	"admin/network/mtk_qos": {
+		"title": "MTK NPU QoS",
+		"order": 65,
+		"action": {
+			"type": "view",
+			"path": "network/mtk-qos"
+		},
+		"depends": {
+			"acl": [ "luci-app-mtk-qos" ],
+			"uci": { "mtk_qos": true }
+		}
+	}
+}
