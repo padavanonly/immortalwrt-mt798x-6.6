@@ -1,0 +1,27 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] uci: keep conf2dir setter error state consistent
+
+Reset or propagate errcode consistently across conf2dir configuration updates.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/libuci.c
++++ b/libuci.c
+@@ -98,10 +98,16 @@
+ {
+ 	char *cdir;
+ 
++	if (!ctx)
++		return UCI_ERR_INVAL;
++	ctx->err = 0;
++
+ 	if (!dir || !dir[0])
+ 		cdir = NULL;
+-	else if ((cdir = strdup(dir)) == NULL)
++	else if ((cdir = strdup(dir)) == NULL) {
++		ctx->err = UCI_ERR_MEM;
+ 		return UCI_ERR_MEM;
++	}
+ 
+ 	if (ctx->conf2dir != uci_conf2dir)
+ 		free(ctx->conf2dir);

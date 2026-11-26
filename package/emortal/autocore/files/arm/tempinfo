@@ -6,29 +6,115 @@ THERMAL_PATH="/sys/class/thermal"
 get_mtwifi_temp() {
 	local ifname="$1"
 	local flag
-	if [ -f "/sys/class/net/${ifname}/flags" ]; then
-		flag="$(cat /sys/class/net/${ifname}/flags)"
-		if [ "$((flag & 0x1))" -eq "1" ]; then
-			iwpriv ${ifname} stat | awk '/CurrentTemperature/ {printf("%d°C", $3)}'
-		fi
+	if [ -s "/sys/class/net/${ifname}/flags" ]; then
+		flag="$(cat "/sys/class/net/${ifname}/flags" 2>/dev/null)"
+		case "$flag" in
+			0x*|[0-9]*)
+				if [ "$((flag & 0x1))" -eq 1 ]; then
+					if command -v iwpriv >/dev/null 2>&1; then
+						iwpriv "$ifname" stat 2>/dev/null | awk '/CurrentTemperature/ { for (i=1; i<=NF; i++) { if ($i ~ /^[0-9]+$/ && $i > 0 && $i < 130) { printf("%d°C", $i); break } } }'
+					fi
+				fi
+				;;
+		esac
 	fi
 }
 
-if grep -Eq "ipq40xx|ipq806x" "/etc/openwrt_release"; then
-	wifi_temp="$(awk '{printf("%.1f°C ", $0 / 1000)}' "$IEEE_PATH"/phy*/device/hwmon/hwmon*/temp1_input | awk '$1=$1')"
-else
-	wifi_temp1="$(get_mtwifi_temp ra0)"
-	wifi_temp2="$(get_mtwifi_temp rai0)"
-	wifi_temp="$(echo "$wifi_temp1 $wifi_temp2" | xargs)"
-fi
+# 1. Vendor MediaTek Wi-Fi detection (ra0, rai0, rax0)
+vendor_wifi_temp=""
+for ifname in ra0 rai0 rax0; do
+	t="$(get_mtwifi_temp "$ifname")"
+	if [ -n "$t" ]; then
+		vendor_wifi_temp="${vendor_wifi_temp:+$vendor_wifi_temp }$t"
+	fi
+done
 
-if grep -q "ipq40xx" "/etc/openwrt_release"; then
-	if [ -e "$IEEE_PATH/phy0/hwmon0/temp1_input" ]; then
-		mt76_temp=" $(awk -F ': ' '{print $2}' "$IEEE_PATH/phy0/hwmon0/temp1_input")°C"
+# 2. Generic Wi-Fi fallback (mac80211 / mt76 hwmon / thermal)
+generic_wifi_temp=""
+if [ -z "$vendor_wifi_temp" ]; then
+	if grep -Eq "ipq40xx|ipq806x" "/etc/openwrt_release" 2>/dev/null; then
+		generic_wifi_temp="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C ", $0 / 1000) }' "$IEEE_PATH"/phy*/device/hwmon/hwmon*/temp1_input 2>/dev/null | awk '$1=$1')"
+	else
+		for f in "$IEEE_PATH"/phy*/device/hwmon/hwmon*/temp1_input \
+		         "$IEEE_PATH"/phy*/hwmon*/temp1_input \
+		         "$IEEE_PATH"/wl*/hwmon*/temp1_input; do
+			if [ -s "$f" ]; then
+				t="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C", $1 / 1000) }' "$f" 2>/dev/null)"
+				[ -n "$t" ] && generic_wifi_temp="${generic_wifi_temp:+$generic_wifi_temp }$t"
+			fi
+		done
+
+		if [ -z "$generic_wifi_temp" ]; then
+			for h in /sys/class/hwmon/hwmon*; do
+				[ -d "$h" ] || continue
+				hname="$(cat "$h/name" 2>/dev/null)"
+				case "$hname" in
+					mt7*|phy*|ath*|rtw*)
+						if [ -s "$h/temp1_input" ]; then
+							t="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C", $1 / 1000) }' "$h/temp1_input" 2>/dev/null)"
+							[ -n "$t" ] && generic_wifi_temp="${generic_wifi_temp:+$generic_wifi_temp }$t"
+						fi
+						;;
+				esac
+			done
+		fi
+
+		if [ -z "$generic_wifi_temp" ]; then
+			for z in "$THERMAL_PATH"/thermal_zone*; do
+				[ -d "$z" ] || continue
+				ztype="$(cat "$z/type" 2>/dev/null)"
+				case "$ztype" in
+					mt7*|*wifi*|*wireless*)
+						if [ -s "$z/temp" ]; then
+							t="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C", $1 / 1000) }' "$z/temp" 2>/dev/null)"
+							[ -n "$t" ] && generic_wifi_temp="${generic_wifi_temp:+$generic_wifi_temp }$t"
+						fi
+						;;
+				esac
+			done
+		fi
 	fi
 
-	echo -n "WiFi:${mt76_temp} ${wifi_temp}"
-else
-	cpu_temp="$(awk '{printf("%.1f°C", $0 / 1000)}' "$THERMAL_PATH/thermal_zone0/temp")"
+	if grep -q "ipq40xx" "/etc/openwrt_release" 2>/dev/null; then
+		if [ -s "$IEEE_PATH/phy0/hwmon0/temp1_input" ]; then
+			mt76_temp="$(awk -F ': ' '{print $2}' "$IEEE_PATH/phy0/hwmon0/temp1_input" 2>/dev/null)°C"
+			[ -n "$mt76_temp" ] && generic_wifi_temp="${generic_wifi_temp:+$generic_wifi_temp }$mt76_temp"
+		fi
+	fi
+fi
+
+wifi_temp="${vendor_wifi_temp:-$generic_wifi_temp}"
+
+# 3. CPU Temperature detection
+cpu_temp=""
+if [ -d "$THERMAL_PATH" ]; then
+	for z in "$THERMAL_PATH"/thermal_zone*; do
+		[ -d "$z" ] || continue
+		ztype="$(cat "$z/type" 2>/dev/null)"
+		case "$ztype" in
+			*cpu*|*soc*|mt798*|mt799*)
+				if [ -s "$z/temp" ]; then
+					cpu_temp="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C", $1 / 1000) }' "$z/temp" 2>/dev/null)"
+					[ -n "$cpu_temp" ] && break
+				fi
+				;;
+		esac
+	done
+
+	if [ -z "$cpu_temp" ] && [ -s "$THERMAL_PATH/thermal_zone0/temp" ]; then
+		cpu_temp="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C", $1 / 1000) }' "$THERMAL_PATH/thermal_zone0/temp" 2>/dev/null)"
+	fi
+fi
+
+if [ -z "$cpu_temp" ] && [ -s "/sys/class/hwmon/hwmon0/temp1_input" ]; then
+	cpu_temp="$(awk '{ if ($1 > 0 && $1 < 150000) printf("%.1f°C", $1 / 1000) }' "/sys/class/hwmon/hwmon0/temp1_input" 2>/dev/null)"
+fi
+
+# 4. Standard formatting
+if [ -n "$cpu_temp" ] && [ -n "$wifi_temp" ]; then
 	echo -n "CPU: ${cpu_temp}, WiFi: ${wifi_temp}"
+elif [ -n "$cpu_temp" ]; then
+	echo -n "CPU: ${cpu_temp}"
+elif [ -n "$wifi_temp" ]; then
+	echo -n "WiFi: ${wifi_temp}"
 fi

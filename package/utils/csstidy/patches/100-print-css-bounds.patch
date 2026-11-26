@@ -1,0 +1,11 @@
+diff --git a/csstidy/print_css.cpp b/csstidy/print_css.cpp
+index 1a32bbf..f02662e 100644
+--- a/csstidy/print_css.cpp
++++ b/csstidy/print_css.cpp
+@@ -19,0 +20 @@
++#include <cstddef>
+@@ -67 +68 @@ int csstidy::_seeknocomment(const int key, int move)
+-        if (i < 0 || i > csstokens.size()) {
++        if (i < 0 || static_cast<std::size_t>(i) >= csstokens.size()) {
+@@ -75,0 +77 @@ int csstidy::_seeknocomment(const int key, int move)
++    return -1;
