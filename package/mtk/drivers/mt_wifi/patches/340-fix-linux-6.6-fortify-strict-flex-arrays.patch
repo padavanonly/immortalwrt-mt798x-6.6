@@ -1,0 +1,364 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi: fix Linux 6.6 FORTIFY strict-flex-arrays traps and sta.c syntax typo
+
+Convert trailing zero-length arrays [0] to C99 flexible array members [] in
+non-embedded structs across dot11r_ft.h, dot11w_pmf.h, dot11i_wpa.h, oid.h,
+rrm_cmm.h, qos.h, mlme.h, and wapp_cmm_type.h so Linux 6.6 CONFIG_FORTIFY_SOURCE
+computes true allocation bounds rather than 0 bytes under -fstrict-flex-arrays=3.
+
+Replace HEADER_802_11.Octet[0] pointer accesses in cmm_tkip.c and pmf.c with
+(UCHAR *)(pHdr + 1) / (UCHAR *)(pFrame + 1), pass $(call cc-option,-fstrict-flex-arrays=0)
+in mt_wifi_ap/Makefile for the remaining wire/firmware ABI [1] structs
+(EID_STRUCT, FRAME_802_11, NDIS_*_KEY), and fix the stray "t" token on the
+MTWF_DBG format string literal in sta/sta.c:662.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/dot11r_ft.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/dot11r_ft.h
+--- a/mt_wifi/embedded/include/dot11r_ft.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/include/dot11r_ft.h	2026-11-26 07:34:55.151968808 +0800
+@@ -133,7 +133,7 @@
+ 	UINT8 MIC[FT_MIC_LEN];			/* 16 Octects. */
+ 	UINT8 ANonce[FT_NONCE_LEN];		/* 32 Octects. */
+ 	UINT8 SNonce[FT_NONCE_LEN];		/* 32 Octects. */
+-	UINT8 Option[0];				/* 1:R1KHID, 2:GTK, 3:ROKHId, else:Res */
++	UINT8 Option[];				/* 1:R1KHID, 2:GTK, 3:ROKHId, else:Res */
+ } FT_FTIE, *PFT_FTIE;
+ #endif
+ 
+@@ -152,7 +152,7 @@
+ typedef struct GNU_PACKED _FT_OPTION_FIELD {
+ 	UINT8 SubElementId;
+ 	UINT8 Len;
+-	UINT8 Oct[0];
++	UINT8 Oct[];
+ } FT_OPTION_FIELD, *PFT_OPTION_FIELD;
+ 
+ /* Sub element frame of FTIE. */
+@@ -173,7 +173,7 @@
+ 	FT_GTK_KEY_INFO KeyInfo;	/* 2 octects. */
+ 	UINT8 KeyLen;
+ 	UINT8 RSC[8];				/* Receive seq counter. */
+-	UINT8 Key[0];				/* 5 to 32 octects. */
++	UINT8 Key[];				/* 5 to 32 octects. */
+ } FT_GTK_SUB_ELEMENT, *PFT_GTK_SUB_ELEMENT;
+ #endif /* DOT11R_FT_SUPPORT */
+ 
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/mlme.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/mlme.h
+--- a/mt_wifi/embedded/include/mlme.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/include/mlme.h	2026-11-26 07:34:55.152153198 +0800
+@@ -1221,7 +1221,7 @@
+ 	UCHAR phy_mode;
+ 
+ 	/*must be last because vendor_ie len is not the same for each bss */
+-	char vendor_ie[0];
++	char vendor_ie[];
+ };
+ #endif /* CUSTOMER_VENDOR_IE_SUPPORT */
+ 
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/oid.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/oid.h
+--- a/mt_wifi/embedded/include/oid.h	2026-11-26 07:16:55.065360783 +0800
++++ b/mt_wifi/embedded/include/oid.h	2026-11-26 07:34:55.152070108 +0800
+@@ -1948,7 +1948,7 @@
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 anqp_req_len;
+-	UCHAR anqp_req[0];
++	UCHAR anqp_req[];
+ };
+ 
+ struct anqp_rsp_data {
+@@ -1956,7 +1956,7 @@
+ 	UCHAR peer_mac_addr[6];
+ 	UINT16 status;
+ 	UINT32 anqp_rsp_len;
+-	UCHAR anqp_rsp[0];
++	UCHAR anqp_rsp[];
+ };
+ 
+ struct hs_onoff {
+@@ -1971,7 +1971,7 @@
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 wnm_req_len;
+-	UCHAR wnm_req[0];
++	UCHAR wnm_req[];
+ };
+ #endif
+ struct wapp_param_setting {
+@@ -1982,7 +1982,7 @@
+ struct location_IE {
+ 	UINT16 type;
+ 	UINT8 len;
+-	UCHAR location_buf[0];
++	UCHAR location_buf[];
+ };
+ 
+ struct proxy_arp_entry {
+@@ -1992,7 +1992,7 @@
+ 	UCHAR IsDAD;
+ 	UCHAR source_mac_addr[6];
+ 	UCHAR target_mac_addr[6];
+-	UCHAR ip_addr[0];
++	UCHAR ip_addr[];
+ };
+ 
+ 
+@@ -2013,14 +2013,14 @@
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 type;
+ 	UINT32 wnm_req_len;
+-	UCHAR wnm_req[0];
++	UCHAR wnm_req[];
+ };
+ 
+ struct qosmap_data {
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 qosmap_len;
+-	UCHAR qosmap[0];
++	UCHAR qosmap[];
+ };
+ 
+ 
+@@ -2179,20 +2179,20 @@
+ typedef struct GNU_PACKED rrm_command_s {
+ 	UINT8 command_id;
+ 	UINT32 command_len;
+-	UINT8 command_body[0];
++	UINT8 command_body[];
+ } rrm_command_t, *p_rrm_command_t;
+ 
+ typedef struct GNU_PACKED rrm_event_s {
+ 	UINT8 event_id;
+ 	UINT32 event_len;
+-	UINT8 event_body[0];
++	UINT8 event_body[];
+ } rrm_event_t, *p_rrm_event_t;
+ 
+ struct GNU_PACKED nr_req_data {
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 nr_req_len;
+-	UCHAR nr_req[0];
++	UCHAR nr_req[];
+ };
+ 
+ typedef struct GNU_PACKED nr_rsp_data_s {
+@@ -2200,7 +2200,7 @@
+ 	UINT8 dialog_token;
+ 	UINT8 peer_address[MAC_ADDR_LEN];
+ 	UINT32 nr_rsp_len;
+-	UINT8 nr_rsp[0];
++	UINT8 nr_rsp[];
+ } nr_rsp_data_t, *p_nr_rsp_data_t;
+ 
+ typedef struct GNU_PACKED bcn_req_data_s {
+@@ -2208,7 +2208,7 @@
+ 	UINT8 dialog_token;
+ 	UINT8 peer_address[MAC_ADDR_LEN];
+ 	UINT32 bcn_req_len;
+-	UINT8 bcn_req[0];
++	UINT8 bcn_req[];
+ } bcn_req_data_t, *p_bcn_req_data_t;
+ 
+ /**
+@@ -2271,7 +2271,7 @@
+ 	UINT32 ifindex;
+ 	UINT8 peer_address[6];
+ 	UINT32 bcn_rsp_len;
+-	UINT8 bcn_rsp[0];
++	UINT8 bcn_rsp[];
+ } bcn_rsp_data_t, *p_bcn_rsp_data_t;
+ 
+ /**
+@@ -2369,40 +2369,40 @@
+ 	UINT8 dialog_token;
+ 	UINT32 timeout;
+ 	UINT32 btm_req_len;
+-	UINT8 btm_req[0];
++	UINT8 btm_req[];
+ } btm_req_ie_data_t, *p_btm_req_ie_data_t;
+ 
+ struct GNU_PACKED btm_req_data {
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 btm_req_len;
+-	UCHAR btm_req[0];
++	UCHAR btm_req[];
+ };
+ 
+ struct GNU_PACKED btm_query_data {
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 btm_query_len;
+-	UCHAR btm_query[0];
++	UCHAR btm_query[];
+ };
+ 
+ struct GNU_PACKED btm_rsp_data {
+ 	UINT32 ifindex;
+ 	UCHAR peer_mac_addr[6];
+ 	UINT32 btm_rsp_len;
+-	UCHAR btm_rsp[0];
++	UCHAR btm_rsp[];
+ };
+ 
+ struct GNU_PACKED reduced_neighbor_list_data {
+ 	u32 ifindex;
+ 	u32 reduced_neighbor_list_len;
+-	char reduced_neighbor_list_req[0];
++	char reduced_neighbor_list_req[];
+ };
+ 
+ struct GNU_PACKED neighbor_list_data {
+ 	u32 ifindex;
+ 	u32 neighbor_list_len;
+-	char neighbor_list_req[0];
++	char neighbor_list_req[];
+ };
+ 
+ /**
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/qos.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/qos.h
+--- a/mt_wifi/embedded/include/qos.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/include/qos.h	2026-11-26 07:34:55.152129268 +0800
+@@ -193,7 +193,7 @@
+ 	u32 frmid;
+ 	u32 chan;
+ 	u32 frm_len;
+-	u8 frm[0];
++	u8 frm[];
+ };
+ 
+ struct GNU_PACKED classifier_header {
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/rrm_cmm.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/rrm_cmm.h
+--- a/mt_wifi/embedded/include/rrm_cmm.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/include/rrm_cmm.h	2026-11-26 07:34:55.152113888 +0800
+@@ -171,7 +171,7 @@
+ 	UINT8 measuretype;
+ 	UINT8 stamac[MAC_ADDR_LEN];
+ 	UINT16 DataLen;
+-	UCHAR Data[0];
++	UCHAR Data[];
+ } BCN_EVENT_DATA, *PBCN_EVENT_DATA;
+ 
+ /*this struct is used for mlme*/
+@@ -180,7 +180,7 @@
+ 	UINT8 MeasureReqToken;
+ 	UINT8 stamac[MAC_ADDR_LEN];
+ 	UINT16 DataLen;
+-	UCHAR Data[0];
++	UCHAR Data[];
+ } NR_EVENT_DATA, *PNR_EVENT_DATA;
+ 
+ typedef struct GNU_PACKED _RRM_FRAME {
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/security/dot11i_wpa.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/security/dot11i_wpa.h
+--- a/mt_wifi/embedded/include/security/dot11i_wpa.h	2026-11-26 07:31:43.750579867 +0800
++++ b/mt_wifi/embedded/include/security/dot11i_wpa.h	2026-11-26 07:34:55.152011788 +0800
+@@ -246,7 +246,7 @@
+ 	UCHAR               Kid:2;
+ 	UCHAR               rsv1;
+ #endif
+-	UCHAR               GTK[0];
++	UCHAR               GTK[];
+ }   GTK_KDE, *PGTK_KDE;
+ 
+ /* For WPA1 */
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/security/dot11w_pmf.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/security/dot11w_pmf.h
+--- a/mt_wifi/embedded/include/security/dot11w_pmf.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/include/security/dot11w_pmf.h	2026-11-26 07:34:55.151994908 +0800
+@@ -86,7 +86,7 @@
+ typedef struct GNU_PACKED _PMF_IGTK_KDE {
+ 	UINT8 KeyID[2];		/* identifies the IGTK used to compute the MIC */
+ 	UINT8 IPN[6];		/* indicates the receive sequence counter for the IGTK being installed */
+-	UINT8 IGTK[0];		/* The length of the IGTK */
++	UINT8 IGTK[];		/* The length of the IGTK */
+ } PMF_IGTK_KDE, *PPMF_IGTK_KDE;
+ 
+ 
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/include/wapp/wapp_cmm_type.h /tmp/nw_mtwifi_6b/mt_wifi/embedded/include/wapp/wapp_cmm_type.h
+--- a/mt_wifi/embedded/include/wapp/wapp_cmm_type.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/include/wapp/wapp_cmm_type.h	2026-11-26 07:34:55.152192128 +0800
+@@ -863,7 +863,7 @@
+ 	u32 chan;
+ 	u32 frm_len;
+ 	u32 is_gas;
+-	u8 frm[0];
++	u8 frm[];
+ };
+ 
+ struct GNU_PACKED wapp_dpp_frm_tx_status {
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/security/cmm_tkip.c /tmp/nw_mtwifi_6b/mt_wifi/embedded/security/cmm_tkip.c
+--- a/mt_wifi/embedded/security/cmm_tkip.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/security/cmm_tkip.c	2026-11-26 07:34:55.152215348 +0800
+@@ -769,7 +769,7 @@
+ 	} else if (to_ds == 1 && from_ds == 1) {
+ 		NdisMoveMemory(TA, pFrame->Addr2, MAC_ADDR_LEN);
+ 		NdisMoveMemory(DA, pFrame->Addr3, MAC_ADDR_LEN);
+-		NdisMoveMemory(SA, pFrame->Octet, MAC_ADDR_LEN);
++		NdisMoveMemory(SA, (UCHAR *)(pFrame + 1), MAC_ADDR_LEN);
+ 	}
+ 
+ 	pnl = (*(pData)) << 8 | (*(pData + 2));
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/security/pmf.c /tmp/nw_mtwifi_6b/mt_wifi/embedded/security/pmf.c
+--- a/mt_wifi/embedded/security/pmf.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/security/pmf.c	2026-11-26 07:34:55.152243308 +0800
+@@ -902,7 +902,7 @@
+ 	case SUBTYPE_ACTION: {
+ 		if  ((IsRx == FALSE)
+ 			 || (IsRx && (pHdr->FC.Wep == 0))) {
+-			UCHAR Category = (UCHAR) (pHdr->Octet[(pHdr->FC.Order ? 4 : 0)]);
++			UCHAR Category = ((UCHAR *)(pHdr + 1))[(pHdr->FC.Order ? 4 : 0)];
+ 
+ 			switch (Category) {
+ 			/* Refer to IEEE 802.11w Table7-24 */
+@@ -1008,7 +1008,7 @@
+ 	/* Construct and insert 8-bytes CCMP header to MPDU header */
+ 	RTMPConstructCCMPHdr(0, pEntry->PmfTxTsc, pBuf);
+ 	NdisMoveMemory(pBuf + LEN_CCMP_HDR,
+-				   &pHdr->Octet[0],
++				   (UCHAR *)(pHdr + 1),
+ 				   data_len);
+ 	/* Encrypt the MPDU data by software */
+ 	RTMPSoftEncryptCCMP(pAd,
+@@ -1018,7 +1018,7 @@
+ 						pBuf + LEN_CCMP_HDR,
+ 						data_len);
+ 	data_len += (LEN_CCMP_HDR + LEN_CCMP_MIC);
+-	NdisMoveMemory(&pHdr->Octet[0], pBuf, data_len);
++	NdisMoveMemory((UCHAR *)(pHdr + 1), pBuf, data_len);
+ 	/* TSC increment for next transmittion */
+ 	INC_TX_TSC(pEntry->PmfTxTsc, LEN_WPA_TSC);
+ 	MlmeFreeMemory(pBuf);
+@@ -1086,7 +1086,7 @@
+ 	PUCHAR pKey = NULL;
+ 	UCHAR aad_hdr[LEN_PMF_BIP_AAD_HDR];
+ 	UCHAR BIP_MIC[LEN_PMF_BIP_MIC];
+-	PUCHAR pFrameBody = &pHdr->Octet[0];
++	PUCHAR pFrameBody = (PUCHAR)(pHdr + 1);
+ 	UINT32 body_len = mgmt_len - LENGTH_802_11;
+ #ifdef RT_BIG_ENDIAN
+ 	PUCHAR pMacHdr = NULL;
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi/embedded/sta/sta.c /tmp/nw_mtwifi_6b/mt_wifi/embedded/sta/sta.c
+--- a/mt_wifi/embedded/sta/sta.c	2026-11-26 07:16:55.016337045 +0800
++++ b/mt_wifi/embedded/sta/sta.c	2026-11-26 07:34:55.152302398 +0800
+@@ -659,7 +659,7 @@
+ #if defined(CONFIG_FAST_NAT_SUPPORT) && (defined(CONFIG_WIFI_PKT_FWD) || defined(CONFIG_WIFI_PKT_FWD_MODULE))
+ 	if (wf_ra_sw_nat_hook_rx_bkup != NULL)
+ 		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+-		 "wf_ra_sw_nat_hook_rx_bkup:%p\n"t, wf_ra_sw_nat_hook_rx_bkup);
++		 "wf_ra_sw_nat_hook_rx_bkup:%p\n", wf_ra_sw_nat_hook_rx_bkup);
+ 
+ 	wf_ra_sw_nat_hook_rx_bkup = NULL;
+ 
+diff -urN /tmp/nw_mtwifi_6a/mt_wifi_ap/Makefile /tmp/nw_mtwifi_6b/mt_wifi_ap/Makefile
+--- a/mt_wifi_ap/Makefile	2026-11-26 07:16:55.089198674 +0800
++++ b/mt_wifi_ap/Makefile	2026-11-26 07:34:55.152369529 +0800
+@@ -46,6 +46,7 @@
+ # workaround of bin compare on preflight will get the .rodata.str1.8 and it's abs path of __FILE__
+ # will false the compare due to build server folder is not the same
+ ccflags-y += -fmacro-prefix-map=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))=
++ccflags-y += $(call cc-option,-fstrict-flex-arrays=0)
+ endif
+ endif
+ 
