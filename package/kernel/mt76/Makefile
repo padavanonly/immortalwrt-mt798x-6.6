@@ -39,6 +39,9 @@ CMAKE_BINARY_DIR:=$(PKG_BUILD_DIR)/tools
 define KernelPackage/mt76-default
   SUBMENU:=Wireless Drivers
   DEPENDS:= \
+	@!TARGET_mediatek_filogic_mtwifi \
+	@!TARGET_mediatek_filogic_hwifi \
+	@!TARGET_mediatek_filogic_hwifi_a73 \
 	+kmod-mac80211 \
 	+@DRIVER_11AC_SUPPORT \
 	+@KERNEL_PAGE_POOL
@@ -48,6 +51,9 @@ define KernelPackage/mt76
   SUBMENU:=Wireless Drivers
   TITLE:=MediaTek MT76x2/MT7603 wireless driver (metapackage)
   DEPENDS:= \
+	@!TARGET_mediatek_filogic_mtwifi \
+	@!TARGET_mediatek_filogic_hwifi \
+	@!TARGET_mediatek_filogic_hwifi_a73 \
 	+kmod-mt76-core +kmod-mt76x2 +kmod-mt7603
 endef
 
