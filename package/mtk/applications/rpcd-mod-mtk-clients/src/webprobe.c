@@ -1,4 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Original-Author: coolsnowwolf <coolsnowwolf@gmail.com>
+ * Upstream: https://github.com/coolsnowwolf/luci (openwrt-25.12)
+ * Path: libs/rpcd-mod-luci/src/webprobe.c
+ * Cherry-picked commit: 725ddc051fe44eac07cf39b70708e24bf1539bcc
+ */
 #include "mtk_clients.h"
 /* Bounded, asynchronous TCP reachability checks for current DHCPv4 leases. */
 #include <arpa/inet.h>

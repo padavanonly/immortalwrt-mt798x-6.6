@@ -1,0 +1,15 @@
+{
+	"luci-app-openfi": {
+		"description": "Grant UCI access for OpenFi hardware switch settings",
+		"read": {
+			"uci": [
+				"openfi"
+			]
+		},
+		"write": {
+			"uci": [
+				"openfi"
+			]
+		}
+	}
+}

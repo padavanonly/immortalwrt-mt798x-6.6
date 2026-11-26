@@ -1,0 +1,19 @@
+{
+	"luci-app-mtwifi-cfg": {
+		"description": "Grant least-privilege ubus wireless control for luci-app-mtwifi-cfg",
+		"read": {
+			"ubus": {
+				"network.wireless": [
+					"status"
+				]
+			}
+		},
+		"write": {
+			"ubus": {
+				"network.wireless": [
+					"up"
+				]
+			}
+		}
+	}
+}

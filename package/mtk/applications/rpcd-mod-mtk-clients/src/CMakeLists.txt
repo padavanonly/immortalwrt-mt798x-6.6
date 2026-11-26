@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.10)
 
 PROJECT(rpcd-mod-mtk-clients C)
 
-ADD_DEFINITIONS(-Os -Wall -Werror --std=gnu99 -D_GNU_SOURCE)
+ADD_DEFINITIONS(-Os -Wall -Werror --std=gnu99 -g3 -Wmissing-declarations)
+
+SET(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
 
 IF (NOT DEFINED LIBNL_LIBS)
   FIND_LIBRARY(libnl NAMES libnl-3 libnl nl-3 nl-tiny nl)

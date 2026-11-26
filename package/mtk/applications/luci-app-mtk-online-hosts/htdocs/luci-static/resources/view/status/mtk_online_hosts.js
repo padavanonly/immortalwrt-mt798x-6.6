@@ -1,3 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+// Original-Author: coolsnowwolf <coolsnowwolf@gmail.com>
+// Base-Author: OpenWrt LuCI Team (modules/luci-mod-status/view/status/include/40_dhcp.js)
+// Upstream: https://github.com/coolsnowwolf/luci (openwrt-25.12)
+// Cherry-picked commits:
+//   8ac42d9a355f89ccd7414e17f65a6bff5ce62d95
+//   22f66d0d9261b8ffd41062ec3ea40dc1d38332ed
+//   086d8c870dfb0c2e3f60dbc8f78b56d190502745
+//   725ddc051fe44eac07cf39b70708e24bf1539bcc
+//   348b9af4860fe811bc40623c27abfb23b6911d13
+//   edf9a7f6ef6b8cce16e2648df4cba806d9fb1b48
+//   6211a8f0630f72753f7e3223b8f02547083af425
+//   5cfaf67fed77d4a9407c60c31a5abf610c7bb5ad
+//   393cc750ae526773c4f66349742abd57cd6bca31
+//   e853b2b146ac0aceac0788b93ad0049e65f1a9d0
+//   d7d7e0849df0892541f86186dbde61c99056bf1a
 'use strict';
 'require baseclass';
 'require rpc';
@@ -12,7 +28,7 @@ const callLuciDHCPLeases = rpc.declare({
 	method: 'getDHCPLeases',
 	expect: { '': {} }
 });
- 
+
 const callClientRates = rpc.declare({
 	object: 'luci.client-rates',
 	method: 'get',
@@ -52,6 +68,18 @@ return baseclass.extend({
 			return v4.join('.');
 		const v6 = validation.parseIPv6(ip);
 		return v6 ? v6.map(word => word.toString(16)).join(':') : null;
+	},
+
+	isDisplayIPv6(ip) {
+		const v6 = validation.parseIPv6(String(ip || '').replace(/\/\d+$/, ''));
+		if (!v6)
+			return false;
+		/* Exclude link-local (fe80::/10), multicast (ff00::/8), unspecified (::), and loopback (::1). */
+		if ((v6[0] & 0xffc0) == 0xfe80 || (v6[0] & 0xff00) == 0xff00)
+			return false;
+		if (v6.every((w, i) => (i < 7 ? w == 0 : w <= 1)))
+			return false;
+		return true;
 	},
 
 	clientAddresses(lease, hints) {
@@ -107,7 +135,6 @@ return baseclass.extend({
 			'data-mac': lease.macaddr || ''
 		}, value[1]) ];
 	},
-
 
 	clientURL(lease, data) {
 		const ip = validation.parseIPv4(lease.ipaddr || '')?.join('.');
@@ -237,8 +264,6 @@ return baseclass.extend({
 		const ip6addr = lease.ip6addrs?.[0]?.replace(/\/128$/, '');
 		const ip6arr = ip6addr ? validation.parseIPv6(ip6addr) : null;
 
-		// Combine DUID and IAID if both available
-		// (note that we know that lease.duid is set here)
 		let duid_iaid = lease.duid.toLowerCase();
 		if (lease.iaid)
 			duid_iaid += `%${lease.iaid}`.toLowerCase();
@@ -303,8 +328,6 @@ return baseclass.extend({
 					if (matches.size == 1)
 						mac = matches.values().next().value;
 				}
-				// DUID/IAID only deduplicate the same unidentified lease and its history;
-				// they never join it to a different IPv4 record based on hostname.
 				const unknown = lease.duid ? [family, lease.duid.toLowerCase(), lease.iaid?.toLowerCase(), lease.interface] :
 					addresses(lease).length ? [family, ...addresses(lease).map(ip => this.normalizeRateAddress(ip))] : null;
 				const key = mac || (unknown ? JSON.stringify(unknown) : Symbol());
@@ -330,6 +353,20 @@ return baseclass.extend({
 			}
 		}
 		for (const client of clients.values()) {
+			const host = client.macaddr
+				? (hints.hosts?.[client.macaddr] || hints.hosts?.[client.macaddr.toLowerCase()])
+				: null;
+			if (host) {
+				for (const ip6 of L.toArray(host.ip6addrs || host.ipv6)) {
+					if (!this.isDisplayIPv6(ip6))
+						continue;
+					const address = this.normalizeRateAddress(ip6);
+					if (address && !client.activeAddresses.includes(address))
+						client.activeAddresses.push(address);
+					if (address && !client.ip6addrs.some(value => this.normalizeRateAddress(value) == address))
+						client.ip6addrs.push(ip6);
+				}
+			}
 			const current = { macaddr: client.macaddr, ipaddrs: client.activeAddresses };
 			client.rateAddresses = client.activeAddresses.length ? this.clientAddresses(current, hints) : [];
 		}
@@ -419,7 +456,7 @@ return baseclass.extend({
 					'role': 'img', 'aria-label': status, 'title': status,
 					'style': 'display:inline-block;width:10px;height:10px;border-radius:50%;background-color:' + (online ? '#28a745' : '#dc3545')
 				})],
-				this.renderHostname(host)),
+				this.renderHostname(host),
 				client.ipaddrs.length ? E('div', {}, client.ipaddrs.map(ipaddr =>
 					E('div', client.activeAddresses.includes(this.normalizeRateAddress(ipaddr)) ? {} : { 'style': 'opacity:.55', 'title': _('Expired') },
 						client.activeAddresses.includes(this.normalizeRateAddress(ipaddr)) ? this.renderClientIP({ ipaddr, macaddr: client.macaddr }, web) : ipaddr))) : '-',

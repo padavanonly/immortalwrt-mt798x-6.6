@@ -9,19 +9,19 @@ init_wireless_driver "$@"
 
 LOCK_FILE="/tmp/mtwifi.lock"
 
-MTWIFI_MAX_AP_IDX=15
+MTWIFI_MAX_AP_IDX=3
 MTWIFI_MAX_APCLI_IDX=0
 MTWIFI_CFG_IFNAME_KEY="mtwifi_ifname"
 
 drv_mtwifi_init_device_config() {
 	config_add_int txpower beacon_int
-	config_add_boolean mu_beamformer dbdc_main whnat
+	config_add_boolean mu_beamformer dbdc_main whnat dfs
 	config_add_string country twt
 }
 
 drv_mtwifi_init_iface_config() {
-	config_add_string 'ssid:string' macfilter bssid kicklow assocthres 'macaddr:macaddr'
-	config_add_boolean mlo wmm hidden isolate ieee80211k bss_transition
+	config_add_string 'ssid:string' macfilter bssid kicklow assocthres 'macaddr:macaddr' mcast_rate
+	config_add_boolean mlo wmm hidden isolate ieee80211k bss_transition igmp_snooping
 	config_add_int wpa_group_rekey frag rts dtim_period
 	config_add_array 'maclist:list(macaddr)'
 	config_add_boolean mumimo_dl mumimo_ul ofdma_dl ofdma_ul amsdu autoba uapsd
@@ -71,24 +71,44 @@ mtwifi_vif_sta_config() {
 
 mtwifi_vif_ap_set_data() {
 	local ifname=""
+	local disabled=""
 
-	if [ ! $AP_IDX -gt $MTWIFI_MAX_AP_IDX ]; then
+	json_select config
+	json_get_var disabled disabled
+	json_select ..
+
+	[ "$disabled" = "1" ] && return 0
+
+	if [ $AP_IDX -le $MTWIFI_MAX_AP_IDX ]; then
 		ifname="${MTWIFI_AP_IF_PREFIX}${AP_IDX}"
-		AP_IDX=$((AP_IDX+1))
+		AP_IDX=$((AP_IDX + 1))
+	else
+		MTWIFI_VIF_LIMIT_ERROR=1
+		return 1
 	fi
 
-	json_add_string "$MTWIFI_CFG_IFNAME_KEY" "$ifname"
+	[ -n "$ifname" ] && json_add_string "$MTWIFI_CFG_IFNAME_KEY" "$ifname"
 }
 
 mtwifi_vif_sta_set_data() {
 	local ifname=""
+	local disabled=""
 
-	if [ ! $APCLI_IDX -gt $MTWIFI_MAX_APCLI_IDX ]; then
+	json_select config
+	json_get_var disabled disabled
+	json_select ..
+
+	[ "$disabled" = "1" ] && return 0
+
+	if [ $APCLI_IDX -le $MTWIFI_MAX_APCLI_IDX ]; then
 		ifname="${MTWIFI_APCLI_IF_PREFIX}${APCLI_IDX}"
-		APCLI_IDX=$((APCLI_IDX+1))
+		APCLI_IDX=$((APCLI_IDX + 1))
+	else
+		MTWIFI_VIF_LIMIT_ERROR=1
+		return 1
 	fi
 
-	json_add_string "$MTWIFI_CFG_IFNAME_KEY" "$ifname"
+	[ -n "$ifname" ] && json_add_string "$MTWIFI_CFG_IFNAME_KEY" "$ifname"
 }
 
 drv_mtwifi_setup() {
@@ -98,12 +118,14 @@ drv_mtwifi_setup() {
 
 	json_add_string device "$dev"
 
-	lock $LOCK_FILE
+	lock "$LOCK_FILE"
 
 	logger -t "netifd-mtwifi" "up: $dev"
 
 	MTWIFI_AP_IF_PREFIX="$(l1util get $dev ext_ifname)"
 	MTWIFI_APCLI_IF_PREFIX="$(l1util get $dev apcli_ifname)"
+
+	MTWIFI_VIF_LIMIT_ERROR=0
 
 	AP_IDX=0
 	for_each_interface ap mtwifi_vif_ap_set_data
@@ -111,14 +133,26 @@ drv_mtwifi_setup() {
 	APCLI_IDX=0
 	for_each_interface sta mtwifi_vif_sta_set_data
 
-	json_dump | /sbin/mtwifi_cfg setup
+	if [ "$MTWIFI_VIF_LIMIT_ERROR" = 1 ]; then
+		logger -t mtwifi "Too many active virtual interfaces on $1"
+		wireless_setup_failed MTWIFI_VIF_LIMIT
+		lock -u "$LOCK_FILE"
+		return 1
+	fi
+
+	if ! json_dump | /sbin/mtwifi_cfg setup; then
+		logger -t "netifd-mtwifi" "mtwifi_cfg setup failed for $dev"
+		wireless_setup_failed MTWIFI_CFG_FAILED
+		lock -u "$LOCK_FILE"
+		return 1
+	fi
 
 	for_each_interface ap mtwifi_vif_ap_config
 	for_each_interface sta mtwifi_vif_sta_config
 
 	wireless_set_up
 
-	lock -u $LOCK_FILE
+	lock -u "$LOCK_FILE"
 }
 
 drv_mtwifi_teardown() {

@@ -6,25 +6,29 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-turboacc-mtk
+PKG_RELEASE:=12
 PKG_LICENSE:=GPL-3.0-only
 
 LUCI_TITLE:=LuCI support for MTK HNAT
 LUCI_DEPENDS:= \
+	@!TARGET_mediatek_filogic \
 	+luci-base \
 	+rpcd \
+	+firewall4 \
 	+kmod-mediatek_hnat \
-	+luci-lua-runtime \
+	+ucode +ucode-mod-fs +ucode-mod-ubus \
 	+kmod-tcp-bbr \
 	+kmod-nft-socket +kmod-nft-tproxy +kmod-nft-nat +kmod-inet-diag \
 	+kmod-ipt-nat6 +kmod-ipt-nat +kmod-netlink-diag \
 	+kmod-ipt-physdev +kmod-nf-ipvs +kmod-veth +kmod-wireguard \
-	+kmod-ipt-fullconenat +kmod-fs-btrfs +luci-app-ttyd +kmod-bonding \
+	+kmod-nft-fullcone +kmod-fs-btrfs +luci-app-ttyd +kmod-bonding \
 	@!PACKAGE_luci-app-turboacc
 LUCI_PKGARCH:=all
 
 define Build/Prepare/$(PKG_NAME)
 	chmod 0755 $(PKG_BUILD_DIR)/root/etc/init.d/turboacc
 	chmod 0755 $(PKG_BUILD_DIR)/root/etc/uci-defaults/turboacc
+	chmod 0755 $(PKG_BUILD_DIR)/root/etc/hotplug.d/net/40-turboacc-vpn-flowtable
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/rpcd/luci.turboacc
 endef
 
@@ -34,6 +38,7 @@ if [ -z "$$IPKG_INSTROOT" ]; then
 	for runtime_file in \
 		/etc/init.d/turboacc \
 		/etc/uci-defaults/turboacc \
+		/etc/hotplug.d/net/40-turboacc-vpn-flowtable \
 		/usr/libexec/rpcd/luci.turboacc
 	do
 		[ -f "$$runtime_file" ] && chmod 0755 "$$runtime_file"

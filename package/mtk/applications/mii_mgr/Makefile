@@ -25,6 +25,12 @@ define Package/mii_mgr/description
   An mdio r/w phy regs program.
 endef
 
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/. $(PKG_BUILD_DIR)/
+	$(Build/Patch)
+endef
+
 define Package/mii_mgr/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mii_mgr $(1)/usr/sbin

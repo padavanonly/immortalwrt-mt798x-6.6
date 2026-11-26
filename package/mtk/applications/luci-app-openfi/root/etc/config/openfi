@@ -1,20 +1,8 @@
-config fan 'fan'
-	option cpu_temp_high "65"
-	option cpu_temp_low "55"
-	option wifi_temp_high "65"
-	option wifi_temp_low "55"
-	option modem_temp_high "50"
-	option modem_temp_low "40"
-	option period "10"
-	option level "1"
-
 config switch 'switch'
 	option func '0'
-	option lan "1"
-	option power "1"
-	option led "1"
+	option lan '1'
+	option power '1'
+	option led '1'
 
 config modem 'reset'
 	option state '1'
-
-

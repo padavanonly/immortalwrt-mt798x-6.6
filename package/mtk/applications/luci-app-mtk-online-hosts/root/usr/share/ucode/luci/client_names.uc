@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// Original-Author: coolsnowwolf <coolsnowwolf@gmail.com>
+// Upstream: https://github.com/coolsnowwolf/luci (openwrt-25.12)
 // RFC 1002 NBSTAT: unicast queries only, to known LAN clients.
 import { create, poll, AF_INET, SOCK_DGRAM, POLLIN, MSG_DONTWAIT } from 'socket';
 

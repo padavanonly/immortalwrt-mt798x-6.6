@@ -1,9 +1,11 @@
 #!/bin/sh
 
-[ "${ACTION}" = "add" ] && [ "${INTERFACE%%[0-9]}" = "ra" ] &&  {
-	if [ ! -f /etc/config/wireless ]; then
-		need_up=1
-	fi
-	/sbin/wifi config
-	[ "$need_up" = "1" ] && /sbin/wifi up
-}
+[ "${ACTION}" = "add" ] && case "${INTERFACE}" in
+	ra0|rax0|rai0|ray0|rae0|raz0)
+		if [ ! -f /etc/config/wireless ]; then
+			need_up=1
+		fi
+		/sbin/wifi config
+		[ "$need_up" = "1" ] && /sbin/wifi up
+	;;
+esac

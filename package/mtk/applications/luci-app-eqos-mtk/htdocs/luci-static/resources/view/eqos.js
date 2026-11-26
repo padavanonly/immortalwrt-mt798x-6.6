@@ -18,7 +18,8 @@ return view.extend({
 		m = new form.Map('eqos', _('EQoS'),
  			_('Network speed control service.(Compatiable with Mediatek HNAT)'));
  			
-		s = m.section(form.NamedSection, 'config', 'eqos');
+		s = m.section(form.TypedSection, 'eqos');
+		s.anonymous = true;
 
 		o = s.option(form.Flag, 'enabled', _('Enable'));
 		o.default = o.disabled;
@@ -57,9 +58,11 @@ return view.extend({
 		o = s.option(form.Flag, 'enabled', _('Enable'));
 		o.default = o.enabled;
 		
+		var hosts = data[1]?.hosts || {};
+
 		o = s.option(form.Value, 'ip', _('IPV4 address'));
 		o.datatype = 'ip4addr';
-		for (var i of Object.entries(data[1]?.hosts))
+		for (var i of Object.entries(hosts))
 			for (var v in i[1].ipaddrs)
 				if (i[1].ipaddrs[v]) {
 					var ip_addr = i[1].ipaddrs[v], ip_host = i[1].name;
@@ -67,7 +70,6 @@ return view.extend({
 				}
 		o.rmempty = true;
 		
-		var hosts = data[1]?.hosts;
 		o = s.option(form.Value, 'mac', _('IPV6 host'));
 		o.datatype = 'macaddr';
 		Object.keys(hosts).forEach(function(mac) {

@@ -1,0 +1,57 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Auto-tune overlay/VPN tunnel txqueuelen and attach active tunnels to fw4 flowtable.
+
+IP_BIN="${TURBOACC_IP_BIN:-ip}"
+NFT_BIN="${TURBOACC_NFT_BIN:-nft}"
+SYS_NET="${TURBOACC_SYS_NET:-/sys/class/net}"
+TARGET_Q="${TURBOACC_VPN_TXQLEN:-1000}"
+
+is_vpn_iface() {
+	case "$1" in
+	tunl*) return 1 ;;
+	wg*|tailscale*|tun*|easytier*|zt*) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+tune_vpn_iface() {
+	local dev="$1"
+	local qlen_file qlen
+
+	[ -n "$dev" ] && [ -d "$SYS_NET/$dev" ] || return 0
+	is_vpn_iface "$dev" || return 0
+
+	qlen_file="$SYS_NET/$dev/tx_queue_len"
+	if [ -r "$qlen_file" ]; then
+		qlen="$(tr -d ' \t\r\n' <"$qlen_file" 2>/dev/null)"
+		case "$qlen" in
+		''|*[!0-9]*) ;;
+		*)
+			if [ "$qlen" -lt "$TARGET_Q" ]; then
+				"$IP_BIN" link set dev "$dev" txqueuelen "$TARGET_Q" >/dev/null 2>&1 || true
+			fi
+			;;
+		esac
+	fi
+
+	if "$NFT_BIN" list flowtable inet fw4 ft >/dev/null 2>&1; then
+		"$NFT_BIN" add element inet fw4 ft "{ \"$dev\" }" >/dev/null 2>&1 || true
+	fi
+}
+
+if [ "${1:-}" = "sync" ]; then
+	for p in "$SYS_NET"/*; do
+		[ -e "$p" ] || continue
+		tune_vpn_iface "$(basename "$p")"
+	done
+	exit 0
+fi
+
+case "${ACTION:-add}" in
+add|register|move)
+	[ -n "${INTERFACE:-}" ] && tune_vpn_iface "$INTERFACE"
+	;;
+esac
+
+exit 0

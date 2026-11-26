@@ -8,8 +8,8 @@ msgstr "10秒"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:177
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:609
-msgid "3 seconds"
-msgstr "3秒"
+msgid "2 seconds"
+msgstr "2秒"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:177
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:612
@@ -116,7 +116,7 @@ msgstr "隐藏MAC地址"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:181
 msgid "IEC - 1024"
-msgstr ""
+msgstr "IEC - 1024"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/config.js:21
 msgid "Keep running in the background"
@@ -154,7 +154,7 @@ msgstr "重置"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:181
 msgid "SI - 1000"
-msgstr ""
+msgstr "SI - 1000"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:207
 msgid "Save"
@@ -252,11 +252,14 @@ msgstr "用户文件"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:176
 msgid "ipv4"
-msgstr ""
+msgstr "IPv4"
 
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:176
 msgid "ipv6"
-msgstr ""
+msgstr "IPv6"
+
+msgid "Unable to load the customized hostname file: "
+msgstr "无法加载自定义主机名文件："
 
 #~ msgid "Show More Columns:"
 #~ msgstr "显示更多列："

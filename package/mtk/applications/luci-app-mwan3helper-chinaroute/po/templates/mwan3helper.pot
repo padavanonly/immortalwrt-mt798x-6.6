@@ -1,0 +1,109 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-mwan3helper-chinaroute\n"
+
+msgid "MWAN3 Helper"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "IPSet Lists"
+msgstr ""
+
+msgid "MWAN3 Helper generate IPSets"
+msgstr ""
+
+msgid "RUNNING"
+msgstr ""
+
+msgid "NOT RUNNING"
+msgstr ""
+
+msgid "Collecting data..."
+msgstr ""
+
+msgid "Enable Forwarding"
+msgstr ""
+
+msgid "Traffic Forwarding Mode"
+msgstr ""
+
+msgid "Foreign Traffic"
+msgstr ""
+
+msgid "GFWList Traffic"
+msgstr ""
+
+msgid "Forward Traffic to IP"
+msgstr ""
+
+msgid "Device"
+msgstr ""
+
+msgid "Enable DNS Anti-Pollution"
+msgstr ""
+
+msgid "Anti-pollution DNS Server"
+msgstr ""
+
+msgid "MWAN3 IPSets"
+msgstr ""
+
+msgid "GFW List"
+msgstr ""
+
+msgid "GFW list entries: 5207, IPSet name: gfwlist"
+msgstr ""
+
+msgid "All China IP Addresses"
+msgstr ""
+
+msgid "All China IP route entries: 8304, IPSet name: cn"
+msgstr ""
+
+msgid "China Telecom"
+msgstr ""
+
+msgid "China Telecom route entries: 1948, IPSet name: ct"
+msgstr ""
+
+msgid "China Unicom / CNC"
+msgstr ""
+
+msgid "China Unicom / CNC route entries: 895, IPSet name: cnc"
+msgstr ""
+
+msgid "China Mobile"
+msgstr ""
+
+msgid "China Mobile route entries: 55, IPSet name: cmcc"
+msgstr ""
+
+msgid "China TieTong"
+msgstr ""
+
+msgid "China TieTong route entries: 16, IPSet name: crtc"
+msgstr ""
+
+msgid "CERNET"
+msgstr ""
+
+msgid "CERNET route entries: 162, IPSet name: cernet"
+msgstr ""
+
+msgid "Great Wall Broadband / Dr. Peng"
+msgstr ""
+
+msgid "Great Wall Broadband / Dr. Peng entries: 94, IPSet name: gwbn"
+msgstr ""
+
+msgid "Other China ISPs"
+msgstr ""
+
+msgid "Other China ISP entries: 5134, IPSet name: othernet"
+msgstr ""
+
+msgid "Enable GFW IPSet"
+msgstr ""

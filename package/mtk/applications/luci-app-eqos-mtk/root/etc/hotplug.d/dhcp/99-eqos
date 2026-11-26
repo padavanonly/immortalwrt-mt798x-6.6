@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+case "$ACTION" in
+	add|remove|update|del|old)
+		${EQOS_UCODE_BIN:-/usr/bin/ucode} ${EQOS_UCODE_ARGS} "${EQOS_LIBEXEC_DIR:-/usr/libexec/eqos}/reconcile.uc" --trigger dhcp
+		;;
+esac

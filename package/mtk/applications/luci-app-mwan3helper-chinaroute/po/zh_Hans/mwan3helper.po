@@ -1,12 +1,8 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: PACKAGE VERSION\n"
-"Report-Msgid-Bugs-To: \n"
-"Language: zh_Hans\n"
-"MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
-"Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=1; plural=0;\n"
+"Project-Id-Version: luci-app-mwan3helper-chinaroute\n"
+"Language: zh_Hans\n"
 
 msgid "MWAN3 Helper"
 msgstr "MWAN3 分流助手"
@@ -19,6 +15,96 @@ msgstr "IPSet列表"
 
 msgid "MWAN3 Helper generate IPSets"
 msgstr "自动生成中国地址段和各大ISP运营商的 IPSet 地址段，并解决国外域名的污染问题，帮助MWAN3分流 ISP/WireGuard 等"
+
+msgid "RUNNING"
+msgstr "运行中"
+
+msgid "NOT RUNNING"
+msgstr "未运行"
+
+msgid "Collecting data..."
+msgstr "正在收集数据..."
+
+msgid "Enable Forwarding"
+msgstr "启用转发"
+
+msgid "Traffic Forwarding Mode"
+msgstr "转发流量模式"
+
+msgid "Foreign Traffic"
+msgstr "国外流量"
+
+msgid "GFWList Traffic"
+msgstr "GFWLIST流量"
+
+msgid "Forward Traffic to IP"
+msgstr "转发流量至IP"
+
+msgid "Device"
+msgstr "设备"
+
+msgid "Enable DNS Anti-Pollution"
+msgstr "启用 DNS 防污染"
+
+msgid "Anti-pollution DNS Server"
+msgstr "防污染 DNS 服务器"
+
+msgid "MWAN3 IPSets"
+msgstr "MWAN3 IPSet 列表"
+
+msgid "GFW List"
+msgstr "GFW列表"
+
+msgid "GFW list entries: 5207, IPSet name: gfwlist"
+msgstr "GFW列表数据： 5207 条，IPSET 名称为 gfwlist"
+
+msgid "All China IP Addresses"
+msgstr "中国所有IP地址"
+
+msgid "All China IP route entries: 8304, IPSet name: cn"
+msgstr "中国所有IP地址路由表数据： 8304 条, IPSET 名称为 cn"
+
+msgid "China Telecom"
+msgstr "中国电信"
+
+msgid "China Telecom route entries: 1948, IPSet name: ct"
+msgstr "中国电信路由表数据： 1948 条, IPSET 名称为 ct"
+
+msgid "China Unicom / CNC"
+msgstr "中国联通/网通"
+
+msgid "China Unicom / CNC route entries: 895, IPSet name: cnc"
+msgstr "中国联通/网通路由表数据： 895 条, IPSET 名称为 cnc"
+
+msgid "China Mobile"
+msgstr "中国移动"
+
+msgid "China Mobile route entries: 55, IPSet name: cmcc"
+msgstr "中国移动路由表数据： 55 条, IPSET 名称为 cmcc"
+
+msgid "China TieTong"
+msgstr "中国铁通"
+
+msgid "China TieTong route entries: 16, IPSet name: crtc"
+msgstr "中国铁通路由表数据： 16 条, IPSET 名称为 crtc"
+
+msgid "CERNET"
+msgstr "中国教育网"
+
+msgid "CERNET route entries: 162, IPSet name: cernet"
+msgstr "中国教育网路由表数据： 162 条, IPSET 名称为 cernet"
+
+msgid "Great Wall Broadband / Dr. Peng"
+msgstr "长城宽带/鹏博士"
+
+msgid "Great Wall Broadband / Dr. Peng entries: 94, IPSet name: gwbn"
+msgstr "长城宽带/鹏博士： 94 条, IPSET 名称为 gwbn"
+
+msgid "Other China ISPs"
+msgstr "中国其他ISP"
+
+msgid "Other China ISP entries: 5134, IPSet name: othernet"
+msgstr "中国其他ISP： 5134 条, IPSET 名称为 othernet"
 
 msgid "Enable GFW IPSet"
 msgstr "启用 GFW IPSet"

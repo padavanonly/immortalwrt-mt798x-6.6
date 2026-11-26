@@ -1,0 +1,203 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Target Wake Time"
+msgstr ""
+
+msgid "MU-MIMO DL"
+msgstr ""
+
+msgid "MU-MIMO UL"
+msgstr ""
+
+msgid "OFDMA DL"
+msgstr ""
+
+msgid "OFDMA UL"
+msgstr ""
+
+msgid "A-MSDU"
+msgstr ""
+
+msgid "Auto Block ACK"
+msgstr ""
+
+msgid "U-APSD"
+msgstr ""
+
+msgid "Kick low RSSI station threshold"
+msgstr ""
+
+msgid "Station associate threshold"
+msgstr ""
+
+msgid "Wireless HWNAT"
+msgstr ""
+
+msgid "Wireless configuration error"
+msgstr ""
+
+msgid "At least one MBSSID needs to be reserved"
+msgstr ""
+
+msgid "Enable MLO"
+msgstr ""
+
+msgid "MAC Address"
+msgstr ""
+
+msgid "driver default (%s)"
+msgstr ""
+
+msgid "no override"
+msgstr ""
+
+msgid "Override default MAC address - the range of usable addresses might be limited by the driver"
+msgstr ""
+
+msgid "Enables The 802.11k standard provides information to discover the best available access point"
+msgstr ""
+
+msgid "Rate unavailable"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+msgid "6 GHz band only supports WPA3-SAE or OWE."
+msgstr ""
+
+msgid "802.11k"
+msgstr ""
+
+msgid "802.11v"
+msgstr ""
+
+msgid "BSS Transition Management"
+msgstr ""
+
+msgid "Default %d"
+msgstr ""
+
+msgid "Distance to farthest network member in meters."
+msgstr ""
+
+msgid "Enable beacon report via radio measurements"
+msgstr ""
+
+msgid "Enable neighbor report via radio measurements"
+msgstr ""
+
+msgid "Enables 802.11v allows client devices to exchange information about the network topology,tating overall improvement of the wireless network."
+msgstr ""
+
+msgid "List of R0KHs in the same Mobility Domain. <br />Format: MAC-address,NAS-Identifier,128-bit key as hex string. <br />This list is used to map R0KH-ID (NAS Identifier) to a destination MAC address when requesting PMK-R1 key from the R0KH that the STA used during the Initial Mobility Domain Association."
+msgstr ""
+
+msgid "Local time zone as specified in 8.3 of IEEE Std 1003.1-2004"
+msgstr ""
+
+msgid "MU-MIMO"
+msgstr ""
+
+msgid "Maximum number of enabled AP interfaces per radio is %d."
+msgstr ""
+
+msgid "Maximum number of multiple SSIDs is %d."
+msgstr ""
+
+msgid "MediaTek Wireless"
+msgstr ""
+
+msgid "Please delete the existing MBSSID and try again."
+msgstr ""
+
+msgid "Please disable or remove an existing AP network before adding another active network."
+msgstr ""
+
+msgid "RSSI threshold for joining"
+msgstr ""
+
+msgid "Radius-Accounting-Port"
+msgstr ""
+
+msgid "Radius-Accounting-Secret"
+msgstr ""
+
+msgid "Radius-Accounting-Server"
+msgstr ""
+
+msgid "Radius-Authentication-Port"
+msgstr ""
+
+msgid "Radius-Authentication-Secret"
+msgstr ""
+
+msgid "Radius-Authentication-Server"
+msgstr ""
+
+msgid "Time advertisement"
+msgstr ""
+
+msgid "Too many enabled AP interfaces on %s (%d > %d)."
+msgstr ""
+
+msgid "UTC time at which the TSF timer is 0"
+msgstr ""
+
+msgid "Unable to add more active AP Networks"
+msgstr ""
+
+msgid "WPA3/OWE does not support TKIP cipher."
+msgstr ""
+
+msgid "WPA1 does not support GCMP-256 cipher."
+msgstr ""
+
+msgid "Enable DFS"
+msgstr ""
+
+msgid "ITWT"
+msgstr ""
+
+msgid "BTWT"
+msgstr ""
+
+msgid "ITWT + BTWT"
+msgstr ""
+
+msgid "%"
+msgstr ""
+
+msgid "Default (3600s)"
+msgstr ""
+
+msgid "Disable"
+msgstr ""
+
+msgid "Seconds (10-86400; 0 to disable; default 3600)"
+msgstr ""
+
+msgid "Group Key Rekey Interval"
+msgstr ""
+
+msgid "Wireless"
+msgstr ""
+
+msgid "extended sleep mode for stations"
+msgstr ""
+
+msgid "IGMP/MLD Snooping"
+msgstr ""
+
+msgid "Enable WA hardware multicast-to-unicast conversion for subscribed clients (mDNS, SSDP, and IPv6 ND remain flooded)."
+msgstr ""
+
+msgid "Multicast Rate"
+msgstr ""
+
+msgid "Minimum OFDM rate for non-snooped wireless multicast frames."
+msgstr ""
+
+msgid "Driver default"
+msgstr ""

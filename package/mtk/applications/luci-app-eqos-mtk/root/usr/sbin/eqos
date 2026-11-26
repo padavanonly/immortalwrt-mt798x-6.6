@@ -1,177 +1,266 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
 
 dev=br-lan
-hash_file="/tmp/hash_records.txt"
+TC="${EQOS_TC_BIN:-tc}"
+IP="${EQOS_IP_BIN:-ip}"
+UCI="${EQOS_UCI_BIN:-uci}"
+HNAT_DIR="${EQOS_HNAT_DIR:-/sys/kernel/debug/hnat}"
+HASH_FILE="${EQOS_HASH_FILE:-/tmp/hash_records.txt}"
+
+write_hnat_node() {
+	local path="$1"
+	local content="$2"
+	[ -n "$path" ] || return 1
+
+	local parent_dir
+	parent_dir=$(dirname "$path")
+	if [ ! -d "$parent_dir" ]; then
+		mkdir -p "$parent_dir" || {
+			echo "eqos: failed to create directory $parent_dir" >&2
+			return 1
+		}
+	fi
+
+	local ucode_bin="${EQOS_UCODE_BIN:-/usr/bin/ucode}"
+	if [ -x "$ucode_bin" ] || command -v "$ucode_bin" >/dev/null 2>&1; then
+		"$ucode_bin" ${EQOS_UCODE_ARGS} -e '
+			import * as fs from "fs";
+			let path = ARGV[0];
+			let val = ARGV[1] + "\n";
+			let fp = fs.open(path, "w");
+			if (!fp)
+				exit(1);
+			let w = fp.write(val);
+			if (w === null || w != length(val)) {
+				fp.close();
+				exit(1);
+			}
+			if (!fp.flush()) {
+				fp.close();
+				exit(1);
+			}
+			fp.close();
+			exit(0);
+		' "$path" "$content" 2>/dev/null
+		local rc=$?
+		if [ $rc -ne 0 ]; then
+			echo "eqos: failed to write '$content' to $path via ucode (rc=$rc)" >&2
+			return 1
+		fi
+		return 0
+	else
+		if ! printf '%s\n' "$content" > "$path"; then
+			echo "eqos: failed to write '$content' to $path" >&2
+			return 1
+		fi
+		return 0
+	fi
+}
+
+tc_del_ignore_missing() {
+	local out rc
+	out=$("$TC" "$@" 2>&1)
+	rc=$?
+	[ $rc -eq 0 ] && return 0
+	case "$out" in
+		*"No such file or directory"*|\
+		*"Cannot find device"*|\
+		*"Cannot delete qdisc with handle of zero"*|\
+		*"Invalid argument"*|\
+		*"does not exist"*|\
+		*"No such device"*|\
+		*"No such process"*)
+			return 0
+		;;
+		*)
+			printf '%s\n' "$out" >&2
+			return $rc
+		;;
+	esac
+}
+
+ip_link_del_ignore_missing() {
+	local out rc
+	out=$("$IP" "$@" 2>&1)
+	rc=$?
+	[ $rc -eq 0 ] && return 0
+	case "$out" in
+		*"No such file or directory"*|\
+		*"Cannot find device"*|\
+		*"Cannot delete qdisc with handle of zero"*|\
+		*"Invalid argument"*|\
+		*"does not exist"*|\
+		*"No such device"*|\
+		*"No such process"*)
+			return 0
+		;;
+		*)
+			printf '%s\n' "$out" >&2
+			return $rc
+		;;
+	esac
+}
 
 generate_index() {
-    local input="$1"
-    local hash_value=$(echo -n "$input" | md5sum | cut -d' ' -f1)
-    local decimal_value=$((0x${hash_value:0:8}))
-    local index=$((decimal_value % 31 + 1))
-    echo $index
+	local input="$1"
+	local hash_value
+	hash_value=$(printf '%s' "$input" | md5sum | cut -d' ' -f1 | cut -c1-8)
+	local decimal_value=$((0x${hash_value}))
+	local index=$((decimal_value % 31 + 1))
+	echo "$index"
 }
 
 find_available_index() {
-    local base_index=$(generate_index "$1")
-    local index=$base_index
+	local base_index
+	base_index=$(generate_index "$1")
+	local index=$base_index
 
-    while true; do
-        if grep -q "^$index$" "$hash_file"; then
-            index=$((index % 31 + 1))
-            if [[ $index -eq $base_index ]]; then
-                echo "All slots are full. Returning 0."
-                return 0 
-            fi
-        else
-            echo $index >> "$hash_file"
-            echo $index
-            return 0
-        fi
-    done
+	[ -f "$HASH_FILE" ] || touch "$HASH_FILE" || return 1
+	while true; do
+		if grep -q "^${index}$" "$HASH_FILE" 2>/dev/null; then
+			index=$((index % 31 + 1))
+			if [ "$index" -eq "$base_index" ]; then
+				echo 0
+				return 0
+			fi
+		else
+			echo "$index" >> "$HASH_FILE" || return 1
+			echo "$index"
+			return 0
+		fi
+	done
 }
+
 stop_qos() {
-	tc qdisc del dev $dev root 2>/dev/null
-	tc qdisc del dev $dev ingress 2>/dev/null
-	tc qdisc del dev ${dev}-ifb root 2>/dev/null
-	ip link del dev ${dev}-ifb 2>/dev/null
+	tc_del_ignore_missing qdisc del dev "$dev" root || return 1
+	tc_del_ignore_missing qdisc del dev "$dev" ingress || return 1
+	tc_del_ignore_missing qdisc del dev "${dev}-ifb" root || return 1
+	ip_link_del_ignore_missing link del dev "${dev}-ifb" || return 1
+	return 0
 }
 
 start_qos() {
-	local dl=$1
-	local up=$2
-	rm /tmp/hash_records.txt
-    	touch "$hash_file"
-	tc qdisc add dev $dev root handle 1: htb
-	tc class add dev $dev parent 1: classid 1:1 htb rate ${dl}mbit
-	
-	ip link add dev ${dev}-ifb name ${dev}-ifb type ifb
-	ip link set dev ${dev}-ifb up
-	
-	tc qdisc add dev ${dev}-ifb root handle 1: htb
-	tc class add dev ${dev}-ifb parent 1: classid 1:1 htb rate ${up}mbit
-	
-	tc qdisc add dev $dev ingress
-	tc filter add dev $dev parent ffff: protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev ${dev}-ifb
+	local dl="$1"
+	local up="$2"
+	[ -n "$dl" ] && [ -n "$up" ] || { echo "eqos: missing download/upload rate in start_qos" >&2; return 1; }
+	rm -f "$HASH_FILE" || { echo "eqos: failed to remove $HASH_FILE" >&2; return 1; }
+	touch "$HASH_FILE" || { echo "eqos: failed to touch $HASH_FILE" >&2; return 1; }
+	"$TC" qdisc add dev "$dev" root handle 1: htb || { echo "eqos: failed to add root htb on $dev" >&2; return 1; }
+	"$TC" class add dev "$dev" parent 1: classid 1:1 htb rate "${dl}mbit" || { echo "eqos: failed to add class 1:1 on $dev" >&2; return 1; }
+
+	"$IP" link add dev "${dev}-ifb" name "${dev}-ifb" type ifb || { echo "eqos: failed to add ifb dev ${dev}-ifb" >&2; return 1; }
+	"$IP" link set dev "${dev}-ifb" up || { echo "eqos: failed to set ${dev}-ifb up" >&2; return 1; }
+
+	"$TC" qdisc add dev "${dev}-ifb" root handle 1: htb || { echo "eqos: failed to add root htb on ${dev}-ifb" >&2; return 1; }
+	"$TC" class add dev "${dev}-ifb" parent 1: classid 1:1 htb rate "${up}mbit" || { echo "eqos: failed to add class 1:1 on ${dev}-ifb" >&2; return 1; }
+
+	"$TC" qdisc add dev "$dev" ingress || { echo "eqos: failed to add ingress qdisc on $dev" >&2; return 1; }
+	"$TC" filter add dev "$dev" parent ffff: protocol ip u32 match u32 0 0 flowid 1:1 action mirred egress redirect dev "${dev}-ifb" || { echo "eqos: failed to add ingress redirect filter on $dev" >&2; return 1; }
+	return 0
 }
 
-iptables_stop() {
-		iptables -t mangle -D FORWARD  -j eqos
-		ip6tables -t mangle -D FORWARD  -j eqos
-		ebtables -t nat -D POSTROUTING  -j eqos -p ipv6
-		echo 0 > /sys/kernel/debug/hnat/qos_toggle
-		sed -i '/\/etc\/init.d\/eqos start/d' /etc/firewall.user
-		iptables -t mangle -D FORWARD -i br-lan -j DSCP --set-dscp 0
-		iptables -t mangle -D FORWARD -o br-lan -j DSCP --set-dscp 0
-		ip6tables -t mangle -D FORWARD -i br-lan -j DSCP --set-dscp 0
-		ip6tables -t mangle -D FORWARD -o br-lan -j DSCP --set-dscp 0
-		echo "10 0" > /sys/kernel/debug/hnat/hnat_setting
-		echo "11 30" >/sys/kernel/debug/hnat/hnat_setting
-		for i in $(seq 0 31); do
-		echo 0 0 0 0 0 4 4 > /sys/kernel/debug/hnat/qdma_txq$i
-		done
-		for i in $(seq 32 63); do
-		echo 1 0 0 0 0 4 4 > /sys/kernel/debug/hnat/qdma_txq$i
-		done	
-		echo 0 wrr 25000000 > /sys/kernel/debug/hnat/qdma_sch0
-		echo 0 wrr 25000000 > /sys/kernel/debug/hnat/qdma_sch1
-		echo 0 wrr 25000000 > /sys/kernel/debug/hnat/qdma_sch2
-		echo 0 wrr 25000000 > /sys/kernel/debug/hnat/qdma_sch3
+get_turboacc_bind_rate() {
+	local rate
+	rate=$("$UCI" -q get "turboacc.config.fastpath_mh_eth_hnat_bind_rate" 2>/dev/null)
+	case "$rate" in
+		''|*[!0-9]*) rate=5 ;;
+		*)
+			if [ "$rate" -lt 1 ] || [ "$rate" -gt 30 ]; then
+				rate=5
+			fi
+		;;
+	esac
+	echo "$rate"
 }
 
-iptables_start_prepare() {
-		iptables -t mangle -D FORWARD -i br-lan -j DSCP --set-dscp 0
-		iptables -t mangle -D FORWARD -o br-lan -j DSCP --set-dscp 0
-		iptables -t mangle -A FORWARD -i br-lan -j DSCP --set-dscp 0
-		iptables -t mangle -A FORWARD -o br-lan -j DSCP --set-dscp 0
-		ip6tables -t mangle -D FORWARD -i br-lan -j DSCP --set-dscp 0
-		ip6tables -t mangle -D FORWARD -o br-lan -j DSCP --set-dscp 0
-		ip6tables -t mangle -A FORWARD -i br-lan -j DSCP --set-dscp 0
-		ip6tables -t mangle -A FORWARD -o br-lan -j DSCP --set-dscp 0
+hnat_stop() {
+	if [ ! -d "$HNAT_DIR" ]; then
+		mkdir -p "$HNAT_DIR" || { echo "eqos: failed to mkdir $HNAT_DIR" >&2; return 1; }
+	fi
+	local bind_rate
+	bind_rate=$(get_turboacc_bind_rate)
+	write_hnat_node "${HNAT_DIR}/qos_toggle" "0" || return 1
+	write_hnat_node "${HNAT_DIR}/hnat_setting" "10 0" || return 1
+	write_hnat_node "${HNAT_DIR}/hnat_setting" "11 ${bind_rate}" || return 1
+	for i in $(seq 0 31); do
+		write_hnat_node "${HNAT_DIR}/qdma_txq${i}" "0 0 0 0 0 4 4" || return 1
+	done
+	for i in $(seq 32 63); do
+		write_hnat_node "${HNAT_DIR}/qdma_txq${i}" "1 0 0 0 0 4 4" || return 1
+	done
+	write_hnat_node "${HNAT_DIR}/qdma_sch0" "0 wrr 0" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_sch1" "0 wrr 0" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_sch2" "0 wrr 0" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_sch3" "0 wrr 0" || return 1
+	return 0
 }
 
-iptables_start_inital() {
-		iptables -t mangle -N eqos
-		iptables -t mangle -F eqos
-		iptables -t mangle -D FORWARD  -j eqos
-		iptables -t mangle -A FORWARD  -j eqos	
-		echo 1 > /sys/kernel/debug/hnat/qos_toggle
-		echo 0 wrr 25000000 > /sys/kernel/debug/hnat/qdma_sch0
-		echo 0 wrr 25000000 > /sys/kernel/debug/hnat/qdma_sch1
-		echo 0 0 0 0 0 0 0 > /sys/kernel/debug/hnat/qdma_txq0
-		echo 1 0 0 0 0 0 0 > /sys/kernel/debug/hnat/qdma_txq32
-		echo "11 5" >/sys/kernel/debug/hnat/hnat_setting
-		uci -q set "turboacc.config.fastpath_mh_eth_hnat_bind_rate"="5"
-		uci -q commit "turboacc"
-		sed -i '/\/etc\/init.d\/eqos start/d' /etc/firewall.user
-		echo "/etc/init.d/eqos start" >> /etc/firewall.user
-		echo "10 1" > /sys/kernel/debug/hnat/hnat_setting
+hnat_start_initial() {
+	if [ ! -d "$HNAT_DIR" ]; then
+		mkdir -p "$HNAT_DIR" || { echo "eqos: failed to mkdir $HNAT_DIR" >&2; return 1; }
+	fi
+	local bind_rate
+	bind_rate=$(get_turboacc_bind_rate)
+	write_hnat_node "${HNAT_DIR}/qos_toggle" "1" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_sch0" "0 wrr 0" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_sch1" "0 wrr 0" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_txq0" "0 0 0 0 0 0 0" || return 1
+	write_hnat_node "${HNAT_DIR}/qdma_txq32" "1 0 0 0 0 0 0" || return 1
+	write_hnat_node "${HNAT_DIR}/hnat_setting" "11 ${bind_rate}" || return 1
+	write_hnat_node "${HNAT_DIR}/hnat_setting" "10 1" || return 1
+	return 0
 }
-
 
 case "$1" in
 	"stop")
-		stop_qos
-		iptables_stop
+		stop_qos || exit 1
+		hnat_stop || exit 1
 	;;
 	"start")
-		stop_qos
-		iptables_start_prepare
-		start_qos $2 $3
-		iptables_start_inital
-		echo 1 wrr $(($3*1000)) > /sys/kernel/debug/hnat/qdma_sch2
-		echo 1 wrr $(($2*1000)) > /sys/kernel/debug/hnat/qdma_sch3
+		stop_qos || exit 1
+		start_qos "$2" "$3" || exit 1
+		hnat_start_initial || exit 1
+		write_hnat_node "${HNAT_DIR}/qdma_sch2" "1 wrr $(($3 * 1000))" || exit 1
+		write_hnat_node "${HNAT_DIR}/qdma_sch3" "1 wrr $(($2 * 1000))" || exit 1
 	;;
 	"add")
 		ip="$2"
-		dl="$3"
-		up="$4"
+		dl="${3:-0}"
+		up="${4:-0}"
+		comment="$5"
 		macaddr="$6"
-		cnt=$(tc class show dev $dev | wc -l)
-		
 		interface="$7"
-		if [ -n "$ip" ]; then
-		id="$(find_available_index "$ip")"
+		explicit_slot="$8"
+		cnt=$("$TC" class show dev "$dev" 2>/dev/null | wc -l)
+
+		if [ -n "$explicit_slot" ]; then
+			id="$explicit_slot"
+		elif [ -n "$ip" ]; then
+			id="$(find_available_index "$ip")" || exit 1
 		elif [ -n "$macaddr" ]; then
-		id="$(find_available_index "$macaddr")"
-		fi
-		idpair=$((id+32))
-		if [ $id -lt 32 ]; then
-		iptables -t mangle -D eqos -s $ip -j DSCP --set-dscp ${id}
-		iptables -t mangle -D eqos -d $ip -j DSCP --set-dscp ${idpair}
-		ip6tables -t mangle -D eqos -m mac --mac-source $macaddr -j MARK --set-mark ${id}
-		ebtables -t nat -D eqos -p ipv6 -d $macaddr -j mark --mark-set ${idpair}
-		if [ $up -ne 0 ]; then
-		echo 2 0 0 1 ${up} 4 1 > /sys/kernel/debug/hnat/qdma_txq${id}
-		iptables -t mangle -A eqos -s $ip -j DSCP --set-dscp ${id}
-		ip6tables -t mangle -A eqos -m mac --mac-source $macaddr -j MARK --set-mark ${id}
-		fi
-		if [ $dl -ne 0 ]; then
-		echo 3 0 0 1 ${dl} 4 1 > /sys/kernel/debug/hnat/qdma_txq${idpair}
-		iptables -t mangle -A eqos -d $ip -j DSCP --set-dscp ${idpair}
-		ebtables -t nat -A eqos -p ipv6 -d $macaddr -j mark --mark-set ${idpair}
-		fi
+			id="$(find_available_index "$macaddr")" || exit 1
 		else
-		iptables -t mangle -D eqos -s $ip -j MARK --set-mark 0x99
-		iptables -t mangle -D eqos -d $ip -j MARK --set-mark 0x99
-		if [ $up -ne 0 ]; then
-		iptables -t mangle -A eqos -s $ip -j MARK --set-mark 0x99
+			id=0
 		fi
-		if [ $dl -ne 0 ]; then
-		iptables -t mangle -A eqos -d $ip -j MARK --set-mark 0x99
+		idpair=$((id + 32))
+		if [ ! -d "$HNAT_DIR" ]; then
+			mkdir -p "$HNAT_DIR" || { echo "eqos: failed to mkdir $HNAT_DIR" >&2; exit 1; }
 		fi
+		if [ "$id" -ge 1 ] && [ "$id" -lt 32 ]; then
+			if [ "$up" -ne 0 ]; then
+				write_hnat_node "${HNAT_DIR}/qdma_txq${id}" "2 0 0 1 ${up} 4 1" || exit 1
+			fi
+			if [ "$dl" -ne 0 ]; then
+				write_hnat_node "${HNAT_DIR}/qdma_txq${idpair}" "3 0 0 1 ${dl} 4 1" || exit 1
+			fi
 		fi
-		if [ $id -gt 31 ]; then
-		tc class add dev $dev parent 1:1 classid 1:1$cnt htb rate ${dl}kbit ceil ${dl}kbit
-		tc filter add dev $dev parent 1:0 protocol ip u32 match ip dst $ip flowid 1:1$cnt
-		
-		tc class add dev ${dev}-ifb parent 1:1 classid 1:1$cnt htb rate ${up}kbit ceil ${up}kbit
-		tc filter add dev ${dev}-ifb parent 1:0 protocol ip u32 match ip src $ip flowid 1:1$cnt
-		fi
-		if [ $interface ]; then
-		iptables -t mangle -D PREROUTING -s $ip -m conntrack --ctstate NEW -j MARK --set-mark 2"$interface"
-		iptables -t mangle -A PREROUTING -s $ip -m conntrack --ctstate NEW -j MARK --set-mark 2"$interface"
-		iptables -t mangle -D PREROUTING -i br-lan -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
-        	iptables -t mangle -A PREROUTING -i br-lan -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
+		if [ "$id" -gt 31 ]; then
+			"$TC" class add dev "$dev" parent 1:1 classid "1:1${cnt}" htb rate "${dl}kbit" ceil "${dl}kbit" || { echo "eqos: failed to add tc class on $dev" >&2; exit 1; }
+			"$TC" filter add dev "$dev" parent 1:0 protocol ip u32 match ip dst "$ip" flowid "1:1${cnt}" || { echo "eqos: failed to add tc filter on $dev" >&2; exit 1; }
+
+			"$TC" class add dev "${dev}-ifb" parent 1:1 classid "1:1${cnt}" htb rate "${up}kbit" ceil "${up}kbit" || { echo "eqos: failed to add tc class on ${dev}-ifb" >&2; exit 1; }
+			"$TC" filter add dev "${dev}-ifb" parent 1:0 protocol ip u32 match ip src "$ip" flowid "1:1${cnt}" || { echo "eqos: failed to add tc filter on ${dev}-ifb" >&2; exit 1; }
 		fi
 	;;
 	*)

@@ -45,7 +45,7 @@ local chipname
                     <% chipname = string.split(dev.devname,".")[1].."."..(dev.mainidx) %>
                     <tr  style="height:45px">
                         <td style="padding:15px;">
-                            <img src="/luci-static/resources/icons/wifi_big.svg">
+                            <img src="/luci-static/resources/icons/wifi_big.png">
                         </td>
                         <td colspan="2" style="text-align:left">
                             <big><strong title="<%=dev.profile%>"> <%=string.split(dev.devname,".")[1]%></strong></big>
@@ -119,9 +119,9 @@ local chipname
                         <td></td>
                         <td class="cbi-value-field" style="width:16px; padding:3px;padding-left:40px;">
                             <% if vif.state == "up" then %>
-                            <img src="/luci-static/resources/icons/signal-75-100.svg">
+                            <img src="/luci-static/resources/icons/signal-75-100.png">
                             <% else %>
-                            <img src="/luci-static/resources/icons/signal-none.svg">
+                            <img src="/luci-static/resources/icons/signal-none.png">
                             <% end %>
                         </td>
                         <td class="cbi-value-field" style="vertical-align:middle; text-align:left; padding:3px">
@@ -172,15 +172,15 @@ local chipname
                         <td></td>
                         <td class="cbi-value-field" style="width:16px; padding:3px;padding-left:40px;">
                             <% if dev.apcli.state == "up" then %>
-                            <img src="/luci-static/resources/icons/signal-75-100.svg">
+                            <img src="/luci-static/resources/icons/signal-75-100.png">
                             <% else %>
-                            <img src="/luci-static/resources/icons/signal-none.svg">
+                            <img src="/luci-static/resources/icons/signal-none.png">
                             <% end %>
                         </td>
                         <td class="cbi-value-field" style="vertical-align:middle; text-align:left; padding:3px"><strong><%:Interface%>:</strong> <%=dev.apcli.devname%> | <strong><%:Type%>:</strong> STA | <strong><%:Status%>:</strong> <span id="ConnStatus_<%=dev.apcli.devname%>"><% if dev.ApCliEnable ~= "1" then %> <%:Disconnected%> <% end %></span>
                             <br>
                             <div id="LoadingBar_<%=dev.apcli.devname%>" <% if dev.ApCliEnable ~= "1" then %> style="display:none" <% end %>>
-                                <img src="<%=resource%>/icons/loading.svg" alt="<%:Loading%>" style="width:20px;height:20px;vertical-align:middle;"/> <cite>&nbsp;<%:Loading connection information of%> <%=dev.apcli.devname%></cite>
+                                <img src="<%=resource%>/icons/loading.gif" alt="<%:Loading%>" style="width:20px;height:20px;vertical-align:middle;"/> <cite>&nbsp;<%:Loading connection information of%> <%=dev.apcli.devname%></cite>
                             </div>
                             <div id="ConnInfo_<%=dev.apcli.devname%>" style="display:none">
                                 <strong>BSSID:</strong> <span id="ApCliBssid_<%=dev.apcli.devname%>"></span> |

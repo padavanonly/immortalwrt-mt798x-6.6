@@ -1,8 +1,31 @@
 #!/bin/sh
 
-. /lib/functions.sh
+if [ -n "${HQOS_FUNCTIONS_SH:-}" ] && [ -r "$HQOS_FUNCTIONS_SH" ]; then
+	. "$HQOS_FUNCTIONS_SH"
+else
+	. /lib/functions.sh
+fi
 
-hqos_path="/sys/kernel/debug/hnat"
+HQOS_HNAT_DIR="${HQOS_HNAT_DIR:-/sys/kernel/debug/hnat}"
+HQOS_DT_DIR="${HQOS_DT_DIR:-/proc/device-tree}"
+HQOS_SYSCTL_DIR="${HQOS_SYSCTL_DIR:-/proc/sys}"
+hqos_path="$HQOS_HNAT_DIR"
+
+dbg() {
+	logger -t "mtkhqos_util" "$1"
+	echo "$1"
+}
+
+sysctl_write_if_writable() {
+	[ -w "$1" ] && echo "$2" > "$1"
+}
+
+eqos_enabled="$(uci -q get eqos.config.enabled 2>/dev/null || echo 0)"
+mtk_qos_enabled="$(uci -q get mtk_qos.global.enabled 2>/dev/null || echo 0)"
+if [ "$eqos_enabled" = "1" ] || [ "$mtk_qos_enabled" = "1" ]; then
+	dbg "skipping mtkhqos: active QoS manager (eqos=${eqos_enabled}, mtk_qos=${mtk_qos_enabled})"
+	exit 0
+fi
 
 config_load mtkhqos
 config_get hnat global hnat 1
@@ -17,11 +40,6 @@ config_get sch1_enable global sch1_enable 0
 config_get sch1_mode global sch1_mode 0
 config_get sch1_bw global sch1_bw 1000000
 
-dbg() {
-	logger -t "mtkhqos_util" "$1"
-	echo "$1"
-}
-
 sch_mode2str() {
 	if [ "$1" = "0" ]; then
 		echo "wrr"
@@ -33,15 +51,15 @@ sch_mode2str() {
 }
 
 # disable bridge netfilter module to avoid high cpu usage
-echo 0 > /proc/sys/net/bridge/bridge-nf-call-arptables
-echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables
-echo 0 > /proc/sys/net/bridge/bridge-nf-call-ip6tables
-echo 0 > /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged
-echo 0 > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged
-echo 0 > /proc/sys/net/bridge/bridge-nf-pass-vlan-input-dev
-echo 1035876 >/proc/sys/net/core/rmem_max
-echo 1035876 >/proc/sys/net/core/wmem_max
-if [ ! -d $hqos_path ]; then
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-call-arptables" 0
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-call-iptables" 0
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-call-ip6tables" 0
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-filter-pppoe-tagged" 0
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-filter-vlan-tagged" 0
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-pass-vlan-input-dev" 0
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/core/rmem_max" 1035876
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/core/wmem_max" 1035876
+if [ ! -d "$hqos_path" ]; then
 	modprobe mtkhnat
 	if [ "$?" != "0" ]; then
 		exit 1
@@ -51,16 +69,16 @@ fi
 if [ "$hnat" -eq "0" ]; then
 	# disable hnat & hqos
 	dbg "disable hnat & hqos"
-	echo 0 $(sch_mode2str $sch0_mode) ${sch0_bw} > $hqos_path/qdma_sch0
-	echo 0 $(sch_mode2str $sch1_mode) ${sch1_bw} > $hqos_path/qdma_sch1
+	echo 0 $(sch_mode2str "$sch0_mode") "${sch0_bw}" > "$hqos_path/qdma_sch0"
+	echo 0 $(sch_mode2str "$sch1_mode") "${sch1_bw}" > "$hqos_path/qdma_sch1"
 
-	echo 0 0 0 0 0 0 4 > $hqos_path/qdma_txq0
+	echo 0 0 0 0 0 0 4 > "$hqos_path/qdma_txq0"
 	for i in $(seq 1 $((txq_num - 1))); do
-		echo 0 0 0 0 0 0 0 > $hqos_path/qdma_txq$i
+		echo 0 0 0 0 0 0 0 > "$hqos_path/qdma_txq$i"
 	done
 
-	echo 0 > $hqos_path/qos_toggle
-	echo 0 > $hqos_path/hook_toggle
+	echo 0 > "$hqos_path/qos_toggle"
+	echo 0 > "$hqos_path/hook_toggle"
 
 	exit 0
 fi
@@ -68,46 +86,51 @@ fi
 if [ "$hqos" -eq 0 ]; then
 	# disable hqos, enable hnat
 	dbg "disable hqos, enable hnat"
-	SOC=`cat /proc/device-tree/ethernet*/compatible | cut -c 10-15`
-	DUAL_SCH=$(if [ $SOC = "mt7981" ]; then echo true; fi)
+	SOC="$(
+		for p in "$HQOS_DT_DIR/compatible" "$HQOS_DT_DIR"/soc/ethernet*/compatible "$HQOS_DT_DIR"/ethernet*/compatible; do
+			[ -r "$p" ] && tr '\0' '\n' < "$p" 2>/dev/null
+		done | grep -oE 'mt798[0-9]' | head -n 1
+	)"
+	DUAL_SCH=""
+	[ "$SOC" = "mt7981" ] && DUAL_SCH="true"
 
-	echo 0 $(sch_mode2str $sch0_mode) ${sch0_bw} > $hqos_path/qdma_sch0
-	echo 0 $(sch_mode2str $sch1_mode) ${sch1_bw} > $hqos_path/qdma_sch1
+	echo 0 $(sch_mode2str "$sch0_mode") "${sch0_bw}" > "$hqos_path/qdma_sch0"
+	echo 0 $(sch_mode2str "$sch1_mode") "${sch1_bw}" > "$hqos_path/qdma_sch1"
 
 	for i in $(seq 0 $((txq_num - 1))); do
-		if [ "${i}" -le $(((txq_num / 2) - 1)) ] || [ ! $DUAL_SCH ]; then
-			echo 0 0 0 0 0 0 4 > $hqos_path/qdma_txq$i
+		if [ "${i}" -le $(((txq_num / 2) - 1)) ] || [ -z "$DUAL_SCH" ]; then
+			echo 0 0 0 0 0 0 4 > "$hqos_path/qdma_txq$i"
 		else
-			echo 1 0 0 0 0 0 4 > $hqos_path/qdma_txq$i
+			echo 1 0 0 0 0 0 4 > "$hqos_path/qdma_txq$i"
 		fi
 	done
 
-	echo 1 > $hqos_path/hook_toggle
-	echo 0 > $hqos_path/qos_toggle
+	echo 1 > "$hqos_path/hook_toggle"
+	echo 0 > "$hqos_path/qos_toggle"
 
 	exit 0
 fi
 
 # enable hnat & hqos
-dbg "sch0=${sch0_enable}, mode=$(sch_mode2str $sch0_mode), bw=${sch0_bw}"
-echo ${sch0_enable} $(sch_mode2str $sch0_mode) ${sch0_bw} > $hqos_path/qdma_sch0
+dbg "sch0=${sch0_enable}, mode=$(sch_mode2str "$sch0_mode"), bw=${sch0_bw}"
+echo "${sch0_enable}" $(sch_mode2str "$sch0_mode") "${sch0_bw}" > "$hqos_path/qdma_sch0"
 
-dbg "sch1=${sch1_enable}, mode=$(sch_mode2str $sch1_mode), bw=${sch1_bw}"
-echo ${sch1_enable} $(sch_mode2str $sch1_mode) ${sch1_bw} > $hqos_path/qdma_sch1
+dbg "sch1=${sch1_enable}, mode=$(sch_mode2str "$sch1_mode"), bw=${sch1_bw}"
+echo "${sch1_enable}" $(sch_mode2str "$sch1_mode") "${sch1_bw}" > "$hqos_path/qdma_sch1"
 
 # enable bridge netfilter module to allow skb being marked
-echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables
-echo 1 > /proc/sys/net/bridge/bridge-nf-call-ip6tables
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-call-iptables" 1
+sysctl_write_if_writable "$HQOS_SYSCTL_DIR/net/bridge/bridge-nf-call-ip6tables" 1
 
 setup_queue() {
 	local queue_id queue_scheduler queue_minebl queue_maxebl
 	local queue_minrate queue_maxrate queue_resv minrate maxrate queue_weight
 
-	config_get queue_id $1 id 0
-	config_get queue_minrate $1 minrate 0
-	config_get queue_maxrate $1 maxrate 0
-	config_get queue_resv $1 resv 4
-	config_get queue_weight $1 weight 4
+	config_get queue_id "$1" id 0
+	config_get queue_minrate "$1" minrate 0
+	config_get queue_maxrate "$1" maxrate 0
+	config_get queue_resv "$1" resv 4
+	config_get queue_weight "$1" weight 4
 
 	# check qid < txq max num or not for loop condition
 	[ "${queue_id}" -gt $((txq_num - 1)) ] && return 0
@@ -123,34 +146,34 @@ setup_queue() {
 	[ "${queue_maxrate}" -eq 0 ] && queue_maxebl=0
 
 	# calculate min rate according to sch0_bw
-	minrate=$((sch0_bw * $queue_minrate))
+	minrate=$((sch0_bw * queue_minrate))
 	minrate=$((minrate / 100))
 
 	# calculate max rate according to sch0_bw
-	maxrate=$((sch0_bw * $queue_maxrate))
+	maxrate=$((sch0_bw * queue_maxrate))
 	maxrate=$((maxrate / 100))
 
 	# set the queue of sch0 group(the lower half of total queues)
 	[ "${queue_id}" -le $(((txq_num / 2) - 1)) ] && \
-	echo 0 ${queue_minebl} ${minrate} ${queue_maxebl} ${maxrate} ${queue_weight} \
-		${queue_resv} > $hqos_path/qdma_txq${queue_id}
+	echo 0 "${queue_minebl}" "${minrate}" "${queue_maxebl}" "${maxrate}" "${queue_weight}" \
+		"${queue_resv}" > "$hqos_path/qdma_txq${queue_id}"
 
 	# calculate min rate according to sch1_bw
-	minrate=$((sch1_bw * $queue_minrate))
+	minrate=$((sch1_bw * queue_minrate))
 	minrate=$((minrate / 100))
 
 	# calculate max rate according to sch1_bw
-	maxrate=$((sch1_bw * $queue_maxrate))
+	maxrate=$((sch1_bw * queue_maxrate))
 	maxrate=$((maxrate / 100))
 
 	# set the queue of sch1 group(the upper half of total queues)
 	[ "${queue_id}" -gt $(((txq_num / 2) - 1)) ] && \
-	echo 1 ${queue_minebl} ${minrate} ${queue_maxebl} ${maxrate} ${queue_weight} \
-		${queue_resv} > $hqos_path/qdma_txq${queue_id}
+	echo 1 "${queue_minebl}" "${minrate}" "${queue_maxebl}" "${maxrate}" "${queue_weight}" \
+		"${queue_resv}" > "$hqos_path/qdma_txq${queue_id}"
 }
 
 config_foreach setup_queue queue
 
 # enable hooks
-echo 1 > $hqos_path/hook_toggle
-echo 0 > $hqos_path/qos_toggle
+echo 1 > "$hqos_path/hook_toggle"
+echo 1 > "$hqos_path/qos_toggle"

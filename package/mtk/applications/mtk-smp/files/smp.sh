@@ -24,6 +24,83 @@ CPU_RPS_ADD()
 	dbg2 "CPU${1}_RPS=\"\$CPU${1}_RPS $2\""
 }
 
+detect_soc_family()
+{
+	compat=""
+	if [ -r /proc/device-tree/compatible ]; then
+		compat=$(tr '\000' ' ' < /proc/device-tree/compatible 2>/dev/null)
+	fi
+	board=$(board_name)
+	case "$compat $board" in
+	*mt7987*)
+		echo "mt7987"
+		;;
+	*mt7988*|*7988*)
+		echo "mt7988"
+		;;
+	*mt7986*|*7986*)
+		echo "mt7986"
+		;;
+	*mt7981*|*7981*)
+		echo "mt7981"
+		;;
+	*)
+		echo "$board"
+		;;
+	esac
+}
+
+MT7987_whnat()
+{
+	num_of_wifi=$1
+	storage=$2
+	DEFAULT_RPS=0
+
+	# Physical GICv3 SPI/IRQ numbers on MT7987A
+	eth_tx=229
+	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=204
+	wifi1_irq=237
+	wifi2_irq=
+	wifi3_irq=
+
+	dbg "[MT7987_whnat]"
+	if [ "$num_of_wifi" = "0" ]; then
+		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
+		CPU1_AFFINITY="$usb_irq $eth_rx1"
+		CPU2_AFFINITY="$eth_tx $eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
+
+		CPU0_RPS=""
+		CPU1_RPS="$ethif1 $ethif2 $ethif3"
+		CPU2_RPS="$ethif1 $ethif2 $ethif3"
+		CPU3_RPS="$ethif1 $ethif2 $ethif3"
+	elif [ "$num_of_wifi" = "1" ]; then
+		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
+		CPU1_AFFINITY="$usb_irq $eth_rx1"
+		CPU2_AFFINITY="$eth_tx $eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
+
+		CPU0_RPS=""
+		CPU1_RPS="$ethif1 $ethif2 $ethif3"
+		CPU2_RPS="$ethif1 $ethif2 $ethif3 $wifi1 $wifi1_apcli0"
+		CPU3_RPS="$ethif1 $ethif2 $ethif3 $wifi1 $wifi1_apcli0"
+	else
+		CPU0_AFFINITY="$wifi1_irq $eth_rx0"
+		CPU1_AFFINITY="$usb_irq $eth_rx1"
+		CPU2_AFFINITY="$eth_tx $eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
+
+		CPU0_RPS=""
+		CPU1_RPS="$ethif1 $ethif2"
+		CPU2_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
+		CPU3_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
+	fi
+}
+
 MT7990_whnat()
 {
 	num_of_wifi=$1
@@ -39,7 +116,7 @@ MT7990_whnat()
 	eth_rx1=222
 	eth_rx2=223
 	eth_rx3=224
-	usb_irq=204
+	usb_irq="204 205"
 	if [ -d "/proc/warp_ctrl/warp0" ]; then
 		wifi1_irq=237
 		wifi2_irq=238
@@ -109,6 +186,10 @@ MT7986_whnat()
 	PCIe0=
 	eth_tx=229
 	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=205
 	if [ -d "/proc/warp_ctrl/warp0" ]; then
 		wifi1_irq=237
 		wifi2_irq=237
@@ -125,9 +206,9 @@ MT7986_whnat()
 	dbg "[MT7986_whnat]"
 	if [ "$num_of_wifi" = "0" ]; then
 		CPU0_AFFINITY="$eth_rx0"
-		CPU1_AFFINITY="$eth_tx"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_tx $eth_rx1 $usb_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2"
@@ -135,9 +216,9 @@ MT7986_whnat()
 		CPU3_RPS="$ethif1 $ethif2"
 	elif [ "$num_of_wifi" = "1" ]; then
 		CPU0_AFFINITY="$eth_rx0"
-		CPU1_AFFINITY="$eth_tx"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY="$wifi1_irq"
+		CPU1_AFFINITY="$eth_tx $eth_rx1 $usb_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3 $wifi1_irq"
 
 		CPU0_RPS="                $wifi1 $wifi1_apcli0"
 		CPU1_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
@@ -145,9 +226,9 @@ MT7986_whnat()
 		CPU3_RPS="$ethif1 $ethif2 "
 	elif [ "$num_of_wifi" = "2" ]; then
 		CPU0_AFFINITY="$eth_rx0"
-		CPU1_AFFINITY="$eth_tx"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY="$wifi1_irq $wifi2_irq"
+		CPU1_AFFINITY="$eth_tx $eth_rx1 $usb_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3 $wifi1_irq $wifi2_irq"
 
 		CPU0_RPS="                $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 		CPU1_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
@@ -155,9 +236,9 @@ MT7986_whnat()
 		CPU3_RPS="$ethif1 $ethif2"
 	elif [ "$num_of_wifi" = "3" ]; then
 		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq $wifi2_irq"
-		CPU2_AFFINITY="$PCIe0 $wifi3_irq"
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_rx1 $usb_irq $wifi1_irq $wifi2_irq"
+		CPU2_AFFINITY="$PCIe0 $eth_rx2 $wifi3_irq"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2                                           $wifi3 $wifi3_apcli0"
@@ -178,6 +259,10 @@ MT7986()
 	PCIe0=
 	eth_tx=229
 	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=205
 	wifi1_irq=245
 	wifi2_irq=
 	wifi3_irq=
@@ -188,9 +273,9 @@ MT7986()
 	dbg "[MT7986]"
 	if [ "$num_of_wifi" = "0" ]; then
 		CPU0_AFFINITY="$eth_rx0"
-		CPU1_AFFINITY="$eth_tx"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_tx $eth_rx1 $usb_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2"
@@ -198,9 +283,9 @@ MT7986()
 		CPU3_RPS="$ethif1 $ethif2"
 	elif [ "$num_of_wifi" = "1" ]; then
 		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_rx1 $usb_irq $wifi1_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS=""
@@ -208,9 +293,9 @@ MT7986()
 		CPU3_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
 	elif [ "$num_of_wifi" = "2" ]; then
 		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq"
-		CPU2_AFFINITY="$PCIe0 $wifi2_irq"
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_rx1 $usb_irq $wifi1_irq"
+		CPU2_AFFINITY="$PCIe0 $eth_rx2 $wifi2_irq"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2 $wifi2 $wifi2_apcli0"
@@ -218,9 +303,9 @@ MT7986()
 		CPU3_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 	elif [ "$num_of_wifi" = "3" ]; then
 		CPU0_AFFINITY="$eth_tx $eth_rx0 $wifi3_irq"
-		CPU1_AFFINITY="$PCIe0 $wifi2_irq $wifi1_irq"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$PCIe0 $eth_rx1 $usb_irq $wifi2_irq $wifi1_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS=""
@@ -241,6 +326,10 @@ MT7986_dbdc1()
 	PCIe0=
 	eth_tx=229
 	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=205
 	# WARP OFF -> wifi irq change from 237 to 245
 	wifi1_irq=245
 	wifi2_irq=245
@@ -252,9 +341,9 @@ MT7986_dbdc1()
 	dbg "[MT7986_dbdc1]"
 	if [ "$num_of_wifi" = "2" ]; then
 		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq $wifi2_irq"
-		CPU2_AFFINITY=""
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_rx1 $usb_irq $wifi1_irq $wifi2_irq"
+		CPU2_AFFINITY="$eth_rx2"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS=""
@@ -262,9 +351,9 @@ MT7986_dbdc1()
 		CPU3_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 	elif [ "$num_of_wifi" = "3" ]; then
 		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq $wifi2_irq"
-		CPU2_AFFINITY="$PCIe0 $wifi3_irq"
-		CPU3_AFFINITY=""
+		CPU1_AFFINITY="$eth_rx1 $usb_irq $wifi1_irq $wifi2_irq"
+		CPU2_AFFINITY="$PCIe0 $eth_rx2 $wifi3_irq"
+		CPU3_AFFINITY="$eth_rx3"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2 $wifi3 $wifi3_apcli0"
@@ -285,6 +374,10 @@ MT7981_whnat()
 	PCIe0=
 	eth_tx=229
 	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=205
 	if [ -d "/proc/warp_ctrl/warp0" ]; then
 		wifi1_irq=237
 		wifi2_irq=237
@@ -300,26 +393,26 @@ MT7981_whnat()
 	# CPU#_RPS="add binding interface name here"
 	dbg "[MT7981_whnat]"
 	if [ "$num_of_wifi" = "0" ]; then
-		CPU0_AFFINITY="$eth_rx0"
-		CPU1_AFFINITY="$eth_tx"
+		CPU0_AFFINITY="$eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$eth_tx $eth_rx1 $eth_rx3 $usb_irq"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2"
 	elif [ "$num_of_wifi" = "1" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$eth_rx1 $eth_rx3 $usb_irq $wifi1_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
 		CPU1_RPS="                $wifi1 $wifi1_apcli0"
 	elif [ "$num_of_wifi" = "2" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq $wifi2_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$eth_rx1 $eth_rx3 $usb_irq $wifi1_irq $wifi2_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 		CPU1_RPS="$ethif1 $ethif2"
 	elif [ "$num_of_wifi" = "3" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$PCIe0 $wifi1_irq $wifi2_irq $wifi3_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$PCIe0 $eth_rx1 $eth_rx3 $usb_irq $wifi1_irq $wifi2_irq $wifi3_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
 		CPU1_RPS="                $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
@@ -338,6 +431,10 @@ MT7981()
 	PCIe0=
 	eth_tx=229
 	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=205
 	wifi1_irq=245
 	wifi2_irq=
 	wifi3_irq=
@@ -347,26 +444,26 @@ MT7981()
 	# CPU#_RPS="add binding interface name here"
 	dbg "[MT7981]"
 	if [ "$num_of_wifi" = "0" ]; then
-		CPU0_AFFINITY="$eth_rx0"
-		CPU1_AFFINITY="$eth_tx"
+		CPU0_AFFINITY="$eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$eth_tx $eth_rx1 $eth_rx3 $usb_irq"
 
 		CPU0_RPS=""
 		CPU1_RPS="$ethif1 $ethif2"
 	elif [ "$num_of_wifi" = "1" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$eth_rx1 $eth_rx3 $usb_irq $wifi1_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
 		CPU1_RPS="                $wifi1 $wifi1_apcli0"
 	elif [ "$num_of_wifi" = "2" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$PCIe0 $wifi1_irq $wifi2_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$PCIe0 $eth_rx1 $eth_rx3 $usb_irq $wifi1_irq $wifi2_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 		CPU1_RPS="                $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 	elif [ "$num_of_wifi" = "3" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0 $wifi3_irq"
-		CPU1_AFFINITY="$PCIe0 $wifi2_irq $wifi1_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2 $wifi3_irq"
+		CPU1_AFFINITY="$PCIe0 $eth_rx1 $eth_rx3 $usb_irq $wifi2_irq $wifi1_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
 		CPU1_RPS="                $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
@@ -385,6 +482,10 @@ MT7981_dbdc1()
 	PCIe0=
 	eth_tx=229
 	eth_rx0=221
+	eth_rx1=222
+	eth_rx2=223
+	eth_rx3=224
+	usb_irq=205
 	# WARP OFF -> wifi irq change from 237 to 245
 	wifi1_irq=245
 	wifi2_irq=245
@@ -395,14 +496,14 @@ MT7981_dbdc1()
 	# CPU#_RPS="add binding interface name here"
 	dbg "[MT7981_dbdc1]"
 	if [ "$num_of_wifi" = "2" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$wifi1_irq $wifi2_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$eth_rx1 $eth_rx3 $usb_irq $wifi1_irq $wifi2_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 		CPU1_RPS="                $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
 	elif [ "$num_of_wifi" = "3" ]; then
-		CPU0_AFFINITY="$eth_tx $eth_rx0"
-		CPU1_AFFINITY="$PCIe0 $wifi1_irq $wifi2_irq $wifi3_irq"
+		CPU0_AFFINITY="$eth_tx $eth_rx0 $eth_rx2"
+		CPU1_AFFINITY="$PCIe0 $eth_rx1 $eth_rx3 $usb_irq $wifi1_irq $wifi2_irq $wifi3_irq"
 
 		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
 		CPU1_RPS="                $wifi1 $wifi2 $wifi3 $wifi1_apcli0 $wifi2_apcli0 $wifi3_apcli0"
@@ -674,17 +775,27 @@ get_wifi_if_name()
 		#wifi_if1s=`l1dat idx2if 1`
 		#wifi_if2s=`l1dat idx2if 2`
 		#wifi_if3s=`l1dat idx2if 3`
-		board=$(board_name)
-		case $board in
-		*7988*)
-			wifi_if1s=`l1dat zone2if dev00`
-			wifi_if2s=`l1dat zone2if dev01`
-			wifi_if3s=`l1dat zone2if dev02`
+		soc=$(detect_soc_family)
+		case "$soc" in
+		mt7987|mt7988|*7988*)
+			wifi_if1s=$(l1dat zone2if dev00 2>/dev/null)
+			wifi_if2s=$(l1dat zone2if dev01 2>/dev/null)
+			wifi_if3s=$(l1dat zone2if dev02 2>/dev/null)
+			if [ -z "$wifi_if1s" ] && [ -z "$wifi_if2s" ]; then
+				wifi_if1s=$(l1dat zone2if dev1 2>/dev/null)
+				wifi_if2s=$(l1dat zone2if dev2 2>/dev/null)
+				wifi_if3s=$(l1dat zone2if dev3 2>/dev/null)
+			fi
 			;;
 		*)
-			wifi_if1s=`l1dat zone2if dev1`
-			wifi_if2s=`l1dat zone2if dev2`
-			wifi_if3s=`l1dat zone2if dev3`
+			wifi_if1s=$(l1dat zone2if dev1 2>/dev/null)
+			wifi_if2s=$(l1dat zone2if dev2 2>/dev/null)
+			wifi_if3s=$(l1dat zone2if dev3 2>/dev/null)
+			if [ -z "$wifi_if1s" ] && [ -z "$wifi_if2s" ]; then
+				wifi_if1s=$(l1dat zone2if dev00 2>/dev/null)
+				wifi_if2s=$(l1dat zone2if dev01 2>/dev/null)
+				wifi_if3s=$(l1dat zone2if dev02 2>/dev/null)
+			fi
 			;;
 		esac
 	
@@ -790,18 +901,21 @@ module_exist()
 
 setup_model()
 {
-	board=$(board_name)
+	soc=$(detect_soc_family)
 	num_of_wifi=$(get_wifi_num)
 	mt_whnat_en=$(module_exist "mt_whnat")
 
-	case $board in
-	*7988*)
+	case "$soc" in
+	mt7987)
+		MT7987_whnat $num_of_wifi
+		;;
+	mt7988|*7988*)
 		MT7990_whnat $num_of_wifi
 		;;
-	*7986*)
+	mt7986|*7986*)
 		MT7986_whnat $num_of_wifi
 		;;
-	*7981*)
+	mt7981|*7981*)
 		MT7981_whnat $num_of_wifi
 		;;
 	*)
@@ -839,6 +953,17 @@ get_virtual_irq()
 	done
 }
 
+# Improve SW path peak throughput by disabling the GRO fraglist feature.
+disable_gro_fraglist()
+{
+	for iface in /sys/class/net/*; do
+		[ -e "$iface" ] || continue
+		iface=$(basename "$iface")
+		if ethtool -k "$iface" 2>/dev/null | grep -q "rx-gro-list: on"; then
+			ethtool -K "$iface" rx-gro-list off 2>/dev/null || true
+		fi
+	done
+}
 
 set_rps_cpu_bitmap()
 {
@@ -869,19 +994,36 @@ set_rps_cpu_bitmap()
 set_rps_cpus()
 {
 	dbg2 "# Setup rps of the interfaces, $RPS_IF_LIST."
+	sysctl -qw net.core.rps_sock_flow_entries=32768 >/dev/null 2>&1 || true
+	ps_mode="$(uci -q get network.@globals[0].packet_steering 2>/dev/null)"
+	[ -n "$ps_mode" ] || ps_mode="2"
+	all_cpu_mask="$(printf '%x' $(((1 << NUM_OF_CPU) - 1)))"
 	for i in $RPS_IF_LIST; do
 		var=${VAR_PREFIX}_${i//-/_}
 		eval cpu_map=\$$var
-		if [ -d /sys/class/net/$i ]; then
-			if [ ! -z $cpu_map ]; then
-				cpu_map=`printf '%x' $cpu_map`
-				dbg "echo $cpu_map > /sys/class/net/$i/queues/rx-0/rps_cpus"
-				echo $cpu_map > /sys/class/net/$i/queues/rx-0/rps_cpus
-			elif [ ! -z $1 ]; then
-				dbg "echo $1 > /sys/class/net/$i/queues/rx-0/rps_cpus"
-				echo $1 > /sys/class/net/$i/queues/rx-0/rps_cpus
+		for qdir in "/sys/class/net/$i/queues"/rx-*; do
+			[ -d "$qdir" ] || continue
+			rps_node="$qdir/rps_cpus"
+			flow_node="$qdir/rps_flow_cnt"
+			[ -w "$rps_node" ] || continue
+			if [ "$ps_mode" = "0" ]; then
+				dbg "echo 0 > $rps_node"
+				echo "0" > "$rps_node" 2>/dev/null || true
+				[ -w "$flow_node" ] && echo 0 > "$flow_node" 2>/dev/null || true
+			elif [ "$ps_mode" = "2" ]; then
+				dbg "echo $all_cpu_mask > $rps_node"
+				echo "$all_cpu_mask" > "$rps_node" 2>/dev/null || true
+				[ -w "$flow_node" ] && echo 4096 > "$flow_node" 2>/dev/null || true
+			elif [ -n "$cpu_map" ]; then
+				cpu_map_hex=`printf '%x' $cpu_map`
+				dbg "echo $cpu_map_hex > $rps_node"
+				echo "$cpu_map_hex" > "$rps_node" 2>/dev/null || true
+				[ -w "$flow_node" ] && echo 4096 > "$flow_node" 2>/dev/null || true
+			elif [ -n "$1" ]; then
+				dbg "echo $1 > $rps_node"
+				echo "$1" > "$rps_node" 2>/dev/null || true
 			fi
-		fi
+		done
 	done
 }
 
@@ -942,4 +1084,5 @@ setup_model
 set_rps_cpu_bitmap
 set_rps_cpus $DEFAULT_RPS
 set_smp_affinity
+disable_gro_fraglist
 #end of file

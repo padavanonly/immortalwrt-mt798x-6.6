@@ -17,6 +17,8 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
 
 PKG_MAINTAINER:=Weijie Gao <weijie.gao@mediatek.com>
 
+PKG_CONFIG_DEPENDS := CONFIG_PACKAGE_datconf-lua
+
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -38,7 +40,7 @@ define Package/datconf
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
   SUBMENU:=Applications
-  DEPENDS:=+kvcedit
+  DEPENDS:=@!TARGET_mediatek_filogic +kvcedit
   TITLE:=Utility for editing dat files used by MediaTek Wi-Fi drivers
 endef
 
@@ -46,7 +48,7 @@ define Package/datconf-lua
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
   SUBMENU:=Applications
-  DEPENDS:=+datconf +liblua
+  DEPENDS:=@!(TARGET_mediatek_filogic||TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) +datconf +liblua
   TITLE:=Lua plugin for datconf
 endef
 
@@ -54,7 +56,8 @@ TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include
 TARGET_LDFLAGS += -L$(STAGING_DIR)/usr/lib
 
 CMAKE_OPTIONS = \
-        -DLUAPATH=/usr/lib/lua
+        -DLUAPATH=/usr/lib/lua \
+        -DBUILD_LUA=$(if $(CONFIG_PACKAGE_datconf-lua),ON,OFF)
 
 
 define Package/libkvcutil/install

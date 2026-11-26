@@ -317,32 +317,48 @@ int convert_string_display(lua_State *L)
 	return 1;
 }
 
+static const char *sta_phy_mode_name(unsigned int mode)
+{
+	static const char *const phy_mode[] = {"CCK", "OFDM", "MM", "GF", "VHT", "HE",
+		"HE5G", "HE2G", "HE_SU", "HE_EXT_SU", "HE_TRIG", "HE_MU"};
+
+	if (mode >= sizeof(phy_mode) / sizeof(phy_mode[0]))
+		return "UNKNOWN";
+
+	return phy_mode[mode];
+}
+
+static int sta_table_num_valid(unsigned long num)
+{
+	return num <= MAX_NUMBER_OF_MAC;
+}
+
+static int sta_table_response_valid(unsigned short length, unsigned long num)
+{
+	return length == sizeof(RT_802_11_MAC_TABLE_FIX) && sta_table_num_valid(num);
+}
+
 int StaInfo(lua_State *L)
 {
 	int i, s;
-	struct iwreq iwr;
+	struct iwreq iwr = {0};
 	RT_802_11_MAC_TABLE_FIX *table;
 	char tmpBuff[128] = {0};
-	char *phyMode[12] = {"CCK", "OFDM", "MM", "GF", "VHT", "HE",
-		"HE5G", "HE2G", "HE_SU", "HE_EXT_SU", "HE_TRIG", "HE_MU"};
 	const char *interface = luaL_checkstring(L, 1);
 
-	table = (RT_802_11_MAC_TABLE_FIX *)malloc(sizeof(RT_802_11_MAC_TABLE_FIX));
+	table = (RT_802_11_MAC_TABLE_FIX *)calloc(1, sizeof(*table));
 	if (!table)
 		return -ENOMEM;
 
-	memset(table, 0, sizeof(RT_802_11_MAC_TABLE_FIX));
-
 	s = socket(AF_INET, SOCK_DGRAM, 0);
-
-	snprintf(iwr.ifr_name, IFNAMSIZ, "%s", interface);
-
-	iwr.u.data.pointer = table;
-
 	if (s < 0) {
 		free(table);
 		return 0;
 	}
+
+	snprintf(iwr.ifr_name, IFNAMSIZ, "%s", interface);
+	iwr.u.data.pointer = table;
+	iwr.u.data.length = (unsigned short)sizeof(*table);
 
 	if (ioctl(s, RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT, &iwr) < 0) {
 		free(table);
@@ -352,10 +368,15 @@ int StaInfo(lua_State *L)
 
 	close(s);
 
-	/* Creates parent table of size table.Num array elements: */
-	lua_createtable(L, table->Num, 0);
+	if (!sta_table_response_valid(iwr.u.data.length, table->Num)) {
+		free(table);
+		return 0;
+	}
 
-	for (i = 0; i < table->Num; i++) {
+	/* Creates parent table of size table.Num array elements: */
+	lua_createtable(L, (int)table->Num, 0);
+
+	for (i = 0; i < (int)table->Num; i++) {
 
 		lua_pushnumber(L, i);
 
@@ -452,7 +473,7 @@ int StaInfo(lua_State *L)
 		lua_setfield(L, -2, "Gi");
 
 		//TX phy mode
-		snprintf(tmpBuff, sizeof(tmpBuff), "%s", phyMode[TxRate.field.MODE]);
+		snprintf(tmpBuff, sizeof(tmpBuff), "%s", sta_phy_mode_name(TxRate.field.MODE));
 		lua_pushstring(L, tmpBuff);
 		lua_setfield(L, -2, "PhyMode");
 
@@ -565,7 +586,7 @@ int StaInfo(lua_State *L)
 		lua_pushstring(L, tmpBuff);
 		lua_setfield(L, -2, "LastGi");
 
-		snprintf(tmpBuff, sizeof(tmpBuff), "%s", phyMode[RxRate.field.MODE]);
+		snprintf(tmpBuff, sizeof(tmpBuff), "%s", sta_phy_mode_name(RxRate.field.MODE));
 		lua_pushstring(L, tmpBuff);
 		lua_setfield(L, -2, "LastPhyMode");
 

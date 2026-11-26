@@ -170,7 +170,7 @@ function handleConfig(ev) {
 
 		arglist = [
 			[ui.Select, _('Default Protocol'), {'ipv4': _('ipv4'), 'ipv6': _('ipv6')}, {}, ''],
-			[ui.Select, _('Default Refresh Interval'), {'-1': _('Disabled'), '3': _('3 seconds'), '5': _('5 seconds'), '10': _('10 seconds'), '30': _('30 seconds')}, {sort: ['-1', '3', '5', '10', '30']}, ''],
+			[ui.Select, _('Default Refresh Interval'), {'-1': _('Disabled'), '2': _('2 seconds'), '5': _('5 seconds'), '10': _('10 seconds'), '30': _('30 seconds')}, {sort: ['-1', '2', '5', '10', '30']}, ''],
 			[ui.Dropdown, _('Default Columns'), columns, {multiple: true, sort: false, custom_placeholder: '', dropdown_items: 3}, ''],
 			[ui.Checkbox, _('Show Zeros'), {value_enabled: true, value_disabled: false}, ''],
 			[ui.Checkbox, _('Transfer Speed in Bits'), {value_enabled: true, value_disabled: false}, ''],
@@ -601,7 +601,7 @@ return view.extend({
 							'change': clickToSelectInterval.bind(this, settings, labelUpdating)
 							}, initOption({
 								'-1': _('Disabled'),
-								'3': _('3 seconds'),
+								'2': _('2 seconds'),
 								'5': _('5 seconds'),
 								'10': _('10 seconds'),
 								'30': _('30 seconds')

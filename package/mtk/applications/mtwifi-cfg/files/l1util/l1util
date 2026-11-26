@@ -1,6 +1,5 @@
-#!/usr/bin/lua
---[[
- *
+#!/usr/bin/env ucode
+/*
  * Copyright (C) 2023 hanwckf <hanwckf@vip.qq.com>
  *
  * 	This program is free software; you can redistribute it and/or modify
@@ -12,133 +11,165 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
-]]
+ */
 
-local l1parser = require("l1dat_parser")
-local l1dat = l1parser.load_l1_profile(l1parser.L1_DAT_PATH)
-
-if not l1dat then
-    return
-end
-
-function show_usage()
-    print("Usage: l1util list | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>")
-end
-
-function show_devs()
-    local devs = {}
-    local ret = ""
-
-    for k, v in pairs(l1dat.devname_ridx) do
-        -- skip MT7986-2.4G for ax7800 project
-        if not(string.find(v.profile_path, "ax7800") and 
-        v.INDEX == "MT7986" and v.subidx == 1) then
-            table.insert(devs, k)
-        end
-    end
-
-    table.sort(devs)
-
-    for _,v in ipairs(devs) do
-        if #ret > 0 then
-            ret = ret .. " " .. v
-        else
-            ret = v
-        end
-    end
-
-    print(ret)
-end
-
-function get_dev_prop(dev, prop)
-    if l1dat.devname_ridx[dev] and l1dat.devname_ridx[dev][prop] then
-        print(l1dat.devname_ridx[dev][prop])
-    end
-end
-
-local action = {
-    ["list"] = function()
-        show_devs()
-    end,
-
-    ["get"] = function(dev, prop)
-        get_dev_prop(dev, prop)
-    end,
-
-    ["if2zone"] = function(ifname)
-        if not ifname then return end
-
-        local zone = l1parser.l1_ifname_to_zone(ifname) or ""
-        print(zone);
-    end,
-
-    ["if2dat"] = function(ifname)
-        if not ifname then return end
-
-        local dat_path = l1parser.l1_ifname_to_datpath(ifname) or ""
-        print(dat_path)
-    end,
-
-    ["zone2if"] = function(zone)
-        if not zone then return end
-
-        local main_if, ext_if, apcli, wds, mesh = l1parser.l1_zone_to_ifname(zone)
-
-        if main_if then
-            print(main_if.." "..ext_if.." "..apcli.." "..wds.." "..mesh)
-        end
-    end,
-
-    ["idx2if"] = function(idx)
-        if not idx then return end
-
-        idx = tonumber(idx)
-
-        local band_num = l1parser.MAX_NUM_DBDC_BAND
-        local dbdc_if
-        local count = 0
-        for k, v in pairs(l1dat) do
-            -- check if last dbdc exists
-            dbdc_if = l1parser.token_get(v.main_ifname, band_num, nil)
-            if dbdc_if then
-                count = count + band_num;
-            else
-                count = count + 1
-            end
-
-            if not dbdc_if and count == idx then
-                print(v.main_ifname)
-
-                break
-            end
-
-            if count >= idx then -- dbdc case
-                local token_num = band_num - ( count - idx )
-                print(l1parser.token_get(v.main_ifname, token_num, nil))
-
-                break
-            end
-        end
-    end,
-
-    ["if2dbdcidx"] = function(ifname)
-        if not ifname then return end
-
-        local ridx = l1parser.IF_RINDEX
-
-        if not l1dat[ridx][ifname] then return end
-
-        print(l1dat[ridx][ifname]["subidx"] or "0")
-    end,
+unshift(REQUIRE_SEARCH_PATH, "/usr/lib/ucode/*.uc");
+unshift(REQUIRE_SEARCH_PATH, "/usr/share/ucode/*.uc");
+unshift(REQUIRE_SEARCH_PATH, "/usr/share/ucode/mtwifi/*.uc");
+let __sp = sourcepath(0, true);
+if (__sp) {
+	unshift(REQUIRE_SEARCH_PATH, __sp + "/../mtwifi-cfg/*.uc");
+	unshift(REQUIRE_SEARCH_PATH, __sp + "/../l1util/*.uc");
+	unshift(REQUIRE_SEARCH_PATH, __sp + "/*.uc");
+}
+let __env_dir = getenv("MTWIFI_UCODE_DIR") || getenv("MTWIFI_LIB_DIR");
+if (__env_dir) {
+	for (let p in split(__env_dir, ":")) {
+		if (length(p) > 0)
+			unshift(REQUIRE_SEARCH_PATH, p + "/*.uc");
+	}
 }
 
+let l1parser = require("l1dat_parser");
+let l1dat = l1parser.load_l1_profile(l1parser.L1_DAT_PATH);
 
-if #arg == 0 then
-    show_usage()
-elseif #arg == 1 then
-    action[arg[1]]()
-elseif #arg == 2 then
-    action[arg[1]](arg[2])
-elseif #arg == 3 then
-    action[arg[1]](arg[2], arg[3])
-end
+if (!l1dat)
+	exit(0);
+
+function show_usage() {
+	print("Usage: l1util list | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>\n");
+}
+
+function show_devs() {
+	let devs = [];
+
+	for (let k, v in l1dat.devname_ridx) {
+		// skip MT7986-2.4G for ax7800 project
+		if (!(index("" + v.profile_path, "ax7800") >= 0 &&
+		      v.INDEX == "MT7986" && v.subidx == 1)) {
+			push(devs, k);
+		}
+	}
+
+	sort(devs);
+
+	print(join(" ", devs) + "\n");
+}
+
+function get_dev_prop(dev, prop) {
+	if (l1dat.devname_ridx[dev] && l1dat.devname_ridx[dev][prop] != null && l1dat.devname_ridx[dev][prop] !== false) {
+		print(l1dat.devname_ridx[dev][prop] + "\n");
+	}
+}
+
+let action = {
+	"list": function() {
+		show_devs();
+	},
+
+	"get": function(dev, prop) {
+		get_dev_prop(dev, prop);
+	},
+
+	"dev": function(dev, prop) {
+		if (prop != null)
+			get_dev_prop(dev, prop);
+		else if (dev != null)
+			get_dev_prop(dev, "main_ifname");
+	},
+
+	"if2zone": function(ifname) {
+		if (!ifname) return;
+
+		let zone = l1parser.l1_ifname_to_zone(ifname) || "";
+		print(zone + "\n");
+	},
+
+	"if2dat": function(ifname) {
+		if (!ifname) return;
+
+		let dat_path = l1parser.l1_ifname_to_datpath(ifname) || "";
+		print(dat_path + "\n");
+	},
+
+	"ifname": function(ifname) {
+		if (!ifname) return;
+
+		let dat_path = l1parser.l1_ifname_to_datpath(ifname) || "";
+		print(dat_path + "\n");
+	},
+
+	"zone2if": function(zone) {
+		if (!zone) return;
+
+		let ifs = l1parser.l1_zone_to_ifname(zone);
+		if (type(ifs) == "array" && ifs[0]) {
+			print(join(" ", ifs) + "\n");
+		}
+	},
+
+	"zone": function(zone) {
+		if (!zone) return;
+
+		let ifs = l1parser.l1_zone_to_ifname(zone);
+		if (type(ifs) == "array" && ifs[0]) {
+			print(join(" ", ifs) + "\n");
+		}
+	},
+
+	"idx2if": function(idx) {
+		if (!idx) return;
+
+		idx = int(idx);
+
+		let band_num = l1parser.MAX_NUM_DBDC_BAND;
+		let dbdc_if;
+		let count = 0;
+		for (let k, v in l1dat) {
+			if (!match("" + k, /^[0-9]+$/))
+				continue;
+
+			// check if last dbdc exists
+			dbdc_if = l1parser.token_get(v.main_ifname, band_num, null);
+			if (dbdc_if) {
+				count = count + band_num;
+			} else {
+				count = count + 1;
+			}
+
+			if (!dbdc_if && count == idx) {
+				print(v.main_ifname + "\n");
+				break;
+			}
+
+			if (count >= idx) { // dbdc case
+				let token_num = band_num - (count - idx);
+				print((l1parser.token_get(v.main_ifname, token_num, null) ?? "nil") + "\n");
+				break;
+			}
+		}
+	},
+
+	"if2dbdcidx": function(ifname) {
+		if (!ifname) return;
+
+		let ridx = l1parser.IF_RINDEX;
+		if (!l1dat[ridx][ifname]) return;
+
+		print((l1dat[ridx][ifname]["subidx"] ?? "0") + "\n");
+	},
+};
+
+let argc = length(ARGV);
+if (argc == 0) {
+	show_usage();
+} else if (argc == 1) {
+	if (action[ARGV[0]])
+		action[ARGV[0]]();
+} else if (argc == 2) {
+	if (action[ARGV[0]])
+		action[ARGV[0]](ARGV[1]);
+} else if (argc == 3) {
+	if (action[ARGV[0]])
+		action[ARGV[0]](ARGV[1], ARGV[2]);
+}

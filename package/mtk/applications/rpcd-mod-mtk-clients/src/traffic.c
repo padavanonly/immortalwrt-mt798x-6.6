@@ -1,4 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Original-Author: coolsnowwolf <coolsnowwolf@gmail.com>
+ * Upstream: https://github.com/coolsnowwolf/luci (openwrt-25.12)
+ * Path: libs/rpcd-mod-luci/src/traffic.c
+ * Cherry-picked commits:
+ *   8ac42d9a355f89ccd7414e17f65a6bff5ce62d95
+ *   22f66d0d9261b8ffd41062ec3ea40dc1d38332ed
+ *   5cfaf67fed77d4a9407c60c31a5abf610c7bb5ad
+ *   e853b2b146ac0aceac0788b93ad0049e65f1a9d0
+ *   d7d7e0849df0892541f86186dbde61c99056bf1a
+ */
 #include "mtk_clients.h"
 /* Read-only conntrack accounting, including ECM/NSS synchronized counters. */
 #include <arpa/inet.h>

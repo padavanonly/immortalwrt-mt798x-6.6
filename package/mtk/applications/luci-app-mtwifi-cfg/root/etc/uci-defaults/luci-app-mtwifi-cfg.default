@@ -1,13 +1,13 @@
 #!/bin/sh
-
-if [ -d /www/luci-static/resources/view/network ]; then
-	mv -f /usr/share/luci-app-mtwifi-cfg/wireless-mtk.js /www/luci-static/resources/view/network/wireless.js
-fi
+# Safe LuCI network.js interface recognition for MediaTek interfaces
+# (Avoid destructive overwriting of core LuCI views)
 
 luci_network_js="/www/luci-static/resources/network.js"
 
-if [ -f $luci_network_js ]; then
-	if ! grep -sq 'ra\[xiyez\]' $luci_network_js ; then
-		sed -i 's#/^wlan\\d+/,#/^wlan\\d+/,/^ra[xiyez]?\\d+/,/^apcli[xiyez]?\\d+/,#' $luci_network_js
+if [ -f "$luci_network_js" ]; then
+	if ! grep -sq 'ra\[xiyez\]' "$luci_network_js" 2>/dev/null; then
+		sed -i 's#/^wlan\\d+/,#/^wlan\\d+/,/^ra[xiyez]?\\d+/,/^apcli[xiyez]?\\d+/,#' "$luci_network_js" 2>/dev/null || true
 	fi
 fi
+
+exit 0

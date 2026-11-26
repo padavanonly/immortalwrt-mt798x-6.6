@@ -513,3 +513,6 @@ msgstr "弱信号剔除阈值"
 
 msgid "STA Assoc Threshold"
 msgstr "弱信号接入阈值"
+
+msgid "Loading"
+msgstr "正在加载..."

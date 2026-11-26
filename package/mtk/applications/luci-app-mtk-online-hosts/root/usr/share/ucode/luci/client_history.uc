@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// Original-Author: coolsnowwolf <coolsnowwolf@gmail.com>
+// Upstream: https://github.com/coolsnowwolf/luci (openwrt-25.12)
 // Retain discovered clients in RAM for this boot, independently of the browser.
 export function arp_leases(text) {
 	let leases = [];
