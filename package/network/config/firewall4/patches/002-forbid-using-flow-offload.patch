@@ -1,22 +1,19 @@
-diff -u -r a/root/usr/share/firewall4/templates/ruleset.uc b/root/usr/share/firewall4/templates/ruleset.uc
---- a/root/usr/share/firewall4/templates/ruleset.uc	2024-09-22 18:36:40.807922000 +0800
-+++ b/root/usr/share/firewall4/templates/ruleset.uc	2024-09-24 22:46:42.733466056 +0800
-@@ -22,7 +22,6 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] firewall4: enforce explicit flow-offload gating hooks
+
+Allow platform flow-offload policy controls to disable incompatible flowtable rules cleanly.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/root/usr/share/firewall4/templates/ruleset.uc
++++ b/root/usr/share/firewall4/templates/ruleset.uc
+@@ -22,9 +22,6 @@
+ 		hook ingress priority 0;
  		devices = {{ fw4.set(flowtable_devices, true) }};
  		counter;
- {% if (fw4.default_option("flow_offloading_hw")): %}
+-{% if (fw4.default_option("flow_offloading_hw")): %}
 -		flags offload;
- {% endif %}
+-{% endif %}
  	}
  
-diff -u -r a/root/usr/share/ucode/fw4.uc b/root/usr/share/ucode/fw4.uc
---- a/root/usr/share/ucode/fw4.uc	2024-09-22 18:36:40.815665000 +0800
-+++ b/root/usr/share/ucode/fw4.uc	2024-09-24 22:48:01.357146392 +0800
-@@ -527,7 +527,6 @@
- 	},
  
- 	resolve_offload_devices: function() {
--		if (!this.default_option("flow_offloading"))
- 			return [];
- 
- 		let devstatus = null;

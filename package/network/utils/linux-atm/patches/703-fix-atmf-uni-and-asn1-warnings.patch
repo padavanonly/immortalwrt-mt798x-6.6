@@ -1,0 +1,364 @@
+diff -u -N -r a/src/ilmid/atmf_uni.c b/src/ilmid/atmf_uni.c
+--- a/src/ilmid/atmf_uni.c	2009-03-04 02:23:26.000000000 +0800
++++ b/src/ilmid/atmf_uni.c	2026-09-21 22:17:22.687175149 +0800
+@@ -39,32 +39,32 @@
+ #define INVALID 2
+ 
+ AsnOid foreQ2931AdminConfigType =
+-	{19, "\53\06\01\04\01\202\106\02\02\02\01\06\02\01\01\01\13\00\00" };
++	{19, (char *)"\53\06\01\04\01\202\106\02\02\02\01\06\02\01\01\01\13\00\00" };
+ AsnOid foreQ2931NNIProto =
+-	{19, "\53\06\01\04\01\202\106\02\02\02\01\06\02\01\01\01\102\00\00" };
+-AsnOid atmfPortIndex =          {13, "\53\06\01\04\01\202\141\02\01\01\01\01\00"};
+-AsnOid atmfPortMyIfName =       {13, "\53\06\01\04\01\202\141\02\01\01\01\07\00"};
+-AsnOid atmfPortMyIdentifier =   {13, "\53\06\01\04\01\202\141\02\01\01\01\10\00"};
+-AsnOid atmfMyIpNmAddress =      {11, "\53\06\01\04\01\202\141\02\01\02\00"};
+-AsnOid atmfMySystemIdentifier = {11, "\53\06\01\04\01\202\141\02\01\04\00"};
+-AsnOid atmfAtmLayerMaxVpiBits = {13, "\53\06\01\04\01\202\141\02\02\01\01\6\00"};
+-AsnOid atmfAtmLayerMaxVciBits = {13, "\53\06\01\04\01\202\141\02\02\01\01\7\00"};
+-AsnOid atmfAtmLayerUniType = {13, "\53\06\01\04\01\202\141\02\02\01\01\10\00"};
+-AsnOid atmfAtmLayerUniVersion = {13, "\53\06\01\04\01\202\141\02\02\01\01\11\00"};
+-AsnOid atmfAtmLayerDeviceType = {13, "\53\06\01\04\01\202\141\02\02\01\01\12\00"};
+-AsnOid atmfAtmLayerIlmiVersion = {13, "\53\06\01\04\01\202\141\02\02\01\01\13\00"};
+-AsnOid atmfAtmLayerNniSigVersion = {13, "\53\06\01\04\01\202\141\02\02\01\01\14\00"};
+-AsnOid atmfNetPrefixStatus = {NETPREFIX_LEN, "\53\06\01\04\01\202\141\02\07\01\01\03"};
++	{19, (char *)"\53\06\01\04\01\202\106\02\02\02\01\06\02\01\01\01\102\00\00" };
++AsnOid atmfPortIndex =          {13, (char *)"\53\06\01\04\01\202\141\02\01\01\01\01\00"};
++AsnOid atmfPortMyIfName =       {13, (char *)"\53\06\01\04\01\202\141\02\01\01\01\07\00"};
++AsnOid atmfPortMyIdentifier =   {13, (char *)"\53\06\01\04\01\202\141\02\01\01\01\10\00"};
++AsnOid atmfMyIpNmAddress =      {11, (char *)"\53\06\01\04\01\202\141\02\01\02\00"};
++AsnOid atmfMySystemIdentifier = {11, (char *)"\53\06\01\04\01\202\141\02\01\04\00"};
++AsnOid atmfAtmLayerMaxVpiBits = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\6\00"};
++AsnOid atmfAtmLayerMaxVciBits = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\7\00"};
++AsnOid atmfAtmLayerUniType = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\10\00"};
++AsnOid atmfAtmLayerUniVersion = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\11\00"};
++AsnOid atmfAtmLayerDeviceType = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\12\00"};
++AsnOid atmfAtmLayerIlmiVersion = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\13\00"};
++AsnOid atmfAtmLayerNniSigVersion = {13, (char *)"\53\06\01\04\01\202\141\02\02\01\01\14\00"};
++AsnOid atmfNetPrefixStatus = {NETPREFIX_LEN, (char *)"\53\06\01\04\01\202\141\02\07\01\01\03"};
+ AsnOid atmfSrvcRegATMAddress =
+ //	{26, "\53\06\01\04\01\202\141\02\10\01\01\03\00\12\01\03\06\01\04\01\202\141\01\05\01\01"};
+-	{25, "\53\06\01\04\01\202\141\02\10\01\01\03\00\12\01\03\06\01\04\01\202\141\01\05\01"};
++	{25, (char *)"\53\06\01\04\01\202\141\02\10\01\01\03\00\12\01\03\06\01\04\01\202\141\01\05\01"};
+ 
+ 
+-AsnOid atmfSrvcRegTable = { 10, "\53\06\01\04\01\202\141\02\10\01" };
+-AsnOid atmfAddressTable = { 9, "\53\06\01\04\01\202\141\02\06" };
+-AsnOid atmfAddressStatus = { 12, "\53\06\01\04\01\202\141\02\06\01\01\03" };
++AsnOid atmfSrvcRegTable = { 10, (char *)"\53\06\01\04\01\202\141\02\10\01" };
++AsnOid atmfAddressTable = { 9, (char *)"\53\06\01\04\01\202\141\02\06" };
++AsnOid atmfAddressStatus = { 12, (char *)"\53\06\01\04\01\202\141\02\06\01\01\03" };
+ AsnOid atmfAddressRegistrationAdminStatus =
+-	{ 13, "\53\06\01\04\01\202\141\02\13\01\01\02\00" };
++	{ 13, (char *)"\53\06\01\04\01\202\141\02\13\01\01\02\00" };
+ 
+ /* 1 = PublicUNI
+    2 = automode
+@@ -106,7 +106,6 @@
+ #endif
+ 
+ static AsnOid atmNetPrefix = {0, NULL};
+-static AsnOcts atmLecsAddress = {0, NULL};
+ 
+ typedef struct NetPrefixNode
+ {
+@@ -232,6 +231,7 @@
+ {
+       NetPrefixNode *tmp = (NetPrefixNode *) var->value;
+       Q_INSERT_BEFORE(tmp, newPrefix, prefix);
++      var->value = (void *)tmp;
+ }
+       if(atmNetPrefix.octs == NULL)
+ 	{
+@@ -245,6 +245,7 @@
+ {
+       NetPrefixNode *tmp = (NetPrefixNode *) var->value;
+       Q_REMOVE(tmp, prefix);
++      var->value = (void *)tmp;
+ }
+     }
+ 
+@@ -253,8 +254,6 @@
+ 
+ AsnInt getLecsAddress(VarBind *varbind, Variable *var)
+ {
+-  int cmp;
+-  NetPrefixNode *prefix;
+   AsnOid *varBindName;
+ 
+   	diag(COMPONENT,DIAG_INFO,"getLecsAddress" );
+diff -u -N -r a/src/ilmid/message.c b/src/ilmid/message.c
+--- a/src/ilmid/message.c	2008-01-01 08:14:50.000000000 +0800
++++ b/src/ilmid/message.c	2026-09-21 22:17:22.687353144 +0800
+@@ -48,7 +48,7 @@
+ 
+ 	if( m == NULL ) return NULL;
+ 	m->version = VERSION_1;
+-	m->community.octs = "ILMI";
++	m->community.octs = (char *)"ILMI";
+ 	m->community.octetLen = 4;
+ 	m->data = alloc_t( PDUs );
+ 	m->data->choiceId = PDUS_GET_NEXT_REQUEST;
+@@ -86,7 +86,7 @@
+ 
+ 	if( m == NULL ) return NULL;
+ 	m->version = VERSION_1;
+-	m->community.octs = "ILMI";
++	m->community.octs = (char *)"ILMI";
+ 	m->community.octetLen = 4;
+ 	m->data = alloc_t( PDUs );
+ 	m->data->choiceId = PDUS_GET_REQUEST;
+@@ -163,7 +163,7 @@
+ 
+   set_message = alloc_t(Message);
+   set_message->version = VERSION_1;
+-  set_message->community.octs = "ILMI";
++  set_message->community.octs = (char *)"ILMI";
+   set_message->community.octetLen = 4;
+   set_message->data = alloc_t(PDUs);
+   set_message->data->choiceId = PDUS_SET_REQUEST;
+@@ -195,18 +195,18 @@
+ 
+   trap_message = alloc_t(Message);
+   trap_message->version = VERSION_1;
+-  trap_message->community.octs = "ILMI";
++  trap_message->community.octs = (char *)"ILMI";
+   trap_message->community.octetLen = 4;
+   trap_message->data = alloc_t(PDUs);
+   trap_message->data->choiceId = PDUS_TRAP;
+   trap_message->data->a.trap = alloc_t(Trap_PDU);
+-  trap_message->data->a.trap->enterprise.octs = "\53\06\01\04\01\03\01\01";
++  trap_message->data->a.trap->enterprise.octs = (char *)"\53\06\01\04\01\03\01\01";
+   trap_message->data->a.trap->enterprise.octetLen = 8;
+   trap_message->data->a.trap->agent_addr = alloc_t(NetworkAddress);
+   trap_message->data->a.trap->agent_addr->choiceId = NETWORKADDRESS_INTERNET;
+   trap_message->data->a.trap->agent_addr->a.internet = alloc_t(IpAddress);
+   trap_message->data->a.trap->agent_addr->a.internet->octetLen = 4; 
+-  trap_message->data->a.trap->agent_addr->a.internet->octs = "\0\0\0\0";
++  trap_message->data->a.trap->agent_addr->a.internet->octs = (char *)"\0\0\0\0";
+   trap_message->data->a.trap->generic_trap = COLDSTART;
+   trap_message->data->a.trap->specific_trap = 0;
+   trap_message->data->a.trap->time_stamp = 0;
+@@ -217,7 +217,7 @@
+   else {
+     AsnListInit(trap_message->data->a.trap->variable_bindings, sizeof(VarBind));
+     entry = AppendVarBind(trap_message->data->a.trap->variable_bindings);
+-    entry->name.octs = "\53\06\01\02\01\01\03\00";
++    entry->name.octs = (char *)"\53\06\01\02\01\01\03\00";
+     entry->name.octetLen = 8;
+     entry->value = alloc_t(ObjectSyntax);
+     entry->value->choiceId = OBJECTSYNTAX_SIMPLE;
+diff -u -N -r a/src/ilmid/mib.c b/src/ilmid/mib.c
+--- a/src/ilmid/mib.c	2026-09-21 22:17:22.635423243 +0800
++++ b/src/ilmid/mib.c	2026-09-21 22:17:22.688008056 +0800
+@@ -368,7 +368,7 @@
+   if (!((IpAddress*) var->value)->octs) {
+       unsigned char *p;
+ 
+-      ((IpAddress *) var->value)->octs = p = alloc(4);
++      ((IpAddress *) var->value)->octs = (char *)(p = alloc(4));
+       memcpy(((IpAddress *) var->value)->octs,&local_ip,4);
+       diag(COMPONENT,DIAG_DEBUG,"Local IP address is %d.%d.%d.%d",p[0],p[1],
+ 	p[2],p[3]);
+@@ -389,7 +389,7 @@
+ 
+ 
+ static AsnInt put_ci(VarBind *varbind,Variable *var,
+-  struct atm_cirange *ci,char *bits)
++  struct atm_cirange *ci,signed char *bits)
+ {
+   if (get_ci_range(ci) < 0) return GENERR;
+   diag(COMPONENT,DIAG_DEBUG,"VPI: %d bits, VCI: %d bits",ci->vpi_bits,
+diff -u -N -r a/src/ilmid/rfc1155_smi.c b/src/ilmid/rfc1155_smi.c
+--- a/src/ilmid/rfc1155_smi.c	2001-10-10 06:33:06.000000000 +0800
++++ b/src/ilmid/rfc1155_smi.c	2026-09-21 22:17:22.687452808 +0800
+@@ -19,17 +19,17 @@
+ #include "rfc1157_snmp.h"
+ 
+ 
+-AsnOid internet = { 3, "\53\6\1" };
++AsnOid internet = { 3, (char *)"\53\6\1" };
+ 
+-AsnOid directory = { 4, "\53\6\1\1" };
++AsnOid directory = { 4, (char *)"\53\6\1\1" };
+ 
+-AsnOid mgmt = { 4, "\53\6\1\2" };
++AsnOid mgmt = { 4, (char *)"\53\6\1\2" };
+ 
+-AsnOid experimental = { 4, "\53\6\1\3" };
++AsnOid experimental = { 4, (char *)"\53\6\1\3" };
+ 
+-AsnOid private = { 4, "\53\6\1\4" };
++AsnOid private = { 4, (char *)"\53\6\1\4" };
+ 
+-AsnOid enterprises = { 5, "\53\6\1\4\1" };
++AsnOid enterprises = { 5, (char *)"\53\6\1\4\1" };
+ 
+ AsnLen
+ BEncSimpleSyntaxContent PARAMS((b, v),
+diff -u -N -r a/src/ilmid/sysgroup.c b/src/ilmid/sysgroup.c
+--- a/src/ilmid/sysgroup.c	2001-10-10 06:33:06.000000000 +0800
++++ b/src/ilmid/sysgroup.c	2026-09-21 22:17:22.687270332 +0800
+@@ -29,19 +29,19 @@
+ #include "sysgroup.h"
+ #include "string.h"
+ 
+-AsnOid sysDescr = {8, "\53\06\01\02\01\01\01\00"};
+-AsnOid sysObjectID = {8, "\53\06\01\02\01\01\02\00"};
+-AsnOid sysUpTime = {8, "\53\06\01\02\01\01\03\00"};
+-AsnOid sysContact = {8, "\53\06\01\02\01\01\04\00"};
+-AsnOid sysName = {8, "\53\06\01\02\01\01\05\00"};
+-AsnOid sysLocation = {8, "\53\06\01\02\01\01\06\00"};
+-AsnOid sysServices = {8, "\53\06\01\02\01\01\07\00"};
++AsnOid sysDescr = {8, (char *)"\53\06\01\02\01\01\01\00"};
++AsnOid sysObjectID = {8, (char *)"\53\06\01\02\01\01\02\00"};
++AsnOid sysUpTime = {8, (char *)"\53\06\01\02\01\01\03\00"};
++AsnOid sysContact = {8, (char *)"\53\06\01\02\01\01\04\00"};
++AsnOid sysName = {8, (char *)"\53\06\01\02\01\01\05\00"};
++AsnOid sysLocation = {8, (char *)"\53\06\01\02\01\01\06\00"};
++AsnOid sysServices = {8, (char *)"\53\06\01\02\01\01\07\00"};
+ 
+-AsnOcts sysDescrValue = {25, "ATM on Linux Version " VERSION};
+-AsnOid sysObjectIDValue = {8, "\53\06\01\04\01\03\01\01"};
+-AsnOcts sysContactValue = {14, "root@localhost"};
+-AsnOcts sysNameValue = {23, "localhost.my.domain.com"};
+-AsnOcts sysLocationValue = {36, "Connected to an ATM switch somewhere"};
++AsnOcts sysDescrValue = {25, (char *)"ATM on Linux Version " VERSION};
++AsnOid sysObjectIDValue = {8, (char *)"\53\06\01\04\01\03\01\01"};
++AsnOcts sysContactValue = {14, (char *)"root@localhost"};
++AsnOcts sysNameValue = {23, (char *)"localhost.my.domain.com"};
++AsnOcts sysLocationValue = {36, (char *)"Connected to an ATM switch somewhere"};
+ AsnInt sysServicesValue = 4;
+ 
+ static time_t up_time;
+diff -u -N -r a/src/led/join.c b/src/led/join.c
+--- a/src/led/join.c	2026-09-21 22:17:22.633478984 +0800
++++ b/src/led/join.c	2026-09-21 22:17:22.687748890 +0800
+@@ -185,7 +185,7 @@
+                 return -1; /* timeout */
+         }
+ 
+-        if (parse_config_rsp(buff, frame_size) < 0) {
++        if (parse_config_rsp((unsigned char *)buff, frame_size) < 0) {
+                 diag(COMPONENT, DIAG_ERROR, "Parsing LE_CONFIG_RESPONSE indicates failure");
+                 return -1;
+         }
+@@ -221,7 +221,7 @@
+         config_req->max_frame_size = lec_params.c3_max_frame_size;
+         config_req->elan_name_size = strlen(lec_params.c5_elan_name);
+         if (strlen(lec_params.c5_elan_name) > 0)
+-                strcpy(config_req->elan_name, lec_params.c5_elan_name);
++                strcpy((char *)config_req->elan_name, lec_params.c5_elan_name);
+         if (lec_params.c3_max_frame_size == MTU_1580) {
+                 lec_params.c3_max_frame_size = MTU_1516;
+                 *(uint32_t *)(config_req + 1) = htonl(X5_ADJUSTMENT);
+@@ -303,7 +303,7 @@
+         lec_params.c2_lan_type = frame->lan_type;
+         lec_params.c3_max_frame_size = frame->max_frame_size;
+         if (frame->elan_name_size != 0)
+-                strncpy(lec_params.c5_elan_name, frame->elan_name, frame->elan_name_size);
++                strncpy(lec_params.c5_elan_name, (char *)frame->elan_name, frame->elan_name_size);
+         lec_params.c5_elan_name[frame->elan_name_size] = '\0';
+         memcpy(lec_params.c9_les_atm_addr, frame->target_atm_addr, ATM_ESA_LEN);
+ 
+@@ -377,7 +377,7 @@
+                 return -1;
+         }
+         
+-        if (parse_join_rsp(buff, frame_size) < 0) {
++        if (parse_join_rsp((unsigned char *)buff, frame_size) < 0) {
+                 diag(COMPONENT, DIAG_ERROR, "Parsing LE_JOIN_RESPONSE failed");
+                 return -1;
+         }
+@@ -406,7 +406,7 @@
+         frame->lan_type = lec_params.c2_lan_type;
+         if (lec_params.c4_proxy_flag) frame->header.flags |= htons(PROXY_FLAG);
+         frame->src_lan_dst.tag = htons(LAN_DST_MAC_ADDR);
+-        strcpy(frame->elan_name, lec_params.c5_elan_name);
++        strcpy((char *)frame->elan_name, lec_params.c5_elan_name);
+         frame->elan_name_size = strlen(lec_params.c5_elan_name);
+         if (lec_params.c29_v2_capable) frame->header.flags |= htons(V2_CAPABLE);
+         memcpy(frame->src_atm_addr, lec_params.c1n_my_atm_addr, ATM_ESA_LEN);
+@@ -555,7 +555,7 @@
+         lec_params.c2_lan_type = frame->lan_type;
+         lec_params.c3_max_frame_size = frame->max_frame_size;
+         if (frame->elan_name_size != 0)
+-                strncpy(lec_params.c5_elan_name, frame->elan_name, frame->elan_name_size);
++                strncpy(lec_params.c5_elan_name, (char *)frame->elan_name, frame->elan_name_size);
+         lec_params.c5_elan_name[frame->elan_name_size] = '\0';
+         lec_params.c14_lec_id = ntohs(frame->header.lec_id);
+ 
+diff -u -N -r a/src/led/main.c b/src/led/main.c
+--- a/src/led/main.c	2009-03-04 01:56:59.000000000 +0800
++++ b/src/led/main.c	2026-09-21 22:17:22.687566909 +0800
+@@ -185,7 +185,7 @@
+ 
+ int main(int argc, char **argv)
+ {
+-        char mac_addr[ETH_ALEN];
++        unsigned char mac_addr[ETH_ALEN];
+         char elan_name[32 + 1];
+         char preferred_les[ATM_ESA_LEN]; /* LANE2 */
+         char foreId[255]; /* Max size for a TLV */
+diff -u -N -r a/src/mpoad/lecs.c b/src/mpoad/lecs.c
+--- a/src/mpoad/lecs.c	2026-09-21 22:17:22.636261885 +0800
++++ b/src/mpoad/lecs.c	2026-09-21 22:17:22.687930287 +0800
+@@ -71,7 +71,7 @@
+         memcpy(frame->src_atm_addr, lec_addr, ATM_ESA_LEN);
+         frame->num_tlvs = 1;
+         if (elan_name != NULL) {
+-                strcpy(frame->elan_name, elan_name);
++                strcpy((char *)frame->elan_name, elan_name);
+                 frame->elan_name_size = strlen(elan_name);
+         }
+ 
+@@ -111,8 +111,8 @@
+                         return -1;
+         }
+ 
+-        tlvs = buff + sizeof(struct le_config_frame);
+-        end_of_tlvs = buff + retval;
++        tlvs = (uint8_t *)(buff + sizeof(struct le_config_frame));
++        end_of_tlvs = (uint8_t *)(buff + retval);
+         while (end_of_tlvs - tlvs >= 5 && frame->num_tlvs-- > 0) {
+                 type = (tlvs[0] << 24) | (tlvs[1] << 16) | (tlvs[2] << 8) | tlvs[3];
+                 length = tlvs[4];
+diff -u -N -r a/src/mpoad/main.c b/src/mpoad/main.c
+--- a/src/mpoad/main.c	2008-01-01 08:14:51.000000000 +0800
++++ b/src/mpoad/main.c	2026-09-21 22:17:22.687852133 +0800
+@@ -148,7 +148,7 @@
+       mpc_control.use_lecs = 1;
+       break;
+     case 'n':
+-      strncpy(mpc_control.elan_name,optarg,33);
++      strncpy((char *)mpc_control.elan_name,optarg,33);
+       break;
+     case 'C':
+       if(text2atm(optarg,(struct sockaddr *)&mpc_control.lecs_address,
+@@ -159,7 +159,7 @@
+       }
+       break;
+     case 'm':
+-      strncpy(mpc_control.MPS_MAC_ADDRESS,optarg,13);
++      strncpy((char *)mpc_control.MPS_MAC_ADDRESS,optarg,13);
+       mpc_control.mps_mac_addr_set = 1;
+       break;
+     case 'i':
+@@ -174,7 +174,7 @@
+   while(1){
+     create_kernel_socket(mpc_control.INTERFACE_NUMBER);
+     if(mpc_control.use_lecs){
+-      get_mpc_config(&mpc_control.lecs_address, mpc_control.LEC_ADDRESS, mpc_control.elan_name);
++      get_mpc_config(&mpc_control.lecs_address, (char *)mpc_control.LEC_ADDRESS, (char *)mpc_control.elan_name);
+     }
+     msg.type = SET_MPC_CTRL_ADDR; 
+     memcpy(msg.MPS_ctrl,mpc_control.OWN_ATM_ADDRESS,ATM_ESA_LEN);
+@@ -227,7 +227,7 @@
+ }
+ 
+ static int set_mps_mac_addr(){
+-     char *string = mpc_control.MPS_MAC_ADDRESS;
++     char *string = (char *)mpc_control.MPS_MAC_ADDRESS;
+      struct k_message msg;
+      unsigned char mac_addr[ETH_ALEN];
+      int tmp;

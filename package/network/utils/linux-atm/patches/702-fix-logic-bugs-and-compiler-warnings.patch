@@ -1,0 +1,100 @@
+--- a/src/maint/hediag.c
++++ b/src/maint/hediag.c
+@@ -12,7 +12,7 @@
+ 
+ struct reg_table {
+ 	unsigned addr;
+-	char *name;
++	const char *name;
+ };
+ 
+ struct reg_table pci_regs[] =
+@@ -122,7 +122,7 @@ struct reg_table pci_regs[] =
+ 	{ 0x00000, NULL }
+ };
+ 
+-char *
++const char *
+ reg_name(unsigned addr)
+ {
+ 	struct reg_table *regp = pci_regs;
+--- a/src/lib/sapequal.c
++++ b/src/lib/sapequal.c
+@@ -43,7 +43,7 @@ static int bhli_compat(const struct atm_
+   if (res && !res->FIELD) res->FIELD = a.FIELD; \
+   if (a.FIELD && b.FIELD && a.FIELD != b.FIELD) { \
+     if (!(flags & SXE_NEGOTIATION)) return 0; \
+-    if (!CONSTRAINT) return 0; \
++    if (!(CONSTRAINT)) return 0; \
+     if (res) res->FIELD = a.FIELD < b.FIELD ? a.FIELD : b.FIELD; \
+   }
+ 
+--- a/src/lib/ans.c
++++ b/src/lib/ans.c
+@@ -248,7 +248,7 @@ static int ans(const char *text,int want
+     char tmp[MAX_NAME]; /* could be smaller ... */
+     int res;
+ 
+-    if (addr->sas_addr.prv) {
++    if (*addr->sas_addr.prv) {
+         res = encode_nsap(tmp,addr->sas_addr.prv);
+         if (!res && !ans(tmp,T_PTR,buffer,length)) return 0;
+ 	res = encode_nsap_new(tmp,addr->sas_addr.prv);
+--- a/src/ilmid/asn1/asn_bits.c
++++ b/src/ilmid/asn1/asn_bits.c
+@@ -346,7 +346,7 @@ AsnBitsEquiv PROTO ((AsnBits* b1, AsnBit
+     return ( (b1->bitLen == b2->bitLen) &&
+              (memcmp(b1->bits, b2->bits, octetsLessOne) == 0) &&
+              (( b1->bits[octetsLessOne] & (0xFF << octetBits)) ==
+-              ( b1->bits[octetsLessOne] & (0xFF << octetBits))));
++              ( b2->bits[octetsLessOne] & (0xFF << octetBits))));
+ 
+ } /* AsnBitsEquiv */
+ 
+--- a/src/include/atmd.h
++++ b/src/include/atmd.h
+@@ -21,14 +21,14 @@
+ /* doubly linked list primitives */
+  
+ #define Q_INSERT_HEAD(r,i) ({ (i)->next = r; (i)->prev = NULL; \
+-  if (r) (r)->prev = i; r = i; })
++  if (r) { (r)->prev = i; } r = i; })
+ #define Q_INSERT_AFTER(r,i,a) ({ if (a) { (i)->next = (a)->next; \
+   (i)->prev = a; if ((a)->next) (a)->next->prev = i; (a)->next = i; } \
+-  else { (i)->next = r; (i)->prev = NULL; if (r) (r)->prev = i; r = i; } })
++  else { (i)->next = r; (i)->prev = NULL; if (r) { (r)->prev = i; } r = i; } })
+ #define Q_INSERT_BEFORE(r,i,b) ({ if (b) { (i)->next = b; \
+   (i)->prev = (b)->prev; if ((b)->prev) (b)->prev->next = i; else r = i; \
+   (b)->prev = i; } else { (i)->next = r; (i)->prev = NULL; \
+-  if (r) (r)->prev = i; r = i; } })
++  if (r) { (r)->prev = i; } r = i; } })
+ #define Q_REMOVE(r,i) ({ if ((i)->next) (i)->next->prev = (i)->prev; \
+   if ((i)->prev) (i)->prev->next = (i)->next; else r = (i)->next; })
+ 
+--- a/src/ilmid/wait.c
++++ b/src/ilmid/wait.c
+@@ -49,9 +49,11 @@ extern SysGroup *remsys;
+ 
+ static void reset_remsys( void ){
+ 	if( remsys->sysDescr.octs != NULL ) free( remsys->sysDescr.octs );
+-	if( remsys->sysObjectID.octs != NULL ) free( remsys->sysObjectID.octs );        if( remsys->sysContact.octs != NULL ) free( remsys->sysContact.octs );
++	if( remsys->sysObjectID.octs != NULL ) free( remsys->sysObjectID.octs );
++	if( remsys->sysContact.octs != NULL ) free( remsys->sysContact.octs );
+ 	if( remsys->sysName.octs != NULL ) free( remsys->sysName.octs );
+-	if( remsys->sysLocation.octs != NULL ) free( remsys->sysLocation.octs );        memset( remsys, 0, sizeof( SysGroup ));
++	if( remsys->sysLocation.octs != NULL ) free( remsys->sysLocation.octs );
++	memset( remsys, 0, sizeof( SysGroup ));
+ }
+ 
+ void wait_for_prefix( int fd, int itf, Msgs *msgs ){
+--- a/src/led/frame_defs.h
++++ b/src/led/frame_defs.h
+@@ -27,7 +27,7 @@ struct ready_frame {
+         uint8_t  protocol;
+         uint8_t  version;
+         uint16_t opcode;
+-};
++} PACKED;
+ 
+ /* Fields common to all control frames,
+  * not including READY_*

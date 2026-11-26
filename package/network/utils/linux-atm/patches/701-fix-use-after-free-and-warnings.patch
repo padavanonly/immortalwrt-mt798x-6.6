@@ -1,0 +1,199 @@
+--- a/src/switch/proto.c
++++ b/src/switch/proto.c
+@@ -56,8 +56,8 @@ CALL *new_call(void)
+ void free_call(CALL *call)
+ {
+     fab_destroy(call);
+     call->state = cs_invalid;
++    printf("Call 0x%p killed\n",call);
+     free(call);
+-    printf("Call 0x%p killed\n",call);
+ }
+ 
+ 
+--- a/src/test/ttcp.c
++++ b/src/test/ttcp.c
+@@ -369,7 +369,7 @@ int main(argc,argv)
+ 	err("malloc");
+     
+     if (bufalign != 0)
+-	buf +=(bufalign - ((int)buf % bufalign) + bufoffset) % bufalign;
++	buf +=(bufalign - ((uintptr_t)buf % bufalign) + bufoffset) % bufalign;
+ 
+     if (trans) {
+ 	fprintf(stdout,
+--- a/src/maint/atmloop.c
++++ b/src/maint/atmloop.c
+@@ -116,7 +116,7 @@ int main(int argc,char **argv)
+ 	return 1;
+     }
+     if (set) {
+-	req.arg = (void *) mode;
++	req.arg = (void *)(uintptr_t) mode;
+ 	req.length = 0;
+ 	if (ioctl(s,ATM_SETLOOP,&req) < 0) {
+ 	    perror("ioctl ATM_SETLOOP");
+--- a/src/ilmid/mib.c
++++ b/src/ilmid/mib.c
+@@ -75,7 +75,7 @@ void MIBget(VarBindList *list, PDUInt *s
+ {
+   VarBind *varbind;
+   Variable *var;
+-  AsnOidResult result;
++  AsnOidResult result = AsnOidGreater;
+   
+   *offset = 1;
+   FOR_EACH_LIST_ELMT(varbind, list)
+@@ -162,7 +162,7 @@ void MIBset(VarBindList *list, PDUInt *s
+ {
+   VarBind *varbind;
+   Variable *var;
+-  AsnOidResult result;
++  AsnOidResult result = AsnOidGreater;
+ 
+   *offset = 1;
+   FOR_EACH_LIST_ELMT(varbind, list)
+--- a/src/mpoad/io.c
++++ b/src/mpoad/io.c
+@@ -640,7 +640,7 @@ static void check_connection(int slot)
+ static int complete_connection(int slot)
+ {
+         int retval;
+-        struct sockaddr_atmsvc dummy;
++        struct sockaddr_atmsvc dummy = {0};
+ 
+         dprintf("mpcd: io.c: complete_connection() completing fd %d slot %d\n", fds[slot].fd, slot);
+         /* this seems to be common method in Linux-ATM
+--- a/src/maint/atmaddr.c
++++ b/src/maint/atmaddr.c
+@@ -97,8 +97,8 @@ static void print_addr(int itf,int type,
+     }
+     if (cmd != ATM_GETADDR) return 0;
+     if (req.length % sizeof(*addr)) {
+-	fprintf(stderr,"internal error: len %d %% %d\n",req.length,
+-	  sizeof(*addr));
++	fprintf(stderr,"internal error: len %d %% %zu\n",req.length,
++	  (size_t)sizeof(*addr));
+ 	return 1;
+     }
+     for (i = 0; i < req.length/sizeof(*addr); i++) {
+--- a/src/maint/atmtcp.c
++++ b/src/maint/atmtcp.c
+@@ -579,7 +579,7 @@ static void dump(const char *label,const
+ 	exit(1);
+     }
+     if (wrote != sizeof(stream)) {
+-	fprintf(stderr,"short write (%d < %d)\n",wrote,sizeof(stream));
++	fprintf(stderr,"short write (%d < %zu)\n",wrote,sizeof(stream));
+ 	exit(1);
+     }
+     wrote = write(fd,data,size);
+--- a/src/arpd/atmarp.c
++++ b/src/arpd/atmarp.c
+@@ -67,7 +67,7 @@ static void print_addr(struct sockaddr_a
+     }
+     if (req->type == art_query) return query_result(&reply);
+     if (len != sizeof(int)) {
+-	fprintf(stderr,"bad read: %d != %d\n",len,sizeof(int));
++	fprintf(stderr,"bad read: %d != %zu\n",len,sizeof(int));
+ 	exit(1);
+     }
+     if (*(int *) &reply < 0) {
+--- a/src/lane/mem_lecs.c
++++ b/src/lane/mem_lecs.c
+@@ -77,8 +77,8 @@ mem_free(Mem_t **memlist, void *p, const
+     free(tmp->start);
+     free(tmp);
+   } else {
+-    printf("Trying to free memory by %s, allocated by %s, size %d\n",
+-	   unit, tmp->unit, tmp->size);
++    printf("Trying to free memory by %s, allocated by %s, size %zu\n",
++	   unit, tmp->unit, (size_t)tmp->size);
+   }
+ }
+ 
+@@ -90,5 +90,5 @@ mem_dump(void)
+ 
+   printf("Dumping memory allocation\n");
+   for (tmp=memlist;tmp;tmp=tmp->next)
+-    printf("%s : %d bytes from %p\n", tmp->unit, tmp->size, tmp->start);
++    printf("%s : %zu bytes from %p\n", tmp->unit, (size_t)tmp->size, tmp->start);
+   printf("-------------------------\n");
+ }
+--- a/src/mpoad/lecs.c
++++ b/src/mpoad/lecs.c
+@@ -157,7 +157,7 @@ static int get_reply(int fd, struct atm_
+                 /* Sampo-Add: end */
+         }
+         if (end_of_tlvs - tlvs != 0)
+-                printf("mpcd: lecs.c: get_reply: ignoring %d bytes of trailing TLV carbage\n",
+-                       end_of_tlvs - tlvs);
++                printf("mpcd: lecs.c: get_reply: ignoring %ld bytes of trailing TLV carbage\n",
++                       (long)(end_of_tlvs - tlvs));
+         return 1;
+ }
+--- a/src/switch/swc.c
++++ b/src/switch/swc.c
+@@ -28,15 +28,15 @@ static void dialog(int s,SWC_MSG *msg)
+ 	exit(1);
+     }
+     if (size != sizeof(*msg)) {
+-	fprintf(stderr,"bad write: %d != %d\n",size,sizeof(*msg));
++	fprintf(stderr,"bad write: %d != %zu\n",size,sizeof(*msg));
+ 	exit(1);
+     }
+     size = read(s,msg,sizeof(*msg));
+     if (size < 0) {
+ 	perror("read");
+ 	exit(1);
+     }
+     if (size != sizeof(*msg)) {
+-	fprintf(stderr,"bad read: %d != %d\n",size,sizeof(*msg));
++	fprintf(stderr,"bad read: %d != %zu\n",size,sizeof(*msg));
+ 	exit(1);
+     }
+--- a/src/test/isp.c
++++ b/src/test/isp.c
+@@ -37,11 +37,11 @@ void send_msg(const struct atmsvc_msg *m
+     wrote = write(sock,msg,sizeof(*msg));
+     if (wrote == sizeof(*msg)) return;
+     if (wrote < 0) perror("write");
+-    else fprintf(stderr,"bad write: %d != %d\n",wrote,sizeof(*msg));
++    else fprintf(stderr,"bad write: %d != %zu\n",wrote,sizeof(*msg));
+     exit(1);
+ }
+ 
+ 
+ void recv_msg(struct atmsvc_msg *msg)
+ {
+     int got;
+@@ -49,7 +49,7 @@ void recv_msg(struct atmsvc_msg *msg)
+     got = read(sock,msg,sizeof(*msg));
+     if (got == sizeof(*msg)) return;
+     if (got < 0) perror("read");
+-    else fprintf(stderr,"bad read: %d != %d\n",got,sizeof(*msg));
++    else fprintf(stderr,"bad read: %d != %zu\n",got,sizeof(*msg));
+     exit(1);
+ }
+ 
+--- a/src/test/window.c
++++ b/src/test/window.c
+@@ -180,7 +180,7 @@ int main(argc,argv)
+        /* Get a reply */
+        size = read(s2, buffer2, REPLY_SIZE);
+        if (size != REPLY_SIZE) {
+-	 fprintf(stderr,"Received reply of length %d, should be %d.\n",
++	 fprintf(stderr,"Received reply of length %zd, should be %d.\n",
+ 		 size,REPLY_SIZE);
+        }
+ #endif
+@@ -264,7 +264,7 @@ int main(argc,argv)
+ #endif
+ 	 }
+ 
+        } else {
+-	 fprintf(stderr,"Received message of length %d, should be %d.\n",
++	 fprintf(stderr,"Received message of length %zd, should be %d.\n",
+ 		 size,PINGPONG_SIZE);
+        }
+      }
