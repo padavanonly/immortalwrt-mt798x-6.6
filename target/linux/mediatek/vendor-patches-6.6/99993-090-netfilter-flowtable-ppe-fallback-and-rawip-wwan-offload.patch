@@ -1,0 +1,2074 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] netfilter: flowtable: add multi-tier PPE fallback and Raw-IP
+ WWAN HNAT offload
+
+Coordinate multi-tier flowtable/PPE offload fallback and roaming flush, and enable Raw-IP/NOARP WWAN packet offload in mtk_hnat.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ .../boot/dts/mediatek/mt7987-netsys.dtsi      |   2 +-
+ arch/arm64/boot/dts/mediatek/mt7988a.dtsi     |   2 +-
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.c |   7 +
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.h | 105 +++
+ .../ethernet/mediatek/mtk_hnat/hnat_nf_hook.c | 658 +++++++++++++++---
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   |  25 +
+ include/net/netfilter/nf_flow_table.h         | 129 ++++
+ net/netfilter/nf_flow_table_core.c            | 495 ++++++++++++-
+ net/netfilter/nf_flow_table_ip.c              |  56 +-
+ net/netfilter/nf_flow_table_offload.c         |  43 +-
+ net/netfilter/nft_flow_offload.c              |   3 +
+ 11 files changed, 1425 insertions(+), 100 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt7987-netsys.dtsi b/arch/arm64/boot/dts/mediatek/mt7987-netsys.dtsi
+index ecff448..c0c6ed9 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7987-netsys.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7987-netsys.dtsi
+@@ -152,7 +152,7 @@ &hnat {
+ 	mtketh-ppd = "hnat";
+ 	mtketh-max-gmac = <2>;
+ 	mtketh-ppe-num = <2>;
+-	ext-devices-prefix = "usb","wwan","rmnet","eth2","eth3";
++	ext-devices-prefix = "usb","wwan","rmnet","qmimux","eth2","eth3";
+ 	status = "okay";
+ };
+ 
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+index a47abc4..76e2e44 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -1702,7 +1702,7 @@ hnat: hnat@15000000 {
+ 		       mtketh-lan2 = "eth2";
+ 		       mtketh-max-gmac = <3>;
+ 		       mtketh-ppe-num = <3>;
+-		       ext-devices-prefix = "usb","wwan","rmnet","eth3","eth4","phy";
++		       ext-devices-prefix = "usb","wwan","rmnet","qmimux","eth3","eth4","phy";
+                };
+ 
+ 		
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+index 5cd41a8..ed01438 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+@@ -29,6 +29,7 @@
+ #include <linux/rtnetlink.h>
+ #include <linux/timer.h>
+ #include <linux/wait.h>
++#include <net/netfilter/nf_flow_table.h>
+ #include <net/netlink.h>
+ 
+ #include "nf_hnat_mtk.h"
+@@ -1601,6 +1602,11 @@ static int hnat_probe(struct platform_device *pdev)
+ 
+ 	INIT_LIST_HEAD(&hnat_priv->xlat.map_list);
+ 
++	err = mtk_flow_multitier_register_ops(&mtk_hnat_multitier_ops);
++	if (err)
++		dev_warn(&pdev->dev,
++			 "failed to register multitier flow ops (%d)\n", err);
++
+ 	return 0;
+ 
+ err_out:
+@@ -1635,6 +1641,7 @@ static int hnat_remove(struct platform_device *pdev)
+ 	struct mtk_eth_hnat_tx tx = { 0 };
+ 	int i;
+ 
++	mtk_flow_multitier_unregister_ops(&mtk_hnat_multitier_ops);
+ 	hnat_deinit_debugfs(hnat_priv);
+ 	hnat_roaming_disable();
+ 	unregister_netdevice_notifier(&nf_hnat_netdevice_nb);
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+index 005d875..c4bd8b9 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -14,7 +14,10 @@
+ #include <linux/debugfs.h>
+ #include <linux/string.h>
+ #include <linux/if.h>
++#include <linux/if_arp.h>
+ #include <linux/if_ether.h>
++#include <linux/etherdevice.h>
++#include <linux/ip.h>
+ #include <net/netevent.h>
+ #include <linux/mod_devicetable.h>
+ #include <linux/wait.h>
+@@ -1468,6 +1471,9 @@ void hnat_mib_bind_end(struct mtk_hnat *h, u32 ppe_id,
+ 		       struct hnat_mib_bind_guard *guard);
+ 
+ struct mtk_eth_hnat_tx;
++struct mtk_flow_multitier_ops;
++
++extern const struct mtk_flow_multitier_ops mtk_hnat_multitier_ops;
+ 
+ int hnat_quiesce_ppe_locked(struct mtk_hnat *h, struct mtk_eth_hnat_tx *tx,
+ 			    u32 ppe_id);
+@@ -1479,3 +1485,102 @@ static inline u16 foe_timestamp(struct mtk_hnat *h)
+ {
+ 	return (readl(hnat_priv->fe_base + 0x0010)) & 0xffff;
+ }
++
++static inline bool hnat_dev_is_rawip_ext(const struct net_device *dev)
++{
++	return dev && (dev->type == ARPHRD_NONE || dev->type == ARPHRD_RAWIP);
++}
++
++static inline bool hnat_dev_is_noarp_ext(const struct net_device *dev)
++{
++	return dev && (hnat_dev_is_rawip_ext(dev) ||
++		       (dev->flags & (IFF_NOARP | IFF_POINTOPOINT)));
++}
++
++static inline bool hnat_skb_has_eth_hdr(const struct sk_buff *skb)
++{
++	const unsigned char *net_hdr;
++
++	if (!skb || !skb_mac_header_was_set(skb))
++		return false;
++
++	net_hdr = (const unsigned char *)ip_hdr(skb);
++	if (!net_hdr || net_hdr > skb->data)
++		return false;
++
++	return skb_mac_header(skb) < net_hdr &&
++	       (size_t)(net_hdr - skb_mac_header(skb)) >= ETH_HLEN;
++}
++
++static inline __be16 hnat_skb_l3_proto(const struct sk_buff *skb)
++{
++	const struct iphdr *iph;
++
++	if (!skb)
++		return 0;
++
++	if (skb->protocol == htons(ETH_P_IP) ||
++	    skb->protocol == htons(ETH_P_IPV6))
++		return skb->protocol;
++
++	if (skb->len < 1)
++		return 0;
++
++	iph = ip_hdr(skb);
++	if ((const unsigned char *)iph >= skb->head &&
++	    (const unsigned char *)iph <= skb->data) {
++		if (iph->version == 6)
++			return htons(ETH_P_IPV6);
++		if (iph->version == 4)
++			return htons(ETH_P_IP);
++		return 0;
++	}
++
++	if (skb_headlen(skb) >= 1) {
++		u8 ver = skb->data[0] >> 4;
++
++		if (ver == 6)
++			return htons(ETH_P_IPV6);
++		if (ver == 4)
++			return htons(ETH_P_IP);
++	}
++
++	return 0;
++}
++
++static inline void hnat_fill_ext_wwan_mac(int ext_slot, u8 *mac)
++{
++	mac[0] = 0x02;
++	mac[1] = 'm';
++	mac[2] = 't';
++	mac[3] = 'k';
++	mac[4] = 'w';
++	mac[5] = (u8)(ext_slot & 0xff);
++}
++
++static inline void hnat_fill_ext_ppd_mac(const struct net_device *ppd, u8 *mac)
++{
++	static const u8 fallback_ppd_mac[ETH_ALEN] = {
++		0x02, 'm', 't', 'k', 'p', 0x01
++	};
++
++	if (ppd && is_valid_ether_addr(ppd->dev_addr))
++		ether_addr_copy(mac, ppd->dev_addr);
++	else
++		ether_addr_copy(mac, fallback_ppd_mac);
++}
++
++static inline void hnat_fill_rawip_pseudo_eth(struct ethhdr *eth,
++					      const struct net_device *wwan_dev,
++					      __be16 proto, int ext_slot,
++					      const struct net_device *ppd)
++{
++	(void)wwan_dev;
++	if (!eth)
++		return;
++
++	hnat_fill_ext_ppd_mac(ppd, eth->h_dest);
++	hnat_fill_ext_wwan_mac(ext_slot, eth->h_source);
++	eth->h_proto = proto;
++}
++
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index ca12e82..2abbf20 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -845,7 +845,7 @@ static void hnat_record_foe_nh_meta_locked(
+ 	u32 entry_idx = skb_hnat_entry(skb);
+ 	struct hnat_foe_nh_meta *meta;
+ 	const struct dst_entry *dst;
+-	const struct ethhdr *eth;
++	__be16 proto;
+ 
+ 	if (!hnat_priv || ppe_id >= CFG_PPE_NUM ||
+ 	    entry_idx >= hnat_priv->foe_etry_num ||
+@@ -862,9 +862,13 @@ static void hnat_record_foe_nh_meta_locked(
+ 	if (!dst || !dst->dev || (dst->flags & DST_FAKE_RTABLE) || !dst->ops)
+ 		return;
+ 
+-	eth = eth_hdr(skb);
++	if (hnat_dev_is_rawip_ext(dst->dev))
++		return;
++
++	proto = hnat_skb_has_eth_hdr(skb) ?
++		eth_hdr(skb)->h_proto : hnat_skb_l3_proto(skb);
+ 	if ((IS_IPV4_HNAPT(entry) || IS_IPV4_HNAT(entry)) &&
+-	    ntohs(eth->h_proto) == ETH_P_IP) {
++	    ntohs(proto) == ETH_P_IP) {
+ 		const struct rtable *rt = (const struct rtable *)dst;
+ 
+ 		if (dst->ops->family != AF_INET ||
+@@ -883,7 +887,7 @@ static void hnat_record_foe_nh_meta_locked(
+ 	} else if ((IS_IPV6_5T_ROUTE(entry) || IS_IPV6_3T_ROUTE(entry) ||
+ 		    IS_IPV6_HNAPT(entry) || IS_IPV6_HNAT(entry)) &&
+ 		   !IS_IPV6_6RD(entry) &&
+-		   ntohs(eth->h_proto) == ETH_P_IPV6) {
++		   ntohs(proto) == ETH_P_IPV6) {
+ 		const struct rt6_info *rt6 = (const struct rt6_info *)dst;
+ 		const struct in6_addr *nh6;
+ 
+@@ -1193,8 +1197,23 @@ unsigned int do_hnat_ext_to_ge(struct sk_buff *skb, const struct net_device *in,
+ 	if (skb_cow_head(skb, FOE_INFO_LEN + ETH_HLEN + VLAN_HLEN))
+ 		return -1;
+ 
+-	skb_set_network_header(skb, 0);
+-	skb_push(skb, ETH_HLEN);
++	if (hnat_dev_is_rawip_ext(in)) {
++		__be16 proto;
++
++		skb_reset_network_header(skb);
++		proto = hnat_skb_l3_proto(skb);
++		if (!proto)
++			return -1;
++		skb->protocol = proto;
++		skb_push(skb, ETH_HLEN);
++		hnat_fill_rawip_pseudo_eth((struct ethhdr *)skb->data, in,
++					   proto, ext_idx, ppdev);
++		skb_reset_mac_header(skb);
++		skb_set_network_header(skb, ETH_HLEN);
++	} else {
++		skb_set_network_header(skb, 0);
++		skb_push(skb, ETH_HLEN);
++	}
+ 	set_to_ppe(skb);
+ 
+ 	if (unlikely(skb_vlan_tag_present(skb))) {
+@@ -1257,7 +1276,13 @@ unsigned int do_hnat_ext_to_ge2(struct sk_buff *skb, const char *func)
+ 			skb->mark = 0;
+ 
+ 		set_from_extge(skb);
+-		fix_skb_packet_type(skb, skb->dev, eth);
++		if (hnat_dev_is_rawip_ext(dev)) {
++			skb_reset_mac_header(skb);
++			skb_reset_network_header(skb);
++			skb->pkt_type = PACKET_HOST;
++		} else {
++			fix_skb_packet_type(skb, skb->dev, eth);
++		}
+ 		netif_rx(skb);
+ 		return 0;
+ 	} else {
+@@ -1324,7 +1349,7 @@ unsigned int do_hnat_ge_to_ext(struct sk_buff *skb, const char *func)
+ 		}
+ 	}
+ 
+-	if (!dev || dev->type != ARPHRD_ETHER) {
++	if (!dev || (dev->type != ARPHRD_ETHER && !hnat_dev_is_rawip_ext(dev))) {
+ 		/* if external devices is down, invalidate related ppe entry */
+ 		if (entry_hnat_is_bound(entry)) {
+ 			entry->bfib1.state = INVALID;
+@@ -1365,6 +1390,49 @@ unsigned int do_hnat_ge_to_ext(struct sk_buff *skb, const char *func)
+ 			2 * ETH_ALEN);
+ 	}
+ 
++	if (hnat_dev_is_rawip_ext(dev)) {
++		__be16 proto;
++
++		if (skb_cow_head(skb, FOE_INFO_LEN + 16)) {
++			if (skb_owned) {
++				kfree_skb(skb);
++				return 0;
++			}
++			return -1;
++		}
++
++		if (unlikely(skb->len < 1 || !pskb_may_pull(skb, 1))) {
++			if (skb_owned) {
++				kfree_skb(skb);
++				return 0;
++			}
++			return -1;
++		}
++
++		skb_reset_network_header(skb);
++		skb_reset_mac_header(skb);
++		switch (ip_hdr(skb)->version) {
++		case 4:
++			proto = htons(ETH_P_IP);
++			break;
++		case 6:
++			proto = htons(ETH_P_IPV6);
++			break;
++		default:
++			if (skb_owned) {
++				kfree_skb(skb);
++				return 0;
++			}
++			return -1;
++		}
++		skb->protocol = proto;
++		skb->dev = dev;
++		dev_queue_xmit(skb);
++		trace_printk("%s: called from %s successfully\n",
++			     __func__, func);
++		return 0;
++	}
++
+ 	if (skb_cow_head(skb, ETH_HLEN)) {
+ 		if (skb_owned) {
+ 			kfree_skb(skb);
+@@ -1549,11 +1617,15 @@ static unsigned int is_ppe_support_type(struct sk_buff *skb)
+ 	struct ipv6hdr *ip6h = NULL;
+ 	struct iphdr _iphdr;
+ 
+-	eth = eth_hdr(skb);
+-	if (!is_magic_tag_valid(skb) || !IS_SPACE_AVAILABLE_HEAD(skb) ||
+-	    is_broadcast_ether_addr(eth->h_dest))
++	if (!is_magic_tag_valid(skb) || !IS_SPACE_AVAILABLE_HEAD(skb))
+ 		return 0;
+ 
++	if (!hnat_dev_is_rawip_ext(skb->dev) && hnat_skb_has_eth_hdr(skb)) {
++		eth = eth_hdr(skb);
++		if (is_broadcast_ether_addr(eth->h_dest))
++			return 0;
++	}
++
+ 	switch (ntohs(skb->protocol)) {
+ 	case ETH_P_IP:
+ 		iph = ip_hdr(skb);
+@@ -1706,7 +1778,11 @@ mtk_hnat_nf_conntrack(void *priv, struct sk_buff *skb,
+ static bool hnat_prepare_ext_skb(struct sk_buff *skb,
+ 				 const struct net_device *in)
+ {
+-	if (!in || in->type != ARPHRD_ETHER || in->hard_header_len < ETH_HLEN)
++	bool is_eth = in && in->type == ARPHRD_ETHER &&
++		      in->hard_header_len >= ETH_HLEN;
++	bool is_rawip = in && IS_EXT(in) && hnat_dev_is_rawip_ext(in);
++
++	if (!is_eth && !is_rawip)
+ 		return false;
+ 
+ 	if (skb_is_gso(skb) || skb_shinfo(skb)->frag_list)
+@@ -1907,7 +1983,8 @@ mtk_hnat_br_nf_local_in(void *priv, struct sk_buff *skb,
+ 
+ 	/* packets from external devices -> xxx ,step 1 , learning stage & bound stage*/
+ 	if ((skb_hnat_iface(skb) == FOE_MAGIC_EXT) && !is_from_extge(skb) &&
+-	    !is_multicast_ether_addr(eth_hdr(skb)->h_dest)) {
++	    (hnat_dev_is_rawip_ext(state->in) || !hnat_skb_has_eth_hdr(skb) ||
++	     !is_multicast_ether_addr(eth_hdr(skb)->h_dest))) {
+ 		if (!READ_ONCE(hnat_priv->g_ppdev)) {
+ 			struct net_device *ppdev;
+ 
+@@ -1966,6 +2043,43 @@ mtk_hnat_br_nf_local_in(void *priv, struct sk_buff *skb,
+ 	return NF_DROP;
+ }
+ 
++static void hnat_fill_ext_nexthop_macs(const struct net_device *out,
++				       int ext_slot, bool rawip,
++				       u8 *dmac, u8 *smac)
++{
++	struct net_device *ppd =
++		hnat_priv ? READ_ONCE(hnat_priv->g_ppdev) : NULL;
++
++	hnat_fill_ext_wwan_mac(ext_slot, dmac);
++	if (!rawip && out && is_valid_ether_addr(out->dev_addr))
++		ether_addr_copy(smac, out->dev_addr);
++	else
++		hnat_fill_ext_ppd_mac(ppd, smac);
++}
++
++static void hnat_write_skb_eth_macs(struct sk_buff *skb, bool is_v6_ipip,
++				    u16 ipip_offset, const u8 *dmac,
++				    const u8 *smac)
++{
++	struct ethhdr *eth;
++
++	if (!hnat_skb_has_eth_hdr(skb))
++		return;
++
++	if (is_v6_ipip) {
++		if (skb_headroom(skb) <
++		    (unsigned int)(FOE_INFO_LEN + ipip_offset))
++			return;
++		eth = (struct ethhdr *)(skb->data - ipip_offset);
++		eth->h_proto = skb->protocol;
++	} else {
++		eth = eth_hdr(skb);
++	}
++
++	ether_addr_copy(eth->h_dest, dmac);
++	ether_addr_copy(eth->h_source, smac);
++}
++
+ static unsigned int hnat_ipv6_get_nexthop(struct sk_buff *skb,
+ 					  const struct net_device *out,
+ 					  struct flow_offload_hw_path *hw_path)
+@@ -1973,21 +2087,21 @@ static unsigned int hnat_ipv6_get_nexthop(struct sk_buff *skb,
+ 	const struct in6_addr *ipv6_nexthop;
+ 	struct neighbour *neigh = NULL;
+ 	struct dst_entry *dst = skb_dst(skb);
+-	struct ethhdr *eth;
+ 	u16 eth_pppoe_hlen = ETH_HLEN + PPPOE_SES_HLEN;
++	bool is_ipip = (ipv6_hdr(skb)->nexthdr == NEXTHDR_IPIP);
++	int ext_slot = get_index_from_dev(out);
++	bool rawip_out = ext_slot != 0 && hnat_dev_is_rawip_ext(out);
++	bool noarp_out = ext_slot != 0 && hnat_dev_is_noarp_ext(out);
++
++	if (rawip_out) {
++		hnat_fill_ext_nexthop_macs(out, ext_slot, true,
++					   hw_path->eth_dest, hw_path->eth_src);
++		return 0;
++	}
+ 
+ 	if (hw_path->flags & BIT(DEV_PATH_PPPOE)) {
+-		if (ipv6_hdr(skb)->nexthdr == NEXTHDR_IPIP) {
+-			eth = (struct ethhdr *)(skb->data - eth_pppoe_hlen);
+-			eth->h_proto = skb->protocol;
+-			ether_addr_copy(eth->h_dest, hw_path->eth_dest);
+-			ether_addr_copy(eth->h_source,  hw_path->eth_src);
+-		} else {
+-			eth = eth_hdr(skb);
+-			memcpy(eth->h_source, hw_path->eth_src, ETH_ALEN);
+-			memcpy(eth->h_dest, hw_path->eth_dest, ETH_ALEN);
+-		}
+-
++		hnat_write_skb_eth_macs(skb, is_ipip, eth_pppoe_hlen,
++					hw_path->eth_dest, hw_path->eth_src);
+ 		return 0;
+ 	}
+ 
+@@ -1995,32 +2109,34 @@ static unsigned int hnat_ipv6_get_nexthop(struct sk_buff *skb,
+ 		return 0;
+ 
+ 	rcu_read_lock_bh();
+-	ipv6_nexthop =
+-		rt6_nexthop((struct rt6_info *)dst, &ipv6_hdr(skb)->daddr);
+-	neigh = __ipv6_neigh_lookup_noref(dst->dev, ipv6_nexthop);
+-	if (unlikely(!neigh)) {
+-		dev_notice(hnat_priv->dev, "%s:No neigh (daddr=%pI6)\n", __func__,
+-			   &ipv6_hdr(skb)->daddr);
+-		rcu_read_unlock_bh();
+-		return -1;
++	if (dst && dst->dev) {
++		ipv6_nexthop =
++			rt6_nexthop((struct rt6_info *)dst, &ipv6_hdr(skb)->daddr);
++		neigh = __ipv6_neigh_lookup_noref(dst->dev, ipv6_nexthop);
+ 	}
+-
+-	/* why do we get all zero ethernet address ? */
+-	if (!is_valid_ether_addr(neigh->ha)) {
++	if (unlikely(!neigh) || !is_valid_ether_addr(neigh->ha) ||
++	    (noarp_out && !(READ_ONCE(neigh->nud_state) & NUD_VALID))) {
++		if (noarp_out) {
++			hnat_fill_ext_nexthop_macs(out, ext_slot, false,
++						   hw_path->eth_dest,
++						   hw_path->eth_src);
++			hnat_write_skb_eth_macs(skb, is_ipip, ETH_HLEN,
++						hw_path->eth_dest,
++						hw_path->eth_src);
++			rcu_read_unlock_bh();
++			return 0;
++		}
++		if (!neigh)
++			dev_notice(hnat_priv->dev, "%s:No neigh (daddr=%pI6)\n",
++				   __func__, &ipv6_hdr(skb)->daddr);
+ 		rcu_read_unlock_bh();
+ 		return -1;
+ 	}
+ 
+-	if (ipv6_hdr(skb)->nexthdr == NEXTHDR_IPIP) {
+-		/*copy ether type for DS-Lite and MapE */
+-		eth = (struct ethhdr *)(skb->data - ETH_HLEN);
+-		eth->h_proto = skb->protocol;
+-	} else {
+-		eth = eth_hdr(skb);
+-	}
+-
+-	ether_addr_copy(eth->h_dest, neigh->ha);
+-	ether_addr_copy(eth->h_source, out->dev_addr);
++	ether_addr_copy(hw_path->eth_dest, neigh->ha);
++	ether_addr_copy(hw_path->eth_src, out->dev_addr);
++	hnat_write_skb_eth_macs(skb, is_ipip, ETH_HLEN,
++				hw_path->eth_dest, hw_path->eth_src);
+ 
+ 	rcu_read_unlock_bh();
+ 
+@@ -2032,14 +2148,23 @@ static unsigned int hnat_ipv4_get_nexthop(struct sk_buff *skb,
+ 					  struct flow_offload_hw_path *hw_path)
+ {
+ 	u32 nexthop;
+-	struct neighbour *neigh;
++	struct neighbour *neigh = NULL;
+ 	struct dst_entry *dst = skb_dst(skb);
+ 	struct rtable *rt = (struct rtable *)dst;
+ 	struct net_device *dev = (__force struct net_device *)out;
++	int ext_slot = get_index_from_dev(out);
++	bool rawip_out = ext_slot != 0 && hnat_dev_is_rawip_ext(out);
++	bool noarp_out = ext_slot != 0 && hnat_dev_is_noarp_ext(out);
++
++	if (rawip_out) {
++		hnat_fill_ext_nexthop_macs(out, ext_slot, true,
++					   hw_path->eth_dest, hw_path->eth_src);
++		return 0;
++	}
+ 
+ 	if (hw_path->flags & BIT(DEV_PATH_PPPOE)) {
+-		memcpy(eth_hdr(skb)->h_source, hw_path->eth_src, ETH_ALEN);
+-		memcpy(eth_hdr(skb)->h_dest, hw_path->eth_dest, ETH_ALEN);
++		hnat_write_skb_eth_macs(skb, false, 0,
++					hw_path->eth_dest, hw_path->eth_src);
+ 		return 0;
+ 	}
+ 
+@@ -2047,23 +2172,33 @@ static unsigned int hnat_ipv4_get_nexthop(struct sk_buff *skb,
+ 		return 0;
+ 
+ 	rcu_read_lock_bh();
+-	nexthop = (__force u32)rt_nexthop(rt, ip_hdr(skb)->daddr);
+-	neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
+-	if (unlikely(!neigh)) {
+-		dev_notice(hnat_priv->dev, "%s:No neigh (daddr=%pI4)\n", __func__,
+-			   &ip_hdr(skb)->daddr);
+-		rcu_read_unlock_bh();
+-		return -1;
+-	}
+-
+-	/* why do we get all zero ethernet address ? */
+-	if (!is_valid_ether_addr(neigh->ha)) {
++	if (rt) {
++		nexthop = (__force u32)rt_nexthop(rt, ip_hdr(skb)->daddr);
++		neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
++	}
++	if (unlikely(!neigh) || !is_valid_ether_addr(neigh->ha) ||
++	    (noarp_out && !(READ_ONCE(neigh->nud_state) & NUD_VALID))) {
++		if (noarp_out) {
++			hnat_fill_ext_nexthop_macs(out, ext_slot, false,
++						   hw_path->eth_dest,
++						   hw_path->eth_src);
++			hnat_write_skb_eth_macs(skb, false, 0,
++						hw_path->eth_dest,
++						hw_path->eth_src);
++			rcu_read_unlock_bh();
++			return 0;
++		}
++		if (!neigh)
++			dev_notice(hnat_priv->dev, "%s:No neigh (daddr=%pI4)\n",
++				   __func__, &ip_hdr(skb)->daddr);
+ 		rcu_read_unlock_bh();
+ 		return -1;
+ 	}
+ 
+-	memcpy(eth_hdr(skb)->h_dest, neigh->ha, ETH_ALEN);
+-	memcpy(eth_hdr(skb)->h_source, out->dev_addr, ETH_ALEN);
++	ether_addr_copy(hw_path->eth_dest, neigh->ha);
++	ether_addr_copy(hw_path->eth_src, out->dev_addr);
++	hnat_write_skb_eth_macs(skb, false, 0,
++				hw_path->eth_dest, hw_path->eth_src);
+ 
+ 	rcu_read_unlock_bh();
+ 
+@@ -2674,6 +2809,7 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 	struct hnat_mib_bind_guard guard = { 0 };
+ 	struct mtk_mac *mac;
+ 	int whnat = IS_WHNAT(dev);
++	struct ethhdr _rawip_eth;
+ 	struct ethhdr *eth;
+ 	struct iphdr *iph;
+ 	struct ipv6hdr *ip6h;
+@@ -2692,11 +2828,38 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 
+ 	ct = nf_ct_get(skb, &ctinfo);
+ 
+-	if (ipv6_hdr(skb)->nexthdr == NEXTHDR_IPIP)
+-		/* point to ethernet header for DS-Lite and MapE */
+-		eth = get_ipv6_ipip_ethhdr(skb, hw_path);
+-	else
++	if ((IS_EXT(dev) && hnat_dev_is_rawip_ext(dev)) ||
++	    !hnat_skb_has_eth_hdr(skb)) {
++		__be16 proto = hnat_skb_l3_proto(skb);
++
++		if (!proto || is_zero_ether_addr(hw_path->eth_dest))
++			return 0;
++
++		memset(&_rawip_eth, 0, sizeof(_rawip_eth));
++		ether_addr_copy(_rawip_eth.h_dest, hw_path->eth_dest);
++		ether_addr_copy(_rawip_eth.h_source, hw_path->eth_src);
++		_rawip_eth.h_proto = proto;
++		eth = &_rawip_eth;
++	} else if (ipv6_hdr(skb)->nexthdr == NEXTHDR_IPIP) {
++		u16 ipip_offset = (hw_path->flags & BIT(DEV_PATH_PPPOE)) ?
++				  (ETH_HLEN + PPPOE_SES_HLEN) : ETH_HLEN;
++
++		if (skb_headroom(skb) <
++		    (unsigned int)(FOE_INFO_LEN + ipip_offset)) {
++			if (is_zero_ether_addr(hw_path->eth_dest))
++				return 0;
++			memset(&_rawip_eth, 0, sizeof(_rawip_eth));
++			ether_addr_copy(_rawip_eth.h_dest, hw_path->eth_dest);
++			ether_addr_copy(_rawip_eth.h_source, hw_path->eth_src);
++			_rawip_eth.h_proto = htons(ETH_P_IPV6);
++			eth = &_rawip_eth;
++		} else {
++			/* point to ethernet header for DS-Lite and MapE */
++			eth = get_ipv6_ipip_ethhdr(skb, hw_path);
++		}
++	} else {
+ 		eth = eth_hdr(skb);
++	}
+ 
+ 	/*do not bind multicast if PPE mcast not enable*/
+ 	if (!hnat_priv->data->mcast && is_multicast_ether_addr(eth->h_dest))
+@@ -3400,6 +3563,27 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 	return 0;
+ }
+ 
++static void hnat_multitier_on_post_routing_skip(const struct sk_buff *skb)
++{
++	enum ip_conntrack_info ctinfo;
++	struct flow_offload *flow;
++	struct nf_conn *ct;
++
++	if (!IS_SPACE_AVAILABLE_HEAD(skb) || !is_magic_tag_valid(skb) ||
++	    skb_hnat_reason(skb) != HIT_UNBIND_RATE_REACH)
++		return;
++
++	ct = nf_ct_get(skb, &ctinfo);
++	if (!ct)
++		return;
++
++	rcu_read_lock();
++	flow = nf_flow_table_lookup_by_ct_rcu(ct);
++	if (flow)
++		nf_flow_multitier_note_hw_fail(flow, true);
++	rcu_read_unlock();
++}
++
+ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ {
+ 	struct foe_entry *hw_entry, entry;
+@@ -3444,8 +3628,10 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 	eth = eth_hdr(skb);
+ 
+ 	/*not bind multicast if PPE mcast not enable*/
+-	if (!hnat_priv->data->mcast && is_multicast_ether_addr(eth->h_dest))
++	if (!hnat_priv->data->mcast && is_multicast_ether_addr(eth->h_dest)) {
++		hnat_multitier_on_post_routing_skip(skb);
+ 		return NF_ACCEPT;
++	}
+ 
+ 	spin_lock_bh(&hnat_priv->entry_lock);
+ 	if (hw_entry->bfib1.state == BIND ||
+@@ -3666,6 +3852,7 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 	if (!hnat_mib_bind_begin(hnat_priv, skb_hnat_ppe(skb),
+ 				 skb_hnat_entry(skb), &guard)) {
+ 		spin_unlock_bh(&hnat_priv->entry_lock);
++		hnat_multitier_on_post_routing_skip(skb);
+ 		return NF_ACCEPT;
+ 	}
+ 
+@@ -3742,6 +3929,13 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 	}
+ #endif
+ 	spin_unlock_bh(&hnat_priv->entry_lock);
++	{
++		enum ip_conntrack_info ctinfo;
++		struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
++
++		if (ct)
++			nf_flow_table_flush_by_ct(ct);
++	}
+ 	return NF_ACCEPT;
+ }
+ 
+@@ -3888,15 +4082,22 @@ static unsigned int mtk_hnat_accel_type(struct sk_buff *skb)
+ 	return 1;
+ }
+ 
+-static void mtk_hnat_dscp_update(struct sk_buff *skb, struct foe_entry *entry)
++static void mtk_hnat_dscp_update(struct sk_buff *skb,
++				 const struct net_device *out,
++				 struct foe_entry *entry)
+ {
+ 	struct iphdr *iph;
+-	struct ethhdr *eth;
+ 	struct ipv6hdr *ip6h;
++	__be16 proto;
+ 	bool flag = false;
+ 
+-	eth = eth_hdr(skb);
+-	switch (ntohs(eth->h_proto)) {
++	if ((out && IS_EXT(out) && hnat_dev_is_rawip_ext(out)) ||
++	    !hnat_skb_has_eth_hdr(skb))
++		proto = hnat_skb_l3_proto(skb);
++	else
++		proto = eth_hdr(skb)->h_proto;
++
++	switch (ntohs(proto)) {
+ 	case ETH_P_IP:
+ 		iph = ip_hdr(skb);
+ 		if (IS_IPV4_GRP(entry) && entry->ipv4_hnapt.iblk2.dscp != iph->tos) {
+@@ -4245,7 +4446,9 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 					  !IS_SPACE_AVAILABLE_HEAD(skb)))
+ 		return 0;
+ 
+-	if (unlikely(!skb_mac_header_was_set(skb)))
++	if (unlikely(!skb_mac_header_was_set(skb) &&
++		     !(is_from_extge(skb) ||
++		       (out && IS_EXT(out) && hnat_dev_is_rawip_ext(out)))))
+ 		return 0;
+ 
+ 	if (unlikely(!skb_hnat_is_hashed(skb)))
+@@ -4259,14 +4462,20 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 		out = (IS_GMAC1_MODE) ? hw_path.virt_dev : hw_path.dev;
+ 	}
+ 
+-	if (!out || IS_BOND(out))
++	if (!out || IS_BOND(out)) {
++		hnat_multitier_on_post_routing_skip(skb);
+ 		return 0;
++	}
+ 
+-	if (!IS_LAN_GRP(out) && !IS_WAN(out) && !IS_EXT(out))
++	if (!IS_LAN_GRP(out) && !IS_WAN(out) && !IS_EXT(out)) {
++		hnat_multitier_on_post_routing_skip(skb);
+ 		return 0;
++	}
+ 
+-	if (!IS_WHNAT(out) && IS_EXT(out) && FROM_WED(skb))
++	if (!IS_WHNAT(out) && IS_EXT(out) && FROM_WED(skb)) {
++		hnat_multitier_on_post_routing_skip(skb);
+ 		return 0;
++	}
+ 
+ #if defined(CONFIG_NET_DSA)
+ 	{
+@@ -4274,8 +4483,10 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 
+ 		if (!IS_ERR(dp) && dp->cpu_dp && dp->cpu_dp->tag_ops &&
+ 		    (dp->cpu_dp->tag_ops->proto == DSA_TAG_PROTO_RTL8_4 ||
+-		     dp->cpu_dp->tag_ops->proto == DSA_TAG_PROTO_RTL8_4T))
++		     dp->cpu_dp->tag_ops->proto == DSA_TAG_PROTO_RTL8_4T)) {
++			hnat_multitier_on_post_routing_skip(skb);
+ 			return 0;
++		}
+ 	}
+ #endif
+ 
+@@ -4290,18 +4501,60 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 
+ 	switch (skb_hnat_reason(skb)) {
+ 	case HIT_UNBIND_RATE_REACH:
+-		if (entry_hnat_is_bound(entry))
++		if (entry_hnat_is_bound(entry)) {
++			hnat_multitier_on_post_routing_skip(skb);
+ 			break;
++		}
+ 
+-		if (fn && !mtk_hnat_accel_type(skb))
++		if (nf_flow_multitier_ppe_over_watermark()) {
++			enum ip_conntrack_info ctinfo;
++			struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
++			struct flow_offload *flow = NULL;
++
++			if (ct) {
++				rcu_read_lock();
++				flow = nf_flow_table_lookup_by_ct_rcu(ct);
++				if (flow) {
++					nf_flow_multitier_inc_watermark_defer();
++					nf_flow_multitier_note_hw_fail(flow, false);
++				}
++				rcu_read_unlock();
++			}
+ 			break;
++		}
+ 
+-		if (fn && fn(skb, arp_dev, &hw_path))
++		if (fn && !mtk_hnat_accel_type(skb)) {
++			hnat_multitier_on_post_routing_skip(skb);
+ 			break;
++		}
+ 
+-		spin_lock_bh(&hnat_priv->entry_lock);
+-		skb_to_hnat_info(skb, out, entry, &hw_path);
+-		spin_unlock_bh(&hnat_priv->entry_lock);
++		if (fn && fn(skb, arp_dev, &hw_path)) {
++			hnat_multitier_on_post_routing_skip(skb);
++			break;
++		}
++
++		{
++			unsigned int bind_ret;
++			bool bound_now, pre_filled_now;
++
++			spin_lock_bh(&hnat_priv->entry_lock);
++			bind_ret = skb_to_hnat_info(skb, out, entry, &hw_path);
++			bound_now = entry_hnat_is_bound(entry);
++			pre_filled_now = (!bound_now && !bind_ret &&
++					  IS_WHNAT(out) &&
++					  is_hnat_pre_filled(entry));
++			spin_unlock_bh(&hnat_priv->entry_lock);
++
++			if (bound_now) {
++				enum ip_conntrack_info ctinfo;
++				struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
++
++				if (ct)
++					nf_flow_table_flush_by_ct(ct);
++			} else if (!pre_filled_now) {
++				hnat_multitier_on_post_routing_skip(skb);
++			}
++		}
+ 		break;
+ 	case HIT_BIND_KEEPALIVE_DUP_OLD_HDR:
+ 		/* update hnat count to nf_conntrack by keepalive */
+@@ -4312,7 +4565,7 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 			break;
+ 
+ 		/* update dscp for qos */
+-		mtk_hnat_dscp_update(skb, entry);
++		mtk_hnat_dscp_update(skb, out, entry);
+ 
+ 		/* update mcast timestamp*/
+ 		if (hnat_priv->data->version == MTK_HNAT_V1_3 &&
+@@ -4719,3 +4972,242 @@ int mtk_hqos_ptype_cb(struct sk_buff *skb, struct net_device *dev,
+ 
+ 	return 0;
+ }
++
++static bool hnat_foe_entry_matches_mac(const struct foe_entry *entry,
++				       const u8 *mac)
++{
++	u8 dmac[ETH_ALEN], smac[ETH_ALEN];
++
++	if (IS_IPV4_GRP(entry)) {
++		foe_dmac_to_bytes(dmac, entry->ipv4_hnapt.dmac_hi,
++				  entry->ipv4_hnapt.dmac_lo);
++		foe_dmac_to_bytes(smac, entry->ipv4_hnapt.smac_hi,
++				  entry->ipv4_hnapt.smac_lo);
++	} else {
++		foe_dmac_to_bytes(dmac, entry->ipv6_5t_route.dmac_hi,
++				  entry->ipv6_5t_route.dmac_lo);
++		foe_dmac_to_bytes(smac, entry->ipv6_5t_route.smac_hi,
++				  entry->ipv6_5t_route.smac_lo);
++	}
++
++	return ether_addr_equal(dmac, mac) || ether_addr_equal(smac, mac);
++}
++
++static void hnat_multitier_get_ppe_occupancy(u32 *bound, u32 *total)
++{
++	u32 b = 0, t = 0;
++	u32 i, idx;
++
++	if (!bound || !total)
++		return;
++
++	*bound = 0;
++	*total = 0;
++
++	if (!hnat_priv || !READ_ONCE(hnat_priv->fe_base))
++		return;
++
++	spin_lock_bh(&hnat_priv->entry_lock);
++	if (!hnat_priv->fe_base) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return;
++	}
++
++	for (i = 0; i < CFG_PPE_NUM && i < MAX_PPE_NUM; i++) {
++		const struct foe_entry *table = hnat_priv->foe_table_cpu[i];
++
++		if (!table || !hnat_priv->ppe_base[i])
++			continue;
++
++		t += hnat_priv->foe_etry_num;
++		for (idx = 0; idx < hnat_priv->foe_etry_num; idx++) {
++			if (table[idx].bfib1.state == BIND)
++				b++;
++		}
++	}
++	spin_unlock_bh(&hnat_priv->entry_lock);
++
++	*bound = b;
++	*total = t;
++}
++
++static bool hnat_multitier_roam_flush(const u8 *mac,
++				      const struct net_device *dev, u16 vid)
++{
++	struct foe_entry *entry;
++	struct hnat_foe_nh_meta *meta;
++	bool invalidated = false;
++	u32 i, hash_index;
++
++	(void)dev;
++	(void)vid;
++
++	if (!mac || !hnat_priv || !READ_ONCE(hnat_priv->fe_base))
++		return false;
++
++	spin_lock_bh(&hnat_priv->entry_lock);
++	if (!hnat_priv->fe_base) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return false;
++	}
++
++	for (i = 0; i < CFG_PPE_NUM && i < MAX_PPE_NUM; i++) {
++		if (!hnat_priv->foe_table_cpu[i] || !hnat_priv->ppe_base[i])
++			continue;
++
++		for (hash_index = 0; hash_index < hnat_priv->foe_etry_num;
++		     hash_index++) {
++			bool pre_filled;
++
++			entry = hnat_priv->foe_table_cpu[i] + hash_index;
++			meta = hnat_priv->nh_meta[i] ?
++			       &hnat_priv->nh_meta[i][hash_index] : NULL;
++			pre_filled = (entry->bfib1.state == UNBIND &&
++				      is_hnat_pre_filled(entry));
++
++			if (entry->bfib1.state != BIND && !pre_filled)
++				continue;
++
++			if (!hnat_foe_entry_matches_mac(entry, mac))
++				continue;
++
++			cr_set_field(hnat_priv->ppe_base[i] + PPE_TB_CFG,
++				     SMA, SMA_ONLY_FWD_CPU);
++			entry->udib1.state = INVALID;
++			entry->udib1.time_stamp =
++				readl(hnat_priv->fe_base + 0x0010) & 0xFF;
++			foe_clear_pre_filled(entry);
++			if (meta)
++				meta->valid = 0;
++			invalidated = true;
++		}
++	}
++
++	if (invalidated) {
++		for (i = 0; i < CFG_PPE_NUM && i < MAX_PPE_NUM; i++) {
++			if (!hnat_priv->ppe_base[i])
++				continue;
++			cr_set_field(hnat_priv->ppe_base[i] + PPE_CAH_CTRL,
++				     CAH_X_MODE, 1);
++			cr_set_field(hnat_priv->ppe_base[i] + PPE_CAH_CTRL,
++				     CAH_X_MODE, 0);
++			cr_set_field(hnat_priv->ppe_base[i] + PPE_CAH_CTRL,
++				     CAH_EN, 1);
++		}
++		mod_timer(&hnat_priv->hnat_sma_build_entry_timer,
++			  jiffies + 3 * HZ);
++	}
++	spin_unlock_bh(&hnat_priv->entry_lock);
++
++	return invalidated;
++}
++
++static bool hnat_multitier_ingress_pass_to_hnat(const struct sk_buff *skb,
++						const struct net_device *in_dev,
++						bool *is_promote_candidate)
++{
++	if (!is_promote_candidate)
++		return false;
++
++	*is_promote_candidate = false;
++	if (!skb)
++		return false;
++
++	if (IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb)) {
++		switch (skb_hnat_reason(skb)) {
++		case HIT_BIND_KEEPALIVE_DUP_OLD_HDR:
++		case HIT_BIND_MULTICAST_TO_CPU:
++		case HIT_BIND_MULTICAST_TO_GMAC_CPU:
++			return true;
++		case HIT_UNBIND_RATE_REACH:
++			if (hook_toggle && hnat_priv &&
++			    READ_ONCE(hnat_priv->fe_base) &&
++			    !skb_hnat_alg(skb) &&
++			    skb->mark != HNAT_EXCEPTION_TAG &&
++			    !nf_flow_multitier_ppe_over_watermark()) {
++				*is_promote_candidate = true;
++				return true;
++			}
++			return false;
++		default:
++			break;
++		}
++	}
++
++	if (in_dev && !IS_WHNAT(in_dev) && IS_EXT(in_dev) &&
++	    !is_from_extge(skb) && !skb_is_gso(skb) &&
++	    !skb_shinfo(skb)->frag_list) {
++		if (hook_toggle && hnat_priv && READ_ONCE(hnat_priv->fe_base) &&
++		    skb->mark != HNAT_EXCEPTION_TAG &&
++		    !nf_flow_multitier_ppe_over_watermark()) {
++			*is_promote_candidate = true;
++			return true;
++		}
++		return false;
++	}
++
++	return false;
++}
++
++static bool hnat_multitier_defer_sw_admit(const struct sk_buff *skb,
++					  const struct nf_conn *ct)
++{
++	const struct dst_entry *dst;
++	const struct net_device *out;
++
++	(void)ct;
++	if (!hook_toggle || !hnat_priv || !READ_ONCE(hnat_priv->fe_base) || !skb)
++		return false;
++
++	if (nf_flow_multitier_ppe_over_watermark()) {
++		if (!(IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb) &&
++		      skb_hnat_reason(skb) == HIT_UNBIND_RATE_REACH))
++			nf_flow_multitier_inc_watermark_defer();
++		return false;
++	}
++
++	dst = skb_dst(skb);
++	if (dst && dst_xfrm(dst))
++		return false;
++
++	out = dst ? dst->dev : NULL;
++	if (out && IS_BOND(out))
++		return false;
++	if (out && !IS_WHNAT(out) && IS_EXT(out) &&
++	    IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb) &&
++	    FROM_WED(skb))
++		return false;
++	if (skb->mark == HNAT_EXCEPTION_TAG)
++		return false;
++
++	if (IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb)) {
++		u32 ppe_id = skb_hnat_ppe(skb);
++		u32 foe_idx = skb_hnat_entry(skb);
++
++		if (skb_hnat_alg(skb) || !skb_hnat_is_hashed(skb))
++			return false;
++
++		if (ppe_id < CFG_PPE_NUM && ppe_id < MAX_PPE_NUM &&
++		    foe_idx < hnat_priv->foe_etry_num &&
++		    hnat_priv->foe_table_cpu[ppe_id]) {
++			const struct foe_entry *entry =
++				&hnat_priv->foe_table_cpu[ppe_id][foe_idx];
++
++			if (skb_hnat_reason(skb) == UN_HIT &&
++			    entry_hnat_is_bound(entry))
++				return false;
++			if (skb_hnat_reason(skb) == HIT_UNBIND_RATE_REACH)
++				return false;
++			return true;
++		}
++	}
++
++	return false;
++}
++
++const struct mtk_flow_multitier_ops mtk_hnat_multitier_ops = {
++	.get_ppe_occupancy = hnat_multitier_get_ppe_occupancy,
++	.roam_flush_mac = hnat_multitier_roam_flush,
++	.ingress_pass_to_hnat = hnat_multitier_ingress_pass_to_hnat,
++	.defer_sw_admit = hnat_multitier_defer_sw_admit,
++};
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index d67bbb3..2046b7a 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -436,6 +436,25 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 	return 0;
+ }
+ 
++static bool mtk_ppe_occupancy_over_watermark(struct mtk_ppe *ppe)
++{
++	u32 i, bound = 0, total = MTK_PPE_ENTRIES;
++
++	if (!ppe || !ppe->foe_table || !total)
++		return false;
++
++	for (i = 0; i < total; i++) {
++		struct mtk_foe_entry *hwe = mtk_foe_get_entry(ppe, i);
++
++		if (FIELD_GET(MTK_FOE_IB1_STATE, READ_ONCE(hwe->ib1)) ==
++		    MTK_FOE_STATE_BIND)
++			bound++;
++	}
++
++	return (u64)bound * 1000ULL >=
++	       (u64)total * MTK_PPE_OCCUPANCY_WATERMARK_PERMILLE;
++}
++
+ static int
+ mtk_flow_offload_replace(struct mtk_eth *eth, struct flow_cls_offload *f,
+ 			 int ppe_index)
+@@ -477,6 +496,12 @@ mtk_flow_offload_replace(struct mtk_eth *eth, struct flow_cls_offload *f,
+ 		return -EOPNOTSUPP;
+ 	}
+ 
++	if (ppe_index < 0 || ppe_index >= ARRAY_SIZE(eth->ppe) ||
++	    mtk_ppe_occupancy_over_watermark(eth->ppe[ppe_index])) {
++		nf_flow_multitier_inc_watermark_defer();
++		return -ENOSPC;
++	}
++
+ 	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_CONTROL)) {
+ 		struct flow_match_control match;
+ 
+diff --git a/include/net/netfilter/nf_flow_table.h b/include/net/netfilter/nf_flow_table.h
+index 4e3d11c..79860f7 100644
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -16,6 +16,8 @@
+ struct nf_flowtable;
+ struct nf_flow_rule;
+ struct flow_offload;
++struct nf_conn;
++struct sk_buff;
+ enum flow_offload_tuple_dir;
+ 
+ struct nf_flow_key {
+@@ -184,6 +186,11 @@ struct flow_offload {
+ 	unsigned long				flags;
+ 	u16					type;
+ 	u32					timeout;
++	struct hlist_node			hnat_ct_node;
++	bool					hnat_ct_indexed;
++	u8					hw_fail_cnt;
++	unsigned long				hw_retry_ts;
++	unsigned long				last_ct_sync_jiffies;
+ 	struct rcu_head				rcu_head;
+ };
+ 
+@@ -418,4 +425,126 @@ static inline void nf_flow_table_fini_proc(struct net *net)
+ }
+ #endif /* CONFIG_NF_FLOW_TABLE_PROCFS */
+ 
++#define MTK_PPE_OCCUPANCY_WATERMARK_PERMILLE	800
++
++struct mtk_flow_multitier_ops {
++	void (*get_ppe_occupancy)(u32 *bound, u32 *total);
++	bool (*roam_flush_mac)(const u8 *mac, const struct net_device *dev,
++			       u16 vid);
++	bool (*ingress_pass_to_hnat)(const struct sk_buff *skb,
++				     const struct net_device *in_dev,
++				     bool *is_promote_candidate);
++	bool (*defer_sw_admit)(const struct sk_buff *skb,
++			       const struct nf_conn *ct);
++};
++
++#if IS_REACHABLE(CONFIG_NF_FLOW_TABLE)
++int mtk_flow_multitier_register_ops(const struct mtk_flow_multitier_ops *ops);
++void mtk_flow_multitier_unregister_ops(const struct mtk_flow_multitier_ops *ops);
++struct flow_offload *nf_flow_table_lookup_by_ct_rcu(const struct nf_conn *ct);
++int nf_flow_table_flush_by_ct(struct nf_conn *ct);
++void nf_flow_multitier_roam_flush(const u8 *mac, const struct net_device *dev,
++				  u16 vid);
++u64 nf_flow_table_get_tier2_count(void);
++void nf_flow_multitier_get_ppe_occupancy(u32 *bound, u32 *total);
++bool nf_flow_multitier_ppe_over_watermark(void);
++void nf_flow_multitier_inc_watermark_defer(void);
++void nf_flow_multitier_inc_hw_fail_backoff(void);
++void nf_flow_multitier_account_sw_pkt(unsigned int len);
++bool nf_flow_multitier_ingress_ctrl_pkt(const struct sk_buff *skb,
++					const struct net_device *in_dev);
++bool nf_flow_multitier_should_promote(const struct sk_buff *skb,
++				      const struct net_device *in_dev,
++				      struct flow_offload *flow);
++bool nf_flow_multitier_defer_sw_admit(const struct sk_buff *skb,
++				      const struct nf_conn *ct);
++void nf_flow_multitier_note_hw_fail(struct flow_offload *flow,
++				    bool count_metric);
++#else
++static inline int
++mtk_flow_multitier_register_ops(const struct mtk_flow_multitier_ops *ops)
++{
++	return 0;
++}
++
++static inline void
++mtk_flow_multitier_unregister_ops(const struct mtk_flow_multitier_ops *ops)
++{
++}
++
++static inline struct flow_offload *
++nf_flow_table_lookup_by_ct_rcu(const struct nf_conn *ct)
++{
++	return NULL;
++}
++
++static inline int nf_flow_table_flush_by_ct(struct nf_conn *ct)
++{
++	return 0;
++}
++
++static inline void
++nf_flow_multitier_roam_flush(const u8 *mac, const struct net_device *dev,
++			     u16 vid)
++{
++}
++
++static inline u64 nf_flow_table_get_tier2_count(void)
++{
++	return 0;
++}
++
++static inline void nf_flow_multitier_get_ppe_occupancy(u32 *bound, u32 *total)
++{
++	if (bound)
++		*bound = 0;
++	if (total)
++		*total = 0;
++}
++
++static inline bool nf_flow_multitier_ppe_over_watermark(void)
++{
++	return false;
++}
++
++static inline void nf_flow_multitier_inc_watermark_defer(void)
++{
++}
++
++static inline void nf_flow_multitier_inc_hw_fail_backoff(void)
++{
++}
++
++static inline void nf_flow_multitier_account_sw_pkt(unsigned int len)
++{
++}
++
++static inline bool
++nf_flow_multitier_ingress_ctrl_pkt(const struct sk_buff *skb,
++				   const struct net_device *in_dev)
++{
++	return false;
++}
++
++static inline bool
++nf_flow_multitier_should_promote(const struct sk_buff *skb,
++				 const struct net_device *in_dev,
++				 struct flow_offload *flow)
++{
++	return false;
++}
++
++static inline bool
++nf_flow_multitier_defer_sw_admit(const struct sk_buff *skb,
++				 const struct nf_conn *ct)
++{
++	return false;
++}
++
++static inline void
++nf_flow_multitier_note_hw_fail(struct flow_offload *flow, bool count_metric)
++{
++}
++#endif
++
+ #endif /* _NF_FLOW_TABLE_H */
+diff --git a/net/netfilter/nf_flow_table_core.c b/net/netfilter/nf_flow_table_core.c
+index 08ed568..e06a927 100644
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -5,8 +5,15 @@
+ #include <linux/netfilter.h>
+ #include <linux/rhashtable.h>
+ #include <linux/netdevice.h>
++#include <linux/hashtable.h>
++#include <linux/math64.h>
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/u64_stats_sync.h>
+ #include <net/ip.h>
+ #include <net/ip6_route.h>
++#include <net/neighbour.h>
++#include <net/switchdev.h>
+ #include <net/netfilter/nf_flow_table.h>
+ #include <net/netfilter/nf_conntrack.h>
+ #include <net/netfilter/nf_conntrack_qos.h>
+@@ -14,8 +21,57 @@
+ #include <net/netfilter/nf_conntrack_l4proto.h>
+ #include <net/netfilter/nf_conntrack_tuple.h>
+ 
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_SOC) && IS_REACHABLE(CONFIG_NET_MEDIATEK_SOC)
++extern u64 mtk_hnat_get_ser_epoch(void);
++#endif
++
+ static DEFINE_MUTEX(flowtable_lock);
+ static LIST_HEAD(flowtables);
++static DEFINE_HASHTABLE(nf_flow_ct_ht, 10);
++static DEFINE_SPINLOCK(nf_flow_ct_ht_lock);
++static DEFINE_MUTEX(mtk_flow_multitier_ops_lock);
++static const struct mtk_flow_multitier_ops __rcu *mtk_flow_multitier_ops_ptr;
++
++struct mtk_flow_tier2_pcpu_stats {
++	u64_stats_t packets;
++	u64_stats_t bytes;
++	struct u64_stats_sync syncp;
++};
++
++static DEFINE_PER_CPU(struct mtk_flow_tier2_pcpu_stats, mtk_flow_tier2_stats);
++static atomic64_t mtk_flow_tier2_sw_flows = ATOMIC64_INIT(0);
++static atomic64_t mtk_flow_watermark_defers = ATOMIC64_INIT(0);
++static atomic64_t mtk_flow_hw_fail_backoffs = ATOMIC64_INIT(0);
++static atomic64_t mtk_flow_roam_flushes = ATOMIC64_INIT(0);
++
++static void nf_flow_ct_ht_insert(struct flow_offload *flow)
++{
++	if (!flow || !flow->ct)
++		return;
++
++	spin_lock_bh(&nf_flow_ct_ht_lock);
++	if (!flow->hnat_ct_indexed) {
++		hash_add_rcu(nf_flow_ct_ht, &flow->hnat_ct_node,
++			     (unsigned long)flow->ct);
++		flow->hnat_ct_indexed = true;
++		atomic64_inc(&mtk_flow_tier2_sw_flows);
++	}
++	spin_unlock_bh(&nf_flow_ct_ht_lock);
++}
++
++static void nf_flow_ct_ht_remove(struct flow_offload *flow)
++{
++	if (!flow)
++		return;
++
++	spin_lock_bh(&nf_flow_ct_ht_lock);
++	if (flow->hnat_ct_indexed) {
++		hlist_del_init_rcu(&flow->hnat_ct_node);
++		flow->hnat_ct_indexed = false;
++		atomic64_dec(&mtk_flow_tier2_sw_flows);
++	}
++	spin_unlock_bh(&nf_flow_ct_ht_lock);
++}
+ 
+ static void
+ flow_offload_fill_dir(struct flow_offload *flow,
+@@ -62,6 +118,11 @@ struct flow_offload *flow_offload_alloc(struct nf_conn *ct)
+ 
+ 	refcount_inc(&ct->ct_general.use);
+ 	flow->ct = ct;
++	INIT_HLIST_NODE(&flow->hnat_ct_node);
++	flow->hnat_ct_indexed = false;
++	flow->hw_fail_cnt = 0;
++	flow->hw_retry_ts = 0;
++	flow->last_ct_sync_jiffies = jiffies;
+ 
+ 	flow_offload_fill_dir(flow, FLOW_OFFLOAD_DIR_ORIGINAL);
+ 	flow_offload_fill_dir(flow, FLOW_OFFLOAD_DIR_REPLY);
+@@ -215,6 +276,7 @@ static void flow_offload_free_rcu(struct rcu_head *rcu_head)
+ 
+ void flow_offload_free(struct flow_offload *flow)
+ {
++	nf_flow_ct_ht_remove(flow);
+ 	switch (flow->type) {
+ 	case NF_FLOW_OFFLOAD_ROUTE:
+ 		flow_offload_route_release(flow);
+@@ -302,6 +364,7 @@ int flow_offload_add(struct nf_flowtable *flow_table, struct flow_offload *flow)
+ 		return err;
+ 	}
+ 
++	nf_flow_ct_ht_insert(flow);
+ 	nf_ct_offload_timeout(flow->ct);
+ 
+ 	if (nf_flowtable_hw_offload(flow_table)) {
+@@ -339,6 +402,7 @@ static inline bool nf_flow_has_expired(const struct flow_offload *flow)
+ static void flow_offload_del(struct nf_flowtable *flow_table,
+ 			     struct flow_offload *flow)
+ {
++	nf_flow_ct_ht_remove(flow);
+ 	rhashtable_remove_fast(&flow_table->rhashtable,
+ 			       &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
+ 			       nf_flow_offload_rhash_params);
+@@ -350,10 +414,13 @@ static void flow_offload_del(struct nf_flowtable *flow_table,
+ 
+ void flow_offload_teardown(struct flow_offload *flow)
+ {
+-	nf_ct_qos_clear(flow->ct);
+-	clear_bit(IPS_OFFLOAD_BIT, &flow->ct->status);
++	if (likely(flow->ct)) {
++		nf_ct_qos_clear(flow->ct);
++		clear_bit(IPS_OFFLOAD_BIT, &flow->ct->status);
++	}
+ 	set_bit(NF_FLOW_TEARDOWN, &flow->flags);
+-	flow_offload_fixup_ct(flow->ct);
++	if (likely(flow->ct))
++		flow_offload_fixup_ct(flow->ct);
+ }
+ EXPORT_SYMBOL_GPL(flow_offload_teardown);
+ 
+@@ -778,10 +845,418 @@ static struct notifier_block flow_offload_netdev_notifier = {
+ 	.notifier_call	= nf_flow_table_netdev_event,
+ };
+ 
++int mtk_flow_multitier_register_ops(const struct mtk_flow_multitier_ops *ops)
++{
++	const struct mtk_flow_multitier_ops *cur;
++
++	if (!ops)
++		return -EINVAL;
++
++	mutex_lock(&mtk_flow_multitier_ops_lock);
++	cur = rcu_dereference_protected(mtk_flow_multitier_ops_ptr,
++					lockdep_is_held(&mtk_flow_multitier_ops_lock));
++	if (cur && cur != ops) {
++		mutex_unlock(&mtk_flow_multitier_ops_lock);
++		return -EBUSY;
++	}
++	rcu_assign_pointer(mtk_flow_multitier_ops_ptr, ops);
++	mutex_unlock(&mtk_flow_multitier_ops_lock);
++	return 0;
++}
++EXPORT_SYMBOL_GPL(mtk_flow_multitier_register_ops);
++
++void mtk_flow_multitier_unregister_ops(const struct mtk_flow_multitier_ops *ops)
++{
++	const struct mtk_flow_multitier_ops *cur;
++
++	mutex_lock(&mtk_flow_multitier_ops_lock);
++	cur = rcu_dereference_protected(mtk_flow_multitier_ops_ptr,
++					lockdep_is_held(&mtk_flow_multitier_ops_lock));
++	if (!ops || cur == ops) {
++		RCU_INIT_POINTER(mtk_flow_multitier_ops_ptr, NULL);
++		mutex_unlock(&mtk_flow_multitier_ops_lock);
++		synchronize_rcu();
++		return;
++	}
++	mutex_unlock(&mtk_flow_multitier_ops_lock);
++}
++EXPORT_SYMBOL_GPL(mtk_flow_multitier_unregister_ops);
++
++struct flow_offload *nf_flow_table_lookup_by_ct_rcu(const struct nf_conn *ct)
++{
++	struct flow_offload *flow;
++
++	if (!ct)
++		return NULL;
++
++	hash_for_each_possible_rcu(nf_flow_ct_ht, flow, hnat_ct_node,
++				   (unsigned long)ct) {
++		if (flow->ct == ct && !test_bit(NF_FLOW_TEARDOWN, &flow->flags))
++			return flow;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(nf_flow_table_lookup_by_ct_rcu);
++
++int nf_flow_table_flush_by_ct(struct nf_conn *ct)
++{
++	struct flow_offload *flow;
++	int flushed = 0;
++
++	if (!ct)
++		return 0;
++
++	rcu_read_lock();
++	hash_for_each_possible_rcu(nf_flow_ct_ht, flow, hnat_ct_node,
++				   (unsigned long)ct) {
++		if (flow->ct == ct && !test_bit(NF_FLOW_TEARDOWN, &flow->flags)) {
++			flow_offload_teardown(flow);
++			flushed++;
++		}
++	}
++	rcu_read_unlock();
++
++	return flushed;
++}
++EXPORT_SYMBOL_GPL(nf_flow_table_flush_by_ct);
++
++u64 nf_flow_table_get_tier2_count(void)
++{
++	s64 val = atomic64_read(&mtk_flow_tier2_sw_flows);
++
++	return val > 0 ? (u64)val : 0ULL;
++}
++EXPORT_SYMBOL_GPL(nf_flow_table_get_tier2_count);
++
++void nf_flow_multitier_get_ppe_occupancy(u32 *bound, u32 *total)
++{
++	const struct mtk_flow_multitier_ops *ops;
++	u32 b = 0, t = 0;
++
++	if (bound)
++		*bound = 0;
++	if (total)
++		*total = 0;
++
++	rcu_read_lock();
++	ops = rcu_dereference(mtk_flow_multitier_ops_ptr);
++	if (ops && ops->get_ppe_occupancy)
++		ops->get_ppe_occupancy(&b, &t);
++	rcu_read_unlock();
++
++	if (bound)
++		*bound = b;
++	if (total)
++		*total = t;
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_get_ppe_occupancy);
++
++bool nf_flow_multitier_ppe_over_watermark(void)
++{
++	u32 bound = 0, total = 0, permille;
++
++	nf_flow_multitier_get_ppe_occupancy(&bound, &total);
++	if (!total)
++		return false;
++
++	permille = min_t(u32, 1000U, (u32)div_u64((u64)bound * 1000ULL, total));
++	return permille >= MTK_PPE_OCCUPANCY_WATERMARK_PERMILLE;
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_ppe_over_watermark);
++
++void nf_flow_multitier_inc_watermark_defer(void)
++{
++	atomic64_inc(&mtk_flow_watermark_defers);
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_inc_watermark_defer);
++
++void nf_flow_multitier_inc_hw_fail_backoff(void)
++{
++	atomic64_inc(&mtk_flow_hw_fail_backoffs);
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_inc_hw_fail_backoff);
++
++void nf_flow_multitier_account_sw_pkt(unsigned int len)
++{
++	struct mtk_flow_tier2_pcpu_stats *st = get_cpu_ptr(&mtk_flow_tier2_stats);
++
++	u64_stats_update_begin(&st->syncp);
++	u64_stats_inc(&st->packets);
++	u64_stats_add(&st->bytes, len);
++	u64_stats_update_end(&st->syncp);
++	put_cpu_ptr(&mtk_flow_tier2_stats);
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_account_sw_pkt);
++
++bool nf_flow_multitier_ingress_ctrl_pkt(const struct sk_buff *skb,
++					const struct net_device *in_dev)
++{
++	const struct mtk_flow_multitier_ops *ops;
++	bool promote = false;
++	bool pass = false;
++
++	rcu_read_lock();
++	ops = rcu_dereference(mtk_flow_multitier_ops_ptr);
++	if (ops && ops->ingress_pass_to_hnat)
++		pass = ops->ingress_pass_to_hnat(skb, in_dev, &promote);
++	rcu_read_unlock();
++
++	return pass && !promote;
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_ingress_ctrl_pkt);
++
++bool nf_flow_multitier_should_promote(const struct sk_buff *skb,
++				      const struct net_device *in_dev,
++				      struct flow_offload *flow)
++{
++	const struct mtk_flow_multitier_ops *ops;
++	bool promote = false;
++	bool pass = false;
++
++	if (!flow)
++		return false;
++
++	if (READ_ONCE(flow->hw_fail_cnt) &&
++	    time_before(jiffies, READ_ONCE(flow->hw_retry_ts)))
++		return false;
++
++	rcu_read_lock();
++	ops = rcu_dereference(mtk_flow_multitier_ops_ptr);
++	if (ops && ops->ingress_pass_to_hnat)
++		pass = ops->ingress_pass_to_hnat(skb, in_dev, &promote);
++	rcu_read_unlock();
++
++	return pass && promote;
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_should_promote);
++
++bool nf_flow_multitier_defer_sw_admit(const struct sk_buff *skb,
++				      const struct nf_conn *ct)
++{
++	const struct mtk_flow_multitier_ops *ops;
++	bool defer = false;
++
++	rcu_read_lock();
++	ops = rcu_dereference(mtk_flow_multitier_ops_ptr);
++	if (ops && ops->defer_sw_admit)
++		defer = ops->defer_sw_admit(skb, ct);
++	rcu_read_unlock();
++
++	return defer;
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_defer_sw_admit);
++
++void nf_flow_multitier_note_hw_fail(struct flow_offload *flow,
++				    bool count_metric)
++{
++	u8 cnt, shift;
++	unsigned long backoff;
++
++	if (!flow)
++		return;
++
++	cnt = READ_ONCE(flow->hw_fail_cnt);
++	shift = min_t(u8, cnt, 6);
++	backoff = min_t(unsigned long, (unsigned long)HZ << shift, 60UL * HZ);
++
++	if (cnt < U8_MAX)
++		WRITE_ONCE(flow->hw_fail_cnt, cnt + 1);
++	WRITE_ONCE(flow->hw_retry_ts, jiffies + backoff);
++	if (count_metric)
++		nf_flow_multitier_inc_hw_fail_backoff();
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_note_hw_fail);
++
++static bool nf_flow_tuple_matches_mac(const struct flow_offload *flow,
++				      enum flow_offload_tuple_dir dir,
++				      const u8 *mac)
++{
++	const struct flow_offload_tuple *tuple = &flow->tuplehash[dir].tuple;
++	const struct flow_offload_tuple *other_tuple = &flow->tuplehash[!dir].tuple;
++	const struct dst_entry *dst;
++	struct neighbour *n;
++	bool matched = false;
++
++	if (tuple->xmit_type == FLOW_OFFLOAD_XMIT_DIRECT) {
++		return ether_addr_equal(tuple->out.h_dest, mac) ||
++		       ether_addr_equal(tuple->out.h_source, mac);
++	}
++
++	if (tuple->xmit_type == FLOW_OFFLOAD_XMIT_NEIGH) {
++		dst = READ_ONCE(tuple->dst_cache);
++		if (dst && dst->ops && dst->ops->neigh_lookup) {
++			const void *daddr = (tuple->l3proto == NFPROTO_IPV4) ?
++				(const void *)&other_tuple->src_v4 :
++				(const void *)&other_tuple->src_v6;
++
++			n = dst_neigh_lookup(dst, daddr);
++			if (n) {
++				read_lock_bh(&n->lock);
++				matched = ether_addr_equal(n->ha, mac);
++				read_unlock_bh(&n->lock);
++				neigh_release(n);
++			}
++		}
++	}
++
++	return matched;
++}
++
++void nf_flow_multitier_roam_flush(const u8 *mac, const struct net_device *dev,
++				  u16 vid)
++{
++	const struct mtk_flow_multitier_ops *ops;
++	struct flow_offload *flow;
++	unsigned int bkt;
++	bool flushed = false;
++
++	if (!mac || is_zero_ether_addr(mac) || is_multicast_ether_addr(mac))
++		return;
++
++	rcu_read_lock();
++	ops = rcu_dereference(mtk_flow_multitier_ops_ptr);
++	if (ops && ops->roam_flush_mac && ops->roam_flush_mac(mac, dev, vid))
++		flushed = true;
++
++	hash_for_each_rcu(nf_flow_ct_ht, bkt, flow, hnat_ct_node) {
++		if (test_bit(NF_FLOW_TEARDOWN, &flow->flags))
++			continue;
++
++		if (nf_flow_tuple_matches_mac(flow, FLOW_OFFLOAD_DIR_ORIGINAL, mac) ||
++		    nf_flow_tuple_matches_mac(flow, FLOW_OFFLOAD_DIR_REPLY, mac)) {
++			flow_offload_teardown(flow);
++			flushed = true;
++		}
++	}
++	rcu_read_unlock();
++
++	if (flushed)
++		atomic64_inc(&mtk_flow_roam_flushes);
++}
++EXPORT_SYMBOL_GPL(nf_flow_multitier_roam_flush);
++
++static int nf_flow_table_switchdev_event(struct notifier_block *this,
++					 unsigned long event, void *ptr)
++{
++	const struct switchdev_notifier_fdb_info *fdb_info;
++
++	if (event != SWITCHDEV_FDB_ADD_TO_DEVICE &&
++	    event != SWITCHDEV_FDB_ADD_TO_BRIDGE)
++		return NOTIFY_DONE;
++
++	fdb_info = ptr;
++	if (!fdb_info || !fdb_info->addr)
++		return NOTIFY_DONE;
++
++	if (fdb_info->is_local)
++		return NOTIFY_DONE;
++
++	nf_flow_multitier_roam_flush(fdb_info->addr,
++				     switchdev_notifier_info_to_dev(&fdb_info->info),
++				     fdb_info->vid);
++	return NOTIFY_DONE;
++}
++
++static struct notifier_block flow_offload_switchdev_notifier = {
++	.notifier_call	= nf_flow_table_switchdev_event,
++};
++
++#ifdef CONFIG_PROC_FS
++static struct proc_dir_entry *mtk_flow_multitier_proc_entry;
++
++static int mtk_flow_multitier_proc_show(struct seq_file *seq, void *v)
++{
++	u32 bind = 0, total = 0, permille = 0;
++	u64 tier2_flows, tier2_pkts = 0, tier2_bytes = 0;
++	u64 defers, backoffs, roams, ser_epoch = 0;
++	s64 raw_flows;
++	int cpu;
++
++	nf_flow_multitier_get_ppe_occupancy(&bind, &total);
++	if (total) {
++		u64 raw = div_u64((u64)bind * 1000ULL, total);
++
++		permille = (raw > 1000ULL) ? 1000U : (u32)raw;
++	}
++
++	for_each_possible_cpu(cpu) {
++		const struct mtk_flow_tier2_pcpu_stats *st =
++			per_cpu_ptr(&mtk_flow_tier2_stats, cpu);
++		unsigned int start;
++		u64 p, b;
++
++		do {
++			start = u64_stats_fetch_begin(&st->syncp);
++			p = u64_stats_read(&st->packets);
++			b = u64_stats_read(&st->bytes);
++		} while (u64_stats_fetch_retry(&st->syncp, start));
++
++		tier2_pkts += p;
++		tier2_bytes += b;
++	}
++
++	raw_flows = atomic64_read(&mtk_flow_tier2_sw_flows);
++	tier2_flows = raw_flows > 0 ? (u64)raw_flows : 0ULL;
++	defers = (u64)atomic64_read(&mtk_flow_watermark_defers);
++	backoffs = (u64)atomic64_read(&mtk_flow_hw_fail_backoffs);
++	roams = (u64)atomic64_read(&mtk_flow_roam_flushes);
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_SOC) && IS_REACHABLE(CONFIG_NET_MEDIATEK_SOC)
++	ser_epoch = mtk_hnat_get_ser_epoch();
++#endif
++
++	seq_printf(seq, "tier1_ppe_bind %u\n", bind);
++	seq_printf(seq, "tier1_ppe_total %u\n", total);
++	seq_printf(seq, "tier1_occupancy_permille %u\n", permille);
++	seq_printf(seq, "tier2_sw_flows %llu\n", tier2_flows);
++	seq_printf(seq, "tier2_sw_packets %llu\n", tier2_pkts);
++	seq_printf(seq, "tier2_sw_bytes %llu\n", tier2_bytes);
++	seq_printf(seq, "watermark_defers %llu\n", defers);
++	seq_printf(seq, "hw_fail_backoffs %llu\n", backoffs);
++	seq_printf(seq, "roam_flushes %llu\n", roams);
++	seq_printf(seq, "ser_epoch %llu\n", ser_epoch);
++	return 0;
++}
++
++static int mtk_flow_multitier_proc_init(void)
++{
++	mtk_flow_multitier_proc_entry = proc_create_single("mtk_flow_multitier",
++							   0444,
++							   init_net.proc_net_stat,
++							   mtk_flow_multitier_proc_show);
++	if (!mtk_flow_multitier_proc_entry)
++		return -ENOMEM;
++
++	return 0;
++}
++
++static void mtk_flow_multitier_proc_exit(void)
++{
++	if (mtk_flow_multitier_proc_entry) {
++		remove_proc_entry("mtk_flow_multitier",
++				  init_net.proc_net_stat);
++		mtk_flow_multitier_proc_entry = NULL;
++	}
++}
++#else
++static inline int mtk_flow_multitier_proc_init(void)
++{
++	return 0;
++}
++
++static inline void mtk_flow_multitier_proc_exit(void)
++{
++}
++#endif
++
+ static int __init nf_flow_table_module_init(void)
+ {
++	int cpu;
+ 	int ret;
+ 
++	for_each_possible_cpu(cpu)
++		u64_stats_init(&per_cpu(mtk_flow_tier2_stats, cpu).syncp);
++
+ 	ret = register_pernet_subsys(&nf_flow_table_net_ops);
+ 	if (ret < 0)
+ 		return ret;
+@@ -794,8 +1269,20 @@ static int __init nf_flow_table_module_init(void)
+ 	if (ret)
+ 		goto out_offload_init;
+ 
++	ret = register_switchdev_notifier(&flow_offload_switchdev_notifier);
++	if (ret)
++		goto out_netdev;
++
++	ret = mtk_flow_multitier_proc_init();
++	if (ret)
++		goto out_switchdev;
++
+ 	return 0;
+ 
++out_switchdev:
++	unregister_switchdev_notifier(&flow_offload_switchdev_notifier);
++out_netdev:
++	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
+ out_offload_init:
+ 	nf_flow_table_offload_exit();
+ out_offload:
+@@ -805,6 +1292,8 @@ static int __init nf_flow_table_module_init(void)
+ 
+ static void __exit nf_flow_table_module_exit(void)
+ {
++	mtk_flow_multitier_proc_exit();
++	unregister_switchdev_notifier(&flow_offload_switchdev_notifier);
+ 	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
+ 	rcu_barrier();
+ 	nf_flow_table_offload_exit();
+diff --git a/net/netfilter/nf_flow_table_ip.c b/net/netfilter/nf_flow_table_ip.c
+index 20dd4ee..f1fb36d 100644
+--- a/net/netfilter/nf_flow_table_ip.c
++++ b/net/netfilter/nf_flow_table_ip.c
+@@ -14,7 +14,35 @@
+ #include <net/ip6_route.h>
+ #include <net/neighbour.h>
+ #include <net/netfilter/nf_flow_table.h>
++#include <net/netfilter/nf_conntrack.h>
+ #include <net/netfilter/nf_conntrack_acct.h>
++
++static void
++nf_flow_multitier_ct_keepalive(struct nf_flowtable *flow_table,
++			       struct flow_offload *flow,
++			       enum flow_offload_tuple_dir dir,
++			       struct sk_buff *skb)
++{
++	unsigned long now = jiffies;
++	unsigned long prev = READ_ONCE(flow->last_ct_sync_jiffies);
++	enum ip_conntrack_info ctinfo;
++	u32 timeout;
++
++	if (!time_after(now, prev + HZ))
++		return;
++
++	WRITE_ONCE(flow->last_ct_sync_jiffies, now);
++	if (unlikely(!flow->ct || nf_ct_is_dying(flow->ct)))
++		return;
++
++	ctinfo = (dir == FLOW_OFFLOAD_DIR_ORIGINAL) ?
++		 IP_CT_ESTABLISHED : IP_CT_ESTABLISHED_REPLY;
++	timeout = max_t(u32, flow_offload_get_timeout(flow), NF_CT_DAY);
++	if (flow_table->flags & NF_FLOWTABLE_COUNTER)
++		nf_ct_refresh(flow->ct, skb, timeout);
++	else
++		nf_ct_refresh_acct(flow->ct, ctinfo, skb, timeout);
++}
+ /* For layer 4 checksum field offset. */
+ #include <linux/tcp.h>
+ #include <linux/udp.h>
+@@ -426,16 +454,27 @@ nf_flow_offload_ip_hook(void *priv, struct sk_buff *skb,
+ 	__be32 nexthop;
+ 	int ret;
+ 
++	if (nf_flow_multitier_ingress_ctrl_pkt(skb, state->in))
++		return NF_ACCEPT;
++
+ 	tuplehash = nf_flow_offload_lookup(&ctx, flow_table, skb);
+ 	if (!tuplehash)
+ 		return NF_ACCEPT;
+ 
++	dir = tuplehash->tuple.dir;
++	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
++	if (nf_flow_multitier_should_promote(skb, state->in, flow))
++		return NF_ACCEPT;
++
+ 	ret = nf_flow_offload_forward(&ctx, flow_table, tuplehash, skb);
+ 	if (ret < 0)
+ 		return NF_DROP;
+ 	else if (ret == 0)
+ 		return NF_ACCEPT;
+ 
++	nf_flow_multitier_account_sw_pkt(skb->len);
++	nf_flow_multitier_ct_keepalive(flow_table, flow, dir, skb);
++
+ 	if (unlikely(tuplehash->tuple.xmit_type == FLOW_OFFLOAD_XMIT_XFRM)) {
+ 		rt = (struct rtable *)tuplehash->tuple.dst_cache;
+ 		memset(skb->cb, 0, sizeof(struct inet_skb_parm));
+@@ -444,9 +483,6 @@ nf_flow_offload_ip_hook(void *priv, struct sk_buff *skb,
+ 		return nf_flow_xmit_xfrm(skb, state, &rt->dst);
+ 	}
+ 
+-	dir = tuplehash->tuple.dir;
+-	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
+-
+ 	switch (tuplehash->tuple.xmit_type) {
+ 	case FLOW_OFFLOAD_XMIT_NEIGH:
+ 		rt = (struct rtable *)tuplehash->tuple.dst_cache;
+@@ -721,16 +757,27 @@ nf_flow_offload_ipv6_hook(void *priv, struct sk_buff *skb,
+ 	struct rt6_info *rt;
+ 	int ret;
+ 
++	if (nf_flow_multitier_ingress_ctrl_pkt(skb, state->in))
++		return NF_ACCEPT;
++
+ 	tuplehash = nf_flow_offload_ipv6_lookup(&ctx, flow_table, skb);
+ 	if (tuplehash == NULL)
+ 		return NF_ACCEPT;
+ 
++	dir = tuplehash->tuple.dir;
++	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
++	if (nf_flow_multitier_should_promote(skb, state->in, flow))
++		return NF_ACCEPT;
++
+ 	ret = nf_flow_offload_ipv6_forward(&ctx, flow_table, tuplehash, skb);
+ 	if (ret < 0)
+ 		return NF_DROP;
+ 	else if (ret == 0)
+ 		return NF_ACCEPT;
+ 
++	nf_flow_multitier_account_sw_pkt(skb->len);
++	nf_flow_multitier_ct_keepalive(flow_table, flow, dir, skb);
++
+ 	if (unlikely(tuplehash->tuple.xmit_type == FLOW_OFFLOAD_XMIT_XFRM)) {
+ 		rt = dst_rt6_info(tuplehash->tuple.dst_cache);
+ 		memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
+@@ -739,9 +786,6 @@ nf_flow_offload_ipv6_hook(void *priv, struct sk_buff *skb,
+ 		return nf_flow_xmit_xfrm(skb, state, &rt->dst);
+ 	}
+ 
+-	dir = tuplehash->tuple.dir;
+-	flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
+-
+ 	switch (tuplehash->tuple.xmit_type) {
+ 	case FLOW_OFFLOAD_XMIT_NEIGH:
+ 		rt = dst_rt6_info(tuplehash->tuple.dst_cache);
+diff --git a/net/netfilter/nf_flow_table_offload.c b/net/netfilter/nf_flow_table_offload.c
+index 15f9a03..c09dfa5 100644
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -978,20 +978,40 @@ static int flow_offload_rule_add(struct flow_offload_work *offload,
+ static void flow_offload_work_add(struct flow_offload_work *offload)
+ {
+ 	struct nf_flow_rule *flow_rule[FLOW_OFFLOAD_DIR_MAX];
++	struct flow_offload *flow = offload->flow;
+ 	int err;
+ 
++	if (READ_ONCE(flow->hw_fail_cnt) &&
++	    time_before(jiffies, READ_ONCE(flow->hw_retry_ts))) {
++		nf_flow_multitier_inc_hw_fail_backoff();
++		return;
++	}
++
++	if (nf_flow_multitier_ppe_over_watermark()) {
++		nf_flow_multitier_inc_watermark_defer();
++		return;
++	}
++
+ 	err = nf_flow_offload_alloc(offload, flow_rule);
+ 	if (err < 0)
+-		return;
++		goto err_backoff;
+ 
+ 	err = flow_offload_rule_add(offload, flow_rule);
+-	if (err < 0)
+-		goto out;
++	nf_flow_offload_destroy(flow_rule);
++	if (err < 0) {
++		if (err == -ENOENT &&
++		    test_bit(IPS_HW_OFFLOAD_BIT, &flow->ct->status))
++			return;
++		goto err_backoff;
++	}
+ 
+-	set_bit(IPS_HW_OFFLOAD_BIT, &offload->flow->ct->status);
++	WRITE_ONCE(flow->hw_fail_cnt, 0);
++	WRITE_ONCE(flow->hw_retry_ts, 0);
++	set_bit(IPS_HW_OFFLOAD_BIT, &flow->ct->status);
++	return;
+ 
+-out:
+-	nf_flow_offload_destroy(flow_rule);
++err_backoff:
++	nf_flow_multitier_note_hw_fail(flow, false);
+ }
+ 
+ static void flow_offload_work_del(struct flow_offload_work *offload)
+@@ -1117,6 +1137,17 @@ void nf_flow_offload_add(struct nf_flowtable *flowtable,
+ {
+ 	struct flow_offload_work *offload;
+ 
++	if (READ_ONCE(flow->hw_fail_cnt) &&
++	    time_before(jiffies, READ_ONCE(flow->hw_retry_ts))) {
++		nf_flow_multitier_inc_hw_fail_backoff();
++		return;
++	}
++
++	if (nf_flow_multitier_ppe_over_watermark()) {
++		nf_flow_multitier_inc_watermark_defer();
++		return;
++	}
++
+ 	offload = nf_flow_offload_work_alloc(flowtable, flow, FLOW_CLS_REPLACE);
+ 	if (!offload)
+ 		return;
+diff --git a/net/netfilter/nft_flow_offload.c b/net/netfilter/nft_flow_offload.c
+index debf798..0828547 100644
+--- a/net/netfilter/nft_flow_offload.c
++++ b/net/netfilter/nft_flow_offload.c
+@@ -573,6 +573,9 @@ static void nft_flow_offload_eval(const struct nft_expr *expr,
+ 			goto out;
+ 	}
+ 
++	if (nf_flow_multitier_defer_sw_admit(pkt->skb, ct))
++		goto out;
++
+ 	if (test_and_set_bit(IPS_OFFLOAD_BIT, &ct->status))
+ 		goto out;
+ 

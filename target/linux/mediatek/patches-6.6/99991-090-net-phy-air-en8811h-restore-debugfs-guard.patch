@@ -1,0 +1,21 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: phy: air_en8811h: restore debugfs preprocessor guard
+
+Restore missing opening #ifdef CONFIG_DEBUG_FS guard matching #endif in air_en8811h_api.c.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/phy/air_en8811h_api.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/phy/air_en8811h_api.c b/drivers/net/phy/air_en8811h_api.c
+index be449da..9c2a522 100644
+--- a/drivers/net/phy/air_en8811h_api.c
++++ b/drivers/net/phy/air_en8811h_api.c
+@@ -532,6 +532,7 @@ static int __maybe_unused air_read_status(struct phy_device *phydev)
+ 
+ 	return ret;
+ }
++#ifdef CONFIG_AIROHA_EN8811H_PHY_DEBUGFS
+ static void air_polarity_help(void)
+ {
+ 	pr_notice("\nUsage:\n"

@@ -1,0 +1,293 @@
+--- a/arch/arm64/boot/dts/mediatek/mt7981.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7981.dtsi
+@@ -95,18 +95,23 @@
+ 		};
+ 
+ 		wmcpu_emi: wmcpu-reserved@47c80000 {
++			compatible = "mediatek,wmcpu-reserved";
+ 			reg = <0 0x47c80000 0 0x100000>;
+ 			no-map;
+ 		};
+ 
+ 		wo_emi0: wo-emi@47d80000 {
++			compatible = "mediatek,wocpu0_emi";
+ 			reg = <0 0x47d80000 0 0x40000>;
+ 			no-map;
++			shared = <0>;
+ 		};
+ 
+ 		wo_data: wo-data@47dc0000 {
++			compatible = "mediatek,wocpu_data";
+ 			reg = <0 0x47dc0000 0 0x240000>;
+ 			no-map;
++			shared = <1>;
+ 		};
+ 	};
+ 
+@@ -129,6 +134,9 @@
+ 		consys: consys@10000000 {
+ 			compatible = "mediatek,mt7981-consys";
+ 			reg = <0 0x10000000 0 0x8600000>;
++			clocks = <&topckgen CLK_TOP_NETSYS_MCU_SEL>,
++				 <&topckgen CLK_TOP_AP2CNN_HOST_SEL>;
++			clock-names = "mcu", "ap2conn";
+ 			memory-region = <&wmcpu_emi>;
+ 		};
+ 
+@@ -587,10 +595,25 @@
+ 			#size-cells = <1>;
+ 		};
+ 
++		hnat: hnat@15000000 {
++			compatible = "mediatek,mtk-hnat_v4";
++			reg = <0 0x15100000 0 0x80000>;
++			resets = <&ethsys 0>;
++			reset-names = "mtketh";
++			mtketh-wan = "eth1";
++			mtketh-lan = "eth0";
++			mtketh-max-gmac = <2>;
++			mtketh-ppe-num = <2>;
++			ext-devices-prefix = "usb","wwan","qmimux","rmnet","eth2","eth3","eth4";
++		};
++
+ 		wed: wed@15010000 {
+-			compatible = "mediatek,mt7981-wed",
++			compatible = "mediatek,wed",
++				     "mediatek,mt7981-wed",
+ 				     "mediatek,mt7986-wed",
+ 				     "syscon";
++			wed_num = <1>;
++			pci_slot_map = <0>, <1>;
+ 			reg = <0 0x15010000 0 0x1000>;
+ 			interrupt-parent = <&gic>;
+ 			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>;
+@@ -605,7 +628,11 @@
+ 		eth: ethernet@15100000 {
+ 			compatible = "mediatek,mt7981-eth";
+ 			reg = <0 0x15100000 0 0x80000>;
+-			interrupts = <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
++			interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>,
++					<GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>,
++					<GIC_SPI 191 IRQ_TYPE_LEVEL_HIGH>,
++					<GIC_SPI 192 IRQ_TYPE_LEVEL_HIGH>,
++					<GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
+ 					<GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
+ 					<GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
+ 					<GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
+@@ -682,7 +709,7 @@
+ 		};
+ 
+ 		wo_cpuboot: syscon@15194000 {
+-			compatible = "mediatek,mt7986-wo-cpuboot", "syscon";
++			compatible = "mediatek,wocpu_boot", "mediatek,mt7986-wo-cpuboot", "syscon";
+ 			reg = <0 0x15194000 0 0x1000>;
+ 		};
+ 
+@@ -703,12 +730,12 @@
+ 		};
+ 
+ 		wo_ilm0: syscon@151e0000 {
+-			compatible = "mediatek,mt7986-wo-ilm", "syscon";
++			compatible = "mediatek,wocpu0_ilm", "mediatek,mt7986-wo-ilm", "syscon";
+ 			reg = <0 0x151e0000 0 0x8000>;
+ 		};
+ 
+ 		wo_dlm0: syscon@151e8000 {
+-			compatible = "mediatek,mt7986-wo-dlm", "syscon";
++			compatible = "mediatek,wocpu_dlm", "mediatek,mt7986-wo-dlm", "syscon";
+ 			reg = <0 0x151e8000 0 0x2000>;
+ 		};
+ 
+@@ -731,6 +758,16 @@
+ 			memory-region = <&wmcpu_emi>;
+ 			status = "disabled";
+ 		};
++
++		wbsys: wbsys@18000000 {
++			compatible = "mediatek,wbsys";
++			reg = <0 0x18000000 0 0x1000000>;
++			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
++			chip_id = <0x7981>;
++		};
+ 	};
+ 
+ 	thermal-zones {
+--- a/arch/arm64/boot/dts/mediatek/mt7986a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7986a.dtsi
+@@ -83,23 +83,30 @@
+ 		};
+ 
+ 		wmcpu_emi: wmcpu-reserved@4fc00000 {
++			compatible = "mediatek,wmcpu-reserved";
+ 			no-map;
+ 			reg = <0 0x4fc00000 0 0x00100000>;
+ 		};
+ 
+ 		wo_emi0: wo-emi@4fd00000 {
++			compatible = "mediatek,wocpu0_emi";
+ 			reg = <0 0x4fd00000 0 0x40000>;
+ 			no-map;
++			shared = <0>;
+ 		};
+ 
+ 		wo_emi1: wo-emi@4fd40000 {
++			compatible = "mediatek,wocpu1_emi";
+ 			reg = <0 0x4fd40000 0 0x40000>;
+ 			no-map;
++			shared = <0>;
+ 		};
+ 
+ 		wo_data: wo-data@4fd80000 {
++			compatible = "mediatek,wocpu_data";
+ 			reg = <0 0x4fd80000 0 0x240000>;
+ 			no-map;
++			shared = <1>;
+ 		};
+ 	};
+ 
+@@ -129,8 +136,18 @@
+ 			#reset-cells = <1>;
+ 		};
+ 
++		consys: consys@10000000 {
++			compatible = "mediatek,mt7986-consys";
++			reg = <0 0x10000000 0 0x8600000>;
++			clocks = <&topckgen CLK_TOP_CONN_MCUSYS_SEL>,
++				 <&topckgen CLK_TOP_AP2CNN_HOST_SEL>;
++			clock-names = "mcu", "ap2conn";
++			memory-region = <&wmcpu_emi>;
++		};
++
+ 		wed_pcie: wed-pcie@10003000 {
+-			compatible = "mediatek,mt7986-wed-pcie",
++			compatible = "mediatek,wed_pcie",
++				     "mediatek,mt7986-wed-pcie",
+ 				     "syscon";
+ 			reg = <0 0x10003000 0 0x10>;
+ 		};
+@@ -499,9 +516,30 @@
+ 			 #reset-cells = <1>;
+ 		};
+ 
++		hnat: hnat@15000000 {
++			compatible = "mediatek,mtk-hnat_v4";
++			reg = <0 0x15100000 0 0x80000>;
++			resets = <&ethsys 0>;
++			reset-names = "mtketh";
++			mtketh-wan = "eth1";
++			mtketh-lan = "eth0";
++			mtketh-max-gmac = <2>;
++			mtketh-ppe-num = <2>;
++			ext-devices-prefix = "usb","wwan","qmimux","rmnet","eth2","eth3","eth4";
++		};
++
++		wdma: wdma@15104800 {
++			compatible = "mediatek,wed-wdma";
++			reg = <0 0x15104800 0 0x400>,
++			      <0 0x15104c00 0 0x400>;
++		};
++
+ 		wed0: wed@15010000 {
+-			compatible = "mediatek,mt7986-wed",
++			compatible = "mediatek,wed",
++				     "mediatek,mt7986-wed",
+ 				     "syscon";
++			wed_num = <2>;
++			pci_slot_map = <0>, <1>;
+ 			reg = <0 0x15010000 0 0x1000>;
+ 			interrupt-parent = <&gic>;
+ 			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>;
+@@ -514,8 +552,10 @@
+ 		};
+ 
+ 		wed1: wed@15011000 {
+-			compatible = "mediatek,mt7986-wed",
++			compatible = "mediatek,wed2",
++				     "mediatek,mt7986-wed",
+ 				     "syscon";
++			wed_num = <2>;
+ 			reg = <0 0x15011000 0 0x1000>;
+ 			interrupt-parent = <&gic>;
+ 			interrupts = <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>;
+@@ -530,7 +570,11 @@
+ 		eth: ethernet@15100000 {
+ 			compatible = "mediatek,mt7986-eth";
+ 			reg = <0 0x15100000 0 0x80000>;
+-			interrupts = <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
++			interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 191 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 192 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 196 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
+@@ -568,6 +612,15 @@
+ 			status = "disabled";
+ 		};
+ 
++		ap2woccif: ap2woccif@151a5000 {
++			compatible = "mediatek,ap2woccif";
++			reg = <0 0x151a5000 0 0x1000>,
++			      <0 0x151ad000 0 0x1000>;
++			interrupt-parent = <&gic>;
++			interrupts = <GIC_SPI 211 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 212 IRQ_TYPE_LEVEL_HIGH>;
++		};
++
+ 		wo_ccif0: syscon@151a5000 {
+ 			compatible = "mediatek,mt7986-wo-ccif", "syscon";
+ 			reg = <0 0x151a5000 0 0x1000>;
+@@ -583,18 +636,19 @@
+ 		};
+ 
+ 		wo_ilm0: syscon@151e0000 {
+-			compatible = "mediatek,mt7986-wo-ilm", "syscon";
++			compatible = "mediatek,wocpu0_ilm", "mediatek,mt7986-wo-ilm", "syscon";
+ 			reg = <0 0x151e0000 0 0x8000>;
+ 		};
+ 
+ 		wo_ilm1: syscon@151f0000 {
+-			compatible = "mediatek,mt7986-wo-ilm", "syscon";
++			compatible = "mediatek,wocpu1_ilm", "mediatek,mt7986-wo-ilm", "syscon";
+ 			reg = <0 0x151f0000 0 0x8000>;
+ 		};
+ 
+ 		wo_dlm0: syscon@151e8000 {
+-			compatible = "mediatek,mt7986-wo-dlm", "syscon";
+-			reg = <0 0x151e8000 0 0x2000>;
++			compatible = "mediatek,wocpu_dlm", "mediatek,mt7986-wo-dlm", "syscon";
++			reg = <0 0x151e8000 0 0x2000>,
++			      <0 0x151f8000 0 0x2000>;
+ 		};
+ 
+ 		wo_dlm1: syscon@151f8000 {
+@@ -603,7 +657,7 @@
+ 		};
+ 
+ 		wo_cpuboot: syscon@15194000 {
+-			compatible = "mediatek,mt7986-wo-cpuboot", "syscon";
++			compatible = "mediatek,wocpu_boot", "mediatek,mt7986-wo-cpuboot", "syscon";
+ 			reg = <0 0x15194000 0 0x1000>;
+ 		};
+ 
+@@ -623,6 +677,16 @@
+ 				     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
+ 			memory-region = <&wmcpu_emi>;
+ 		};
++
++		wbsys: wbsys@18000000 {
++			compatible = "mediatek,wbsys";
++			reg = <0 0x18000000 0 0x1000000>;
++			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
++			chip_id = <0x7986>;
++		};
+ 	};
+ 
+ 	thermal-zones {

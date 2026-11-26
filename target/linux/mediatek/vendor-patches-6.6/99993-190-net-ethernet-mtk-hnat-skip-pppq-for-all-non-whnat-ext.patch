@@ -1,0 +1,37 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_hnat: skip PPPQ auto-offset for all non-WHNAT external devices
+
+On NETSYS v3 (MT7987/MT7988), IS_PPPQ_MODE only exempted no-ARP external
+interfaces (Raw-IP QMI), causing Ethernet-type USB WWAN modems (CDC-ECM
+and CDC-NCM) with ARP to receive qid += 12 and fqos/tport_id queue
+assignment even when no PPPQ port exists for external USB devices.
+
+Exempt all unclassified non-WHNAT external devices from the automatic
+PPPQ qid offset while preserving PPPQ for GMAC/DSA ports, WHNAT/WED
+interfaces, and explicit IS_PPPQ_PATH flows.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index 1234567..89abcde 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -4275,11 +4275,11 @@
+ 		}
+ 	}
+ 
+-	/* An unclassified no-ARP external output has no PPPQ port assignment. */
++	/* An unclassified non-WHNAT external output has no PPPQ port assignment. */
+ 	if (IS_PPPQ_MODE &&
+ 	    !(hnat_priv->data->version == MTK_HNAT_V3 &&
+ 	      qid == 0 && gmac == NR_PDMA_PORT && IS_EXT(dev) &&
+-	      hnat_dev_is_noarp_ext(dev) && !whnat &&
++	      !whnat &&
+ 	      !IS_PPPQ_PATH(dev, skb))) {
+ 		qid+= gmac;
+ 		if (gmac == 0) qid+= 12;
+-- 
+2.43.0

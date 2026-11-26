@@ -468,7 +468,7 @@ int air_get_autonego(struct phy_device *phydev, int *an)
 	return 0;
 }
 
-static int air_read_status(struct phy_device *phydev)
+static int __maybe_unused air_read_status(struct phy_device *phydev)
 {
 	int ret = 0, reg = 0, an = AUTONEG_DISABLE, bmcr = 0;
 	u32 pbus_value = 0;
@@ -532,7 +532,6 @@ static int air_read_status(struct phy_device *phydev)
 
 	return ret;
 }
-#ifdef CONFIG_AIROHA_EN8811H_PHY_DEBUGFS
 static void air_polarity_help(void)
 {
 	pr_notice("\nUsage:\n"

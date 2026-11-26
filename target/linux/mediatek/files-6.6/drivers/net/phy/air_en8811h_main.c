@@ -110,7 +110,6 @@ static int en8811h_load_firmware(struct phy_device *phydev)
 	struct device *dev = phydev_dev(phydev);
 	int ret = 0;
 	u32 pbus_value = 0;
-	struct en8811h_priv *priv = phydev->priv;
 
 	ret = air_buckpbus_reg_write(phydev,
 					0x0f0018, 0x0);

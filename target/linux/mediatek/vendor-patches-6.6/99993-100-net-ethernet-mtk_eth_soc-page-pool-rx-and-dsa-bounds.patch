@@ -1,0 +1,444 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_eth_soc: enable non-XDP page-pool RX and
+ harden DSA/FSM bounds
+
+Enable page-pool recycling on non-XDP RX queues, guard mac->id/DSA queue indexing against out-of-bounds access, fix MTK_FE_GDM_FSM macro, and widen reset telemetry arrays.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c   | 203 ++++++++++++++----
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   |   8 +-
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   |   3 +-
+ 3 files changed, 164 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 38a3e0a..54353ba 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2648,11 +2648,9 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 	bool xdp_flush = false;
+ 	int idx;
+ 	struct sk_buff *skb;
+-	u64 addr64 = 0;
+ 	u8 *data, *new_data;
+ 	struct mtk_rx_dma_v2 *rxd, trxd;
+ 	int done = 0, bytes = 0;
+-	dma_addr_t dma_addr = DMA_MAPPING_ERROR;
+ 	int ppe_idx = 0;
+ 	int sent_ppd = 0;
+ 
+@@ -2660,9 +2658,11 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 		goto rx_done;
+ 
+ 	while (done < budget) {
++		dma_addr_t dma_addr = DMA_MAPPING_ERROR;
+ 		unsigned int pktlen, *rxdcsum;
+ 		struct net_device *netdev;
+ 		u32 hash, reason;
++		u64 addr64 = 0;
+ 		int mac = 0;
+ 
+ 		idx = NEXT_DESP_IDX(ring->calc_idx, ring->dma_size);
+@@ -2715,12 +2715,17 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 			goto release_desc;
+ 
+ 		pktlen = RX_DMA_GET_PLEN0(trxd.rxd2);
++		if (unlikely(pktlen < ETH_HLEN || pktlen > ring->buf_size)) {
++			netdev->stats.rx_dropped++;
++			netdev->stats.rx_length_errors++;
++			goto release_desc;
++		}
+ 
+ 		/* alloc new buffer */
+ 		if (ring->page_pool) {
+ 			struct page *page = virt_to_head_page(data);
+-			struct xdp_buff xdp;
+-			u32 ret;
++			unsigned int headroom = MTK_PP_HEADROOM;
++			unsigned int data_len = pktlen;
+ 
+ 			new_data = mtk_page_pool_get_buff(ring->page_pool,
+ 							  &dma_addr,
+@@ -2734,17 +2739,25 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 				page_pool_get_dma_addr(page) + MTK_PP_HEADROOM,
+ 				pktlen, page_pool_get_dma_dir(ring->page_pool));
+ 
+-			xdp_init_buff(&xdp, PAGE_SIZE, &ring->xdp_q);
+-			xdp_prepare_buff(&xdp, data, MTK_PP_HEADROOM, pktlen,
+-					 false);
+-			xdp_buff_clear_frags_flag(&xdp);
++			if (unlikely(rcu_access_pointer(eth->prog))) {
++				struct xdp_buff xdp;
++				u32 ret;
+ 
+-			ret = mtk_xdp_run(eth, ring, &xdp, netdev);
+-			if (ret == XDP_REDIRECT)
+-				xdp_flush = true;
++				xdp_init_buff(&xdp, PAGE_SIZE, &ring->xdp_q);
++				xdp_prepare_buff(&xdp, data, MTK_PP_HEADROOM,
++						 pktlen, false);
++				xdp_buff_clear_frags_flag(&xdp);
+ 
+-			if (ret != XDP_PASS)
+-				goto skip_rx;
++				ret = mtk_xdp_run(eth, ring, &xdp, netdev);
++				if (ret == XDP_REDIRECT)
++					xdp_flush = true;
++
++				if (ret != XDP_PASS)
++					goto skip_rx;
++
++				headroom = xdp.data - xdp.data_hard_start;
++				data_len = xdp.data_end - xdp.data;
++			}
+ 
+ 			skb = napi_build_skb(data, PAGE_SIZE);
+ 			if (unlikely(!skb)) {
+@@ -2754,8 +2767,8 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 				goto skip_rx;
+ 			}
+ 
+-			skb_reserve(skb, xdp.data - xdp.data_hard_start);
+-			skb_put(skb, xdp.data_end - xdp.data);
++			skb_reserve(skb, headroom);
++			skb_put(skb, data_len);
+ 			skb_mark_for_recycle(skb);
+ 		} else {
+ 			if (ring->frag_size <= PAGE_SIZE)
+@@ -3339,7 +3352,8 @@ static int mtk_rx_alloc(struct mtk_eth *eth, int ring_no, int rx_flag)
+ 		return -ENOMEM;
+ 	ring->dma_size = rx_dma_size;
+ 
+-	if (mtk_page_pool_enabled(eth) && rcu_access_pointer(eth->prog))  {
++	if (mtk_page_pool_enabled(eth) && rx_flag == MTK_RX_FLAGS_NORMAL &&
++	    ring->buf_size <= MTK_PP_MAX_BUF_SIZE) {
+ 		struct page_pool *pp;
+ 
+ 		pp = mtk_create_page_pool(eth, &ring->xdp_q, ring_no,
+@@ -4495,6 +4509,8 @@ static int mtk_device_event(struct notifier_block *n, unsigned long event, void
+ 		return NOTIFY_DONE;
+ 
+ 	if (dsa_slave_dev_check(dev)) {
++		if (mac->id >= MTK_MAX_DEVS)
++			return NOTIFY_DONE;
+ 		/* set txq offset when multiple dsa switch exist */
+ 		mtk_eth_set_dsa_pppq_offset(eth);
+ 		pppq_ofs = eth->pppq_ofs[mac->id];
+@@ -4504,6 +4520,8 @@ static int mtk_device_event(struct notifier_block *n, unsigned long event, void
+ 		dp = dsa_port_from_netdev(dev);
+ 		if (dp->index < ARRAY_SIZE(mac->dsa_user_idx))
+ 			queue = MTK_MAX_DEVS + pppq_ofs + mac->dsa_user_idx[dp->index];
++		else
++			return NOTIFY_DONE;
+ 	} else
+ 		queue = mac->id;
+ 
+@@ -4613,6 +4631,10 @@ static int mtk_open(struct net_device *dev)
+ 		refcount_inc(&eth->dma_refcnt);
+ 	}
+ 
++	BUILD_BUG_ON(MTK_MAX_DEVS > BITS_PER_LONG);
++	if (mac->id < MTK_MAX_DEVS)
++		set_bit(mac->id, &eth->dma_active);
++
+ 	phylink_start(mac->phylink);
+ 	netif_tx_start_all_queues(dev);
+ 
+@@ -4684,12 +4706,19 @@ static int mtk_stop(struct net_device *dev)
+ 	struct mtk_eth *eth = mac->hw;
+ 	int i;
+ 
++	if (mac->id >= MTK_MAX_DEVS ||
++	    !test_and_clear_bit(mac->id, &eth->dma_active))
++		return 0;
++
+ 	phylink_stop(mac->phylink);
+ 
+ 	netif_tx_disable(dev);
+ 
+ 	phylink_disconnect_phy(mac->phylink);
+ 
++	if (WARN_ON_ONCE(!refcount_read(&eth->dma_refcnt)))
++		return 0;
++
+ 	/* only shutdown DMA if this is the last user */
+ 	if (!refcount_dec_and_test(&eth->dma_refcnt))
+ 		return 0;
+@@ -4736,12 +4765,55 @@ static int mtk_stop(struct net_device *dev)
+ 	return 0;
+ }
+ 
++static void mtk_dma_stop_running(struct mtk_eth *eth, unsigned long *restart)
++{
++	int i;
++
++	*restart = 0;
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		if (!eth->netdev[i] || !netif_running(eth->netdev[i]))
++			continue;
++
++		mtk_stop(eth->netdev[i]);
++		__set_bit(i, restart);
++	}
++}
++
++static int mtk_dma_restart_running(struct mtk_eth *eth, unsigned long restart,
++				   bool close_on_fail)
++{
++	int i, err = 0;
++
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		int ret;
++
++		if (!eth->netdev[i] || !test_bit(i, &restart))
++			continue;
++
++		ret = mtk_open(eth->netdev[i]);
++		if (ret) {
++			if (!close_on_fail) {
++				err = ret;
++				break;
++			}
++			netif_alert(eth, ifup, eth->netdev[i],
++				    "Driver up/down cycle failed\n");
++			dev_close(eth->netdev[i]);
++			if (!err)
++				err = ret;
++		}
++	}
++
++	return err;
++}
++
+ static int mtk_xdp_setup(struct net_device *dev, struct bpf_prog *prog,
+ 			 struct netlink_ext_ack *extack)
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	struct mtk_eth *eth = mac->hw;
+ 	struct bpf_prog *old_prog;
++	unsigned long restart = 0;
+ 	bool need_update;
+ 
+ 	if (eth->hwlro) {
+@@ -4749,23 +4821,30 @@ static int mtk_xdp_setup(struct net_device *dev, struct bpf_prog *prog,
+ 		return -EOPNOTSUPP;
+ 	}
+ 
+-	if (dev->mtu > MTK_PP_MAX_BUF_SIZE) {
++	if (prog &&
++	    ((mtk_max_gmac_mtu(eth) + MTK_RX_ETH_HLEN) > MTK_PP_MAX_BUF_SIZE ||
++	     eth->rx_buf_len > MTK_PP_MAX_BUF_SIZE ||
++	     (dev->mtu + MTK_RX_ETH_HLEN) > MTK_PP_MAX_BUF_SIZE)) {
+ 		NL_SET_ERR_MSG_MOD(extack, "MTU too large for XDP");
+ 		return -EOPNOTSUPP;
+ 	}
+ 
+ 	need_update = !!eth->prog != !!prog;
+-	if (netif_running(dev) && need_update)
+-		mtk_stop(dev);
++	if (need_update && refcount_read(&eth->dma_refcnt) > 0)
++		mtk_dma_stop_running(eth, &restart);
+ 
+ 	old_prog = rcu_replace_pointer(eth->prog, prog, lockdep_rtnl_is_held());
+ 
+-	if (netif_running(dev) && need_update) {
++	if (restart) {
+ 		int err;
+ 
+-		err = mtk_open(dev);
++		err = mtk_dma_restart_running(eth, restart, false);
+ 		if (err) {
++			unsigned long rb_restart;
++
++			mtk_dma_stop_running(eth, &rb_restart);
+ 			rcu_assign_pointer(eth->prog, old_prog);
++			mtk_dma_restart_running(eth, restart, true);
+ 
+ 			return err;
+ 		}
+@@ -6584,15 +6663,34 @@ static void mtk_uninit(struct net_device *dev)
+ 	mtk_rx_irq_disable(eth, ~0);
+ }
+ 
++static int mtk_mtu_to_rx_buf_len(int mtu)
++{
++	int length = mtu + MTK_RX_ETH_HLEN;
++
++	if (length <= MTK_MAX_RX_LENGTH)
++		return MTK_MAX_RX_LENGTH;
++	if (length <= MTK_MAX_RX_LENGTH_2K)
++		return MTK_MAX_RX_LENGTH_2K;
++	if (length <= MTK_MAX_RX_LENGTH_9K)
++		return MTK_MAX_RX_LENGTH_9K;
++
++	return -EINVAL;
++}
++
+ static int mtk_change_mtu(struct net_device *dev, int new_mtu)
+ {
+-	int length = new_mtu + MTK_RX_ETH_HLEN;
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	struct mtk_eth *eth = mac->hw;
+-	int max_mtu, i;
++	u32 old_rx_buf_len = eth->rx_buf_len;
++	int old_mtu = dev->mtu;
++	int new_rx_buf_len, max_mtu, i;
++
++	new_rx_buf_len = mtk_mtu_to_rx_buf_len(new_mtu);
++	if (new_rx_buf_len < 0)
++		return new_rx_buf_len;
+ 
+ 	if (rcu_access_pointer(eth->prog) &&
+-	    length > MTK_PP_MAX_BUF_SIZE) {
++	    new_rx_buf_len > MTK_PP_MAX_BUF_SIZE) {
+ 		netdev_err(dev, "Invalid MTU for XDP mode\n");
+ 		return -EINVAL;
+ 	}
+@@ -6603,13 +6701,35 @@ static int mtk_change_mtu(struct net_device *dev, int new_mtu)
+ 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
+ 		mtk_ppe_update_mtu(eth->ppe[i], max_mtu);
+ 
+-	length = max_mtu + MTK_RX_ETH_HLEN;
+-	if (length <= MTK_MAX_RX_LENGTH)
+-		eth->rx_buf_len = MTK_MAX_RX_LENGTH;
+-	else if (length <= MTK_MAX_RX_LENGTH_2K)
+-		eth->rx_buf_len = MTK_MAX_RX_LENGTH_2K;
+-	else if (length <= MTK_MAX_RX_LENGTH_9K)
+-		eth->rx_buf_len = MTK_MAX_RX_LENGTH_9K;
++	new_rx_buf_len = mtk_mtu_to_rx_buf_len(max_mtu);
++	if (new_rx_buf_len < 0)
++		return new_rx_buf_len;
++
++	eth->rx_buf_len = new_rx_buf_len;
++
++	if (mtk_page_pool_enabled(eth) &&
++	    old_rx_buf_len != eth->rx_buf_len &&
++	    refcount_read(&eth->dma_refcnt) > 0) {
++		unsigned long restart;
++		int err;
++
++		mtk_dma_stop_running(eth, &restart);
++		err = mtk_dma_restart_running(eth, restart, false);
++		if (err) {
++			unsigned long rb_restart;
++
++			mtk_dma_stop_running(eth, &rb_restart);
++			dev->mtu = old_mtu;
++			max_mtu = mtk_max_gmac_mtu(eth);
++			for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
++				mtk_ppe_update_mtu(eth->ppe[i], max_mtu);
++			eth->rx_buf_len = old_rx_buf_len;
++			if (restart)
++				mtk_dma_restart_running(eth, restart, true);
++
++			return err;
++		}
++	}
+ 
+ 	return 0;
+ }
+@@ -6865,13 +6985,7 @@ static void mtk_pending_work(struct work_struct *work)
+ 	mtk_prepare_for_reset(eth);
+ 
+ 	/* stop all devices to make sure that dma is properly shut down */
+-	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-		if (!eth->netdev[i] || !netif_running(eth->netdev[i]))
+-			continue;
+-
+-		mtk_stop(eth->netdev[i]);
+-		__set_bit(i, &restart);
+-	}
++	mtk_dma_stop_running(eth, &restart);
+ 
+ 	usleep_range(15000, 16000);
+ 
+@@ -6884,16 +6998,12 @@ static void mtk_pending_work(struct work_struct *work)
+ 			eth, eth->ppe_registry);
+ 
+ 	/* restart DMA and enable IRQs */
++	mtk_dma_restart_running(eth, restart, true);
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-		if (!eth->netdev[i] || !test_bit(i, &restart))
++		if (!eth->netdev[i] || !test_bit(i, &restart) ||
++		    !netif_running(eth->netdev[i]))
+ 			continue;
+ 
+-		if (mtk_open(eth->netdev[i])) {
+-			netif_alert(eth, ifup, eth->netdev[i],
+-				    "Driver up/down cycle failed\n");
+-			dev_close(eth->netdev[i]);
+-		}
+-
+ 		if (mtk_is_netsys_v3_or_greater(eth) &&
+ 		    mtk_interface_mode_is_xgmii(eth->mac[i]->interface) &&
+ 		    eth->mac[i]->id == MTK_GMAC1_ID)
+@@ -7385,7 +7495,8 @@ static u16 mtk_select_queue(struct net_device *dev, struct sk_buff *skb,
+ 	if (skb->mark > 0 && skb->mark < dev->num_tx_queues)
+ 		return skb->mark;
+ 
+-	if (netdev_uses_dsa(dev) && dp_index < ARRAY_SIZE(mac->dsa_user_idx))
++	if (netdev_uses_dsa(dev) && mac->id < MTK_MAX_DEVS &&
++	    dp_index < ARRAY_SIZE(mac->dsa_user_idx))
+ 		queue = MTK_MAX_DEVS + eth->pppq_ofs[mac->id] + mac->dsa_user_idx[dp_index];
+ 	else
+ 		queue = mac->id;
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index ce6cbf6..b78a370 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -824,7 +824,7 @@
+ 				 ((x) == 1) ? MTK_FE_CDM4_FSM : MTK_FE_CDM5_FSM)
+ 
+ #define MTK_FE_GDM_FSM(x)	(((x) == 0) ? MTK_FE_GDM1_FSM : \
+-				 ((x) == 1) ? MTK_FE_CDM2_FSM : MTK_FE_CDM3_FSM)
++				 ((x) == 1) ? MTK_FE_GDM2_FSM : MTK_FE_GDM3_FSM)
+ 
+ #define MTK_MAC_FSM(x)		(0x1010C + ((x) * 0x100))
+ 
+@@ -1691,6 +1691,7 @@ struct mtk_soc_data {
+  * @pctl:		The register map pointing at the range used to setup
+  *			GMAC port drive/slew values
+  * @dma_refcnt:		track how many netdevs are using the DMA engine
++ * @dma_active:		bitmap of MAC IDs holding a DMA reference
+  * @tx_ring:		Pointer to the memory holding info about the TX ring
+  * @rx_ring:		Pointer to the memory holding info about the RX ring
+  * @rx_ring_qdma:	Pointer to the memory holding info about the QDMA RX ring
+@@ -1738,7 +1739,7 @@ struct mtk_eth {
+ 	int				irq_fe[MTK_FE_IRQ_NUM];
+ 	int				irq_pdma[MTK_PDMA_IRQ_NUM];
+ 	u32				msg_enable;
+-	u32				pppq_ofs[MTK_MAX_DEVS];
++	u32				pppq_ofs[MTK_MAX_DEVS + 1];
+ 	unsigned long			sysclk;
+ 	struct regmap			*ethsys;
+ 	struct regmap			*infra;
+@@ -1746,6 +1747,7 @@ struct mtk_eth {
+ 	struct regmap			*pctl;
+ 	bool				hwlro;
+ 	refcount_t			dma_refcnt;
++	unsigned long			dma_active;
+ 	struct mtk_tx_ring		tx_ring;
+ 	struct mtk_rx_ring		rx_ring[MTK_MAX_RX_RING_NUM];
+ 	struct mtk_rx_ring		rx_ring_qdma;
+@@ -1802,7 +1804,7 @@ struct mtk_eth {
+ 		atomic_t force;
+ 		u32 event;
+ 		u32 wdidx[3];
+-		u32 adidx[3];
++		u32 adidx[4];
+ 		u32 gdm_txgp_cnt[3];
+ 		u32 gdm_rxgp_cnt[3];
+ 		u32 gdm_rxfc_cnt[3];
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index 2046b7a..f53cbd8 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -391,7 +391,8 @@ mtk_flow_set_output_device(struct mtk_eth *eth, struct mtk_foe_entry *foe,
+ 			err = mtk_foe_entry_set_dsa(eth, foe, dsa_proto, dsa_port);
+ 		if (err)
+ 			return err;
+-		if (dsa_port >= ARRAY_SIZE(mac->dsa_user_idx))
++		if (mac->id >= MTK_MAX_DEVS ||
++		    dsa_port >= ARRAY_SIZE(mac->dsa_user_idx))
+ 			return -EOPNOTSUPP;
+ 		queue = MTK_MAX_DEVS + eth->pppq_ofs[mac->id] + mac->dsa_user_idx[dsa_port];
+ 	} else {

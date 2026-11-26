@@ -58,8 +58,8 @@ Subject: [PATCH] 999-2733-add-netlink-support-for-dsa
  }
  
  static void
-@@ -235,6 +249,7 @@ mt7530_remove(struct mdio_device *mdiode
- 			ret);
+@@ -237,6 +251,7 @@ mt7530_remove(struct mdio_device *mdiode
+ 	}
  
  	mt7530_remove_common(priv);
 +	mt7530_nl_exit();
@@ -138,7 +138,7 @@ Subject: [PATCH] 999-2733-add-netlink-support-for-dsa
 +int mt7531_ind_c45_phy_read(struct mt7530_priv *priv, int port, int devad,
  			int regnum)
  {
- 	struct mt7530_dummy_poll p;
+ 	u32 reg, val;
 @@ -621,8 +618,7 @@ out:
  	return ret;
  }
@@ -148,7 +148,7 @@ Subject: [PATCH] 999-2733-add-netlink-support-for-dsa
 +int mt7531_ind_c45_phy_write(struct mt7530_priv *priv, int port, int devad,
  			 int regnum, u16 data)
  {
- 	struct mt7530_dummy_poll p;
+ 	u32 val, reg;
 @@ -668,8 +664,7 @@ out:
  	return ret;
  }
@@ -157,8 +157,8 @@ Subject: [PATCH] 999-2733-add-netlink-support-for-dsa
 -mt7531_ind_c22_phy_read(struct mt7530_priv *priv, int port, int regnum)
 +int mt7531_ind_c22_phy_read(struct mt7530_priv *priv, int port, int regnum)
  {
- 	struct mt7530_dummy_poll p;
  	int ret;
+ 	u32 val;
 @@ -705,8 +700,7 @@ out:
  	return ret;
  }
@@ -168,7 +168,7 @@ Subject: [PATCH] 999-2733-add-netlink-support-for-dsa
 +int mt7531_ind_c22_phy_write(struct mt7530_priv *priv, int port, int regnum,
  			 u16 data)
  {
- 	struct mt7530_dummy_poll p;
+ 	int ret;
 --- a/drivers/net/dsa/mt7530.h
 +++ b/drivers/net/dsa/mt7530.h
 @@ -864,6 +864,12 @@ static inline void INIT_MT7530_DUMMY_POL

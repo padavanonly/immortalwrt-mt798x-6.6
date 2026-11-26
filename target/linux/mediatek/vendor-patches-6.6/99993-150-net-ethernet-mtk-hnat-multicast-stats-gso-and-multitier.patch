@@ -1,0 +1,286 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_hnat: account RX multicast stats and harden mcast/GSO/multitier
+
+Account PACKET_MULTICAST stats in mtk_poll_rx() and mtk_get_stats64(),
+gate MCAST_TB_EN, harden local-out/GSO/cloned-SKB/PPPQ ACK checks, and
+skip multi-tier deferral on non-PPE VPN interfaces while allowing bond*.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c        |   8 +-
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.c      |   3 +-
+ .../net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c  | 144 ++++++++++++++++-----
+ 3 files changed, 120 insertions(+), 35 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 0d1ea71b2..644a24135 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -1603,6 +1603,7 @@ static void mtk_get_stats64(struct net_device *dev,
+ 	storage->tx_errors = dev->stats.tx_errors;
+ 	storage->rx_dropped = dev->stats.rx_dropped;
+ 	storage->tx_dropped = dev->stats.tx_dropped;
++	storage->multicast = DEV_STATS_READ(dev, multicast);
+ }
+ 
+ static inline int mtk_max_frag_size(struct mtk_eth *eth, int mtu)
+@@ -2974,10 +2975,13 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 			skb->mark = 0x78681415;
+ 		}
+ 		skb_record_rx_queue(skb, 0);
+-		if (sent_ppd)
++		if (sent_ppd) {
+ 			netif_receive_skb(skb);
+-		else
++		} else {
++			if (unlikely(skb->pkt_type == PACKET_MULTICAST))
++				DEV_STATS_INC(netdev, multicast);
+ 			napi_gro_receive(napi, skb);
++		}
+ 
+ skip_rx:
+ 		ring->data[idx] = new_data;
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+index 6a1d26dc1..1f2c71a17 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+@@ -616,7 +616,8 @@ static int hnat_hw_init(u32 ppe_id)
+ 	writel(0, hnat_priv->ppe_base[ppe_id] + PPE_DFT_CPORT); /* pdma */
+ 	/* writel(0x55555555, hnat_priv->ppe_base[ppe_id] + PPE_DFT_CPORT); */ /* qdma */
+ 	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_GLO_CFG, TTL0_DRP, 0);
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_GLO_CFG, MCAST_TB_EN, 1);
++	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_GLO_CFG, MCAST_TB_EN,
++		     hnat_priv->data->mcast ? 1 : 0);
+ 
+ 	if (hnat_priv->data->version == MTK_HNAT_V2 ||
+ 	    hnat_priv->data->version == MTK_HNAT_V3) {
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index 97659c1d4..50b2ace21 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -2097,12 +2097,16 @@ static int do_hnat_ge_to_ext(struct sk_buff *skb, const char *func)
+ 	}
+ 
+ 	if (strip_hqos) {
+-		was_cloned = skb_cloned(skb);
+-		skb = skb_unshare(skb, GFP_ATOMIC);
+-		if (!skb)
+-			return 0;
++		if (skb_shared(skb)) {
++			was_cloned = skb_cloned(skb);
++			skb = skb_unshare(skb, GFP_ATOMIC);
++			if (!skb)
++				return 0;
+ 
+-		skb_owned = was_cloned;
++			skb_owned = was_cloned;
++		} else if (skb_cloned(skb) && unlikely(skb_cow_head(skb, ETH_HLEN))) {
++			return -1;
++		}
+ 
+ 		if (unlikely(!pskb_may_pull(skb, VLAN_HLEN))) {
+ 			kfree_skb(skb);
+@@ -2416,11 +2420,45 @@ static unsigned int is_ppe_support_type(struct sk_buff *skb)
+ 	return 0;
+ }
+ 
++static bool hnat_skb_is_l3_mcast(const struct sk_buff *skb, __be16 proto)
++{
++	if (proto == htons(ETH_P_IP)) {
++		struct iphdr _iph, *iph;
++
++		iph = skb_header_pointer(skb, skb_network_offset(skb),
++					 sizeof(_iph), &_iph);
++		return iph && ipv4_is_multicast(iph->daddr);
++	} else if (proto == htons(ETH_P_IPV6)) {
++		struct ipv6hdr _ip6h, *ip6h;
++
++		ip6h = skb_header_pointer(skb, skb_network_offset(skb),
++					  sizeof(_ip6h), &_ip6h);
++		return ip6h && ipv6_addr_is_multicast(&ip6h->daddr);
++	}
++
++	return false;
++}
++
++static bool hnat_skb_is_mcast(const struct sk_buff *skb)
++{
++	if (skb->pkt_type == PACKET_MULTICAST)
++		return true;
++
++	if (hnat_skb_has_eth_hdr(skb) &&
++	    is_multicast_ether_addr(eth_hdr(skb)->h_dest))
++		return true;
++
++	return hnat_skb_is_l3_mcast(skb, skb->protocol);
++}
++
+ static unsigned int do_hnat_cpu_to_ge(struct sk_buff *skb)
+ {
+ 	unsigned int need_headroom;
+ 
+-	if (unlikely(skb_shinfo(skb)->frag_list))
++	if (unlikely(skb_is_gso(skb) || skb_shinfo(skb)->frag_list))
++                return -1;
++
++	if (!hnat_priv->data->mcast && hnat_skb_is_mcast(skb))
+                 return -1;
+ 
+ 	/*
+@@ -2561,7 +2599,8 @@ mtk_hnat_ipv6_nf_pre_routing(void *priv, struct sk_buff *skb,
+ {
+ 	if (!skb)
+ 		goto drop;
+-	if (!IS_WHNAT(state->in) && IS_EXT(state->in) && !is_from_extge(skb)) {
++	if (!IS_WHNAT(state->in) && IS_EXT(state->in) && !is_from_extge(skb) &&
++	    (hnat_priv->data->mcast || !hnat_skb_is_mcast(skb))) {
+ 		if (!hnat_prepare_ext_skb(skb, state->in))
+ 			return NF_ACCEPT;
+ 	}
+@@ -2637,7 +2676,8 @@ mtk_hnat_ipv4_nf_pre_routing(void *priv, struct sk_buff *skb,
+ 	if (!skb)
+ 		goto drop;
+ 
+-	if (!IS_WHNAT(state->in) && IS_EXT(state->in) && !is_from_extge(skb)) {
++	if (!IS_WHNAT(state->in) && IS_EXT(state->in) && !is_from_extge(skb) &&
++	    (hnat_priv->data->mcast || !hnat_skb_is_mcast(skb))) {
+ 		if (!hnat_prepare_ext_skb(skb, state->in))
+ 			return NF_ACCEPT;
+ 	}
+@@ -2715,7 +2755,8 @@ mtk_hnat_br_nf_local_in(void *priv, struct sk_buff *skb,
+ 	if (!skb)
+ 		goto drop;
+ 
+-	if (!IS_WHNAT(state->in) && IS_EXT(state->in) && !is_from_extge(skb)) {
++	if (!IS_WHNAT(state->in) && IS_EXT(state->in) && !is_from_extge(skb) &&
++	    (hnat_priv->data->mcast || !hnat_skb_is_mcast(skb))) {
+ 		if (!hnat_prepare_ext_skb(skb, state->in))
+ 			return NF_ACCEPT;
+ 	}
+@@ -3629,12 +3670,24 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 			/* point to ethernet header for DS-Lite and MapE */
+ 			eth = get_ipv6_ipip_ethhdr(skb, hw_path);
+ 		}
++	} else if (!is_zero_ether_addr(hw_path->eth_dest) &&
++		   !is_zero_ether_addr(hw_path->eth_src)) {
++		__be16 proto = hnat_skb_has_eth_hdr(skb) ?
++			eth_hdr(skb)->h_proto : hnat_skb_l3_proto(skb);
++
++		memset(&_rawip_eth, 0, sizeof(_rawip_eth));
++		ether_addr_copy(_rawip_eth.h_dest, hw_path->eth_dest);
++		ether_addr_copy(_rawip_eth.h_source, hw_path->eth_src);
++		_rawip_eth.h_proto = proto;
++		eth = &_rawip_eth;
+ 	} else {
+ 		eth = eth_hdr(skb);
+ 	}
+ 
+-	/*do not bind multicast if PPE mcast not enable*/
+-	if (!hnat_priv->data->mcast && is_multicast_ether_addr(eth->h_dest))
++	/*do not bind L2/L3 multicast if PPE mcast not enable*/
++	if (!hnat_priv->data->mcast &&
++	    (is_multicast_ether_addr(eth->h_dest) ||
++	     hnat_skb_is_l3_mcast(skb, eth->h_proto)))
+ 		return 0;
+ 
+ 	if (whnat && is_hnat_pre_filled(foe))
+@@ -4209,23 +4262,43 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 		qid+= gmac;
+ 		if (gmac == 0) qid+= 12;
+ 		if (ntohs(eth->h_proto) == ETH_P_IP) {
+-			iph = ip_hdr(skb);
+-			if (iph->protocol == IPPROTO_TCP) {
+-				skb_set_transport_header(skb, sizeof(struct iphdr));
+-				payload_len = be16_to_cpu(iph->tot_len) -
+-					      skb_transport_offset(skb) - tcp_hdrlen(skb);
+-				/* Dispatch ACK packets to high priority queue */
+-				if (payload_len == 0)
+-					qid += 6;
++			struct iphdr _iph;
++
++			iph = skb_header_pointer(skb, skb_network_offset(skb),
++						 sizeof(_iph), &_iph);
++			if (iph && iph->ihl >= 5 && iph->protocol == IPPROTO_TCP) {
++				struct tcphdr _th, *th;
++				unsigned int ip_hlen = iph->ihl * 4;
++
++				th = skb_header_pointer(skb,
++							skb_network_offset(skb) + ip_hlen,
++							sizeof(_th), &_th);
++				if (th && th->doff >= 5) {
++					payload_len = be16_to_cpu(iph->tot_len) -
++						      ip_hlen - th->doff * 4;
++					/* Dispatch ACK packets to high priority queue */
++					if (payload_len == 0)
++						qid += 6;
++				}
+ 			}
+ 		} else if (ntohs(eth->h_proto) == ETH_P_IPV6) {
+-			ip6h = ipv6_hdr(skb);
+-			if (ip6h->nexthdr == NEXTHDR_TCP) {
+-				skb_set_transport_header(skb, sizeof(struct ipv6hdr));
+-				payload_len = be16_to_cpu(ip6h->payload_len) - tcp_hdrlen(skb);
+-				/* Dispatch ACK packets to high priority queue */
+-				if (payload_len == 0)
+-					qid += 6;
++			struct ipv6hdr _ip6h;
++
++			ip6h = skb_header_pointer(skb, skb_network_offset(skb),
++						  sizeof(_ip6h), &_ip6h);
++			if (ip6h && ip6h->nexthdr == NEXTHDR_TCP) {
++				struct tcphdr _th, *th;
++
++				th = skb_header_pointer(skb,
++							skb_network_offset(skb) + sizeof(*ip6h),
++							sizeof(_th), &_th);
++				if (th && th->doff >= 5) {
++					payload_len = be16_to_cpu(ip6h->payload_len) -
++						      th->doff * 4;
++					/* Dispatch ACK packets to high priority queue */
++					if (payload_len == 0)
++						qid += 6;
++				}
+ 			}
+ 		}
+ 	}
+@@ -4451,8 +4524,10 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 
+ 	eth = eth_hdr(skb);
+ 
+-	/*not bind multicast if PPE mcast not enable*/
+-	if (!hnat_priv->data->mcast && is_multicast_ether_addr(eth->h_dest)) {
++	/*not bind L2/L3 multicast if PPE mcast not enable*/
++	if (!hnat_priv->data->mcast &&
++	    (is_multicast_ether_addr(eth->h_dest) ||
++	     hnat_skb_is_l3_mcast(skb, eth->h_proto))) {
+ 		hnat_multitier_on_post_routing_skip(skb);
+ 		return NF_ACCEPT;
+ 	}
+@@ -5644,10 +5719,13 @@ mtk_hnat_br_nf_local_out(void *priv, struct sk_buff *skb,
+ 	if (!skb)
+ 		goto drop;
+ 	
+-	if ((!strncmp(state->out->name, "ra",2)) && !is_from_extge(skb) && !( FROM_GE_PPD(skb) || FROM_GE_LAN(skb) ||
+-		   FROM_GE_WAN(skb) || FROM_WED(skb) || FROM_EXT(skb) ||FROM_GE_VIRTUAL(skb))){
++	if (!strncmp(state->out->name, "ra", 2) && !is_from_extge(skb) &&
++	    (hnat_priv->data->mcast || !hnat_skb_is_mcast(skb)) &&
++	    !(IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb) &&
++	      (FROM_GE_PPD(skb) || FROM_GE_LAN(skb) || FROM_GE_WAN(skb) ||
++	       FROM_WED(skb) || FROM_EXT(skb) || FROM_GE_VIRTUAL(skb)))) {
+                 if (!do_hnat_cpu_to_ge(skb))
+-                        return NF_STOLEN; 
++                        return NF_STOLEN;
+         }
+ 
+ 	if (!is_magic_tag_valid(skb))
+@@ -6007,7 +6085,9 @@ static bool hnat_multitier_defer_sw_admit(const struct sk_buff *skb,
+ 		return false;
+ 
+ 	out = dst ? dst->dev : NULL;
+-	if (out && IS_BOND(out))
++	if (!out || (!IS_LAN_GRP(out) && !IS_WAN(out) && !IS_EXT(out) &&
++		     !IS_BR(out) && !IS_WHNAT(out) &&
++		     !(out->netdev_ops && out->netdev_ops->ndo_flow_offload_check)))
+ 		return false;
+ #if !defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	if (out && !IS_WHNAT(out) && IS_EXT(out) &&

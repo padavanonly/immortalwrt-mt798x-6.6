@@ -1,0 +1,473 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: harden PPPoE/VLAN/bonding HNAT offload and stacked flowtable encap
+
+Harden lockless bonding slave lookup and failover FOE flushing, check PPP
+channel/headroom safely under RCU, fix DEV_PATH_VLAN bitmask tests, and
+support stacked in-band 802.1Q + PPPoE encapsulation in nf_flow_table.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/bonding/bond_main.c                    | 77 ++++++++++----------
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.h      |  2 +-
+ .../net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c  | 28 ++++++-
+ drivers/net/ppp/ppp_generic.c                      | 26 +++++--
+ drivers/net/ppp/pppoe.c                            |  2 +-
+ include/net/netfilter/nf_flow_table.h              | 26 +++++--
+ net/8021q/vlan_dev.c                               |  2 +-
+ net/netfilter/nf_flow_table_inet.c                 | 37 ++++++----
+ net/netfilter/nf_flow_table_ip.c                   | 85 ++++++++++++++--------
+ 9 files changed, 183 insertions(+), 102 deletions(-)
+
+diff --git a/drivers/net/bonding/bond_main.c b/drivers/net/bonding/bond_main.c
+index ce2d2762f..22443d8d4 100644
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
+@@ -5939,34 +5939,49 @@ static int bond_ethtool_get_ts_info(struct net_device *bond_dev,
+ }
+ 
+ #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-static int bond_dev_flow_offload_check(struct flow_offload_hw_path *path)
++static struct net_device *bond_offload_pick_slave(struct bonding *bond, u32 hash)
+ {
+-	struct net_device *master_dev = path->dev;
+-	struct bonding *bond = netdev_priv(master_dev);
+-	struct net_device *slave_dev[10];
+-	struct list_head *iter;
++	struct bond_up_slave *slaves;
++	struct net_device *sdev = NULL;
+ 	struct slave *slave;
+-	int i = 0;
++	unsigned int count;
+ 
+ 	rcu_read_lock();
+-	bond_for_each_slave_rcu(bond, slave, iter) {
+-		if (!bond_slave_can_tx(slave))
+-			continue;
+-		slave_dev[i++] = slave->dev;
+-		if (i >= ARRAY_SIZE(slave_dev))
+-			break;
++	switch (BOND_MODE(bond)) {
++	case BOND_MODE_ACTIVEBACKUP:
++		slave = rcu_dereference(bond->curr_active_slave);
++		if (slave && bond_slave_can_tx(slave))
++			sdev = slave->dev;
++		break;
++	case BOND_MODE_8023AD:
++	case BOND_MODE_XOR:
++		slaves = rcu_dereference(bond->usable_slaves);
++		count = slaves ? READ_ONCE(slaves->count) : 0;
++		if (count)
++			sdev = slaves->arr[hash % count]->dev;
++		break;
++	default:
++		rcu_read_unlock();
++		return ERR_PTR(-EOPNOTSUPP);
+ 	}
+ 	rcu_read_unlock();
+ 
+-	if (i <= 0)
+-		return -ENODEV;
++	return sdev ? sdev : ERR_PTR(-ENODEV);
++}
+ 
+-	i = ((path->skb_hash) >> 1) % i;
+-	if (i >= 0 && i < ARRAY_SIZE(slave_dev)) {
+-		if (path->virt_dev == master_dev)
+-			path->virt_dev = slave_dev[i];
+-		path->dev = slave_dev[i];
+-	}
++static int bond_dev_flow_offload_check(struct flow_offload_hw_path *path)
++{
++	struct net_device *master_dev = path->dev;
++	struct bonding *bond = netdev_priv(master_dev);
++	struct net_device *sdev;
++
++	sdev = bond_offload_pick_slave(bond, path->skb_hash >> 1);
++	if (IS_ERR(sdev))
++		return PTR_ERR(sdev);
++
++	if (path->virt_dev == master_dev)
++		path->virt_dev = sdev;
++	path->dev = sdev;
+ 
+ 	if (path->dev->netdev_ops->ndo_flow_offload_check)
+ 		return path->dev->netdev_ops->ndo_flow_offload_check(path);
+@@ -5978,27 +5993,15 @@ static int bond_fill_forward_path(struct net_device_path_ctx *ctx,
+ {
+ 	struct net_device *master_dev = (struct net_device *)ctx->dev;
+ 	struct bonding *bond = netdev_priv(master_dev);
+-	struct net_device *slave_dev[10];
+-	struct list_head *iter;
+-	struct slave *slave;
+-	int i = 0;
+-
+-	rcu_read_lock();
+-	bond_for_each_slave_rcu(bond, slave, iter) {
+-		if (!bond_slave_can_tx(slave))
+-			continue;
+-		slave_dev[i++] = slave->dev;
+-		if (i >= ARRAY_SIZE(slave_dev))
+-			break;
+-	}
+-	rcu_read_unlock();
++	struct net_device *sdev;
+ 
+-	if (i <= 0)
+-		return -ENODEV;
++	sdev = bond_offload_pick_slave(bond, ctx->daddr[5] ^ ctx->daddr[4]);
++	if (IS_ERR(sdev))
++		return PTR_ERR(sdev);
+ 
+ 	path->type = DEV_PATH_ETHERNET;
+ 	path->dev = ctx->dev;
+-	ctx->dev = slave_dev[(ctx->daddr[5] ^ ctx->daddr[4]) % i];
++	ctx->dev = sdev;
+ 	return 0;
+ }
+ #endif /* CONFIG_NF_FLOW_TABLE */
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+index 8b34d0c5d..a1a264518 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -1259,7 +1259,7 @@ enum FoeIpAct {
+ #define IS_LAN2(dev) (!strncmp(dev->name, LAN2_DEV_NAME,			\
+ 		      strlen(LAN2_DEV_NAME)))
+ #define IS_BR(dev) (!strncmp(dev->name, "br", 2))
+-#define IS_BOND(dev) (!strncmp(dev->name, "bond", 4))
++#define IS_BOND(dev) (netif_is_bond_master(dev))
+ #define IS_WHNAT(dev)								\
+ 	((hnat_priv->data->whnat &&						\
+ 	 (get_wifi_hook_if_index_from_dev(dev) != 0)) ? 1 : 0)
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index 50b2ace21..73c8ae945 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -614,14 +614,36 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
+ 
+ 		break;
+ 
+-	case NETDEV_CHANGE:
++	case NETDEV_CHANGEUPPER: {
++		struct netdev_notifier_changeupper_info *cu_info = ptr;
++		struct net_device *d = dev;
++
++		ppd_dev_setting();
++		if (!cu_info || !cu_info->upper_dev ||
++		    !netif_is_bond_master(cu_info->upper_dev))
++			break;
++		if (!IS_LAN_GRP(dev) && !IS_WAN(dev) &&
++		    hnat_dsa_get_port(&d) < 0)
++			break;
++		foe_clear_ethdev_bind_entries(dev);
++		break;
++	}
++
++	case NETDEV_BONDING_FAILOVER:
++	case NETDEV_BONDING_INFO:
++	case NETDEV_CHANGE: {
++		struct net_device *d = dev;
++
+ 		/* Clear PPE entries if the slave of bond device state or link changes */
+ 		ppd_dev_setting();
+-		if (!netif_is_bond_slave(dev) ||
+-		    (!IS_LAN_GRP(dev) && !IS_WAN(dev)))
++		if (!netif_is_bond_slave(dev))
++			break;
++		if (!IS_LAN_GRP(dev) && !IS_WAN(dev) &&
++		    hnat_dsa_get_port(&d) < 0)
+ 			break;
+ 		foe_clear_ethdev_bind_entries(dev);
+ 		break;
++	}
+ 
+ 	case NETDEV_GOING_DOWN:
+ 		if (!get_wifi_hook_if_index_from_dev(dev))
+diff --git a/drivers/net/ppp/ppp_generic.c b/drivers/net/ppp/ppp_generic.c
+index 8a4cf18cc..b62a77464 100644
+--- a/drivers/net/ppp/ppp_generic.c
++++ b/drivers/net/ppp/ppp_generic.c
+@@ -1599,19 +1599,29 @@ static int ppp_flow_offload_check(struct flow_offload_hw_path *path)
+ 	struct ppp *ppp = netdev_priv(path->dev);
+ 	struct ppp_channel *chan;
+ 	struct channel *pch;
++	int ret = -EOPNOTSUPP;
+ 
+ 	if (ppp->flags & SC_MULTILINK)
+ 		return -EOPNOTSUPP;
+ 
+-	if (list_empty(&ppp->channels))
++	rcu_read_lock();
++	pch = list_first_or_null_rcu(&ppp->channels, struct channel, clist);
++	if (!pch) {
++		rcu_read_unlock();
+ 		return -ENODEV;
++	}
+ 
+-	pch = list_first_entry(&ppp->channels, struct channel, clist);
+-	chan = pch->chan;
+-	if (!chan->ops->flow_offload_check)
+-		return -EOPNOTSUPP;
++	chan = READ_ONCE(pch->chan);
++	if (!chan) {
++		rcu_read_unlock();
++		return -ENODEV;
++	}
+ 
+-	return chan->ops->flow_offload_check(chan, path);
++	if (chan->ops && chan->ops->flow_offload_check)
++		ret = chan->ops->flow_offload_check(chan, path);
++	rcu_read_unlock();
++
++	return ret;
+ }
+ #endif /* CONFIG_NF_FLOW_TABLE */
+ 
+@@ -1670,8 +1680,8 @@ static void ppp_setup(struct net_device *dev)
+ 	dev->flags = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST;
+ 	dev->priv_destructor = ppp_dev_priv_destructor;
+ 	dev->pcpu_stat_type = NETDEV_PCPU_STAT_TSTATS;
+-	dev->features = NETIF_F_SG | NETIF_F_FRAGLIST;
+-	dev->hw_features = dev->features;
++	dev->hw_features = NETIF_F_SG | NETIF_F_FRAGLIST;
++	dev->features |= dev->hw_features;
+ 	netif_keep_dst(dev);
+ }
+ 
+diff --git a/drivers/net/ppp/pppoe.c b/drivers/net/ppp/pppoe.c
+index 4ff3a8b33..991ff596b 100644
+--- a/drivers/net/ppp/pppoe.c
++++ b/drivers/net/ppp/pppoe.c
+@@ -699,7 +699,7 @@ static int pppoe_connect(struct socket *sock, struct sockaddr *uservaddr,
+ 			goto err_put;
+ 
+ 		po->chan.hdrlen = (sizeof(struct pppoe_hdr) +
+-				   dev->hard_header_len);
++				   dev->hard_header_len + dev->needed_headroom);
+ 
+ 		po->chan.mtu = dev->mtu - sizeof(struct pppoe_hdr) - 2;
+ 		po->chan.private = sk;
+diff --git a/include/net/netfilter/nf_flow_table.h b/include/net/netfilter/nf_flow_table.h
+index 79860f7ba..aafa05266 100644
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -378,12 +378,12 @@ int nf_flow_rule_route_ipv6(struct net *net, struct flow_offload *flow,
+ int nf_flow_table_offload_init(void);
+ void nf_flow_table_offload_exit(void);
+ 
+-static inline __be16 __nf_flow_pppoe_proto(const struct sk_buff *skb)
++static inline __be16 __nf_flow_pppoe_proto_offset(const struct sk_buff *skb,
++						  u32 offset)
+ {
+ 	__be16 proto;
+ 
+-	proto = *((__be16 *)(skb_mac_header(skb) + ETH_HLEN +
+-			     sizeof(struct pppoe_hdr)));
++	proto = *((__be16 *)(skb->data + offset + sizeof(struct pppoe_hdr)));
+ 	switch (proto) {
+ 	case htons(PPP_IP):
+ 		return htons(ETH_P_IP);
+@@ -394,12 +394,28 @@ static inline __be16 __nf_flow_pppoe_proto(const struct sk_buff *skb)
+ 	return 0;
+ }
+ 
++static inline __be16 __nf_flow_pppoe_proto(const struct sk_buff *skb)
++{
++	return __nf_flow_pppoe_proto_offset(skb, 0);
++}
++
++static inline bool nf_flow_pppoe_proto_offset(struct sk_buff *skb, u32 offset,
++					      __be16 *inner_proto)
++{
++	if (!pskb_may_pull(skb, offset + PPPOE_SES_HLEN))
++		return false;
++
++	*inner_proto = __nf_flow_pppoe_proto_offset(skb, offset);
++
++	return *inner_proto != 0;
++}
++
+ static inline bool nf_flow_pppoe_proto(struct sk_buff *skb, __be16 *inner_proto)
+ {
+-	if (!pskb_may_pull(skb, ETH_HLEN + PPPOE_SES_HLEN))
++	if (!pskb_may_pull(skb, skb_mac_offset(skb) + ETH_HLEN + PPPOE_SES_HLEN))
+ 		return false;
+ 
+-	*inner_proto = __nf_flow_pppoe_proto(skb);
++	*inner_proto = __nf_flow_pppoe_proto_offset(skb, 0);
+ 
+ 	return true;
+ }
+diff --git a/net/8021q/vlan_dev.c b/net/8021q/vlan_dev.c
+index c5fb3961d..18d76e50f 100644
+--- a/net/8021q/vlan_dev.c
++++ b/net/8021q/vlan_dev.c
+@@ -774,7 +774,7 @@ static int vlan_dev_flow_offload_check(struct flow_offload_hw_path *path)
+ 	struct net_device *dev = path->dev;
+ 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
+ 
+-	if (path->flags & DEV_PATH_VLAN)
++	if (path->flags & BIT(DEV_PATH_VLAN))
+ 		return -EEXIST;
+ 
+ 	path->flags |= BIT(DEV_PATH_VLAN);
+diff --git a/net/netfilter/nf_flow_table_inet.c b/net/netfilter/nf_flow_table_inet.c
+index b0f199171..1f648fc15 100644
+--- a/net/netfilter/nf_flow_table_inet.c
++++ b/net/netfilter/nf_flow_table_inet.c
+@@ -15,21 +15,28 @@ nf_flow_offload_inet_hook(void *priv, struct sk_buff *skb,
+ 	struct vlan_ethhdr *veth;
+ 	__be16 proto;
+ 
+-	switch (skb->protocol) {
+-	case htons(ETH_P_8021Q):
+-		if (!pskb_may_pull(skb, skb_mac_offset(skb) + sizeof(*veth)))
+-			return NF_ACCEPT;
+-
+-		veth = (struct vlan_ethhdr *)skb_mac_header(skb);
+-		proto = veth->h_vlan_encapsulated_proto;
+-		break;
+-	case htons(ETH_P_PPP_SES):
+-		if (!nf_flow_pppoe_proto(skb, &proto))
+-			return NF_ACCEPT;
+-		break;
+-	default:
+-		proto = skb->protocol;
+-		break;
++	u32 offset = 0;
++	int i;
++
++	(void)veth;
++	proto = skb->protocol;
++	for (i = 0; i < NF_FLOW_TABLE_ENCAP_MAX; i++) {
++		if (proto == htons(ETH_P_8021Q)) {
++			struct vlan_hdr *vhdr;
++
++			if (!pskb_may_pull(skb, offset + VLAN_HLEN))
++				return NF_ACCEPT;
++
++			vhdr = (struct vlan_hdr *)(skb->data + offset);
++			proto = vhdr->h_vlan_encapsulated_proto;
++			offset += VLAN_HLEN;
++		} else if (proto == htons(ETH_P_PPP_SES)) {
++			if (!nf_flow_pppoe_proto_offset(skb, offset, &proto))
++				return NF_ACCEPT;
++			break;
++		} else {
++			break;
++		}
+ 	}
+ 
+ 	switch (proto) {
+diff --git a/net/netfilter/nf_flow_table_ip.c b/net/netfilter/nf_flow_table_ip.c
+index f1fb36d6b..d0fda51eb 100644
+--- a/net/netfilter/nf_flow_table_ip.c
++++ b/net/netfilter/nf_flow_table_ip.c
+@@ -169,8 +169,8 @@ static bool ip_has_options(unsigned int thoff)
+ static void nf_flow_tuple_encap(struct sk_buff *skb,
+ 				struct flow_offload_tuple *tuple)
+ {
+-	struct vlan_ethhdr *veth;
+-	struct pppoe_hdr *phdr;
++	__be16 proto = skb->protocol;
++	u32 offset = 0;
+ 	int i = 0;
+ 
+ 	if (skb_vlan_tag_present(skb)) {
+@@ -178,17 +178,27 @@ static void nf_flow_tuple_encap(struct sk_buff *skb,
+ 		tuple->encap[i].proto = skb->vlan_proto;
+ 		i++;
+ 	}
+-	switch (skb->protocol) {
+-	case htons(ETH_P_8021Q):
+-		veth = (struct vlan_ethhdr *)skb_mac_header(skb);
+-		tuple->encap[i].id = ntohs(veth->h_vlan_TCI);
+-		tuple->encap[i].proto = skb->protocol;
+-		break;
+-	case htons(ETH_P_PPP_SES):
+-		phdr = (struct pppoe_hdr *)skb_network_header(skb);
+-		tuple->encap[i].id = ntohs(phdr->sid);
+-		tuple->encap[i].proto = skb->protocol;
+-		break;
++
++	while (i < NF_FLOW_TABLE_ENCAP_MAX) {
++		if (proto == htons(ETH_P_8021Q)) {
++			struct vlan_hdr *vhdr;
++
++			vhdr = (struct vlan_hdr *)(skb->data + offset);
++			tuple->encap[i].id = ntohs(vhdr->h_vlan_TCI);
++			tuple->encap[i].proto = proto;
++			proto = vhdr->h_vlan_encapsulated_proto;
++			offset += VLAN_HLEN;
++			i++;
++		} else if (proto == htons(ETH_P_PPP_SES)) {
++			struct pppoe_hdr *phdr;
++
++			phdr = (struct pppoe_hdr *)(skb->data + offset);
++			tuple->encap[i].id = ntohs(phdr->sid);
++			tuple->encap[i].proto = proto;
++			break;
++		} else {
++			break;
++		}
+ 	}
+ }
+ 
+@@ -304,27 +314,40 @@ static unsigned int nf_flow_xmit_xfrm(struct sk_buff *skb,
+ static bool nf_flow_skb_encap_protocol(struct sk_buff *skb, __be16 proto,
+ 				       u32 *offset)
+ {
+-	struct vlan_ethhdr *veth;
+-	__be16 inner_proto;
++	__be16 cur_proto = skb->protocol;
++	u32 cur_off = 0;
++	int i;
+ 
+-	switch (skb->protocol) {
+-	case htons(ETH_P_8021Q):
+-		if (!pskb_may_pull(skb, skb_mac_offset(skb) + sizeof(*veth)))
++	for (i = 0; i < NF_FLOW_TABLE_ENCAP_MAX; i++) {
++		if (cur_proto == htons(ETH_P_8021Q)) {
++			struct vlan_hdr *vhdr;
++
++			if (!pskb_may_pull(skb, cur_off + VLAN_HLEN))
++				return false;
++
++			vhdr = (struct vlan_hdr *)(skb->data + cur_off);
++			cur_proto = vhdr->h_vlan_encapsulated_proto;
++			cur_off += VLAN_HLEN;
++			if (cur_proto == proto) {
++				*offset += cur_off;
++				return true;
++			}
++		} else if (cur_proto == htons(ETH_P_PPP_SES)) {
++			__be16 inner_proto;
++
++			if (!nf_flow_pppoe_proto_offset(skb, cur_off,
++							&inner_proto))
++				return false;
++
++			cur_off += PPPOE_SES_HLEN;
++			if (inner_proto == proto) {
++				*offset += cur_off;
++				return true;
++			}
+ 			return false;
+-
+-		veth = (struct vlan_ethhdr *)skb_mac_header(skb);
+-		if (veth->h_vlan_encapsulated_proto == proto) {
+-			*offset += VLAN_HLEN;
+-			return true;
+-		}
+-		break;
+-	case htons(ETH_P_PPP_SES):
+-		if (nf_flow_pppoe_proto(skb, &inner_proto) &&
+-		    inner_proto == proto) {
+-			*offset += PPPOE_SES_HLEN;
+-			return true;
++		} else {
++			break;
+ 		}
+-		break;
+ 	}
+ 
+ 	return false;

@@ -14,6 +14,7 @@
 #include <linux/usb/cdc.h>
 #include <linux/usb/usbnet.h>
 #include <linux/usb/rndis_host.h>
+#include <linux/overflow.h>
 
 
 /*
@@ -342,9 +343,14 @@ generic_rndis_bind(struct usbnet *dev, struct usb_interface *intf, int flags)
 		goto fail_and_release;
 	}
 
-	//dev->rx_urb_size = dev->hard_mtu + (dev->maxpacket + 1);
-	//dev->rx_urb_size &= ~(dev->maxpacket - 1);
-	dev->rx_urb_size =32 * 1024;
+	dev->rx_urb_size = dev->hard_mtu + (dev->maxpacket + 1);
+	dev->rx_urb_size &= ~(dev->maxpacket - 1);
+	if (dev->driver_info->flags & FLAG_WWAN) {
+		if (dev->udev->speed >= USB_SPEED_SUPER)
+			dev->rx_urb_size = 32 * 1024;
+		else if (dev->udev->speed == USB_SPEED_HIGH)
+			dev->rx_urb_size = 16 * 1024;
+	}
 	u.init->max_transfer_size = cpu_to_le32(dev->rx_urb_size);
 
 	net->netdev_ops = &rndis_netdev_ops;
@@ -507,6 +513,7 @@ int rndis_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 		struct rndis_data_hdr	*hdr = (void *)skb->data;
 		struct sk_buff		*skb2;
 		u32			msg_type, msg_len, data_offset, data_len;
+		u32			overflow_check;
 
 		msg_type = le32_to_cpu(hdr->msg_type);
 		msg_len = le32_to_cpu(hdr->msg_len);
@@ -515,7 +522,9 @@ int rndis_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 
 		/* don't choke if we see oob, per-packet data, etc */
 		if (unlikely(msg_type != RNDIS_MSG_PACKET || skb->len < msg_len
-				|| (data_offset + data_len + 8) > msg_len)) {
+				|| (data_offset + data_len + 8) > msg_len
+				|| check_add_overflow(data_offset, data_len, &overflow_check)
+				|| check_add_overflow(overflow_check, 8, &overflow_check))) {
 			dev->net->stats.rx_frame_errors++;
 			netdev_dbg(dev->net, "bad rndis message %d/%d/%d/%d, len %d\n",
 				   le32_to_cpu(hdr->msg_type),
@@ -631,16 +640,6 @@ static const struct driver_info	zte_rndis_info = {
 	.tx_fixup =	rndis_tx_fixup,
 };
 
-static const struct driver_info asr_rndis_info = {
-	.description =	"Asr RNDIS device",
-	.flags =	FLAG_WWAN | FLAG_POINTTOPOINT | FLAG_FRAMING_RN | FLAG_NO_SETINT | FLAG_NOARP,
-	.bind =		rndis_bind,
-	.unbind =	rndis_unbind,
-	.status =	rndis_status,
-	.rx_fixup =	rndis_rx_fixup,
-	.tx_fixup =	rndis_tx_fixup,
-};
-
 /*-------------------------------------------------------------------------*/
 
 static const struct usb_device_id	products [] = {
@@ -676,36 +675,6 @@ static const struct usb_device_id	products [] = {
 	/* RNDIS for tethering */
 	USB_INTERFACE_INFO(USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
 	.driver_info = (unsigned long) &rndis_info,
-}, {
-	/* Quectel EG060V rndis device */
-	USB_DEVICE_AND_INTERFACE_INFO(0x2c7c, 0x6004,
-				      USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
-	.driver_info = (unsigned long) &asr_rndis_info,
-}, {
-	/* Quectel EC200A rndis device */
-	USB_DEVICE_AND_INTERFACE_INFO(0x2c7c, 0x6005,
-				      USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
-	.driver_info = (unsigned long) &asr_rndis_info,
-}, {
-	/* Quectel EC200T rndis device */
-	USB_DEVICE_AND_INTERFACE_INFO(0x2c7c, 0x6026,
-				      USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
-	.driver_info = (unsigned long) &asr_rndis_info,
-}, {
-	/* Simcom A7906E rndis device */
-	USB_DEVICE_AND_INTERFACE_INFO(0x1e0e, 0x9011,
-				      USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
-	.driver_info = (unsigned long) &asr_rndis_info,
-}, {
-	/* Meig SLM770A */
-	USB_DEVICE_AND_INTERFACE_INFO(0x2dee, 0x4d57,
-				      USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
-	.driver_info = (unsigned long) &asr_rndis_info,
-}, {
-	/* Meig SLM828 */
-	USB_DEVICE_AND_INTERFACE_INFO(0x2dee, 0x4d49,
-				      USB_CLASS_WIRELESS_CONTROLLER, 1, 3),
-	.driver_info = (unsigned long) &asr_rndis_info,
 }, {
 	/* Novatel Verizon USB730L */
 	USB_INTERFACE_INFO(USB_CLASS_MISC, 4, 1),

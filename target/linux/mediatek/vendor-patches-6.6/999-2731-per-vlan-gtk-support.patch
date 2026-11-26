@@ -1,0 +1,40 @@
+--- a/include/linux/if_vlan.h
++++ b/include/linux/if_vlan.h
+@@ -234,6 +234,10 @@ extern void vlan_vids_del_by_dev(struct
+ 				 const struct net_device *by_dev);
+ 
+ extern bool vlan_uses_dev(const struct net_device *dev);
++/* export for vlan_gtk when create/delete vlan dev */
++extern int register_vlan_dev(struct net_device *dev, struct netlink_ext_ack *extack);
++extern void unregister_vlan_dev(struct net_device *dev, struct list_head *head);
++extern void vlan_setup(struct net_device *dev);
+ 
+ #else
+ static inline bool is_vlan_dev(const struct net_device *dev)
+--- a/net/8021q/vlan.c
++++ b/net/8021q/vlan.c
+@@ -125,6 +125,8 @@ void unregister_vlan_dev(struct net_devi
+ 	vlan_vid_del(real_dev, vlan->vlan_proto, vlan_id);
+ }
+ 
++EXPORT_SYMBOL(unregister_vlan_dev);
++
+ int vlan_check_real_dev(struct net_device *real_dev,
+ 			__be16 protocol, u16 vlan_id,
+ 			struct netlink_ext_ack *extack)
+@@ -209,6 +211,8 @@ out_vid_del:
+ 	return err;
+ }
+ 
++EXPORT_SYMBOL(register_vlan_dev);
++
+ /*  Attach a VLAN device to a mac address (ie Ethernet Card).
+  *  Returns 0 if the device was created or a negative error code otherwise.
+  */
+--- a/net/8021q/vlan_dev.c
++++ b/net/8021q/vlan_dev.c
+@@ -1110,3 +1110,4 @@ void vlan_setup(struct net_device *dev)
+ 
+ 	eth_zero_addr(dev->broadcast);
+ }
++EXPORT_SYMBOL(vlan_setup);

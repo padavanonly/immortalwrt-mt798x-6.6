@@ -475,7 +475,7 @@ $(eval $(call KernelPackage,crypto-hw-padlock))
 
 define KernelPackage/crypto-hw-safexcel
   TITLE:= MVEBU SafeXcel Crypto Engine module
-  DEPENDS:=@(TARGET_mvebu_cortexa53||TARGET_mvebu_cortexa72||TARGET_mediatek_filogic||TARGET_mediatek_mt7623) \
+  DEPENDS:=@(TARGET_mvebu_cortexa53||TARGET_mvebu_cortexa72||TARGET_mediatek_filogic||TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73||TARGET_mediatek_filogic_a73||TARGET_mediatek_mt7623) \
 	+eip197-mini-firmware +kmod-crypto-authenc +kmod-crypto-des +kmod-crypto-md5 +kmod-crypto-hmac \
 	+kmod-crypto-sha1 +kmod-crypto-sha256 +kmod-crypto-sha512
   KCONFIG:= \
@@ -991,6 +991,9 @@ KernelPackage/crypto-sha1/imx/cortexa7=$(KernelPackage/crypto-sha1/arm-neon)
 KernelPackage/crypto-sha1/imx/cortexa9=$(KernelPackage/crypto-sha1/arm-neon)
 KernelPackage/crypto-sha1/ipq40xx=$(KernelPackage/crypto-sha1/arm-neon)
 KernelPackage/crypto-sha1/mediatek/filogic=$(KernelPackage/crypto-sha1/aarch64-ce)
+KernelPackage/crypto-sha1/mediatek/filogic_mtwifi=$(KernelPackage/crypto-sha1/aarch64-ce)
+KernelPackage/crypto-sha1/mediatek/filogic_hwifi=$(KernelPackage/crypto-sha1/aarch64-ce)
+KernelPackage/crypto-sha1/mediatek/filogic_hwifi_a73=$(KernelPackage/crypto-sha1/aarch64-ce)
 KernelPackage/crypto-sha1/mediatek/mt7622=$(KernelPackage/crypto-sha1/aarch64-ce)
 KernelPackage/crypto-sha1/mvebu/cortexa9=$(KernelPackage/crypto-sha1/arm-neon)
 KernelPackage/crypto-sha1/mvebu/cortexa53=$(KernelPackage/crypto-sha1/aarch64-ce)
@@ -1083,6 +1086,9 @@ endef
 endif
 
 KernelPackage/crypto-sha256/mediatek/filogic=$(KernelPackage/crypto-sha256/aarch64-ce)
+KernelPackage/crypto-sha256/mediatek/filogic_mtwifi=$(KernelPackage/crypto-sha256/aarch64-ce)
+KernelPackage/crypto-sha256/mediatek/filogic_hwifi=$(KernelPackage/crypto-sha256/aarch64-ce)
+KernelPackage/crypto-sha256/mediatek/filogic_hwifi_a73=$(KernelPackage/crypto-sha256/aarch64-ce)
 KernelPackage/crypto-sha256/mediatek/mt7622=$(KernelPackage/crypto-sha256/aarch64-ce)
 KernelPackage/crypto-sha256/mvebu/cortexa53=$(KernelPackage/crypto-sha256/aarch64-ce)
 KernelPackage/crypto-sha256/mvebu/cortexa72=$(KernelPackage/crypto-sha256/aarch64-ce)

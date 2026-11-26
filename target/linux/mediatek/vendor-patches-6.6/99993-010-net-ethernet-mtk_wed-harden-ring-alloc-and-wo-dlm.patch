@@ -1,0 +1,278 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_wed: harden ring lifecycle and restore WO
+ DLM index 0
+
+Free partially allocated TX/RX/TXBM rings by descriptor ownership, unwind ring allocation failures cleanly, and restore MT7988 WO DLM index 0 DT mapping.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ arch/arm64/boot/dts/mediatek/mt7988a.dtsi |   1 +
+ drivers/net/ethernet/mediatek/mtk_wed.c   | 109 +++++++++++++++-------
+ 2 files changed, 74 insertions(+), 36 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+index a96c471..1d6f950 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -218,6 +218,7 @@ wed: wed@15010000 {
+ 		interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_HIGH>,
+ 			     <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>,
+ 			     <GIC_SPI 270 IRQ_TYPE_LEVEL_HIGH>;
++		mediatek,wo-dlm = <&wocpu_dlm>;
+ 	};
+ 	wed2: wed2@15012000 {
+ 		compatible = "mediatek,wed2";
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index a8a5a4b..0d87f87 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -571,17 +571,23 @@ mtk_wed_amsdu_buffer_alloc(struct mtk_wed_device *dev)
+ 		wed_amsdu[i].txd_phy = dma_map_single(hw->dev, ptr,
+ 						      MTK_WED_AMSDU_BUF_SIZE,
+ 						      DMA_TO_DEVICE);
+-		if (dma_mapping_error(hw->dev, wed_amsdu[i].txd_phy))
++		if (dma_mapping_error(hw->dev, wed_amsdu[i].txd_phy)) {
++			free_pages((unsigned long)ptr,
++				   get_order(MTK_WED_AMSDU_BUF_SIZE));
+ 			goto error;
++		}
+ 	}
+ 	dev->hw->wed_amsdu = wed_amsdu;
+ 
+ 	return 0;
+ 
+ error:
+-	for (i--; i >= 0; i--)
++	for (i--; i >= 0; i--) {
+ 		dma_unmap_single(hw->dev, wed_amsdu[i].txd_phy,
+ 				 MTK_WED_AMSDU_BUF_SIZE, DMA_TO_DEVICE);
++		free_pages((unsigned long)wed_amsdu[i].txd,
++			   get_order(MTK_WED_AMSDU_BUF_SIZE));
++	}
+ 	return -ENOMEM;
+ }
+ 
+@@ -600,6 +606,7 @@ mtk_wed_amsdu_free_buffer(struct mtk_wed_device *dev)
+ 		free_pages((unsigned long)wed_amsdu[i].txd,
+ 			   get_order(MTK_WED_AMSDU_BUF_SIZE));
+ 	}
++	dev->hw->wed_amsdu = NULL;
+ }
+ 
+ static int
+@@ -659,6 +666,8 @@ mtk_wed_amsdu_init(struct mtk_wed_device *dev)
+ 	return 0;
+ }
+ 
++static void mtk_wed_free_tx_buffer(struct mtk_wed_device *dev);
++
+ static int
+ mtk_wed_tx_buffer_alloc(struct mtk_wed_device *dev)
+ {
+@@ -691,7 +700,7 @@ mtk_wed_tx_buffer_alloc(struct mtk_wed_device *dev)
+ 				      dev->tx_buf_ring.size * desc_size,
+ 				      &desc_phys, GFP_KERNEL);
+ 	if (!desc_ptr)
+-		return -ENOMEM;
++		goto error;
+ 
+ 	dev->tx_buf_ring.desc = desc_ptr;
+ 	dev->tx_buf_ring.desc_phys = desc_phys;
+@@ -704,13 +713,13 @@ mtk_wed_tx_buffer_alloc(struct mtk_wed_device *dev)
+ 
+ 		page = __dev_alloc_page(GFP_KERNEL | GFP_DMA32);
+ 		if (!page)
+-			return -ENOMEM;
++			goto error;
+ 
+ 		page_phys = dma_map_page(dev->hw->dev, page, 0, PAGE_SIZE,
+ 					 DMA_BIDIRECTIONAL);
+ 		if (dma_mapping_error(dev->hw->dev, page_phys)) {
+ 			__free_page(page);
+-			return -ENOMEM;
++			goto error;
+ 		}
+ 
+ 		page_list[page_idx].p = page;
+@@ -757,6 +766,10 @@ mtk_wed_tx_buffer_alloc(struct mtk_wed_device *dev)
+ 	}
+ 
+ 	return 0;
++
++error:
++	mtk_wed_free_tx_buffer(dev);
++	return -ENOMEM;
+ }
+ 
+ static void
+@@ -766,33 +779,36 @@ mtk_wed_free_tx_buffer(struct mtk_wed_device *dev)
+ 	struct mtk_wed_hw *hw = dev->hw;
+ 	int i, page_idx = 0;
+ 
+-	if (!page_list)
+-		return;
+-
+-	if (!dev->tx_buf_ring.desc)
+-		goto free_pagelist;
+-
+-	for (i = 0; i < dev->tx_buf_ring.size; i += MTK_WED_BUF_PER_PAGE) {
+-		dma_addr_t page_phy = page_list[page_idx].phy_addr;
+-		void *page = page_list[page_idx++].p;
++	if (page_list) {
++		for (i = 0; i < dev->tx_buf_ring.size;
++		     i += MTK_WED_BUF_PER_PAGE) {
++			dma_addr_t page_phy = page_list[page_idx].phy_addr;
++			struct page *page = page_list[page_idx++].p;
+ 
+-		if (!page)
+-			break;
++			if (!page)
++				break;
+ 
+-		dma_unmap_page(dev->hw->dev, page_phy, PAGE_SIZE,
+-			       DMA_BIDIRECTIONAL);
+-		__free_page(page);
++			dma_unmap_page(dev->hw->dev, page_phy, PAGE_SIZE,
++				       DMA_BIDIRECTIONAL);
++			__free_page(page);
++		}
+ 	}
+ 
+-	dma_free_coherent(dev->hw->dev,
+-			  dev->tx_buf_ring.size * hw->soc->tx_ring_desc_size,
+-			  dev->tx_buf_ring.desc,
+-			  dev->tx_buf_ring.desc_phys);
++	if (dev->tx_buf_ring.desc)
++		dma_free_coherent(dev->hw->dev,
++				  dev->tx_buf_ring.size * hw->soc->tx_ring_desc_size,
++				  dev->tx_buf_ring.desc,
++				  dev->tx_buf_ring.desc_phys);
+ 
+-free_pagelist:
+ 	kfree(page_list);
++	dev->tx_buf_ring.pages = NULL;
++	dev->tx_buf_ring.desc = NULL;
++	dev->tx_buf_ring.desc_phys = 0;
++	dev->tx_buf_ring.size = 0;
+ }
+ 
++static void mtk_wed_hwrro_free_buffer(struct mtk_wed_device *dev);
++
+ static int
+ mtk_wed_hwrro_buffer_alloc(struct mtk_wed_device *dev)
+ {
+@@ -818,10 +834,14 @@ mtk_wed_hwrro_buffer_alloc(struct mtk_wed_device *dev)
+ 	dev->hw_rro.size = dev->wlan.rx_nbuf & ~(MTK_WED_BUF_PER_PAGE - 1);
+ 	dev->hw_rro.pages = page_list;
+ 	desc = dma_alloc_coherent(dev->hw->dev,
+-				  dev->wlan.rx_nbuf * sizeof(*desc),
++				  dev->hw_rro.size * sizeof(*desc),
+ 				  &desc_phys, GFP_KERNEL);
+-	if (!desc)
++	if (!desc) {
++		dev->hw_rro.pages = NULL;
++		dev->hw_rro.size = 0;
++		kfree(page_list);
+ 		return -ENOMEM;
++	}
+ 
+ 	dev->hw_rro.desc = desc;
+ 	dev->hw_rro.desc_phys = desc_phys;
+@@ -832,13 +852,16 @@ mtk_wed_hwrro_buffer_alloc(struct mtk_wed_device *dev)
+ 		int s;
+ 
+ 		page = __dev_alloc_page(GFP_KERNEL | GFP_DMA32);
+-		if (!page)
++		if (!page) {
++			mtk_wed_hwrro_free_buffer(dev);
+ 			return -ENOMEM;
++		}
+ 
+ 		page_phys = dma_map_page(dev->hw->dev, page, 0, PAGE_SIZE,
+ 					 DMA_BIDIRECTIONAL);
+ 		if (dma_mapping_error(dev->hw->dev, page_phys)) {
+ 			__free_page(page);
++			mtk_wed_hwrro_free_buffer(dev);
+ 			return -ENOMEM;
+ 		}
+ 
+@@ -921,6 +944,10 @@ mtk_wed_hwrro_free_buffer(struct mtk_wed_device *dev)
+ 
+ free_pagelist:
+ 	kfree(page_list);
++	dev->hw_rro.pages = NULL;
++	dev->hw_rro.desc = NULL;
++	dev->hw_rro.desc_phys = 0;
++	dev->hw_rro.size = 0;
+ }
+ 
+ static void
+@@ -934,6 +961,9 @@ mtk_wed_free_rx_buffer(struct mtk_wed_device *dev)
+ 	dev->wlan.release_rx_buf(dev);
+ 	dma_free_coherent(dev->hw->dev, dev->rx_buf_ring.size * sizeof(*desc),
+ 			  desc, dev->rx_buf_ring.desc_phys);
++	dev->rx_buf_ring.desc = NULL;
++	dev->rx_buf_ring.desc_phys = 0;
++	dev->rx_buf_ring.size = 0;
+ 
+ 	mtk_wed_hwrro_free_buffer(dev);
+ }
+@@ -1007,8 +1037,7 @@ mtk_wed_free_rx_rings(struct mtk_wed_device *dev)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(dev->rx_ring); i++)
+-		if ((dev->tx_ring[i].flags & MTK_WED_RING_CONFIGURED))
+-			mtk_wed_free_ring(dev, &dev->rx_ring[i]);
++		mtk_wed_free_ring(dev, &dev->rx_ring[i]);
+ 
+ 	for (i = 0; i < ARRAY_SIZE(dev->tx_wdma); i++)
+ 		if ((dev->tx_wdma[i].flags & MTK_WED_RING_CONFIGURED))
+@@ -1024,8 +1053,7 @@ mtk_wed_free_tx_rings(struct mtk_wed_device *dev)
+ 	int i;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(dev->tx_ring); i++)
+-		if ((dev->tx_ring[i].flags & MTK_WED_RING_CONFIGURED))
+-			mtk_wed_free_ring(dev, &dev->tx_ring[i]);
++		mtk_wed_free_ring(dev, &dev->tx_ring[i]);
+ 
+ 	for (i = 0; i < ARRAY_SIZE(dev->rx_wdma); i++)
+ 		if ((dev->rx_wdma[i].flags & MTK_WED_RING_CONFIGURED))
+@@ -2167,11 +2195,6 @@ mtk_wed_reset_dma(struct mtk_wed_device *dev)
+ 	mtk_wed_reset(dev, MTK_WED_RESET_TX_BM);
+ 	mtk_wed_poll_busy(dev, MTK_WED_CTRL, MTK_WED_CTRL_WED_TX_BM_BUSY);
+ 
+-	if (mtk_wed_is_v3_or_greater(dev->hw)) {
+-		mtk_wed_free_tx_buffer(dev);
+-		mtk_wed_tx_buffer_alloc(dev);
+-	}
+-
+ 	/* 4. reset WED WPDMA tx */
+ 	mtk_wed_wpdma_tx_reset(dev);
+ 
+@@ -2198,6 +2221,15 @@ mtk_wed_reset_dma(struct mtk_wed_device *dev)
+ 
+ 	if (mtk_wed_get_rx_capa(dev))
+ 		mtk_wed_rx_reset(dev);
++
++	if (mtk_wed_is_v3_or_greater(dev->hw)) {
++		mtk_wed_free_tx_buffer(dev);
++		if (mtk_wed_tx_buffer_alloc(dev)) {
++			dev_err(dev->hw->dev,
++				"failed to reallocate WED TX buffer pool\n");
++			dev->running = false;
++		}
++	}
+ }
+ 
+ static int
+@@ -2746,6 +2778,11 @@ mtk_wed_start(struct mtk_wed_device *dev, u32 irq_mask)
+ {
+ 	int i;
+ 
++	if (!dev->tx_buf_ring.desc && mtk_wed_tx_buffer_alloc(dev)) {
++		dev_err(dev->hw->dev, "failed to allocate WED TX buffer pool\n");
++		return;
++	}
++
+ 	if (mtk_wed_get_rx_capa(dev) && mtk_wed_rx_buffer_alloc(dev))
+ 		return;
+ 

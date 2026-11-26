@@ -1,0 +1,55 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] crypto: safexcel: prefer arm64-ce for sync ciphers
+
+Prefer ARM64 Crypto Extensions over Inside Secure EIP-197 for synchronous
+cipher operations on MT7988 to avoid DMA sync overhead on small blocks.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/crypto/inside-secure/safexcel.c | 16 ++++++++++++++--
+ drivers/crypto/inside-secure/safexcel.h |  3 ++-
+ 2 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/crypto/inside-secure/safexcel.c b/drivers/crypto/inside-secure/safexcel.c
+index 3028e192b..64ba6b103 100644
+--- a/drivers/crypto/inside-secure/safexcel.c
++++ b/drivers/crypto/inside-secure/safexcel.c
+@@ -1288,10 +1288,22 @@ static int safexcel_register_algorithms(struct safexcel_crypto_priv *priv)
+ 			/* No, so don't register this ciphersuite */
+ 			continue;
+ 
+-		if (safexcel_algs[i]->type == SAFEXCEL_ALG_TYPE_SKCIPHER)
++		if (safexcel_algs[i]->type == SAFEXCEL_ALG_TYPE_SKCIPHER) {
+ 			ret = crypto_register_skcipher(&safexcel_algs[i]->alg.skcipher);
+-		else if (safexcel_algs[i]->type == SAFEXCEL_ALG_TYPE_AEAD)
++		} else if (safexcel_algs[i]->type == SAFEXCEL_ALG_TYPE_AEAD) {
++			const char *name = safexcel_algs[i]->alg.aead.base.cra_name;
++
++			if (!strncmp(name, "rfc7539esp(", 11))
++				safexcel_algs[i]->alg.aead.base.cra_priority =
++					SAFEXCEL_ESP_CRA_PRIORITY + 1;
++			else if (!strncmp(name, "authenc(", 8) ||
++				 !strncmp(name, "rfc4106(", 8) ||
++				 !strncmp(name, "rfc4543(", 8) ||
++				 !strncmp(name, "rfc4309(", 8))
++				safexcel_algs[i]->alg.aead.base.cra_priority =
++					SAFEXCEL_ESP_CRA_PRIORITY;
+ 			ret = crypto_register_aead(&safexcel_algs[i]->alg.aead);
++		}
+ 		else
+ 			ret = crypto_register_ahash(&safexcel_algs[i]->alg.ahash);
+ 
+diff --git a/drivers/crypto/inside-secure/safexcel.h b/drivers/crypto/inside-secure/safexcel.h
+index e07a69966..f4b20a1ba 100644
+--- a/drivers/crypto/inside-secure/safexcel.h
++++ b/drivers/crypto/inside-secure/safexcel.h
+@@ -743,7 +743,8 @@ struct safexcel_priv_data {
+ };
+ 
+ /* Priority we use for advertising our algorithms */
+-#define SAFEXCEL_CRA_PRIORITY		300
++#define SAFEXCEL_CRA_PRIORITY		150
++#define SAFEXCEL_ESP_CRA_PRIORITY	300
+ 
+ /* System cache line size */
+ #define SYSTEM_CACHELINE_SIZE		64

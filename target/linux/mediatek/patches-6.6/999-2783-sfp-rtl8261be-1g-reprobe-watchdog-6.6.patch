@@ -91,7 +91,7 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
  }
  
  static void sfp_sm_link_down(struct sfp *sfp)
-@@ -2477,6 +2494,13 @@ static int sfp_sm_mod_probe(struct sfp *
+@@ -2543,6 +2543,12 @@
  
  	if (sfp->quirk && sfp->quirk->fixup)
  		sfp->quirk->fixup(sfp);
@@ -101,10 +101,9 @@ Signed-off-by: Petr Wozniak <petr.wozniak@gmail.com>
 +	 */
 +	sfp->sm_reprobe_enabled =
 +		sfp->id.base.connector == SFF8024_CONNECTOR_RJ45;
-+
- 	mutex_unlock(&sfp->st_mutex);
  
- 	return 0;
+ 	sfp->state_hw_mask &= ~sfp->state_ignore_mask;
+ 	mutex_unlock(&sfp->st_mutex);
 @@ -2531,6 +2555,8 @@ static void sfp_sm_module(struct sfp *sf
  
  	/* Handle remove event globally, it resets this state machine */

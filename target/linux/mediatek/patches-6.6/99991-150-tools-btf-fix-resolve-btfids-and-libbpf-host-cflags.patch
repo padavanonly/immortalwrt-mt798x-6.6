@@ -1,0 +1,86 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] tools/bpf: fix resolve_btfids set count init and libbpf host cflags
+
+Initialize set count cleanly in resolve_btfids to satisfy strict compiler
+warnings and select host CFLAGS before LP64 probing in tools/lib/bpf.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ tools/bpf/resolve_btfids/main.c | 15 +++++++++------
+ tools/lib/bpf/Makefile          | 14 +++++++-------
+ 2 files changed, 16 insertions(+), 13 deletions(-)
+
+diff --git a/tools/bpf/resolve_btfids/main.c b/tools/bpf/resolve_btfids/main.c
+index b3edc23..f2aaf49 100644
+--- a/tools/bpf/resolve_btfids/main.c
++++ b/tools/bpf/resolve_btfids/main.c
+@@ -671,8 +671,7 @@ static int sets_patch(struct object *obj)
+ 
+ 	next = rb_first(&obj->sets);
+ 	while (next) {
+-		struct btf_id_set8 *set8;
+-		struct btf_id_set *set;
++		u32 cnt = 0;
+ 		unsigned long addr, off;
+ 		struct btf_id *id;
+ 
+@@ -688,10 +687,14 @@ static int sets_patch(struct object *obj)
+ 		}
+ 
+ 		if (id->is_set) {
+-			set = data->d_buf + off;
++			struct btf_id_set *set = data->d_buf + off;
++
++			cnt = set->cnt;
+ 			qsort(set->ids, set->cnt, sizeof(set->ids[0]), cmp_id);
+ 		} else {
+-			set8 = data->d_buf + off;
++			struct btf_id_set8 *set8 = data->d_buf + off;
++
++			cnt = set8->cnt;
+ 			/*
+ 			 * Make sure id is at the beginning of the pairs
+ 			 * struct, otherwise the below qsort would not work.
+@@ -718,8 +721,8 @@ static int sets_patch(struct object *obj)
+ 			}
+ 		}
+ 
+-		pr_debug("sorting  addr %5lu: cnt %6d [%s]\n",
+-			 off, id->is_set ? set->cnt : set8->cnt, id->name);
++		pr_debug("sorting  addr %5lu: cnt %6u [%s]\n",
++			 off, cnt, id->name);
+ 
+ 		next = rb_next(next);
+ 	}
+diff --git a/tools/lib/bpf/Makefile b/tools/lib/bpf/Makefile
+index 4be7144..b561a2e 100644
+--- a/tools/lib/bpf/Makefile
++++ b/tools/lib/bpf/Makefile
+@@ -33,6 +33,13 @@ INSTALL = install
+ DESTDIR ?=
+ DESTDIR_SQ = '$(subst ','\'',$(DESTDIR))'
+ 
++# Set compile option CFLAGS
++ifdef EXTRA_CFLAGS
++  CFLAGS := $(EXTRA_CFLAGS)
++else
++  CFLAGS := -g -O2
++endif
++
+ include $(srctree)/tools/scripts/Makefile.arch
+ 
+ ifeq ($(LP64), 1)
+@@ -76,13 +83,6 @@ LIB_TARGET	= libbpf.a libbpf.so.$(LIBBPF_VERSION)
+ LIB_FILE	= libbpf.a libbpf.so*
+ PC_FILE		= libbpf.pc
+ 
+-# Set compile option CFLAGS
+-ifdef EXTRA_CFLAGS
+-  CFLAGS := $(EXTRA_CFLAGS)
+-else
+-  CFLAGS := -g -O2
+-endif
+-
+ # Append required CFLAGS
+ override CFLAGS += -std=gnu89
+ override CFLAGS += $(EXTRA_WARNINGS) -Wno-switch-enum

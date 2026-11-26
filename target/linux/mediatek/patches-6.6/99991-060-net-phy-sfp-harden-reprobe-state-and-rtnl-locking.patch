@@ -1,0 +1,77 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: phy: sfp: keep reprobe state outside HWMON and hold RTNL
+
+Move RTL8261BE reprobe tracking out of CONFIG_HWMON and guard state-machine reprobe paths under rtnl_lock().
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/phy/sfp.c | 29 ++++++++++++++++++-----------
+ 1 file changed, 18 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
+index eabd4a7..1a1e48c 100644
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -298,14 +298,14 @@ struct sfp {
+ 
+ 	const struct sfp_quirk *quirk;
+ 
+-#if IS_ENABLED(CONFIG_HWMON)
+-	struct sfp_diag diag;
+-	struct delayed_work hwmon_probe;
+-	unsigned int hwmon_tries;
+ 	struct delayed_work reprobe;
+ 	unsigned char sm_reprobe_tries;
+ 	bool sm_reprobing;
+ 	bool sm_reprobe_enabled;
++#if IS_ENABLED(CONFIG_HWMON)
++	struct sfp_diag diag;
++	struct delayed_work hwmon_probe;
++	unsigned int hwmon_tries;
+ 	struct device *hwmon_dev;
+ 	char *hwmon_name;
+ #endif
+@@ -2649,8 +2649,11 @@ static void sfp_sm_module(struct sfp *sfp, unsigned int event)
+ 
+ 	/* Handle remove event globally, it resets this state machine */
+ 	if (event == SFP_E_REMOVE) {
+-		if (!sfp->sm_reprobing)
++		if (!sfp->sm_reprobing) {
+ 			cancel_delayed_work(&sfp->reprobe);
++			sfp->sm_reprobe_enabled = false;
++			sfp->sm_reprobe_tries = 0;
++		}
+ 		sfp_sm_mod_remove(sfp);
+ 		sfp_sm_mod_next(sfp, SFP_MOD_EMPTY, 0);
+ 		return;
+@@ -3170,8 +3173,10 @@ static void sfp_reprobe(struct work_struct *work)
+ {
+ 	struct sfp *sfp = container_of(work, struct sfp, reprobe.work);
+ 
+-	if (!sfp->sm_reprobe_tries)
+-		return;
++	rtnl_lock();
++	mutex_lock(&sfp->sm_mutex);
++	if (!sfp->sm_reprobe_tries || sfp->sm_mod_state == SFP_MOD_EMPTY)
++		goto out_unlock;
+ 
+ 	sfp->sm_reprobe_tries--;
+ 	dev_info(sfp->dev,
+@@ -3180,12 +3185,14 @@ static void sfp_reprobe(struct work_struct *work)
+ 
+ 	/* Replicate a physical remove/insert so the module is re-read and the
+ 	 * upstream interface is re-selected from its current advertisement.
+-	 * Runs in process context without sm_mutex held, so taking it via
+-	 * sfp_sm_event() is safe.
+ 	 */
+ 	sfp->sm_reprobing = true;
+-	sfp_sm_event(sfp, SFP_E_REMOVE);
+-	sfp_sm_event(sfp, SFP_E_INSERT);
++	__sfp_sm_event(sfp, SFP_E_REMOVE);
++	__sfp_sm_event(sfp, SFP_E_INSERT);
++
++out_unlock:
++	mutex_unlock(&sfp->sm_mutex);
++	rtnl_unlock();
+ }
+ 
+ static struct sfp *sfp_alloc(struct device *dev)

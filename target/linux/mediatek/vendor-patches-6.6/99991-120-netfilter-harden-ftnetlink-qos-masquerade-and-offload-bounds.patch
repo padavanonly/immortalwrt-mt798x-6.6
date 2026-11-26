@@ -1,0 +1,553 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] netfilter: scope ftnetlink to netns and harden
+ offload/masquerade bounds
+
+Scope flowtable netlink lookups and flush operations to caller netns, and harden nf_conntrack_qos, masquerade, and xt_FLOWOFFLOAD bounds.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ include/net/netfilter/nf_conntrack_qos.h |  4 +-
+ include/net/netfilter/nf_flow_table.h    |  5 +-
+ net/netfilter/nf_flow_table_core.c       | 99 ++++++++++++++++++++----
+ net/netfilter/nf_flow_table_netlink.c    | 19 +++--
+ net/netfilter/nf_nat_masquerade.c        | 55 ++++++++-----
+ net/netfilter/xt_FLOWOFFLOAD.c           | 73 +++++++++++++----
+ 6 files changed, 200 insertions(+), 55 deletions(-)
+
+diff --git a/include/net/netfilter/nf_conntrack_qos.h b/include/net/netfilter/nf_conntrack_qos.h
+index 3d5ffe7..920ca5b 100644
+--- a/include/net/netfilter/nf_conntrack_qos.h
++++ b/include/net/netfilter/nf_conntrack_qos.h
+@@ -34,8 +34,10 @@ struct nf_conn_qos *nf_ct_qos_ext_add(struct nf_conn *ct, gfp_t gfp)
+ 		return NULL;
+ 
+ 	qos = nf_ct_ext_add(ct, NF_CT_EXT_QOS, gfp);
+-	if (!qos)
++	if (!qos) {
+ 		pr_debug("failed to add qos extension area");
++		return NULL;
++	}
+ 
+ 	memset(qos, 0, sizeof(struct nf_conn_qos));
+ 
+diff --git a/include/net/netfilter/nf_flow_table.h b/include/net/netfilter/nf_flow_table.h
+index ad26b0c..4e3d11c 100644
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -314,12 +314,15 @@ void nf_flow_table_gc_run(struct nf_flowtable *flow_table);
+ void nf_flow_table_gc_cleanup(struct nf_flowtable *flowtable,
+ 			      struct net_device *dev);
+ void nf_flow_table_cleanup(struct net_device *dev);
++void nf_flow_table_cleanup_net(struct net *net);
+ 
+ int nf_flow_table_init(struct nf_flowtable *flow_table);
+ void nf_flow_table_free(struct nf_flowtable *flow_table);
+ 
+ void flow_offload_teardown(struct flow_offload *flow);
+-void flow_offload_teardown_by_tuple(struct flow_offload_tuple *tuple);
++void flow_offload_teardown_by_tuple(struct net *net,
++				    const struct flow_offload_tuple *tuple,
++				    u16 zone);
+ 
+ int nf_flow_table_iterate(struct nf_flowtable *flow_table,
+                       void (*iter)(struct nf_flowtable *flowtable,
+diff --git a/net/netfilter/nf_flow_table_core.c b/net/netfilter/nf_flow_table_core.c
+index 395f48a..08ed568 100644
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -357,26 +357,73 @@ void flow_offload_teardown(struct flow_offload *flow)
+ }
+ EXPORT_SYMBOL_GPL(flow_offload_teardown);
+ 
+-void flow_offload_teardown_by_tuple(struct flow_offload_tuple *tuple)
++struct flow_offload_tuple_match {
++	const struct flow_offload_tuple *tuple;
++	struct net *net;
++	u16 zone;
++};
++
++static bool flow_offload_tuple_equal(const struct flow_offload_tuple *left,
++				     const struct flow_offload_tuple *right)
+ {
+-	struct net_device *netdev;
+-	struct nf_flowtable *flowtable;
+-	struct flow_offload_tuple_rhash *tuplehash;
+-	struct flow_offload *flow;
++	if (left->l3proto != right->l3proto ||
++	    left->l4proto != right->l4proto ||
++	    left->src_port != right->src_port ||
++	    left->dst_port != right->dst_port)
++		return false;
++
++	switch (left->l3proto) {
++	case NFPROTO_IPV4:
++		return left->src_v4.s_addr == right->src_v4.s_addr &&
++		       left->dst_v4.s_addr == right->dst_v4.s_addr;
++	case NFPROTO_IPV6:
++		return ipv6_addr_equal(&left->src_v6, &right->src_v6) &&
++		       ipv6_addr_equal(&left->dst_v6, &right->dst_v6);
++	default:
++		return false;
++	}
++}
++
++static void nf_flow_table_do_cleanup_tuple(struct nf_flowtable *flowtable,
++					   struct flow_offload *flow,
++					   void *data)
++{
++	struct flow_offload_tuple_match *match = data;
++	const struct nf_conntrack_zone *ct_zone;
+ 	int dir;
+ 
+-	list_for_each_entry(flowtable, &flowtables, list) {
+-		for_each_netdev(&init_net, netdev) {
+-			tuple->iifidx = netdev->ifindex;
+-			tuplehash = flow_offload_lookup(flowtable, tuple);
+-			if (!tuplehash)
+-				continue;
+-
+-			dir = tuplehash->tuple.dir;
+-			flow = container_of(tuplehash, struct flow_offload, tuplehash[dir]);
++	if (!net_eq(nf_ct_net(flow->ct), match->net))
++		return;
++
++	ct_zone = nf_ct_zone(flow->ct);
++	if (ct_zone->id != match->zone)
++		return;
++
++	for (dir = 0; dir < FLOW_OFFLOAD_DIR_MAX; dir++) {
++		if (flow_offload_tuple_equal(&flow->tuplehash[dir].tuple,
++					     match->tuple)) {
+ 			flow_offload_teardown(flow);
++			return;
+ 		}
++	}
++}
++
++void flow_offload_teardown_by_tuple(struct net *net,
++				    const struct flow_offload_tuple *tuple,
++				    u16 zone)
++{
++	struct flow_offload_tuple_match match = {
++		.tuple = tuple,
++		.net = net,
++		.zone = zone,
+ 	};
++	struct nf_flowtable *flowtable;
++
++	mutex_lock(&flowtable_lock);
++	list_for_each_entry(flowtable, &flowtables, list)
++		nf_flow_table_iterate(flowtable,
++				      nf_flow_table_do_cleanup_tuple, &match);
++	mutex_unlock(&flowtable_lock);
+ }
+ EXPORT_SYMBOL_GPL(flow_offload_teardown_by_tuple);
+ 
+@@ -629,6 +676,30 @@ void nf_flow_table_cleanup(struct net_device *dev)
+ }
+ EXPORT_SYMBOL_GPL(nf_flow_table_cleanup);
+ 
++static void nf_flow_table_do_cleanup_net(struct nf_flowtable *flowtable,
++					 struct flow_offload *flow, void *data)
++{
++	struct net *net = data;
++
++	if (net_eq(nf_ct_net(flow->ct), net))
++		flow_offload_teardown(flow);
++}
++
++void nf_flow_table_cleanup_net(struct net *net)
++{
++	struct nf_flowtable *flowtable;
++
++	mutex_lock(&flowtable_lock);
++	list_for_each_entry(flowtable, &flowtables, list) {
++		nf_flow_table_iterate(flowtable,
++				      nf_flow_table_do_cleanup_net, net);
++		flush_delayed_work(&flowtable->gc_work);
++		nf_flow_table_offload_flush(flowtable);
++	}
++	mutex_unlock(&flowtable_lock);
++}
++EXPORT_SYMBOL_GPL(nf_flow_table_cleanup_net);
++
+ void nf_flow_table_free(struct nf_flowtable *flow_table)
+ {
+ 	mutex_lock(&flowtable_lock);
+diff --git a/net/netfilter/nf_flow_table_netlink.c b/net/netfilter/nf_flow_table_netlink.c
+index 7e0f16f..a1ce0e1 100644
+--- a/net/netfilter/nf_flow_table_netlink.c
++++ b/net/netfilter/nf_flow_table_netlink.c
+@@ -84,6 +84,9 @@ static inline int ftnetlink_parse_tuple_ip(struct nlattr *attr,
+ 
+ 		tuple->src_v4.s_addr = nla_get_in_addr(tb[FTA_IP_V4_SRC]);
+ 		tuple->dst_v4.s_addr = nla_get_in_addr(tb[FTA_IP_V4_DST]);
++		break;
++	default:
++		return -EAFNOSUPPORT;
+ 	}
+ 
+ 	return err;
+@@ -97,7 +100,7 @@ static inline int ftnetlink_parse_tuple_proto(struct nlattr *attr,
+ 
+ 	err = nla_parse_nested_deprecated(tb, FTA_PROTO_MAX, attr, l4proto_nla_policy, NULL);
+ 
+-	if(err < 0)
++	if (err < 0)
+ 		return err;
+ 
+ 	if (!tb[FTA_PROTO_NUM] || !tb[FTA_PROTO_SPORT] || !tb[FTA_PROTO_DPORT])
+@@ -112,7 +115,7 @@ static inline int ftnetlink_parse_tuple_proto(struct nlattr *attr,
+ 
+ static int ftnetlink_parse_tuple(const struct nlattr * const cda[],
+ 				 struct flow_offload_tuple *tuple,
+-				 int attrtype, int l3proto)
++				 u16 *zone, int attrtype, int l3proto)
+ {
+ 	struct nlattr *tb[FTA_TUPLE_MAX+1];
+ 	int err;
+@@ -126,6 +129,8 @@ static int ftnetlink_parse_tuple(const struct nlattr * const cda[],
+ 	if (!tb[FTA_TUPLE_IP])
+ 		return -EINVAL;
+ 
++	*zone = tb[FTA_TUPLE_ZONE] ? nla_get_u16(tb[FTA_TUPLE_ZONE]) : 0;
++
+ 	/* parse IP */
+ 	tuple->l3proto = l3proto;
+ 	err = ftnetlink_parse_tuple_ip(tb[FTA_TUPLE_IP], tuple);
+@@ -150,20 +155,21 @@ static int ftnetlink_del_nf_flow(struct sk_buff *skb, const struct nfnl_info *in
+ 				 const struct nlattr * const cda[])
+ {
+ 	struct flow_offload_tuple tuple;
++	u16 zone;
+ 	int err = -1;
+ 	struct nfgenmsg *nfmsg = nlmsg_data(info->nlh);
+ 	u_int8_t u3 = nfmsg->nfgen_family;
+ 
+ 	/* parse tuple */
+-	if(!cda[FTA_TUPLE])
++	if (!cda[FTA_TUPLE])
+ 		return -EINVAL;
+ 
+-	err = ftnetlink_parse_tuple(cda, &tuple, FTA_TUPLE, u3);
++	err = ftnetlink_parse_tuple(cda, &tuple, &zone, FTA_TUPLE, u3);
+ 	if (err < 0)
+ 		return err;
+ 
+ 	/* teardown the flow */
+-	flow_offload_teardown_by_tuple(&tuple);
++	flow_offload_teardown_by_tuple(info->net, &tuple, zone);
+ 
+ 	return 0;
+ }
+@@ -177,8 +183,7 @@ static int ftnetlink_add_nf_flow(struct sk_buff *skb, const struct nfnl_info *in
+ static int ftnetlink_flush_table(struct sk_buff *skb, const struct nfnl_info *info,
+ 				 const struct nlattr * const cda[])
+ {
+-	/* NULL device tears down every flow in all flow tables. */
+-	nf_flow_table_cleanup(NULL);
++	nf_flow_table_cleanup_net(info->net);
+ 
+ 	return 0;
+ }
+diff --git a/net/netfilter/nf_nat_masquerade.c b/net/netfilter/nf_nat_masquerade.c
+index 79fd897..0dcf421 100644
+--- a/net/netfilter/nf_nat_masquerade.c
++++ b/net/netfilter/nf_nat_masquerade.c
+@@ -88,7 +88,7 @@ static int bcm_nat_help(struct sk_buff *skb, unsigned int protoff,
+ 
+ /****************************************************************************/
+ static struct nf_conntrack_expect_policy bcm_nat_exp_policy __read_mostly = {
+-       .max_expected   = 1000,
++       .max_expected   = NF_CT_EXPECT_MAX_CNT,
+        .timeout        = 240,
+ };
+ 
+@@ -126,16 +126,20 @@ static inline int find_exp(__be32 ip, __be16 port, struct nf_conn *ct)
+ /****************************************************************************/
+ static inline struct nf_conntrack_expect *find_fullcone_exp(struct nf_conn *ct)
+ {
+-       struct nf_conntrack_tuple * tp =
++       struct nf_conntrack_tuple *tp =
+                &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+-       struct nf_conntrack_expect * exp = NULL;
+-       struct nf_conntrack_expect * i;
++       struct nf_conntrack_expect *exp = NULL;
++       struct nf_conntrack_expect *i;
++       const struct net *net = nf_ct_net(ct);
++       const struct nf_conntrack_zone *zone = nf_ct_zone(ct);
+        unsigned int h;
+ 
+        rcu_read_lock();
+        for (h = 0; h < nf_ct_expect_hsize; h++) {
+                hlist_for_each_entry_rcu(i, &nf_ct_expect_hash[h], hnode) {
+-                       if (nf_inet_addr_cmp(&i->saved_addr, &tp->src.u3) &&
++                       if (net_eq(nf_ct_exp_net(i), net) &&
++                           nf_ct_exp_zone_equal_any(i, zone) &&
++                           nf_inet_addr_cmp(&i->saved_addr, &tp->src.u3) &&
+                            i->saved_proto.all == tp->src.u.all &&
+                            i->tuple.dst.protonum == tp->dst.protonum &&
+                            i->tuple.src.u3.ip == 0 &&
+@@ -144,6 +148,8 @@ static inline struct nf_conntrack_expect *find_fullcone_exp(struct nf_conn *ct)
+                                break;
+                        }
+                }
++               if (exp)
++                       break;
+        }
+        rcu_read_unlock();
+ 
+@@ -210,20 +216,22 @@ extern unsigned int nf_conntrack_nat_mode;
+                        pr_debug("bcm_nat: existing mapped port = %hu\n",
+                                 ntohs(minport));
+                } else { /* no previous expect */
+-                       u_int16_t newport, tmpport, orgport;
++                       u32 newport, tmpport;
++                       u16 orgport;
+ 
+-                       minport = range->min_proto.all == 0?
++                       minport = range->min_proto.all == 0 ?
+                                ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.
+                                u.udp.port : range->min_proto.all;
+-                       maxport = range->max_proto.all == 0?
++                       maxport = range->max_proto.all == 0 ?
+                                htons(65535) : range->max_proto.all;
+-                        orgport = ntohs(minport);
+-                       for (newport = ntohs(minport),tmpport = ntohs(maxport);
++                       orgport = ntohs(minport);
++                       for (newport = ntohs(minport), tmpport = ntohs(maxport);
+                             newport <= tmpport; newport++) {
+-                               if (CHECK_PORT_PARITY(orgport, newport) && !find_exp(newsrc, htons(newport), ct)) {
+-                                        pr_debug("bcm_nat: new mapped port = "
+-                                                "%hu\n", newport);
+-                                       minport = maxport = htons(newport);
++                               if (CHECK_PORT_PARITY(orgport, newport) &&
++                                   !find_exp(newsrc, htons((u16)newport), ct)) {
++                                       pr_debug("bcm_nat: new mapped port = %u\n",
++                                                newport);
++                                       minport = maxport = htons((u16)newport);
+                                        break;
+                                }
+                        }
+@@ -246,7 +254,7 @@ extern unsigned int nf_conntrack_nat_mode;
+                        if (help == NULL)
+                                help = nf_ct_helper_ext_add(ct, GFP_ATOMIC);
+                        if (help != NULL) {
+-                               help->helper = &nf_conntrack_helper_bcm_nat;
++                               rcu_assign_pointer(help->helper, &nf_conntrack_helper_bcm_nat);
+                                pr_debug("bcm_nat: helper set\n");
+                        }
+                }
+@@ -497,8 +505,13 @@ static int nf_nat_masquerade_ipv6_register_notifier(void)
+ {
+ 	return register_inet6addr_notifier(&masq_inet6_notifier);
+ }
++static void nf_nat_masquerade_ipv6_unregister_notifier(void)
++{
++	unregister_inet6addr_notifier(&masq_inet6_notifier);
++}
+ #else
+ static inline int nf_nat_masquerade_ipv6_register_notifier(void) { return 0; }
++static inline void nf_nat_masquerade_ipv6_unregister_notifier(void) {}
+ #endif
+ 
+ int nf_nat_masquerade_inet_register_notifiers(void)
+@@ -528,8 +541,14 @@ int nf_nat_masquerade_inet_register_notifiers(void)
+ 	if (ret)
+ 		goto err_unreg_inet;
+ 
++	ret = nf_conntrack_helper_register(&nf_conntrack_helper_bcm_nat);
++	if (ret)
++		goto err_unreg_inet6;
++
+ 	mutex_unlock(&masq_mutex);
+ 	return ret;
++err_unreg_inet6:
++	nf_nat_masquerade_ipv6_unregister_notifier();
+ err_unreg_inet:
+ 	unregister_inetaddr_notifier(&masq_inet_notifier);
+ err_unregister:
+@@ -544,17 +563,15 @@ EXPORT_SYMBOL_GPL(nf_nat_masquerade_inet_register_notifiers);
+ 
+ void nf_nat_masquerade_inet_unregister_notifiers(void)
+ {
+-       nf_conntrack_helper_unregister(&nf_conntrack_helper_bcm_nat);
+ 	mutex_lock(&masq_mutex);
+ 	/* check if the notifiers still have clients */
+ 	if (--masq_refcnt > 0)
+ 		goto out_unlock;
+ 
++	nf_conntrack_helper_unregister(&nf_conntrack_helper_bcm_nat);
+ 	unregister_netdevice_notifier(&masq_dev_notifier);
+ 	unregister_inetaddr_notifier(&masq_inet_notifier);
+-#if IS_ENABLED(CONFIG_IPV6)
+-	unregister_inet6addr_notifier(&masq_inet6_notifier);
+-#endif
++	nf_nat_masquerade_ipv6_unregister_notifier();
+ out_unlock:
+ 	mutex_unlock(&masq_mutex);
+ }
+diff --git a/net/netfilter/xt_FLOWOFFLOAD.c b/net/netfilter/xt_FLOWOFFLOAD.c
+index 423e6d2..1b6e2e2 100644
+--- a/net/netfilter/xt_FLOWOFFLOAD.c
++++ b/net/netfilter/xt_FLOWOFFLOAD.c
+@@ -48,6 +48,7 @@ struct nf_forward_info {
+ };
+ 
+ static DEFINE_SPINLOCK(hooks_lock);
++static DEFINE_MUTEX(hooks_mutex);
+ 
+ struct xt_flowoffload_table flowtable[2];
+ 
+@@ -156,8 +157,10 @@ static void
+ xt_flowoffload_register_hooks(struct xt_flowoffload_table *table)
+ {
+ 	struct xt_flowoffload_hook *hook;
++	int err;
+ 
+ restart:
++	spin_lock_bh(&hooks_lock);
+ 	hlist_for_each_entry(hook, &table->hooks, list) {
+ 		if (hook->registered)
+ 			continue;
+@@ -165,14 +168,20 @@ xt_flowoffload_register_hooks(struct xt_flowoffload_table *table)
+ 		hook->registered = true;
+ 		hook->net = dev_net(hook->ops.dev);
+ 		spin_unlock_bh(&hooks_lock);
+-		nf_register_net_hook(hook->net, &hook->ops);
++		err = nf_register_net_hook(hook->net, &hook->ops);
++		if (err) {
++			spin_lock_bh(&hooks_lock);
++			hlist_del(&hook->list);
++			spin_unlock_bh(&hooks_lock);
++			kfree(hook);
++			goto restart;
++		}
+ 		if (table->ft.flags & NF_FLOWTABLE_HW_OFFLOAD)
+ 			table->ft.type->setup(&table->ft, hook->ops.dev,
+ 					      FLOW_BLOCK_BIND);
+-		spin_lock_bh(&hooks_lock);
+ 		goto restart;
+ 	}
+-
++	spin_unlock_bh(&hooks_lock);
+ }
+ 
+ static bool
+@@ -234,19 +243,27 @@ xt_flowoffload_hook_work(struct work_struct *work)
+ 
+ 	table = container_of(work, struct xt_flowoffload_table, work.work);
+ 
+-	spin_lock_bh(&hooks_lock);
++	mutex_lock(&hooks_mutex);
+ 	xt_flowoffload_register_hooks(table);
++	spin_lock_bh(&hooks_lock);
+ 	hlist_for_each_entry(hook, &table->hooks, list)
+ 		hook->used = false;
+ 	spin_unlock_bh(&hooks_lock);
+ 
+ 	err = nf_flow_table_iterate(&table->ft, xt_flowoffload_check_hook,
+ 				    NULL);
+-	if (err && err != -EAGAIN)
++	if (err && err != -EAGAIN) {
++		mutex_unlock(&hooks_mutex);
+ 		goto out;
++	}
+ 
+-	if (!xt_flowoffload_cleanup_hooks(table))
+-		return;
++	if (xt_flowoffload_cleanup_hooks(table)) {
++		mutex_unlock(&hooks_mutex);
++		goto out;
++	}
++
++	mutex_unlock(&hooks_mutex);
++	return;
+ 
+ out:
+ 	queue_delayed_work(system_power_efficient_wq, &table->work, HZ);
+@@ -807,6 +824,7 @@ static int flow_offload_netdev_event(struct notifier_block *this,
+ 	if (event != NETDEV_UNREGISTER)
+ 		return NOTIFY_DONE;
+ 
++	mutex_lock(&hooks_mutex);
+ 	spin_lock_bh(&hooks_lock);
+ 	hook0 = flow_offload_lookup_hook(&flowtable[0], dev);
+ 	if (hook0)
+@@ -818,14 +836,22 @@ static int flow_offload_netdev_event(struct notifier_block *this,
+ 	spin_unlock_bh(&hooks_lock);
+ 
+ 	if (hook0) {
+-		nf_unregister_net_hook(hook0->net, &hook0->ops);
++		if (hook0->registered)
++			nf_unregister_net_hook(hook0->net, &hook0->ops);
+ 		kfree(hook0);
+ 	}
+ 
+ 	if (hook1) {
+-		nf_unregister_net_hook(hook1->net, &hook1->ops);
++		if (hook1->registered) {
++			if (flowtable[1].ft.flags & NF_FLOWTABLE_HW_OFFLOAD)
++				flowtable[1].ft.type->setup(&flowtable[1].ft,
++							    hook1->ops.dev,
++							    FLOW_BLOCK_UNBIND);
++			nf_unregister_net_hook(hook1->net, &hook1->ops);
++		}
+ 		kfree(hook1);
+ 	}
++	mutex_unlock(&hooks_mutex);
+ 
+ 	nf_flow_table_cleanup(dev);
+ 
+@@ -882,11 +908,13 @@ static int __init xt_flowoffload_tg_init(void)
+ {
+ 	int ret;
+ 
+-	register_netdevice_notifier(&flow_offload_netdev_notifier);
++	ret = register_netdevice_notifier(&flow_offload_netdev_notifier);
++	if (ret)
++		return ret;
+ 
+ 	ret = init_flowtable(&flowtable[0]);
+ 	if (ret)
+-		return ret;
++		goto err_unreg_notifier;
+ 
+ 	ret = init_flowtable(&flowtable[1]);
+ 	if (ret)
+@@ -904,15 +932,34 @@ static int __init xt_flowoffload_tg_init(void)
+ 	nf_flow_table_free(&flowtable[1].ft);
+ cleanup:
+ 	nf_flow_table_free(&flowtable[0].ft);
++err_unreg_notifier:
++	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
+ 	return ret;
+ }
+ 
+ static void __exit xt_flowoffload_tg_exit(void)
+ {
++	struct xt_flowoffload_hook *hook;
++	struct hlist_node *tmp;
++	int i;
++
+ 	xt_unregister_target(&offload_tg_reg);
+ 	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
+-	nf_flow_table_free(&flowtable[0].ft);
+-	nf_flow_table_free(&flowtable[1].ft);
++	for (i = 0; i < ARRAY_SIZE(flowtable); i++) {
++		cancel_delayed_work_sync(&flowtable[i].work);
++		hlist_for_each_entry_safe(hook, tmp, &flowtable[i].hooks, list) {
++			hlist_del(&hook->list);
++			if (hook->registered) {
++				if (flowtable[i].ft.flags & NF_FLOWTABLE_HW_OFFLOAD)
++					flowtable[i].ft.type->setup(&flowtable[i].ft,
++								    hook->ops.dev,
++								    FLOW_BLOCK_UNBIND);
++				nf_unregister_net_hook(hook->net, &hook->ops);
++			}
++			kfree(hook);
++		}
++		nf_flow_table_free(&flowtable[i].ft);
++	}
+ }
+ 
+ MODULE_LICENSE("GPL");

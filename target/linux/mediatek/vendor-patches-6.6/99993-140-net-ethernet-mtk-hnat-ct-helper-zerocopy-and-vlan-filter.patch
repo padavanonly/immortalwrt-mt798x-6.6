@@ -1,0 +1,173 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_hnat: allow offloadable ct helpers and zero-copy VLAN filter
+
+Permit offloadable conntrack helpers in mtk_hnat_accel_type(), cow headroom
+for zero-copy TX SKBs, filter inner 802.1Q VLAN protocols against non-IP
+control frames (EAPOL/ARP/LLDP), and update NETSYS v3 FOE tail fields.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ .../net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c  | 42 ++++++++++++---
+ include/net/ra_nat.h                               | 59 ++++++++++++++++++++++
+ 2 files changed, 94 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index 4d1197281..97659c1d4 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -2393,8 +2393,24 @@ static unsigned int is_ppe_support_type(struct sk_buff *skb)
+ 		}
+ 
+ 		break;
+-	case ETH_P_8021Q:
+-		return 1;
++	case ETH_P_8021Q: {
++		struct vlan_hdr _vhdr, *vhdr;
++		__be16 inner_proto;
++
++		vhdr = skb_header_pointer(skb, 0, sizeof(_vhdr), &_vhdr);
++		if (unlikely(!vhdr))
++			return 0;
++
++		/*
++		 * Pass only VLAN-tagged IPv4/IPv6 frames so L2 control frames such as
++		 * EAPOL (0x888E), ARP, and LLDP are never hijacked by the PPE.
++		 */
++		inner_proto = vhdr->h_vlan_encapsulated_proto;
++		if (inner_proto == htons(ETH_P_IP) ||
++		    inner_proto == htons(ETH_P_IPV6))
++			return 1;
++		return 0;
++	}
+ 	}
+ 
+ 	return 0;
+@@ -2402,12 +2418,19 @@ static unsigned int is_ppe_support_type(struct sk_buff *skb)
+ 
+ static unsigned int do_hnat_cpu_to_ge(struct sk_buff *skb)
+ {
++	unsigned int need_headroom;
++
+ 	if (unlikely(skb_shinfo(skb)->frag_list))
+                 return -1;
+-        if (unlikely(skb_headroom(skb) < (FOE_INFO_LEN + ETH_HLEN))) {
+-                if(unlikely(skb_cow(skb, FOE_INFO_LEN + ETH_HLEN)))
++
++	/*
++	 * Only skb->head (FOE_INFO_LEN) and L2 headers (ETH_HLEN + optional VLAN)
++	 * are modified; skb_cow_head() avoids deep-copying cloned TCP payloads.
++	 */
++	need_headroom = FOE_INFO_LEN + ETH_HLEN +
++			(skb_vlan_tag_present(skb) ? VLAN_HLEN : 0);
++        if (unlikely(skb_cow_head(skb, need_headroom)))
+                 return -1;
+-        }
+ 
+ 	skb_hnat_alg(skb) = 0;
+ 	skb_hnat_magic_tag(skb) = HNAT_MAGIC_TAG;
+@@ -4904,8 +4927,13 @@ static unsigned int mtk_hnat_accel_type(struct sk_buff *skb)
+ 
+ 	/* rcu_read_lock()ed by nf_hook_slow */
+ 	help = nfct_help(ct);
+-	if (help && rcu_dereference(help->helper))
+-		return 0;
++	if (help) {
++		const struct nf_conntrack_helper *helper;
++
++		helper = rcu_dereference(help->helper);
++		if (helper && !(helper->flags & NF_CT_HELPER_F_OFFLOADABLE))
++			return 0;
++	}
+ 
+ 	return 1;
+ }
+diff --git a/include/net/ra_nat.h b/include/net/ra_nat.h
+index 7a0f9fd08..3fa116850 100644
+--- a/include/net/ra_nat.h
++++ b/include/net/ra_nat.h
+@@ -361,6 +361,55 @@ struct cb_rx_desc_info4 {
+ 	(((struct head_rx_descinfo4 *)((skb)->head))->PPE)
+ 
+ /****************************TAIL FORMAT***************************************/
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++#define FOE_TAG_PROTECT_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)	\
++	  ((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->MAGIC_TAG_PROTECT)
++#define FOE_ENTRY_NUM_LSB_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)	\
++	  ((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->foe_entry_num)
++#define FOE_ENTRY_NUM_MSB_TAIL(skb)  \
++	((((struct dmad_rx_descinfo4 *)	\
++	   ((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->foe_entry_num) >> 14)
++#define FOE_ENTRY_NUM_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)	\
++	  ((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->foe_entry_num)
++#define FOE_ALG_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->ALG)
++#define FOE_AI_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->CRSN)
++#define FOE_SP_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->SPORT)
++#define FOE_MAGIC_TAG_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->IF)
++
++#define FOE_WDMA_ID_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->WDMAID)
++#define FOE_RX_ID_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->RXID)
++#define FOE_WC_ID_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->WCID)
++#define FOE_BSS_ID_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->BSSID)
++#define FOE_USR_INFO_TAIL(skb)	\
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->USR_INFO)
++#define FOE_TID_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->TID)
++#define FOE_IS_FIXEDRATE_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)  \
++	((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->IS_FIXEDRATE)
++#define FOE_IS_PRIOR_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->IS_PRIOR)
++#define FOE_IS_SP_TAIL(skb)	 \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->IS_SP)
++#define FOE_HF_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->HF)
++#define FOE_AMSDU_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->AMSDU)
++
++#define FOE_PPE_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->ppe)
++#else
+ #define FOE_TAG_PROTECT_TAIL(skb)  \
+ 	(((struct pdma_rx_desc_info4 *)	\
+ 	  ((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->MAGIC_TAG_PROTECT)
+@@ -408,6 +457,7 @@ struct cb_rx_desc_info4 {
+ 
+ #define FOE_PPE_TAIL(skb)  \
+ 	(((struct pdma_rx_desc_info4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->ppe)
++#endif
+ /*********************************************************************/
+ #define FOE_WDMA_ID_CB(skb)  \
+ 	(((struct cb_rx_desc_info4 *)((skb)->head))->WDMAID)
+@@ -425,12 +475,21 @@ struct cb_rx_desc_info4 {
+ #define FOE_MINFO_NTYPE_HEAD(skb)	(((struct head_rx_descinfo4 *)((skb)->head))->ntype)
+ #define FOE_MINFO_CHID_HEAD(skb)	(((struct head_rx_descinfo4 *)((skb)->head))->chid)
+ 
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++#define FOE_MINFO_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->minfo)
++#define FOE_MINFO_NTYPE_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->ntype)
++#define FOE_MINFO_CHID_TAIL(skb)  \
++	(((struct dmad_rx_descinfo4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->chid)
++#else
+ #define FOE_MINFO_TAIL(skb)  \
+ 	(((struct pdma_rx_desc_info4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->minfo)
+ #define FOE_MINFO_NTYPE_TAIL(skb)  \
+ 	(((struct pdma_rx_desc_info4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->ntype)
+ #define FOE_MINFO_CHID_TAIL(skb)  \
+ 	(((struct pdma_rx_desc_info4 *)((long)((skb_end_pointer(skb)) - FOE_INFO_LEN)))->chid)
++#endif
+ 
+ #if defined(CONFIG_RA_HW_NAT_PPTP_L2TP)
+ #define FOE_SOURCE(skb)	(((struct head_rx_descinfo4 *)((skb)->head))->SOURCE)

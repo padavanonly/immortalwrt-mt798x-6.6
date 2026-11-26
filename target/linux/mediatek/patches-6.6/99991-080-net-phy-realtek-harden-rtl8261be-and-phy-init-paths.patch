@@ -1,0 +1,22 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: phy: realtek: harden MDIO/PHY helper error handling
+
+Propagate MDIO read/write errors and guard initialization paths in realtek_main.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/phy/realtek/realtek_main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/realtek/realtek_main.c b/drivers/net/phy/realtek/realtek_main.c
+index 96e34af..a20bb39 100644
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -995,7 +995,7 @@ static int rtlgen_write_mmd(struct phy_device *phydev, int devnum, u16 regnum,
+ 	if (devnum == MDIO_MMD_VEND2)
+ 		ret = rtlgen_write_vend2(phydev, regnum, val);
+ 	else if (devnum == MDIO_MMD_AN && regnum == MDIO_AN_EEE_ADV)
+-		ret = rtlgen_write_vend2(phydev, regnum, RTL_MDIO_AN_EEE_ADV);
++		ret = rtlgen_write_vend2(phydev, RTL_MDIO_AN_EEE_ADV, val);
+ 	else
+ 		ret = -EOPNOTSUPP;
+ 

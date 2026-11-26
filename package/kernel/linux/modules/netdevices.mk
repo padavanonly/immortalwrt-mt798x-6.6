@@ -500,7 +500,7 @@ define KernelPackage/phy-airoha-en8811h
   KCONFIG:=CONFIG_AIR_EN8811H_PHY
   FILES:= \
    $(LINUX_DIR)/drivers/net/phy/air_en8811.ko
-  AUTOLOAD:=$(call AutoLoad,20,air_en8811h,1)
+  AUTOLOAD:=$(call AutoLoad,20,air_en8811,1)
 endef
 
 define KernelPackage/phy-airoha-en8811h/description
@@ -2042,6 +2042,22 @@ endef
 
 $(eval $(call KernelPackage,mtk-t7xx))
 
+define KernelPackage/phy-airoha-an8801sb
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Airoha AN8801SB 1G Ethernet PHY
+  DEPENDS:=+kmod-libphy
+  KCONFIG:=CONFIG_AIROHA_AN8801_PHY
+  FILES:= \
+   $(LINUX_DIR)/drivers/net/phy/an8801.ko
+  AUTOLOAD:=$(call AutoLoad,18,an8801,1)
+endef
+
+define KernelPackage/phy-airoha-an8801sb/description
+  Kernel modules for Airoha AN8801SB 1G Ethernet PHY
+endef
+
+$(eval $(call KernelPackage,phy-airoha-an8801sb))
+
 define KernelPackage/atlantic
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Aquantia AQtion 10Gbps Ethernet NIC
@@ -2088,6 +2104,26 @@ define KernelPackage/amazon-ena/description
 endef
 
 $(eval $(call KernelPackage,amazon-ena))
+
+define KernelPackage/mediatek_hnat
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Mediatek HNAT module
+  AUTOLOAD:=$(call AutoLoad,20,mtkhnat)
+  DEPENDS:=@(TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) +kmod-nf-conntrack +wireless-tools +@KERNEL_WIRELESS_EXT
+  KCONFIG:= \
+	CONFIG_BRIDGE_NETFILTER=y \
+	CONFIG_NETFILTER_FAMILY_BRIDGE=y \
+	CONFIG_NET_MEDIATEK_HNAT
+  FILES:= \
+        $(LINUX_DIR)/drivers/net/ethernet/mediatek/mtk_hnat/mtkhnat.ko
+endef
+
+define KernelPackage/mediatek_hnat/description
+  Kernel modules for MediaTek HW NAT offloading
+endef
+
+$(eval $(call KernelPackage,mediatek_hnat))
+
 
 define KernelPackage/enc28j60
   SUBMENU:=$(NETWORK_DEVICES_MENU)

@@ -1,0 +1,246 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] netfilter: export nf_nat_mapping_active and harden BCM fullcone NAT
+
+Export lightweight nf_nat_mapping_active() against nf_nat_bysource so
+nft_fullcone retains unconfirmed UDP NAT mappings without global locks
+or per-connection allocations. Default nf_conntrack_nat_mode to 0 until
+TurboACC explicitly enables BCM mode, validate ext_ip in
+find_fullcone_exp() for multi-WAN isolation, wrap around port search
+safely with fallback to standard masquerade on exhaustion, and attach
+the BCM helper only for new expectations.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -uNrp a/include/net/netfilter/nf_nat.h b/include/net/netfilter/nf_nat.h
+--- a/include/net/netfilter/nf_nat.h	2026-11-23 10:04:45.600998856 +0800
++++ b/include/net/netfilter/nf_nat.h	2026-11-23 10:04:45.634200916 +0800
+@@ -45,6 +45,11 @@ extern unsigned int nf_nat_alloc_null_bi
+ 
+ struct nf_conn_nat *nf_ct_nat_ext_add(struct nf_conn *ct);
+ 
++#define NF_NAT_MAPPING_ACTIVE 1
++
++bool nf_nat_mapping_active(struct net *net, const struct nf_conntrack_zone *zone,
++			   const struct nf_conntrack_tuple *tuple);
++
+ static inline struct nf_conn_nat *nfct_nat(const struct nf_conn *ct)
+ {
+ #if IS_ENABLED(CONFIG_NF_NAT)
+diff -uNrp a/net/netfilter/nf_conntrack_core.c b/net/netfilter/nf_conntrack_core.c
+--- a/net/netfilter/nf_conntrack_core.c	2026-11-23 10:04:45.609947919 +0800
++++ b/net/netfilter/nf_conntrack_core.c	2026-11-23 10:04:45.634520259 +0800
+@@ -78,7 +78,7 @@ static __read_mostly struct kmem_cache *
+ static DEFINE_SPINLOCK(nf_conntrack_locks_all_lock);
+ static __read_mostly bool nf_conntrack_locks_all;
+ 
+-unsigned int nf_conntrack_nat_mode __read_mostly = 1;
++unsigned int nf_conntrack_nat_mode __read_mostly;
+ EXPORT_SYMBOL(nf_conntrack_nat_mode);
+ 
+ /* serialize hash resizes and nf_ct_iterate_cleanup */
+diff -uNrp a/net/netfilter/nf_nat_core.c b/net/netfilter/nf_nat_core.c
+--- a/net/netfilter/nf_nat_core.c	2026-11-23 10:04:45.605516717 +0800
++++ b/net/netfilter/nf_nat_core.c	2026-11-23 10:04:45.634361638 +0800
+@@ -183,6 +183,30 @@ hash_by_src(const struct net *net,
+ 	return reciprocal_scale(hash, nf_nat_htable_size);
+ }
+ 
++/* Check live or unconfirmed SNAT connections before conntrack confirms them. */
++bool nf_nat_mapping_active(struct net *net, const struct nf_conntrack_zone *zone,
++			   const struct nf_conntrack_tuple *tuple)
++{
++	unsigned int h = hash_by_src(net, zone, tuple);
++	const struct nf_conn *ct;
++	bool active = false;
++
++	spin_lock_bh(&nf_nat_locks[h % CONNTRACK_LOCKS]);
++	hlist_for_each_entry(ct, &nf_nat_bysource[h], nat_bysource) {
++		if (net_eq(net, nf_ct_net(ct)) && !nf_ct_is_dying(ct) &&
++		    (!nf_ct_is_confirmed(ct) || !nf_ct_is_expired(ct)) &&
++		    nf_ct_zone_equal(ct, zone, IP_CT_DIR_ORIGINAL) &&
++		    nf_ct_tuple_equal(tuple, &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple)) {
++			active = true;
++			break;
++		}
++	}
++	spin_unlock_bh(&nf_nat_locks[h % CONNTRACK_LOCKS]);
++
++	return active;
++}
++EXPORT_SYMBOL_GPL(nf_nat_mapping_active);
++
+ /**
+  * nf_nat_used_tuple - check if proposed nat tuple clashes with existing entry
+  * @tuple: proposed NAT binding
+diff -uNrp a/net/netfilter/nf_nat_masquerade.c b/net/netfilter/nf_nat_masquerade.c
+--- a/net/netfilter/nf_nat_masquerade.c	2026-11-23 10:04:45.614318979 +0800
++++ b/net/netfilter/nf_nat_masquerade.c	2026-11-23 10:04:45.634656970 +0800
+@@ -124,22 +124,24 @@ static inline int find_exp(__be32 ip, __
+ }
+ 
+ /****************************************************************************/
+-static inline struct nf_conntrack_expect *find_fullcone_exp(struct nf_conn *ct)
++static inline struct nf_conntrack_expect *
++find_fullcone_exp(struct nf_conn *ct, __be32 ext_ip)
+ {
+-       struct nf_conntrack_tuple *tp =
+-               &ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+-       struct nf_conntrack_expect *exp = NULL;
+-       struct nf_conntrack_expect *i;
+-       const struct net *net = nf_ct_net(ct);
+-       const struct nf_conntrack_zone *zone = nf_ct_zone(ct);
+-       unsigned int h;
+-
+-       rcu_read_lock();
+-       for (h = 0; h < nf_ct_expect_hsize; h++) {
+-               hlist_for_each_entry_rcu(i, &nf_ct_expect_hash[h], hnode) {
+-                       if (net_eq(nf_ct_exp_net(i), net) &&
+-                           nf_ct_exp_zone_equal_any(i, zone) &&
+-                           nf_inet_addr_cmp(&i->saved_addr, &tp->src.u3) &&
++	struct nf_conntrack_tuple *tp =
++		&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
++	struct nf_conntrack_expect *exp = NULL;
++	struct nf_conntrack_expect *i;
++	const struct net *net = nf_ct_net(ct);
++	const struct nf_conntrack_zone *zone = nf_ct_zone(ct);
++	unsigned int h;
++
++	rcu_read_lock();
++	for (h = 0; h < nf_ct_expect_hsize; h++) {
++		hlist_for_each_entry_rcu(i, &nf_ct_expect_hash[h], hnode) {
++			if (net_eq(nf_ct_exp_net(i), net) &&
++			    nf_ct_exp_zone_equal_any(i, zone) &&
++			    i->tuple.dst.u3.ip == ext_ip &&
++			    nf_inet_addr_cmp(&i->saved_addr, &tp->src.u3) &&
+                            i->saved_proto.all == tp->src.u.all &&
+                            i->tuple.dst.protonum == tp->dst.protonum &&
+                            i->tuple.src.u3.ip == 0 &&
+@@ -205,61 +207,75 @@ extern unsigned int nf_conntrack_nat_mod
+                u_int16_t maxport;
+                struct nf_conntrack_expect *exp;
+ 
+-               pr_debug("bcm_nat: need full cone NAT\n");
++		bool found = false;
+ 
+-               /* Choose port */
+-               spin_lock_bh(&nf_conntrack_expect_lock);
+-               /* Look for existing expectation */
+-               exp = find_fullcone_exp(ct);
+-               if (exp) {
+-                       minport = maxport = exp->tuple.dst.u.udp.port;
+-                       pr_debug("bcm_nat: existing mapped port = %hu\n",
+-                                ntohs(minport));
+-               } else { /* no previous expect */
+-                       u32 newport, tmpport;
+-                       u16 orgport;
+-
+-                       minport = range->min_proto.all == 0 ?
+-                               ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.
+-                               u.udp.port : range->min_proto.all;
+-                       maxport = range->max_proto.all == 0 ?
+-                               htons(65535) : range->max_proto.all;
+-                       orgport = ntohs(minport);
+-                       for (newport = ntohs(minport), tmpport = ntohs(maxport);
+-                            newport <= tmpport; newport++) {
+-                               if (CHECK_PORT_PARITY(orgport, newport) &&
+-                                   !find_exp(newsrc, htons((u16)newport), ct)) {
+-                                       pr_debug("bcm_nat: new mapped port = %u\n",
+-                                                newport);
+-                                       minport = maxport = htons((u16)newport);
+-                                       break;
+-                               }
+-                       }
+-               }
+-               spin_unlock_bh(&nf_conntrack_expect_lock);
+-
+-
+-       memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));
+-       memset(&newrange.max_addr, 0, sizeof(newrange.max_addr));
++		pr_debug("bcm_nat: need full cone NAT\n");
+ 
+-               newrange.flags = range->flags | NF_NAT_RANGE_MAP_IPS |
+-                       NF_NAT_RANGE_PROTO_SPECIFIED;
+-               newrange.max_addr.ip = newrange.min_addr.ip = newsrc;
+-               newrange.min_proto.udp.port = newrange.max_proto.udp.port = minport;
+-
+-               /* Set ct helper */
+-               ret = nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
+-               if (ret == NF_ACCEPT) {
+-                       struct nf_conn_help *help = nfct_help(ct);
+-                       if (help == NULL)
+-                               help = nf_ct_helper_ext_add(ct, GFP_ATOMIC);
+-                       if (help != NULL) {
+-                               rcu_assign_pointer(help->helper, &nf_conntrack_helper_bcm_nat);
+-                               pr_debug("bcm_nat: helper set\n");
+-                       }
+-               }
+-               return ret;
+-       }
++		/* Choose port */
++		spin_lock_bh(&nf_conntrack_expect_lock);
++		/* Look for existing expectation */
++		exp = find_fullcone_exp(ct, newsrc);
++		if (exp) {
++			minport = exp->tuple.dst.u.udp.port;
++			maxport = minport;
++			found = true;
++			pr_debug("bcm_nat: existing mapped port = %u\n",
++				 ntohs(minport));
++		} else { /* no previous expect */
++			u32 orgport, min_avail, max_avail, range_size, start, off;
++
++			orgport = ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.udp.port);
++			min_avail = range->min_proto.all ?
++				ntohs(range->min_proto.all) : (orgport < 1024 ? orgport : 1024);
++			max_avail = range->max_proto.all ?
++				ntohs(range->max_proto.all) : 65535;
++			if (max_avail < min_avail)
++				swap(min_avail, max_avail);
++			range_size = max_avail - min_avail + 1;
++			start = clamp(orgport, min_avail, max_avail) - min_avail;
++			for (off = 0; off < range_size; off++) {
++				u32 newport = min_avail + ((start + off) % range_size);
++
++				if (CHECK_PORT_PARITY(orgport, newport) &&
++				    !find_exp(newsrc, htons((u16)newport), ct)) {
++					pr_debug("bcm_nat: new mapped port = %u\n",
++						 newport);
++					minport = htons((u16)newport);
++					maxport = minport;
++					found = true;
++					break;
++				}
++			}
++		}
++		spin_unlock_bh(&nf_conntrack_expect_lock);
++
++		if (found) {
++			memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));
++			memset(&newrange.max_addr, 0, sizeof(newrange.max_addr));
++
++			newrange.flags = range->flags | NF_NAT_RANGE_MAP_IPS |
++				NF_NAT_RANGE_PROTO_SPECIFIED;
++			newrange.min_addr.ip = newsrc;
++			newrange.max_addr.ip = newsrc;
++			newrange.min_proto.udp.port = minport;
++			newrange.max_proto.udp.port = maxport;
++
++			/* Set ct helper only on the first flow owning the expectation. */
++			ret = nf_nat_setup_info(ct, &newrange, NF_NAT_MANIP_SRC);
++			if (ret == NF_ACCEPT && !exp) {
++				struct nf_conn_help *help = nfct_help(ct);
++
++				if (!help)
++					help = nf_ct_helper_ext_add(ct, GFP_ATOMIC);
++				if (help) {
++					rcu_assign_pointer(help->helper,
++							   &nf_conntrack_helper_bcm_nat);
++					pr_debug("bcm_nat: helper set\n");
++				}
++			}
++			return ret;
++		}
++	}
+ 
+ 	/* Transfer from original range. */
+ 	memset(&newrange.min_addr, 0, sizeof(newrange.min_addr));

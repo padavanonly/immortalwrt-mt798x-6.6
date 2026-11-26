@@ -1,12 +1,6 @@
-Subject: [PATCH] 999-2756-net-dsa-change-mt753x-agetime-setting-method
-
----
- drivers/net/dsa/mt7530.c | 29 ++++-------------------------
- 1 file changed, 4 insertions(+), 25 deletions(-)
-
 --- a/drivers/net/dsa/mt7530.c
 +++ b/drivers/net/dsa/mt7530.c
-@@ -817,35 +817,14 @@ mt7530_set_ageing_time(struct dsa_switch
+@@ -799,39 +799,14 @@
  {
  	struct mt7530_priv *priv = ds->priv;
  	unsigned int secs = msecs / 1000;
@@ -16,16 +10,21 @@ Subject: [PATCH] 999-2756-net-dsa-change-mt753x-agetime-setting-method
 -	unsigned int age_unit;
 +	const unsigned int age_unit = 1;
  
--	/* Applied timer is (AGE_CNT + 1) * (AGE_UNIT + 1) seconds */
--	if (secs < 1 || secs > (AGE_CNT_MAX + 1) * (AGE_UNIT_MAX + 1))
+-	/* Applied timer is (AGE_CNT + 1) * (AGE_UNIT + 1) seconds.
+-	 * The DSA core has already validated the range using
+-	 * ds->ageing_time_min and ds->ageing_time_max.
+-	 *
+-	 * Iterate through all possible age_count values to find the closest
+-	 * pair. Start from 1 because the per-entry aging counter is
+-	 * initialized to AGE_CNT and a value of 0 means the entry will
+-	 * never be aged out.
+-	 */
+-	for (tmp_age_count = 1; tmp_age_count <= AGE_CNT_MAX; ++tmp_age_count) {
+-		unsigned int tmp_age_unit = secs / (tmp_age_count + 1) - 1;
 +	/* Applied timer is (AGE_CNT + 1) * (AGE_UNIT + 1) seconds, and force AGE_UNIT to 1 sec */
 +	if (secs < 1 || secs > (AGE_CNT_MAX + 1) * 2)
- 		return -ERANGE;
++		return -ERANGE;
  
--	/* iterate through all possible age_count to find the closest pair */
--	for (tmp_age_count = 0; tmp_age_count <= AGE_CNT_MAX; ++tmp_age_count) {
--		unsigned int tmp_age_unit = secs / (tmp_age_count + 1) - 1;
--
 -		if (tmp_age_unit <= AGE_UNIT_MAX) {
 -			unsigned int tmp_error = secs -
 -				(tmp_age_count + 1) * (tmp_age_unit + 1);

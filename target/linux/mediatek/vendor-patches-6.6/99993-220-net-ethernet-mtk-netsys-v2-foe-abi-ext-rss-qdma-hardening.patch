@@ -1,0 +1,432 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk: fix NETSYS v2 FOE ABI, DSA/EXT routing, RSS, QDMA64 SER, and debugfs bounds
+
+Fix six proven defects affecting NETSYS v2 (MT7981/MT7986):
+1. Guard V3-only tail fields in struct hnat_ipv6_hnapt (and keep V2 winfo at offset 82)
+   so sizeof(struct foe_entry) matches hardware ABI: 80 B (V1), 96 B (V2), 128 B (V3).
+   Wrap V3 new_ipv6_ip* access in foe_extract_dip_v6() accordingly.
+2. Clamp default DEF_ETRY_NUM to 16384 (TABLE_16K) on non-V3 targets so NETSYS v2's
+   14-bit RXD4 FOE index never overflows.
+3. Match DSA LAN/WAN netdevs (IS_DSA_LAN/IS_DSA_WAN) in IS_LAN/IS_WAN so 1-GMAC and
+   hybrid DSA MT7981/MT7986 boards classify WAN/LAN paths uniformly without shared DTS
+   overrides.
+4. Enable MTK_RSS (replacing MTK_HWLRO) in MT7981_CAPS/MT7986_CAPS, enable RXD4
+   HIT_BIND_FORCE_TO_CPU sent_ppd handling on V2, extend V2 qid mark routing and
+   64-queue QDMA SER save/restore (without expanding Linux netdev TX queues),
+   broaden PPPQ non-WHNAT external exemption to MTK_HNAT_V2, keep HQoS IS_EXT
+   fqos=1 strictly MTK_HNAT_V3-only (since NETSYS_V3 owns hqos_ext PPE_BYPASS
+   recovery), and allow FROM_WED -> !IS_WHNAT IS_EXT 5G WWAN learning on V2.
+5. Fix debugfs/proc buffer NUL-termination and %63s scanf bounds in hnat_debugfs.c
+   and mtk_eth_dbg.c.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -832,6 +832,7 @@
+ 	u32 smac_hi;
+ 	u16 pppoe_id;
+ 	u16 smac_lo;
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	u16 minfo;
+ 	u16 resv6;
+ 	u32 new_ipv6_ip0;
+@@ -841,7 +842,6 @@
+ 	u16 new_dport;
+ 	u16 new_sport;
+ 	struct hnat_winfo winfo;
+-#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	struct hnat_winfo_pao winfo_pao;
+ 	u32 cdrt_id : 8;
+ 	u32 tops_entry : 6;
+@@ -851,6 +851,9 @@
+ 	u32 resv9;
+ 	u32 resv10;
+ 	u32 resv11;
++#elif defined(CONFIG_MEDIATEK_NETSYS_V2)
++	u16 minfo;
++	struct hnat_winfo winfo;
+ #endif
+ } __packed;
+ 
+@@ -871,9 +874,15 @@
+ /* If user wants to change default FOE entry number, both DEF_ETRY_NUM and
+  * DEF_ETRY_NUM_CFG need to be modified.
+  */
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ #define DEF_ETRY_NUM		32768
+ /* feasible values : 32768, 16384, 8192, 4096, 2048, 1024 */
+ #define DEF_ETRY_NUM_CFG	TABLE_32K
++#else
++#define DEF_ETRY_NUM		16384
++/* NETSYS_V2 14-bit RXD4 FOE index supports at most 16384 entries */
++#define DEF_ETRY_NUM_CFG	TABLE_16K
++#endif
+ /* default BIND_RATE value: 30 packets per second */
+ #define DEF_BIND_THRESHOLD	30
+ /* corresponding values : TABLE_32K, TABLE_16K, TABLE_8K, TABLE_4K, TABLE_2K,
+@@ -1252,12 +1261,12 @@
+ #define LAN_DEV_NAME hnat_priv->lan
+ #define LAN2_DEV_NAME hnat_priv->lan2
+ #define IS_WAN(dev)                                                            \
+-	((!strncmp((dev)->name, hnat_priv->wan, strlen(hnat_priv->wan))) ||		\
+-	 IS_BOND(dev))
++	((!strncmp((dev)->name, hnat_priv->wan, strlen(hnat_priv->wan))) ||	\
++	 IS_DSA_WAN(dev) || IS_BOND(dev))
+ #define IS_LAN_GRP(dev) (IS_LAN(dev) | IS_LAN2(dev))
+ #define IS_LAN(dev)								\
+ 	(!strncmp(dev->name, LAN_DEV_NAME, strlen(LAN_DEV_NAME)) ||		\
+-	 IS_BOND(dev))
++	 IS_DSA_LAN(dev) || IS_BOND(dev))
+ #define IS_LAN2(dev) (!strncmp(dev->name, LAN2_DEV_NAME,			\
+ 		      strlen(LAN2_DEV_NAME)))
+ #define IS_BR(dev) (!strncmp(dev->name, "br", 2))
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -800,12 +800,15 @@
+ 		return true;
+ 	case IPV6_HNAPT:
+ 	case IPV6_HNAT:
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 		if (entry->ipv6_hnapt.eg_ipv6_dir == IPV6_DNAT) {
+ 			dip[0] = entry->ipv6_hnapt.new_ipv6_ip0;
+ 			dip[1] = entry->ipv6_hnapt.new_ipv6_ip1;
+ 			dip[2] = entry->ipv6_hnapt.new_ipv6_ip2;
+ 			dip[3] = entry->ipv6_hnapt.new_ipv6_ip3;
+-		} else {
++		} else
++#endif
++		{
+ 			dip[0] = entry->ipv6_hnapt.ipv6_dip0;
+ 			dip[1] = entry->ipv6_hnapt.ipv6_dip1;
+ 			dip[2] = entry->ipv6_hnapt.ipv6_dip2;
+@@ -1264,7 +1267,8 @@
+ static inline bool hnat_qos_is_wan_egress(const struct net_device *dev)
+ {
+ 	return dev && (IS_WAN(dev) || IS_DSA_WAN(dev) ||
+-		       (IS_EXT(dev) && !IS_WHNAT(dev)));
++		       (IS_EXT(dev) && !IS_WHNAT(dev) &&
++			hnat_priv->data->version == MTK_HNAT_V3));
+ }
+ 
+ static inline bool hnat_qos_is_wan_ingress(const struct sk_buff *skb)
+@@ -1279,6 +1283,9 @@
+ 		return IS_PPPQ_PATH(dev, skb) || qid >= MAX_PPPQ_PORT_NUM;
+ 	if (!IS_HQOS_MODE)
+ 		return false;
++	if (IS_EXT(dev) && !IS_WHNAT(dev) &&
++	    hnat_priv->data->version != MTK_HNAT_V3)
++		return false;
+ 	if (qid != 0)
+ 		return true;
+ 	return (IS_HQOS_UL_MODE && hnat_qos_is_wan_egress(dev)) ||
+@@ -4277,7 +4284,8 @@
+ 
+ 	/* An unclassified non-WHNAT external output has no PPPQ port assignment. */
+ 	if (IS_PPPQ_MODE &&
+-	    !(hnat_priv->data->version == MTK_HNAT_V3 &&
++	    !((hnat_priv->data->version == MTK_HNAT_V2 ||
++	       hnat_priv->data->version == MTK_HNAT_V3) &&
+ 	      qid == 0 && gmac == NR_PDMA_PORT && IS_EXT(dev) &&
+ 	      !whnat &&
+ 	      !IS_PPPQ_PATH(dev, skb))) {
+@@ -5425,7 +5433,7 @@
+ 		return 0;
+ 	}
+ 
+-#if !defined(CONFIG_MEDIATEK_NETSYS_V3)
++#if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	if (!IS_WHNAT(out) && IS_EXT(out) && FROM_WED(skb)) {
+ 		hnat_multitier_on_post_routing_skip(skb);
+ 		return 0;
+@@ -6111,7 +6119,7 @@
+ 		     !IS_BR(out) && !IS_WHNAT(out) &&
+ 		     !(out->netdev_ops && out->netdev_ops->ndo_flow_offload_check)))
+ 		return false;
+-#if !defined(CONFIG_MEDIATEK_NETSYS_V3)
++#if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	if (out && !IS_WHNAT(out) && IS_EXT(out) &&
+ 	    IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb) &&
+ 	    FROM_WED(skb))
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+@@ -1664,11 +1664,11 @@
+ 	if (copy_from_user(line, buf, length))
+ 		return -EFAULT;
+ 
++	line[length] = '\0';
++
+ 	if (sscanf(line, "%15s %1d", name, &enable) != 2)
+ 		return -EFAULT;
+ 
+-	line[length] = '\0';
+-
+ 	dev = dev_get_by_name(&init_net, name);
+ 
+ 	if (dev) {
+@@ -2479,13 +2479,18 @@
+ 				      size_t count, loff_t *data)
+ {
+ 	char buf[8] = {0};
+-	int len = count;
++	size_t len = count;
+ 	int err;
+ 	u32 id;
+ 
+-	if ((len > 8) || copy_from_user(buf, buffer, len))
++	if (!len || len >= sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, buffer, len))
+ 		return -EFAULT;
+ 
++	buf[len] = '\0';
++
+ 	if (buf[0] == '1' && !hook_toggle) {
+ 		pr_info("hook is going to be enabled !\n");
+ 		err = hnat_enable_hook();
+@@ -2579,13 +2584,18 @@
+ 				      size_t count, loff_t *data)
+ {
+ 	char buf[8] = {0};
+-	int len = count;
++	size_t len = count;
+ 	int i;
+ 	u32 ppe_cfg;
+ 
+-	if ((len > 8) || copy_from_user(buf, buffer, len))
++	if (!len || len >= sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, buffer, len))
+ 		return -EFAULT;
+ 
++	buf[len] = '\0';
++
+ 	if (buf[0] == '1' && !xlat_toggle) {
+ 		pr_info("xlat is going to be enabled !\n");
+ 		xlat_toggle = 1;
+@@ -2676,17 +2686,22 @@
+ 				      size_t count, loff_t *data)
+ {
+ 	struct mtk_hnat *h = hnat_priv;
+-	int len = count;
++	size_t len = count;
+ 	char buf[256] = {0}, v4_str[64] = {0}, v6_str[64] = {0};
+ 	struct map46 *map = NULL, *m = NULL, *next = NULL;
+ 	struct in6_addr ipv6;
+ 	u32 ipv4;
+ 
+-	if ((len > 256) || copy_from_user(buf, buffer, len))
++	if (!len || len >= sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, buffer, len))
+ 		return -EFAULT;
+ 
++	buf[len] = '\0';
++
+ 	if (!strncmp(buf, "prefix", 6)) {
+-		if (sscanf(buf, "prefix %64s\n", v6_str) != 1) {
++		if (sscanf(buf, "prefix %63s\n", v6_str) != 1) {
+ 			pr_info("input error\n");
+ 			return -1;
+ 		}
+@@ -2701,7 +2716,7 @@
+ 
+ 		pr_info("set pfx_len = %d\n", h->xlat.prefix_len);
+ 	} else if (!strncmp(buf, "map add", 7)) {
+-		if (sscanf(buf, "map add %64s %64s\n", v4_str, v6_str) != 2) {
++		if (sscanf(buf, "map add %63s %63s\n", v4_str, v6_str) != 2) {
+ 			pr_info("input error\n");
+ 			return -1;
+ 		}
+@@ -2724,7 +2739,7 @@
+ 		list_add(&map->list, &h->xlat.map_list);
+ 		pr_info("add map: %pI4<=>%pI6\n", &map->ipv4, &map->ipv6);
+ 	} else if (!strncmp(buf, "map del", 7)) {
+-		if (sscanf(buf, "map del %64s %64s\n", v4_str, v6_str) != 2) {
++		if (sscanf(buf, "map del %63s %63s\n", v4_str, v6_str) != 2) {
+ 			pr_info("input error\n");
+ 			return -1;
+ 		}
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -29,6 +29,7 @@
+ #define MTK_DSA_PORT_MASK	GENMASK(2, 0)
+ 
+ #define MTK_QDMA_NUM_QUEUES	32
++#define MTK_QDMA_HW_MAX_QUEUES	64
+ #define MTK_QDMA_QUEUE_MASK	(MTK_QDMA_NUM_QUEUES - 1)
+ #define MTK_QDMA_PAGE_SIZE	2048
+ #define MTK_MAX_RX_LENGTH	1536
+@@ -1310,8 +1311,8 @@
+ 				rate control for the Tx Scheduler
+  */
+ struct mtk_qdma_params {
+-	u32	qtx_cfg[MTK_QDMA_NUM_QUEUES];
+-	u32	qtx_sch[MTK_QDMA_NUM_QUEUES];
++	u32	qtx_cfg[MTK_QDMA_HW_MAX_QUEUES];
++	u32	qtx_sch[MTK_QDMA_HW_MAX_QUEUES];
+ 	u32	tx_sch[2];
+ };
+ 
+@@ -1511,11 +1512,11 @@
+ #define MT7981_CAPS  (MTK_GMAC1_SGMII | MTK_GMAC2_SGMII | MTK_GMAC2_GEPHY | \
+ 		      MTK_MUX_GMAC12_TO_GEPHY_SGMII | MTK_QDMA | \
+ 		      MTK_MUX_U3_GMAC23_TO_QPHY | MTK_U3_COPHY_V2 | \
+-		      MTK_RSTCTRL_PPE1 | MTK_SRAM | MTK_PDMA_INT | MTK_HWLRO)
++		      MTK_RSTCTRL_PPE1 | MTK_SRAM | MTK_PDMA_INT | MTK_RSS)
+ 
+ #define MT7986_CAPS  (MTK_GMAC1_SGMII | MTK_GMAC2_SGMII | \
+ 		      MTK_MUX_GMAC12_TO_GEPHY_SGMII | MTK_QDMA | \
+-		      MTK_RSTCTRL_PPE1 | MTK_SRAM | MTK_PDMA_INT | MTK_HWLRO)
++		      MTK_RSTCTRL_PPE1 | MTK_SRAM | MTK_PDMA_INT | MTK_RSS)
+ 
+ #define MT7987_CAPS  (MTK_36BIT_DMA | MTK_GMAC1_SGMII | \
+ 		      MTK_GMAC2_2P5GPHY_V2 | MTK_GMAC2_SGMII | MTK_GMAC3_SGMII | \
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -1980,8 +1980,9 @@
+ 	int k = 0;
+ 	bool ext_ppe = txd_info.ext_ppe;
+ 
+-	if (mtk_is_netsys_v3_or_greater(eth) && skb->mark > 0 &&
+-	    skb->mark < 64 && (ext_ppe || skb->mark >= 32)) {
++	if (mtk_is_netsys_v2_or_greater(eth) && skb->mark > 0 &&
++	    skb->mark < MTK_QDMA_HW_MAX_QUEUES &&
++	    (ext_ppe || skb->mark >= 32)) {
+ 		dma_qid = skb->mark;
+ 		txd_info.qid = dma_qid;
+ 	}
+@@ -2740,9 +2741,12 @@
+ 		orig_mac = mac;
+ #endif
+ 		if (mac == 4 ||
+-		    (mtk_is_netsys_v3_or_greater(eth) &&
++		    (mtk_is_netsys_v3_or_greater(eth) ?
+ 		     FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5) ==
+-		     MTK_PPE_CPU_REASON_HIT_BIND_FORCE_CPU)) {
++		     MTK_PPE_CPU_REASON_HIT_BIND_FORCE_CPU :
++		     (!MTK_HAS_CAPS(eth->soc->caps, MTK_SOC_MT7628) &&
++		      FIELD_GET(MTK_RXD4_PPE_CPU_REASON, trxd.rxd4) ==
++		      MTK_PPE_CPU_REASON_HIT_BIND_FORCE_CPU))) {
+ 			sent_ppd = 1;
+ 			mac = 0;
+ #if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
+@@ -3340,6 +3344,8 @@
+ 
+ 	if (MTK_HAS_CAPS(soc->caps, MTK_QDMA)) {
+ 		void __iomem *page_reg = eth->base + soc->reg_map->qdma.page;
++		int hw_queues = mtk_is_netsys_v2_or_greater(eth) ?
++				MTK_QDMA_HW_MAX_QUEUES : MTK_QDMA_NUM_QUEUES;
+ 
+ 		mtk_w32(eth, ring->phys, soc->reg_map->qdma.ctx_ptr);
+ 		mtk_w32(eth, ring->phys, soc->reg_map->qdma.dtx_ptr);
+@@ -3348,7 +3354,7 @@
+ 			soc->reg_map->qdma.crx_ptr);
+ 		mtk_w32(eth, ring->last_free_ptr, soc->reg_map->qdma.drx_ptr);
+ 
+-		for (i = 0, ofs = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
++		for (i = 0, ofs = 0; i < hw_queues; i++) {
+ 			struct mtk_qdma_page page;
+ 			u32 cfg = (QDMA_RES_THRES << 8) | QDMA_RES_THRES;
+ 
+@@ -5104,8 +5110,10 @@
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA)) {
+ 		void __iomem *page_reg = eth->base + reg_map->qdma.page;
+ 		u32 id;
++		u32 hw_queues = mtk_is_netsys_v2_or_greater(eth) ?
++				MTK_QDMA_HW_MAX_QUEUES : MTK_QDMA_NUM_QUEUES;
+ 
+-		for (id = 0; id < MTK_QDMA_NUM_QUEUES / MTK_QTX_PER_PAGE; id++) {
++		for (id = 0; id < hw_queues / MTK_QTX_PER_PAGE; id++) {
+ 			struct mtk_qdma_page page;
+ 			u32 regs[0x100 / sizeof(u32)];
+ 			unsigned int i;
+@@ -6907,14 +6915,21 @@
+ 	__raw_writel(val, eth->esw_base + MT753X_PMCR_P(6));
+ }
+ 
++static inline int mtk_qdma_hw_queue_count(struct mtk_eth *eth)
++{
++	return mtk_is_netsys_v2_or_greater(eth) ?
++	       MTK_QDMA_HW_MAX_QUEUES : MTK_QDMA_NUM_QUEUES;
++}
++
+ void mtk_save_qdma_cfg(struct mtk_eth *eth)
+ {
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+ 	struct mtk_qdma_params *params = &eth->qdma_params;
+ 	void __iomem *page_reg = eth->base + reg_map->qdma.page;
++	int hw_queues = mtk_qdma_hw_queue_count(eth);
+ 	int i;
+ 
+-	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
++	for (i = 0; i < hw_queues; i++) {
+ 		struct mtk_qdma_page page;
+ 
+ 		mtk_qdma_select_page(&page, page_reg, i / MTK_QTX_PER_PAGE);
+@@ -6938,9 +6953,10 @@
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+ 	struct mtk_qdma_params *params = &eth->qdma_params;
+ 	void __iomem *page_reg = eth->base + reg_map->qdma.page;
++	int hw_queues = mtk_qdma_hw_queue_count(eth);
+ 	int i;
+ 
+-	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
++	for (i = 0; i < hw_queues; i++) {
+ 		struct mtk_qdma_page page;
+ 
+ 		mtk_qdma_select_page(&page, page_reg, i / MTK_QTX_PER_PAGE);
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+@@ -138,15 +138,20 @@
+ 	struct mtk_eth *eth = file_inode(file)->i_private;
+ 	char buf[8] = {0};
+ 	u32 threshold;
+-	int len = count;
++	size_t len = count;
+ 
+-	if ((len > 8) || copy_from_user(buf, buffer, len))
++	if (!len || len >= sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, buffer, len))
+ 		return -EFAULT;
+ 
+-	if (sscanf(buf, "%6d", &threshold) != 1)
++	buf[len] = '\0';
++
++	if (sscanf(buf, "%6u", &threshold) != 1)
+ 		return -EFAULT;
+ 
+-	if (threshold > 10000 || threshold < 0) {
++	if (threshold > 10000) {
+ 		pr_warn("Threshold must be between 0 and 10000 Mbps\n");
+ 		return -EINVAL;
+ 	}
+@@ -244,6 +249,8 @@
+ 	if (copy_from_user(line, buf, length))
+ 		return -EFAULT;
+ 
++	line[length] = '\0';
++
+ 	if (sscanf(line, "%1d %3s %9d", &enable, scheduling, &rate) != 3)
+ 		return -EFAULT;
+ 
+@@ -419,12 +426,12 @@
+ 	if (copy_from_user(line, buf, length))
+ 		return -EFAULT;
+ 
++	line[length] = '\0';
++
+ 	if (sscanf(line, "%d %d %d %d %d %d %d", &scheduler, &min_enable, &min_rate,
+ 		   &max_enable, &max_rate, &weight, &resv) != 7)
+ 		return -EFAULT;
+ 
+-	line[length] = '\0';
+-
+ 	if (mtk_is_netsys_v3_or_greater(eth)) {
+ 		if (max_rate > 10000000 || max_rate < 0 ||
+ 		    min_rate > 10000000 || min_rate < 0)

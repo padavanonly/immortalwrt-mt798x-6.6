@@ -1,0 +1,120 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_eth_soc: unlock TX GSO and expose RSS RX queues
+
+Perform GSO segmentation and SKB linearization outside eth->page_lock,
+expose MTK_RX_RSS_NUM RX queues with skb_record_rx_queue(), and propagate
+valid PPE L4 hashes.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 43 ++++++++++++++++++-----------
+ 1 file changed, 27 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 644a24135..6c090abd5 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2237,20 +2237,11 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	orig_skb = skb;
+ 	tx_list = skb;
+ 
+-	/* normally we can rely on the stack not calling this more than once,
+-	 * however we have 2 queues running on the same ring so we need to lock
+-	 * the ring access
+-	 */
+-	spin_lock(&eth->page_lock);
+-
+-	if (unlikely(test_bit(MTK_RESETTING, &eth->state)))
+-		goto drop_prepared;
+-
+ 	if (skb_is_gso(orig_skb) && mtk_skb_has_small_frag(orig_skb)) {
+ 		segs = skb_gso_segment(orig_skb,
+ 				       dev->features & ~NETIF_F_ALL_TSO);
+ 		if (IS_ERR(segs))
+-			goto drop_prepared;
++			goto drop_unlocked;
+ 
+ 		if (segs) {
+ 			if (mtk_skb_headroom_copy)
+@@ -2262,10 +2253,10 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	need = 0;
+ 	skb_list_walk_safe(tx_list, seg, next) {
+ 		if (mtk_skb_has_small_frag(seg) && skb_linearize(seg))
+-			goto drop_prepared;
++			goto drop_unlocked;
+ 
+ 		if (skb_headlen(seg) > eth->soc->tx.dma_max_len)
+-			goto drop_prepared;
++			goto drop_unlocked;
+ 
+ 		if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
+ 			need += mtk_qdma_desc_need(eth, seg);
+@@ -2274,6 +2265,15 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	}
+ 
+ 	if (unlikely(need >= ring->dma_size - 2))
++		goto drop_unlocked;
++
++	/* normally we can rely on the stack not calling this more than once,
++	 * however we have 2 queues running on the same ring so we need to lock
++	 * the ring access
++	 */
++	spin_lock(&eth->page_lock);
++
++	if (unlikely(test_bit(MTK_RESETTING, &eth->state)))
+ 		goto drop_prepared;
+ 
+ 	if (unlikely(atomic_read(&ring->free_count) <= need)) {
+@@ -2345,6 +2345,7 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ drop_prepared:
+ 	spin_unlock(&eth->page_lock);
++drop_unlocked:
+ 	if (tx_list != orig_skb) {
+ 		skb_list_walk_safe(tx_list, seg, next) {
+ 			skb_mark_not_on_list(seg);
+@@ -2873,14 +2874,16 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 		if (mtk_is_netsys_v3_or_greater(eth)) {
+ 			reason = FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5);
+ 			hash = trxd.rxd5 & MTK_RXD5_FOE_ENTRY;
+-			if (0)
++			if (hash != MTK_RXD5_FOE_ENTRY &&
++			    reason != MTK_PPE_CPU_REASON_UN_HIT)
+ 				skb_set_hash(skb, jhash_1word(hash, 0),
+ 					     PKT_HASH_TYPE_L4);
+ 			rxdcsum = &trxd.rxd3;
+ 		} else {
+ 			reason = FIELD_GET(MTK_RXD4_PPE_CPU_REASON, trxd.rxd4);
+ 			hash = trxd.rxd4 & MTK_RXD4_FOE_ENTRY;
+-			if (0)
++			if (hash != MTK_RXD4_FOE_ENTRY &&
++			    reason != MTK_PPE_CPU_REASON_UN_HIT)
+ 				skb_set_hash(skb, jhash_1word(hash, 0),
+ 					     PKT_HASH_TYPE_L4);
+ 			rxdcsum = &trxd.rxd4;
+@@ -2974,7 +2977,13 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 		} else if (!sent_ppd && eth->mac[mac]->is_ppd_dev) {
+ 			skb->mark = 0x78681415;
+ 		}
+-		skb_record_rx_queue(skb, 0);
++		{
++			u16 rx_qidx = (MTK_HAS_CAPS(eth->soc->caps, MTK_RSS) &&
++				       ring->ring_no < skb->dev->real_num_rx_queues) ?
++				      ring->ring_no : 0;
++
++			skb_record_rx_queue(skb, rx_qidx);
++		}
+ 		if (sent_ppd) {
+ 			netif_receive_skb(skb);
+ 		} else {
+@@ -7924,7 +7933,9 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
+ 		txqs = MTK_QDMA_NUM_QUEUES;
+ 
+-	eth->netdev[id] = alloc_etherdev_mqs(sizeof(*mac), txqs, 1);
++	eth->netdev[id] = alloc_etherdev_mqs(sizeof(*mac), txqs,
++					     MTK_HAS_CAPS(eth->soc->caps, MTK_RSS) ?
++					     MTK_RX_RSS_NUM : 1);
+ 	if (!eth->netdev[id]) {
+ 		dev_err(eth->dev, "alloc_etherdev failed\n");
+ 		return -ENOMEM;

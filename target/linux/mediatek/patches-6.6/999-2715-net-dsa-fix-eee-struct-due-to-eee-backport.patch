@@ -1,0 +1,20 @@
+--- a/net/dsa/slave.c
++++ b/net/dsa/slave.c
+@@ -1238,7 +1238,7 @@ static int dsa_slave_set_wol(struct net_
+ 	return ret;
+ }
+ 
+-static int dsa_slave_set_eee(struct net_device *dev, struct ethtool_eee *e)
++static int dsa_slave_set_eee(struct net_device *dev, struct ethtool_keee *e)
+ {
+ 	struct dsa_port *dp = dsa_slave_to_port(dev);
+ 	struct dsa_switch *ds = dp->ds;
+@@ -1258,7 +1258,7 @@ static int dsa_slave_set_eee(struct net_
+ 	return phylink_ethtool_set_eee(dp->pl, e);
+ }
+ 
+-static int dsa_slave_get_eee(struct net_device *dev, struct ethtool_eee *e)
++static int dsa_slave_get_eee(struct net_device *dev, struct ethtool_keee *e)
+ {
+ 	struct dsa_port *dp = dsa_slave_to_port(dev);
+ 	struct dsa_switch *ds = dp->ds;

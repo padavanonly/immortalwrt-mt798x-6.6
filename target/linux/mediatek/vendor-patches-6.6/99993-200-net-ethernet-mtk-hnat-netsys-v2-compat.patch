@@ -1,0 +1,27 @@
+From: Antigravity <noreply@local>
+Subject: [PATCH] net: ethernet: mtk_hnat: guard NETSYS_V3 fields in hnat_ipv6_hnapt
+
+struct hnat_winfo_pao is only defined when CONFIG_MEDIATEK_NETSYS_V3 is
+enabled, and the trailing winfo_pao/cdrt_id/tops_entry/tport_id/resv7..11
+fields in struct hnat_ipv6_hnapt belong to the 128-byte NETSYS_V3 FOE
+layout. Guard them under CONFIG_MEDIATEK_NETSYS_V3 so NETSYS_V2 builds
+cleanly.
+
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -841,6 +841,7 @@ struct hnat_ipv6_hnapt {
+ 	u16 new_dport;
+ 	u16 new_sport;
+ 	struct hnat_winfo winfo;
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	struct hnat_winfo_pao winfo_pao;
+ 	u32 cdrt_id : 8;
+ 	u32 tops_entry : 6;
+@@ -850,6 +851,7 @@ struct hnat_ipv6_hnapt {
+ 	u32 resv9;
+ 	u32 resv10;
+ 	u32 resv11;
++#endif
+ } __packed;
+ 
+ struct foe_entry {

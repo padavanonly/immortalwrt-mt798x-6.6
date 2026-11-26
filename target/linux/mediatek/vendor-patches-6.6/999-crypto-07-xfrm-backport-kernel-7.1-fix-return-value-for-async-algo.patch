@@ -1,0 +1,74 @@
+---
+[v1] crypto: backport xfrm fixes from kernel-7.1 for noqueue netdeivce with async algorithms
+
+This patch inclue two commits:
+    xfrm: propagate -EINPROGRESS from validate_xmit_xfrm()
+        https://git.kernel.org/linus/6860b467f569
+
+    xfrm: fix stale skb->prev after async crypto steals a GSO segment
+        https://git.kernel.org/linus/3f4c3919baf0
+---
+v1: Backport xfrm fixes from kernel-7.1
+---
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -3780,6 +3780,9 @@ sw_checksum:
+ }
+ EXPORT_SYMBOL(skb_csum_hwoffload_help);
+ 
++/* Returns the skb on success, NULL if dropped, or ERR_PTR(-EINPROGRESS)
++ * if stolen by async xfrm crypto (delivered via xfrm_dev_resume()).
++ */
+ static struct sk_buff *validate_xmit_skb(struct sk_buff *skb, struct net_device *dev, bool *again)
+ {
+ 	netdev_features_t features;
+@@ -3853,7 +3856,7 @@ struct sk_buff *validate_xmit_skb_list(s
+ 		skb->prev = skb;
+ 
+ 		skb = validate_xmit_skb(skb, dev, again);
+-		if (!skb)
++		if (IS_ERR_OR_NULL(skb))
+ 			continue;
+ 
+ 		if (!head)
+@@ -4559,8 +4562,11 @@ int __dev_queue_xmit(struct sk_buff *skb
+ 				goto recursion_alert;
+ 
+ 			skb = validate_xmit_skb(skb, dev, &again);
+-			if (!skb)
++			if (IS_ERR_OR_NULL(skb)) {
++				if (PTR_ERR(skb) == -EINPROGRESS)
++					rc = NET_XMIT_SUCCESS;
+ 				goto out;
++			}
+ 
+ 			HARD_TX_LOCK(dev, txq, cpu);
+ 
+--- a/net/xfrm/xfrm_device.c
++++ b/net/xfrm/xfrm_device.c
+@@ -184,7 +184,7 @@ struct sk_buff *validate_xmit_xfrm(struc
+ 		err = x->type_offload->xmit(x, skb, esp_features);
+ 		if (err) {
+ 			if (err == -EINPROGRESS)
+-				return NULL;
++				return ERR_PTR(-EINPROGRESS);
+ 
+ 			XFRM_INC_STATS(xs_net(x), LINUX_MIB_XFRMOUTSTATEPROTOERROR);
+ 			kfree_skb(skb);
+@@ -226,7 +226,15 @@ struct sk_buff *validate_xmit_xfrm(struc
+ 		pskb = skb2;
+ 	}
+ 
+-	return skb;
++	/* skb_gso_segment() set skb->prev to the last segment, but async
++	 * crypto may have stolen it above without updating ->prev. Rpoint
++	 * it at the last retained segment so validate_xmit_skb_list() does
++	 * not chain onto a segment now owned by the crypto engine.
++	 */
++	if (skb)
++		skb->prev = pskb;
++
++	return skb ? skb : ERR_PTR(-EINPROGRESS);
+ }
+ EXPORT_SYMBOL_GPL(validate_xmit_xfrm);
+ 

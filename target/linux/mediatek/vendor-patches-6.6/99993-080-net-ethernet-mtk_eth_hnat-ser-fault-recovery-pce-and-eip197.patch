@@ -1,0 +1,1706 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_eth_hnat: harden SER fault recovery and
+ add PCE/EIP-197 inline glue
+
+Synchronize SER reset fault recovery between mtk_eth_soc and mtk_hnat, and add inline PCE and EIP-197 crypto offload integration hooks.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ arch/arm64/boot/dts/mediatek/mt7988a.dtsi     |   6 +
+ drivers/net/ethernet/mediatek/mtk_eth_reset.h |   4 +
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c   | 349 ++++++++++-
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   |  58 ++
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.c |  20 +-
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.h |  13 +
+ .../ethernet/mediatek/mtk_hnat/hnat_debugfs.c |  47 ++
+ .../ethernet/mediatek/mtk_hnat/hnat_nf_hook.c | 583 +++++++++++++++++-
+ .../ethernet/mediatek/mtk_hnat/nf_hnat_mtk.h  |  73 ++-
+ include/net/xfrm.h                            |   1 +
+ net/8021q/vlan_dev.c                          |   3 +
+ net/ipv4/ip_output.c                          |   4 +-
+ net/xfrm/xfrm_output.c                        |   9 +
+ net/xfrm/xfrm_policy.c                        |  15 +
+ 14 files changed, 1154 insertions(+), 31 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+index 1d6f950..a47abc4 100644
+--- a/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt7988a.dtsi
+@@ -727,6 +727,11 @@ pwm: pwm@10048000 {
+ 			status = "disabled";
+ 		};
+ 
++		pce: pce@15100000 {
++			compatible = "mediatek,pce";
++			fe_mem = <&eth>;
++		};
++
+ 		sgmiisys0: syscon@10060000 {
+ 			compatible = "mediatek,mt7988-sgmiisys",
+ 				     "mediatek,mt7988-sgmiisys0",
+@@ -1713,6 +1718,7 @@ crypto: crypto@15600000 {
+ 			interrupt-names = "global", "ring0", "ring1", "ring2", "ring3";
+ 			status = "okay";
+ 			eth = <&eth>;
++			hnat = <&hnat>;
+ 		};
+ 	};
+ 
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_reset.h b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+index 5d8c185..53445b1 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+@@ -72,6 +72,7 @@ void mtk_eth_provider_offline(struct mtk_eth *eth);
+ int mtk_eth_hnat_get_supplier(struct device **out);
+ 
+ int mtk_eth_hnat_begin(struct mtk_eth_hnat_tx *tx);
++int mtk_eth_hnat_begin_teardown(struct mtk_eth_hnat_tx *tx);
+ int mtk_eth_hnat_begin_reset(struct mtk_eth_hnat_tx *tx);
+ void mtk_eth_hnat_end(struct mtk_eth_hnat_tx *tx);
+ 
+@@ -85,6 +86,9 @@ int mtk_eth_mark_ppe_quiesced_locked(struct mtk_eth_hnat_tx *tx, u32 id);
+ int mtk_eth_free_ppe_dma_locked(struct mtk_eth_hnat_tx *tx, u32 id);
+ void mtk_eth_fault_ppe_locked(struct mtk_ppe_registry *r, u32 id);
+ void mtk_eth_fault_ppe(struct mtk_ppe_registry *r, u32 id);
++void mtk_eth_detach_ppe_consumer_locked(struct mtk_ppe_registry *r, u32 id);
++void mtk_eth_detach_ppe_consumer(struct mtk_ppe_registry *r, u32 id);
++u64 mtk_hnat_get_ser_epoch(void);
+ 
+ int mtk_eth_quiesce_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_id);
+ int mtk_eth_resume_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_mask);
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 61fe52e..38a3e0a 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -40,6 +40,7 @@
+ #include "mtk_eth_dbg.h"
+ #include "mtk_wed.h"
+ #include "mtk_eth_reset.h"
++#include "mtk_ppe_regs.h"
+ 
+ #if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
+ #include "mtk_hnat/nf_hnat_mtk.h"
+@@ -1877,6 +1878,7 @@ static void mtk_tx_set_dma_desc_v2(struct net_device *dev, void *txd,
+ 		data &= ~(0xf << TX_DMA_FPORT_SHIFT_V2);
+ 		data |= 0x3 << TX_DMA_FPORT_SHIFT_V2;
+ 	}
++	data |= FIELD_PREP(TX_DMA_TPORT_MASK, info->tport);
+ 	WRITE_ONCE(desc->txd4, data);
+ 
+ 	data = 0;
+@@ -1900,7 +1902,11 @@ static void mtk_tx_set_dma_desc_v2(struct net_device *dev, void *txd,
+ 	WRITE_ONCE(desc->txd6, data);
+ 
+ 	WRITE_ONCE(desc->txd7, 0);
+-	WRITE_ONCE(desc->txd8, 0);
++
++	data = 0;
++	data |= FIELD_PREP(TX_DMA_TOPS_ENTRY_MASK, info->tops_entry);
++	data |= FIELD_PREP(TX_DMA_CDRT_MASK, info->cdrt);
++	WRITE_ONCE(desc->txd8, data);
+ }
+ 
+ static void mtk_tx_set_dma_desc(struct net_device *dev, void *txd,
+@@ -1951,6 +1957,21 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
+ 	if (itxd == ring->last_free)
+ 		return -ENOMEM;
+ 
++	if (mtk_is_netsys_v3_or_greater(eth) &&
++	    unlikely(skb->inner_protocol == IPPROTO_ESP)) {
++#if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
++		if (skb_hnat_cdrt(skb) && is_magic_tag_valid(skb)) {
++			txd_info.cdrt = skb_hnat_cdrt(skb);
++			txd_info.tport = TPORT_EIP197_QDMA;
++		}
++#else
++		if (skb_tnl_cdrt(skb) && is_tnl_tag_valid(skb)) {
++			txd_info.cdrt = skb_tnl_cdrt(skb);
++			txd_info.tport = TPORT_EIP197_QDMA;
++		}
++#endif
++	}
++
+ 	itx_buf = mtk_desc_to_tx_buf(ring, itxd, soc->tx.desc_size);
+ 	memset(itx_buf, 0, sizeof(*itx_buf));
+ 
+@@ -1994,6 +2015,20 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
+ 			txd_info.size = min_t(unsigned int, frag_size,
+ 					      soc->tx.dma_max_len);
+ 			txd_info.qid = queue;
++			if (mtk_is_netsys_v3_or_greater(eth) &&
++			    unlikely(skb->inner_protocol == IPPROTO_ESP)) {
++#if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
++				if (skb_hnat_cdrt(skb) && is_magic_tag_valid(skb)) {
++					txd_info.cdrt = skb_hnat_cdrt(skb);
++					txd_info.tport = TPORT_EIP197_QDMA;
++				}
++#else
++				if (skb_tnl_cdrt(skb) && is_tnl_tag_valid(skb)) {
++					txd_info.cdrt = skb_tnl_cdrt(skb);
++					txd_info.tport = TPORT_EIP197_QDMA;
++				}
++#endif
++			}
+ 			txd_info.last = i == skb_shinfo(skb)->nr_frags - 1 &&
+ 					!(frag_size - txd_info.size);
+ 			txd_info.addr = skb_frag_dma_map(eth->dma_dev, frag,
+@@ -2806,6 +2841,12 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 		skb_hnat_alg(skb) = 0;
+ 		skb_hnat_filled(skb) = 0;
+ 		skb_hnat_magic_tag(skb) = HNAT_MAGIC_TAG;
++		if (mtk_is_netsys_v3_or_greater(eth)) {
++			skb_hnat_set_cdrt(skb, RX_DMA_GET_CDRT(trxd.rxd7));
++			skb_hnat_set_tops(skb, 0);
++			skb_hnat_set_is_decap(skb, 0);
++			skb_hnat_set_is_decrypt(skb, (skb_hnat_cdrt(skb) ? 1 : 0));
++		}
+ 		
+ 	
+ 		
+@@ -2820,6 +2861,10 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 			     __func__, skb_hnat_entry(skb), skb_hnat_sport(skb),
+ 			     skb_hnat_reason(skb), skb_hnat_alg(skb));
+ #else
++		if (mtk_is_netsys_v3_or_greater(eth)) {
++			skb_tnl_set_cdrt(skb, RX_DMA_GET_CDRT(trxd.rxd7));
++			skb_tnl_magic_tag(skb) = TNL_MAGIC_TAG;
++		}
+ 		if (reason == MTK_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
+ 			mtk_ppe_check_skb(eth->ppe[ppe_idx], skb, hash);
+ #endif
+@@ -5065,6 +5110,7 @@ struct mtk_ppe_owner_slot {
+ 	enum mtk_ppe_owner_state state;
+ 	struct mtk_ppe_dma_hold hold;
+ 	bool registered;
++	bool consumer_detached;
+ };
+ 
+ struct mtk_ppe_registry {
+@@ -5077,6 +5123,152 @@ struct mtk_ppe_registry {
+ 
+ static LIST_HEAD(mtk_ppe_registries);
+ static DEFINE_MUTEX(mtk_hnat_provider_lock);
++static atomic64_t mtk_hnat_ser_epoch = ATOMIC64_INIT(1);
++
++u64 mtk_hnat_get_ser_epoch(void)
++{
++	return (u64)atomic64_read(&mtk_hnat_ser_epoch);
++}
++EXPORT_SYMBOL_GPL(mtk_hnat_get_ser_epoch);
++
++static u32 mtk_eth_ppe_mmio_base(struct mtk_eth *eth, u32 id)
++{
++	if (!eth || !eth->soc || !eth->soc->reg_map ||
++	    !eth->soc->reg_map->ppe_base || id >= MTK_PPE_OWNER_MAX)
++		return 0;
++
++	return eth->soc->reg_map->ppe_base + (id == 2 ? 0xc00 : id * 0x400);
++}
++
++static bool mtk_eth_ppe_hw_idle_unpointed(struct mtk_eth *eth, u32 id)
++{
++	u32 ppe_mmio;
++	u32 glo_cfg, tb_base, mib_base = 0;
++
++	if (!eth || !eth->base)
++		return false;
++
++	ppe_mmio = mtk_eth_ppe_mmio_base(eth, id);
++	if (!ppe_mmio)
++		return false;
++
++	glo_cfg = mtk_r32(eth, ppe_mmio + MTK_PPE_GLO_CFG);
++	tb_base = mtk_r32(eth, ppe_mmio + MTK_PPE_TB_BASE);
++	if (eth->soc->has_accounting)
++		mib_base = mtk_r32(eth, ppe_mmio + MTK_PPE_MIB_TB_BASE);
++
++	return !(glo_cfg & MTK_PPE_GLO_CFG_BUSY) && tb_base == 0 &&
++	       mib_base == 0;
++}
++
++static u32 mtk_ppe_default_drop(struct mtk_eth *eth)
++{
++	if (eth->soc->caps == MT7988_CAPS)
++		return 0x00002300;
++	if (eth->soc->caps == MT7987_CAPS)
++		return 0x00000100;
++	return 0x00000300;
++}
++
++static void mtk_eth_release_ppe_slot_dma_locked(struct mtk_ppe_owner_slot *s)
++{
++	struct mtk_ppe_dma_hold d;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!s->registered)
++		return;
++
++	d = s->hold;
++	if (d.mib_cpu)
++		dma_free_coherent(d.dma_dev, d.mib_bytes,
++				  d.mib_cpu, d.mib_dma);
++	if (d.foe_cpu)
++		dma_free_coherent(d.dma_dev, d.foe_bytes,
++				  d.foe_cpu, d.foe_dma);
++
++	memset(&s->hold, 0, sizeof(s->hold));
++	s->registered = false;
++	if (d.dma_dev)
++		put_device(d.dma_dev);
++}
++
++static void
++mtk_eth_restore_ppe_policy_locked(struct mtk_eth *eth, u32 id)
++{
++	unsigned long flags;
++	struct mtk_ppe_port_policy *p;
++
++	if (!eth || mtk_is_netsys_v1(eth) || !mtk_eth_has_ppe_id(eth, id))
++		return;
++
++	spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++	p = &eth->ppe_policy[id];
++	if (p->isolated) {
++		u32 reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(id));
++		u32 mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(id));
++		u32 val = mtk_r32(eth, reg);
++
++		val = (val & ~mask) | (p->link_down_was_set ? mask : 0);
++		mtk_w32(eth, val, reg);
++		p->isolated = false;
++		p->link_down_was_set = false;
++	}
++	if (!p->requested_valid || p->requested_drop == 0x3fff) {
++		p->requested_drop = mtk_ppe_default_drop(eth);
++		p->requested_valid = true;
++	}
++	mtk_w32(eth, p->requested_drop, PSE_PPE_DROP(id));
++	spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
++}
++
++static void
++mtk_eth_recover_faulted_ppes_locked(struct mtk_eth *eth,
++				    struct mtk_ppe_registry *r,
++				    bool after_hw_reset)
++{
++	unsigned int id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!eth || !r || !r->live || r->eth != eth ||
++	    test_bit(MTK_REMOVING, &eth->state))
++		return;
++
++	if (after_hw_reset)
++		atomic64_inc(&mtk_hnat_ser_epoch);
++
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		struct mtk_ppe_owner_slot *s = &r->ppe[id];
++
++		if (!mtk_eth_has_ppe_id(eth, id) ||
++		    s->state != MTK_PPE_FAULTED)
++			continue;
++
++		if (!after_hw_reset && !s->consumer_detached)
++			continue;
++
++		if (!mtk_eth_ppe_hw_idle_unpointed(eth, id))
++			continue;
++
++		if (s->consumer_detached || !s->registered) {
++			mtk_eth_release_ppe_slot_dma_locked(s);
++			s->consumer_detached = false;
++			s->state = MTK_PPE_EMPTY;
++			mtk_eth_restore_ppe_policy_locked(eth, id);
++		} else {
++			s->state = MTK_PPE_ACTIVE;
++			mtk_eth_restore_ppe_policy_locked(eth, id);
++		}
++	}
++}
++
++static void
++mtk_eth_recover_faulted_ppes_after_hw_reset_locked(
++	struct mtk_eth *eth, struct mtk_ppe_registry *r)
++{
++	mtk_eth_recover_faulted_ppes_locked(eth, r, true);
++}
+ 
+ static struct mtk_ppe_registry *
+ mtk_eth_ppe_registry_get_locked(struct device_node *node)
+@@ -5127,11 +5319,15 @@ mtk_eth_sync_faulted_policies_locked(struct mtk_eth *eth,
+ 		mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(id));
+ 		val = mtk_r32(eth, reg);
+ 		if (!p->isolated) {
+-			p->link_down_was_set = !!(val & mask);
++			p->link_down_was_set =
++				test_bit(MTK_RESETTING, &eth->state) ?
++				false : !!(val & mask);
++			if (!p->requested_valid) {
++				p->requested_drop = mtk_r32(eth, PSE_PPE_DROP(id));
++				p->requested_valid = true;
++			}
+ 			p->isolated = true;
+ 		}
+-		p->requested_drop = 0x3fff;
+-		p->requested_valid = true;
+ 		mtk_w32(eth, val | mask, reg);
+ 		mtk_w32(eth, 0x3fff, PSE_PPE_DROP(id));
+ 	}
+@@ -5166,12 +5362,14 @@ int mtk_eth_provider_online(struct mtk_eth *eth)
+ 
+ 	/*
+ 	 * Allow Ethernet CPU forwarding to come online.
+-	 * Any pre-existing FAULTED slot remains latched in the resident
+-	 * registry so HNAT claim refuses takeover before DMA allocation.
++	 * Detached faulted slots are reclaimed once hardware reset completes;
++	 * any remaining FAULTED slot stays isolated until reset recovery.
+ 	 */
+ 	r->eth = eth;
+ 	r->live = true;
+ 	eth->ppe_registry = r;
++	if (test_bit(MTK_HW_INIT, &eth->state))
++		mtk_eth_recover_faulted_ppes_locked(eth, r, false);
+ 	mtk_eth_sync_faulted_policies_locked(eth, r);
+ 	rcu_assign_pointer(g_eth, eth);
+ 
+@@ -5312,6 +5510,90 @@ int mtk_eth_hnat_begin(struct mtk_eth_hnat_tx *tx)
+ }
+ EXPORT_SYMBOL(mtk_eth_hnat_begin);
+ 
++int mtk_eth_hnat_begin_teardown(struct mtk_eth_hnat_tx *tx)
++{
++	int retries;
++
++	if (!tx)
++		return -EINVAL;
++
++	for (retries = 0; retries < 25; retries++) {
++		struct mtk_eth *eth;
++		struct mtk_ppe_registry *r;
++		struct device *dev;
++		struct work_struct *pending_work;
++		bool should_flush;
++		int err;
++
++		/*
++		 * Never block on rtnl_lock() or call flush_work() while RTNL
++		 * is held: mtk_pending_work() takes rtnl_lock() and would ABBA
++		 * deadlock with flush_work(&eth->pending_work).
++		 */
++		if (!rtnl_trylock()) {
++			msleep(20);
++			continue;
++		}
++
++		err = mtk_eth_hnat_begin_rtnl(tx, false, true);
++		if (err != -EBUSY) {
++			if (err)
++				rtnl_unlock();
++			return err;
++		}
++		rtnl_unlock();
++
++		if (rtnl_is_locked()) {
++			msleep(20);
++			continue;
++		}
++
++		mutex_lock(&mtk_hnat_provider_lock);
++		eth = rcu_dereference_protected(
++			g_eth, lockdep_is_held(&mtk_hnat_provider_lock));
++		if (!eth || !eth->dev || !eth->ethsys) {
++			mutex_unlock(&mtk_hnat_provider_lock);
++			return -ENODEV;
++		}
++		r = eth->ppe_registry;
++		if (!r || !r->live || r->eth != eth ||
++		    test_bit(MTK_REMOVING, &eth->state)) {
++			mutex_unlock(&mtk_hnat_provider_lock);
++			return -ENODEV;
++		}
++		if (current_work() == &eth->pending_work) {
++			mutex_unlock(&mtk_hnat_provider_lock);
++			return -EBUSY;
++		}
++		dev = get_device(eth->dev);
++		if (!dev) {
++			mutex_unlock(&mtk_hnat_provider_lock);
++			return -ENODEV;
++		}
++		pending_work = &eth->pending_work;
++		should_flush = test_bit(MTK_RESETTING, &eth->state) ||
++			       work_pending(pending_work);
++		mutex_unlock(&mtk_hnat_provider_lock);
++
++		if (should_flush)
++			flush_work(pending_work);
++		else
++			msleep(20);
++		put_device(dev);
++	}
++
++	if (!rtnl_trylock())
++		return -EBUSY;
++	{
++		int err = mtk_eth_hnat_begin_rtnl(tx, false, true);
++
++		if (err)
++			rtnl_unlock();
++		return err;
++	}
++}
++EXPORT_SYMBOL(mtk_eth_hnat_begin_teardown);
++
+ /* Only for synchronous reset notifier (MTK_FE_RESET_NAT_DONE) with RTNL held. */
+ int mtk_eth_hnat_begin_reset(struct mtk_eth_hnat_tx *tx)
+ {
+@@ -5368,8 +5650,10 @@ int mtk_eth_claim_ppes_locked(struct mtk_eth_hnat_tx *tx, u32 mask)
+ 	}
+ 
+ 	for (id = 0; id < MTK_PPE_OWNER_MAX; id++)
+-		if (mask & BIT(id))
++		if (mask & BIT(id)) {
+ 			r->ppe[id].state = MTK_PPE_ACTIVE;
++			r->ppe[id].consumer_detached = false;
++		}
+ 
+ 	return 0;
+ }
+@@ -5411,6 +5695,7 @@ int mtk_eth_register_ppes_locked(
+ 		r->ppe[id].hold = desc[id];
+ 		r->ppe[id].hold.dma_dev = get_device(desc[id].dma_dev);
+ 		r->ppe[id].registered = true;
++		r->ppe[id].consumer_detached = false;
+ 	}
+ 
+ 	return 0;
+@@ -5431,8 +5716,10 @@ void mtk_eth_abort_claim_locked(struct mtk_eth_hnat_tx *tx, u32 mask)
+ 	for (id = 0; id < MTK_PPE_OWNER_MAX; id++)
+ 		if ((mask & BIT(id)) &&
+ 		    r->ppe[id].state == MTK_PPE_ACTIVE &&
+-		    !r->ppe[id].registered)
++		    !r->ppe[id].registered) {
+ 			r->ppe[id].state = MTK_PPE_EMPTY;
++			r->ppe[id].consumer_detached = false;
++		}
+ }
+ EXPORT_SYMBOL(mtk_eth_abort_claim_locked);
+ 
+@@ -5510,6 +5797,29 @@ void mtk_eth_fault_ppe(struct mtk_ppe_registry *r, u32 id)
+ }
+ EXPORT_SYMBOL(mtk_eth_fault_ppe);
+ 
++void mtk_eth_detach_ppe_consumer_locked(struct mtk_ppe_registry *r, u32 id)
++{
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (WARN_ON_ONCE(!r || id >= MTK_PPE_OWNER_MAX))
++		return;
++
++	mtk_eth_fault_ppe_locked(r, id);
++	r->ppe[id].consumer_detached = true;
++}
++EXPORT_SYMBOL(mtk_eth_detach_ppe_consumer_locked);
++
++void mtk_eth_detach_ppe_consumer(struct mtk_ppe_registry *r, u32 id)
++{
++	mutex_lock(&mtk_hnat_provider_lock);
++	if (!WARN_ON_ONCE(!r || id >= MTK_PPE_OWNER_MAX)) {
++		r->ppe[id].state = MTK_PPE_FAULTED;
++		r->ppe[id].consumer_detached = true;
++	}
++	mutex_unlock(&mtk_hnat_provider_lock);
++}
++EXPORT_SYMBOL(mtk_eth_detach_ppe_consumer);
++
+ int mtk_eth_mark_ppe_quiesced_locked(struct mtk_eth_hnat_tx *tx, u32 id)
+ {
+ 	struct mtk_ppe_owner_slot *s;
+@@ -5531,7 +5841,6 @@ EXPORT_SYMBOL(mtk_eth_mark_ppe_quiesced_locked);
+ int mtk_eth_free_ppe_dma_locked(struct mtk_eth_hnat_tx *tx, u32 id)
+ {
+ 	struct mtk_ppe_owner_slot *s;
+-	struct mtk_ppe_dma_hold d;
+ 
+ 	lockdep_assert_held(&mtk_hnat_provider_lock);
+ 
+@@ -5542,19 +5851,9 @@ int mtk_eth_free_ppe_dma_locked(struct mtk_eth_hnat_tx *tx, u32 id)
+ 	if (s->state != MTK_PPE_QUIESCED || !s->registered)
+ 		return -EBUSY;
+ 
+-	d = s->hold;
+-
+-	if (d.mib_cpu)
+-		dma_free_coherent(d.dma_dev, d.mib_bytes,
+-				  d.mib_cpu, d.mib_dma);
+-
+-	dma_free_coherent(d.dma_dev, d.foe_bytes,
+-			  d.foe_cpu, d.foe_dma);
+-
+-	memset(&s->hold, 0, sizeof(s->hold));
+-	s->registered = false;
++	mtk_eth_release_ppe_slot_dma_locked(s);
++	s->consumer_detached = false;
+ 	s->state = MTK_PPE_EMPTY;
+-	put_device(d.dma_dev);
+ 	return 0;
+ }
+ EXPORT_SYMBOL(mtk_eth_free_ppe_dma_locked);
+@@ -6580,7 +6879,9 @@ static void mtk_pending_work(struct work_struct *work)
+ 		pinctrl_select_state(eth->dev->pins->p,
+ 				     eth->dev->pins->default_state);
+ 	mtk_eth_sync_faulted_policies_locked(eth, eth->ppe_registry);
+-	mtk_hw_init(eth, true);
++	if (!mtk_hw_init(eth, true) && !test_bit(MTK_REMOVING, &eth->state))
++		mtk_eth_recover_faulted_ppes_after_hw_reset_locked(
++			eth, eth->ppe_registry);
+ 
+ 	/* restart DMA and enable IRQs */
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+@@ -8165,6 +8466,8 @@ static int mtk_probe(struct platform_device *pdev)
+ 	schedule_delayed_work(&eth->reset.monitor_work,
+ 			      MTK_DMA_MONITOR_TIMEOUT);
+ 
++	mtk_skb_headroom_copy = mtk_hnat_skb_headroom_copy;
++
+ 	return 0;
+ 
+ err_netdevice_event_init:
+@@ -8209,6 +8512,8 @@ static int mtk_remove(struct platform_device *pdev)
+ 	atomic_set(&eth->reset.force, 0);
+ 	spin_unlock_irqrestore(&eth->reset.lock, flags);
+ 
++	mtk_skb_headroom_copy = NULL;
++
+ 	mtk_eth_provider_offline(eth);
+ 
+ 	mtketh_debugfs_exit(eth);
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 4de2cc1..ce6cbf6 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -444,6 +444,10 @@
+ 
+ #define MTK_TX_DMA_BUF_SHIFT	8
+ 
++/* QDMA V2 descriptor txd8 */
++#define TX_DMA_CDRT_MASK	GENMASK(7, 0)
++#define TX_DMA_TOPS_ENTRY_MASK	GENMASK(13, 8)
++
+ /* QDMA V2 descriptor txd6 */
+ #define TX_DMA_INS_VLAN_V2	BIT(16)
+ /* QDMA V2 descriptor txd5 */
+@@ -453,6 +457,10 @@
+ #define TX_DMA_SPTAG_V3         BIT(27)
+ 
+ /* QDMA V2 descriptor txd4 */
++#define TPORT_QDMA		1
++#define TPORT_EIP197		2
++#define TPORT_EIP197_QDMA	3
++#define TX_DMA_TPORT_MASK	GENMASK(3, 0)
+ #define TX_DMA_FPORT_SHIFT_V2	8
+ #define TX_DMA_FPORT_MASK_V2	0xf
+ #define TX_DMA_SWC_V2		BIT(30)
+@@ -535,6 +543,10 @@
+ /* PDMA V2 descriptor rxd6 */
+ #define RX_DMA_GET_FLUSH_RSN_V2	GENMASK(2, 0)
+ #define RX_DMA_GET_AGG_CNT_V2	GENMASK(23, 16)
++#define RX_DMA_GET_TOPS_CRSN(x)	(((x) >> 24) & 0xff)
++
++/* PDMA V2 descriptor rxd7 */
++#define RX_DMA_GET_CDRT(x)	(((x) >> 8) & 0xff)
+ 
+ /* PHY Polling and SMI Master Control registers */
+ #define MTK_PPSC		0x10000
+@@ -845,10 +857,53 @@ struct tnl_desc {
+ } __packed;
+ 
+ #define TNL_MAGIC_TAG 0x6789
++#define skb_tnl_reason(skb) (((struct tnl_desc *)((skb)->head))->crsn)
++#define skb_tnl_tops(skb) (((struct tnl_desc *)((skb)->head))->tops)
+ #define skb_tnl_cdrt(skb) (((struct tnl_desc *)((skb)->head))->cdrt)
+ #define skb_tnl_set_cdrt(skb, cdrt) ((skb_tnl_cdrt(skb)) = (cdrt))
+ #define skb_tnl_magic_tag(skb) (((struct tnl_desc *)((skb)->head))->magic_tag_protect)
+ #define is_tnl_tag_valid(skb) (skb_tnl_magic_tag(skb) == TNL_MAGIC_TAG)
++
++static inline int mtk_hnat_skb_headroom_copy(struct sk_buff *new,
++					     struct sk_buff *old)
++{
++	struct sk_buff *temp = new;
++	unsigned int hr_len;
++	bool need_copy = false;
++	bool is_esp = false;
++
++	if (unlikely(!new || !old))
++		return 0;
++
++	if (skb_headroom(old) < sizeof(struct tnl_desc))
++		return 0;
++
++	if (is_tnl_tag_valid(old) && skb_tnl_tops(old))
++		need_copy = true;
++
++	if (old->inner_protocol == IPPROTO_ESP &&
++	    skb_tnl_cdrt(old) && is_tnl_tag_valid(old)) {
++		need_copy = true;
++		is_esp = true;
++	}
++
++	if (!need_copy)
++		return 0;
++
++	hr_len = skb_headroom(old);
++	while (temp) {
++		if (skb_headroom(temp) < hr_len && skb_cow_head(temp, hr_len))
++			return -ENOMEM;
++
++		memcpy(temp->head, old->head, hr_len);
++		if (is_esp)
++			temp->inner_protocol = IPPROTO_ESP;
++
++		temp = temp->next;
++	}
++
++	return 0;
++}
+ #else /* defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE) */
+ #define skb_tnl_cdrt(skb) (0)
+ #define skb_tnl_set_cdrt(skb, cdrt) (0)
+@@ -1481,6 +1536,9 @@ struct mtk_tx_dma_desc_info {
+ 	u32		size;
+ 	u16		vlan_tci;
+ 	u16		qid;
++	u8		cdrt;
++	u8		tport;
++	u8		tops_entry;
+ 	u8		gso:1;
+ 	u8		csum:1;
+ 	u8		vlan:1;
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+index 084e40d..5cd41a8 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+@@ -76,6 +76,8 @@ EXPORT_SYMBOL(ppe_dev_unregister_hook);
+ 
+ int (*hnat_set_wdma_pse_port_state)(u32 wdma_idx, bool up) = NULL;
+ EXPORT_SYMBOL(hnat_set_wdma_pse_port_state);
++bool (*mtk_crypto_offloadable)(struct sk_buff *skb) = NULL;
++EXPORT_SYMBOL(mtk_crypto_offloadable);
+ 
+ static void hnat_sma_build_entry(struct timer_list *t)
+ {
+@@ -1058,9 +1060,9 @@ void hnat_retain_unquiesced_ppe_tables(struct mtk_hnat *h,
+ 		return;
+ 
+ 	if (tx && tx->locked)
+-		mtk_eth_fault_ppe_locked(h->ppe_owner, ppe_id);
++		mtk_eth_detach_ppe_consumer_locked(h->ppe_owner, ppe_id);
+ 	else
+-		mtk_eth_fault_ppe(h->ppe_owner, ppe_id);
++		mtk_eth_detach_ppe_consumer(h->ppe_owner, ppe_id);
+ 
+ 	hnat_clear_ppe_aliases(h, ppe_id);
+ }
+@@ -1231,10 +1233,15 @@ int hnat_disable_hook(void)
+ int hnat_warm_init(void)
+ {
+ 	struct mtk_eth_hnat_tx tx = { 0 };
+-	u32 ppe_mask = (CFG_PPE_NUM >= 32) ? ~0U : ((1U << CFG_PPE_NUM) - 1U);
++	u32 ppe_mask;
+ 	u32 foe_table_sz, foe_mib_tb_sz, ppe_id = 0;
+ 	int ret;
+ 
++	if (!hnat_priv || !hnat_priv->data)
++		return -ENODEV;
++
++	ppe_mask = (CFG_PPE_NUM >= 32) ? ~0U : ((1U << CFG_PPE_NUM) - 1U);
++
+ 	unregister_netevent_notifier(&nf_hnat_netevent_nb);
+ 
+ 	ret = mtk_eth_hnat_begin_reset(&tx);
+@@ -1256,6 +1263,9 @@ int hnat_warm_init(void)
+ 			mtk_eth_hnat_end(&tx);
+ 			return -EBUSY;
+ 		}
++	}
++
++	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
+ 		foe_table_sz =
+ 			hnat_priv->foe_etry_num * sizeof(struct foe_entry);
+ 		writel(hnat_priv->foe_table_dev[ppe_id],
+@@ -1594,7 +1604,7 @@ static int hnat_probe(struct platform_device *pdev)
+ 	return 0;
+ 
+ err_out:
+-	if (mtk_eth_hnat_begin(&tx) == 0) {
++	if (mtk_eth_hnat_begin_teardown(&tx) == 0) {
+ 		for (i = 0; i < CFG_PPE_NUM; i++)
+ 			hnat_stop_locked(hnat_priv, &tx, i);
+ 		mtk_eth_hnat_end(&tx);
+@@ -1638,7 +1648,7 @@ static int hnat_remove(struct platform_device *pdev)
+ 	if (hnat_priv->data->version == MTK_HNAT_V1_3)
+ 		timer_shutdown_sync(&hnat_priv->hnat_reset_timestamp_timer);
+ 
+-	if (mtk_eth_hnat_begin(&tx) == 0) {
++	if (mtk_eth_hnat_begin_teardown(&tx) == 0) {
+ 		for (i = 0; i < CFG_PPE_NUM; i++)
+ 			hnat_stop_locked(hnat_priv, &tx, i);
+ 		mtk_eth_hnat_end(&tx);
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+index fb6c743..005d875 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -1231,6 +1231,13 @@ enum FoeIpAct {
+ #define NR_WDMA1_PORT 9
+ #define NR_WDMA2_PORT 13
+ #define NR_GMAC3_PORT 15
++#define NR_QDMA_TPORT 1
++#define NR_EIP197_TPORT 2
++#define NR_EIP197_QDMA_TPORT 3
++#define NR_TDMA_TPORT 4
++#define NR_TDMA_QDMA_TPORT 5
++#define NR_TDMA_EIP197_TPORT 8
++#define NR_TDMA_EIP197_QDMA_TPORT 9
+ #define LAN_DEV_NAME hnat_priv->lan
+ #define LAN2_DEV_NAME hnat_priv->lan2
+ #define IS_WAN(dev)                                                            \
+@@ -1411,6 +1418,12 @@ extern int qos_ul_toggle;
+ extern int hook_toggle;
+ extern int mape_toggle;
+ extern int qos_toggle;
++extern int tnl_toggle;
++extern bool (*mtk_crypto_offloadable)(struct sk_buff *skb);
++extern int hnat_bind_crypto_entry(struct sk_buff *skb,
++				  const struct net_device *dev,
++				  int fill_inner_info);
++extern void foe_clear_crypto_entry(u32 cdrt_idx);
+ 
+ int ext_if_add(struct extdev_entry *ext_entry);
+ int ext_if_del(struct extdev_entry *ext_entry);
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+index 399bc26..c44de23 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+@@ -32,6 +32,7 @@ int qos_toggle;
+ int qos_dl_toggle = 1;
+ int qos_ul_toggle = 1;
+ int xlat_toggle;
++int tnl_toggle = 1;
+ struct hnat_desc headroom[DEF_ETRY_NUM];
+ unsigned int dbg_cpu_reason_cnt[MAX_CRSN_NUM];
+ 
+@@ -2512,6 +2513,50 @@ static const struct file_operations hnat_hook_toggle_fops = {
+ 	.release = single_release,
+ };
+ 
++static int hnat_tnl_toggle_read(struct seq_file *m, void *private)
++{
++	seq_printf(m, "value=%d, tnl is %s now!\n",
++		   tnl_toggle, tnl_toggle ? "enabled" : "disabled");
++
++	return 0;
++}
++
++static int hnat_tnl_toggle_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, hnat_tnl_toggle_read, file->private_data);
++}
++
++static ssize_t hnat_tnl_toggle_write(struct file *file,
++				     const char __user *buffer,
++				     size_t count, loff_t *data)
++{
++	char buf[8] = {0};
++
++	if (!count || count > sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, buffer, count))
++		return -EFAULT;
++
++	if (buf[0] == '1' && !tnl_toggle) {
++		pr_info("tnl is going to be enabled !\n");
++		tnl_toggle = 1;
++	} else if (buf[0] == '0' && tnl_toggle) {
++		pr_info("tnl is going to be disabled !\n");
++		tnl_toggle = 0;
++	}
++
++	return count;
++}
++
++static const struct file_operations hnat_tnl_toggle_fops = {
++	.open = hnat_tnl_toggle_open,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.write = hnat_tnl_toggle_write,
++	.release = single_release,
++};
++
+ static int hnat_xlat_toggle_read(struct seq_file *m, void *private)
+ {
+ 	pr_info("value=%d, xlat is %s now!\n",
+@@ -3373,6 +3418,8 @@ int hnat_init_debugfs(struct mtk_hnat *h)
+ 			    &hnat_xlat_toggle_fops);
+ 	debugfs_create_file("xlat_cfg", 0444, root, h,
+ 			    &hnat_xlat_cfg_fops);
++	debugfs_create_file("tnl_toggle", 0644, root, h,
++			    &hnat_tnl_toggle_fops);
+ 
+ 	for (i = 0; i < hnat_priv->data->num_of_sch; i++) {
+ 		ret = snprintf(name, sizeof(name), "qdma_sch%ld", i);
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index 0b2e1ef..ca12e82 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -1034,6 +1034,88 @@ void foe_clear_entry(struct neighbour *neigh)
+ 	spin_unlock_bh(&hnat_priv->entry_lock);
+ }
+ 
++void foe_clear_crypto_entry(u32 cdrt_idx)
++{
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++	struct foe_entry *entry;
++	int i, hash_index;
++	bool invalidated = false;
++
++	if (!hnat_priv || !hnat_priv->fe_base || !cdrt_idx)
++		return;
++
++	spin_lock_bh(&hnat_priv->entry_lock);
++	if (!hnat_priv->fe_base) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return;
++	}
++	for (i = 0; i < CFG_PPE_NUM; i++) {
++		if (!hnat_priv->foe_table_cpu[i] || !hnat_priv->ppe_base[i])
++			continue;
++		for (hash_index = 0; hash_index < hnat_priv->foe_etry_num; hash_index++) {
++			bool match = false;
++
++			entry = hnat_priv->foe_table_cpu[i] + hash_index;
++			if (entry->bfib1.state != BIND)
++				continue;
++
++			switch (entry->bfib1.pkt_type) {
++			case IPV4_HNAPT:
++			case IPV4_HNAT:
++				match = (entry->ipv4_hnapt.cdrt_id == cdrt_idx);
++				break;
++			case IPV4_DSLITE:
++				match = (entry->ipv4_dslite.cdrt_id == cdrt_idx);
++				break;
++			case IPV4_MAP_E:
++			case IPV4_MAP_T:
++				match = (entry->ipv4_mape.cdrt_id == cdrt_idx);
++				break;
++			case IPV6_3T_ROUTE:
++				match = (entry->ipv6_3t_route.cdrt_id == cdrt_idx);
++				break;
++			case IPV6_5T_ROUTE:
++				match = (entry->ipv6_5t_route.cdrt_id == cdrt_idx);
++				break;
++			case IPV6_6RD:
++				match = (entry->ipv6_6rd.cdrt_id == cdrt_idx);
++				break;
++			case IPV6_HNAPT:
++			case IPV6_HNAT:
++				match = (entry->ipv6_hnapt.cdrt_id == cdrt_idx);
++				break;
++			default:
++				break;
++			}
++
++			if (!match)
++				continue;
++
++			cr_set_field(hnat_priv->ppe_base[i] + PPE_TB_CFG,
++				     SMA, SMA_ONLY_FWD_CPU);
++			entry->udib1.state = INVALID;
++			entry->udib1.time_stamp =
++				readl((hnat_priv->fe_base + 0x0010)) & 0xFF;
++			foe_clear_pre_filled(entry);
++			if (hnat_priv->nh_meta[i])
++				hnat_priv->nh_meta[i][hash_index].valid = 0;
++			invalidated = true;
++
++			if (debug_level >= 2)
++				pr_info("[%s]: delete entry idx = %d_%d\n",
++					__func__, i, hash_index);
++		}
++	}
++	if (invalidated) {
++		hnat_cache_ebl(1);
++		mod_timer(&hnat_priv->hnat_sma_build_entry_timer,
++			  jiffies + 3 * HZ);
++	}
++	spin_unlock_bh(&hnat_priv->entry_lock);
++#endif /* defined(CONFIG_MEDIATEK_NETSYS_V3) */
++}
++EXPORT_SYMBOL(foe_clear_crypto_entry);
++
+ int nf_hnat_netevent_handler(struct notifier_block *unused, unsigned long event,
+ 			     void *ptr)
+ {
+@@ -1909,6 +1991,9 @@ static unsigned int hnat_ipv6_get_nexthop(struct sk_buff *skb,
+ 		return 0;
+ 	}
+ 
++	if (!skb_hnat_cdrt(skb) && dst && dst_xfrm(dst))
++		return 0;
++
+ 	rcu_read_lock_bh();
+ 	ipv6_nexthop =
+ 		rt6_nexthop((struct rt6_info *)dst, &ipv6_hdr(skb)->daddr);
+@@ -1958,6 +2043,9 @@ static unsigned int hnat_ipv4_get_nexthop(struct sk_buff *skb,
+ 		return 0;
+ 	}
+ 
++	if (!skb_hnat_cdrt(skb) && dst && dst_xfrm(dst))
++		return 0;
++
+ 	rcu_read_lock_bh();
+ 	nexthop = (__force u32)rt_nexthop(rt, ip_hdr(skb)->daddr);
+ 	neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
+@@ -2111,6 +2199,471 @@ static void hnat_copy_foe_info(struct foe_entry *dst,
+ 	       sizeof(*dst) - offset);
+ }
+ 
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++static inline void hnat_qos_rate_limit_set(u32 id, const struct net_device *dev)
++{
++	const struct mtk_mac *mac;
++	u32 max_man = SPEED_10000 / SPEED_100;
++	u32 max_exp = 5;
++	u32 cfg;
++
++	if (id >= MTK_QDMA_TX_NUM || !hnat_priv || !hnat_priv->fe_base)
++		return;
++
++	if (!dev || IS_EXT(dev) || IS_BOND(dev) || IS_BR(dev))
++		goto setup_rate_limit;
++
++	mac = netdev_priv(dev);
++	switch (mac->speed) {
++	case SPEED_100:
++	case SPEED_1000:
++	case SPEED_2500:
++	case SPEED_5000:
++	case SPEED_10000:
++		max_man = mac->speed / SPEED_100;
++		break;
++	default:
++		return;
++	}
++
++setup_rate_limit:
++	cr_set_field(hnat_priv->fe_base + QDMA_PAGE, QTX_CFG_PAGE,
++		     (id / NUM_OF_Q_PER_PAGE));
++	cfg = QTX_SCH_MIN_RATE_EN | QTX_SCH_MAX_RATE_EN;
++	cfg |= (1 << QTX_SCH_MIN_RATE_MAN_OFFSET) |
++	       (4 << QTX_SCH_MIN_RATE_EXP_OFFSET) |
++	       ((max_man & 0x7f) << QTX_SCH_MAX_RATE_MAN_OFFSET) |
++	       ((max_exp & 0xf) << QTX_SCH_MAX_RATE_EXP_OFFSET) |
++	       (4 << QTX_SCH_MAX_RATE_WGHT_OFFSET);
++	writel(cfg, hnat_priv->fe_base + QTX_SCH(id % NUM_OF_Q_PER_PAGE));
++}
++
++static inline void hnat_fill_offload_engine_entry(struct sk_buff *skb,
++						  struct foe_entry *entry,
++						  const struct net_device *dev)
++{
++	u8 tport_id = 0;
++	u8 cdrt_id = 0;
++	u8 tops_entry = 0;
++
++	if (!tnl_toggle || !skb || !entry)
++		return;
++
++	if (skb_hnat_tops(skb) && skb_hnat_is_encap(skb)) {
++		if (skb_hnat_cdrt(skb) && skb_hnat_is_encrypt(skb)) {
++			tport_id = NR_TDMA_EIP197_QDMA_TPORT;
++			cdrt_id = skb_hnat_cdrt(skb);
++		} else {
++			tport_id = NR_TDMA_QDMA_TPORT;
++		}
++		tops_entry = skb_hnat_tops(skb);
++	} else if (skb_hnat_cdrt(skb) && skb_hnat_is_encrypt(skb)) {
++		tport_id = NR_EIP197_QDMA_TPORT;
++		cdrt_id = skb_hnat_cdrt(skb);
++	} else {
++		return;
++	}
++
++	switch (entry->bfib1.pkt_type) {
++	case IPV4_HNAPT:
++	case IPV4_HNAT:
++		entry->ipv4_hnapt.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv4_hnapt.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv4_hnapt.tops_entry = tops_entry;
++		entry->ipv4_hnapt.iblk2.qid = 14;
++		break;
++	case IPV4_DSLITE:
++		entry->ipv4_dslite.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv4_dslite.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv4_dslite.tops_entry = tops_entry;
++		entry->ipv4_dslite.iblk2.qid = 14;
++		break;
++	case IPV4_MAP_E:
++	case IPV4_MAP_T:
++		entry->ipv4_mape.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv4_mape.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv4_mape.tops_entry = tops_entry;
++		entry->ipv4_mape.iblk2.qid = 14;
++		break;
++	case IPV6_3T_ROUTE:
++		entry->ipv6_3t_route.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv6_3t_route.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv6_3t_route.tops_entry = tops_entry;
++		entry->ipv6_3t_route.iblk2.qid = 14;
++		break;
++	case IPV6_5T_ROUTE:
++		entry->ipv6_5t_route.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv6_5t_route.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv6_5t_route.tops_entry = tops_entry;
++		entry->ipv6_5t_route.iblk2.qid = 14;
++		break;
++	case IPV6_6RD:
++		entry->ipv6_6rd.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv6_6rd.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv6_6rd.tops_entry = tops_entry;
++		entry->ipv6_6rd.iblk2.qid = 14;
++		break;
++	case IPV6_HNAPT:
++	case IPV6_HNAT:
++		entry->ipv6_hnapt.tport_id = tport_id;
++		if (cdrt_id)
++			entry->ipv6_hnapt.cdrt_id = cdrt_id;
++		if (tops_entry)
++			entry->ipv6_hnapt.tops_entry = tops_entry;
++		entry->ipv6_hnapt.iblk2.qid = 14;
++		break;
++	default:
++		return;
++	}
++
++	hnat_qos_rate_limit_set(14, dev);
++}
++#else /* !defined(CONFIG_MEDIATEK_NETSYS_V3) */
++static inline void hnat_fill_offload_engine_entry(struct sk_buff *skb,
++						  struct foe_entry *entry,
++						  const struct net_device *dev)
++{
++}
++#endif /* defined(CONFIG_MEDIATEK_NETSYS_V3) */
++
++static inline void hnat_get_filled_unbind_entry(struct sk_buff *skb,
++						struct foe_entry *entry)
++{
++	u32 ppe_id;
++	u32 foe_idx;
++
++	if (unlikely(!hnat_priv || !skb || !entry))
++		return;
++
++	ppe_id = skb_hnat_ppe(skb);
++	foe_idx = skb_hnat_entry(skb);
++	if (ppe_id >= CFG_PPE_NUM || foe_idx >= hnat_priv->foe_etry_num ||
++	    !hnat_priv->foe_table_cpu[ppe_id])
++		return;
++
++	memcpy(entry,
++	       &hnat_priv->foe_table_cpu[ppe_id][foe_idx],
++	       sizeof(*entry));
++
++#if defined(CONFIG_MEDIATEK_NETSYS_V2) || defined(CONFIG_MEDIATEK_NETSYS_V3)
++	entry->bfib1.mc = 0;
++#endif
++	entry->bfib1.ka = 0;
++	entry->bfib1.vlan_layer = 0;
++	entry->bfib1.psn = 0;
++	entry->bfib1.vpm = 0;
++	entry->bfib1.ps = 0;
++}
++
++int hnat_bind_crypto_entry(struct sk_buff *skb, const struct net_device *dev,
++			   int fill_inner_info)
++{
++	struct foe_entry *foe;
++	struct foe_entry unbind_foe;
++	struct foe_entry entry = { 0 };
++	struct hnat_mib_bind_guard guard = { 0 };
++	struct ethhdr eth = { 0 };
++	struct ethhdr *eth_hdr_ptr;
++	struct net_device *master_dev = (struct net_device *)dev;
++	const struct net_device *rate_dev = NULL;
++	struct ipv6hdr *ip6h;
++	struct iphdr *iph;
++	struct tcpudphdr _ports;
++	const struct tcpudphdr *pptr;
++	u32 ppe_id;
++	u32 foe_idx;
++	u32 gmac = NR_DISCARD;
++	int udp = 0;
++	int port_id;
++	struct mtk_mac *mac;
++	struct flow_offload_hw_path hw_path = {
++		.dev = (struct net_device *)dev,
++		.virt_dev = (struct net_device *)dev,
++	};
++	u16 h_proto = 0;
++
++	if (!hnat_priv || !hnat_priv->data || !skb || !dev)
++		return -EINVAL;
++
++	if (!tnl_toggle) {
++		pr_notice("tnl_toggle is disable now!\n");
++		return -1;
++	}
++
++	if (!IS_SPACE_AVAILABLE_HEAD(skb) || !skb_hnat_is_hashed(skb))
++		return 0;
++
++	ppe_id = skb_hnat_ppe(skb);
++	foe_idx = skb_hnat_entry(skb);
++	if (ppe_id >= CFG_PPE_NUM || foe_idx >= hnat_priv->foe_etry_num)
++		return 0;
++
++	spin_lock_bh(&hnat_priv->entry_lock);
++	if (!hnat_priv->foe_table_cpu[ppe_id] || !hnat_priv->ppe_base[ppe_id]) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return -ENODEV;
++	}
++	foe = &hnat_priv->foe_table_cpu[ppe_id][foe_idx];
++	if (entry_hnat_is_bound(foe)) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return 0;
++	}
++	unbind_foe = *foe;
++	hnat_get_filled_unbind_entry(skb, &entry);
++	spin_unlock_bh(&hnat_priv->entry_lock);
++
++	if (ip_hdr(skb)->version == IPVERSION_V4)
++		h_proto = ETH_P_IP;
++	else if (ip_hdr(skb)->version == IPVERSION_V6)
++		h_proto = ETH_P_IPV6;
++	else
++		return 0;
++
++	if (dev->netdev_ops && dev->netdev_ops->ndo_flow_offload_check) {
++		dev->netdev_ops->ndo_flow_offload_check(&hw_path);
++		dev = (IS_GMAC1_MODE) ? hw_path.virt_dev : hw_path.dev;
++		if (!dev)
++			return -1;
++		master_dev = (struct net_device *)dev;
++	}
++
++	if (hw_path.flags & BIT(DEV_PATH_PPPOE)) {
++		memcpy(eth.h_dest, hw_path.eth_dest, ETH_ALEN);
++		memcpy(eth.h_source, hw_path.eth_src, ETH_ALEN);
++		eth.h_proto = htons(h_proto);
++		eth_hdr_ptr = &eth;
++	} else {
++		if (!skb_mac_header_was_set(skb))
++			return -1;
++		eth_hdr_ptr = eth_hdr(skb);
++		memcpy(hw_path.eth_dest, eth_hdr_ptr->h_dest, ETH_ALEN);
++		memcpy(hw_path.eth_src, eth_hdr_ptr->h_source, ETH_ALEN);
++	}
++
++	if (!fill_inner_info)
++		goto hnat_skip_fill_inner;
++
++	switch (h_proto) {
++	case ETH_P_IP:
++		iph = ip_hdr(skb);
++
++		switch (iph->protocol) {
++		case IPPROTO_UDP:
++			udp = 1;
++			fallthrough;
++		case IPPROTO_TCP:
++			entry.ipv4_hnapt.etype = htons(ETH_P_IP);
++			if (IS_IPV4_GRP(&entry)) {
++				entry.ipv4_hnapt.iblk2.dscp = iph->tos;
++				if (hnat_priv->data->per_flow_accounting)
++					entry.ipv4_hnapt.iblk2.mibf = 1;
++
++				entry.ipv4_hnapt.vlan1 = hw_path.vlan_id;
++				if (skb_vlan_tagged(skb)) {
++					entry.bfib1.vlan_layer += 1;
++					if (entry.ipv4_hnapt.vlan1)
++						entry.ipv4_hnapt.vlan2 = skb->vlan_tci;
++					else
++						entry.ipv4_hnapt.vlan1 = skb->vlan_tci;
++				}
++
++				entry.ipv4_hnapt.sip = unbind_foe.ipv4_hnapt.sip;
++				entry.ipv4_hnapt.dip = unbind_foe.ipv4_hnapt.dip;
++				entry.ipv4_hnapt.sport = unbind_foe.ipv4_hnapt.sport;
++				entry.ipv4_hnapt.dport = unbind_foe.ipv4_hnapt.dport;
++
++				entry.ipv4_hnapt.new_sip = ntohl(iph->saddr);
++				entry.ipv4_hnapt.new_dip = ntohl(iph->daddr);
++
++				if (IS_IPV4_HNAPT(&entry)) {
++					pptr = skb_header_pointer(skb,
++								  skb_network_offset(skb) +
++								  iph->ihl * 4,
++								  sizeof(_ports),
++								  &_ports);
++					if (unlikely(!pptr))
++						return -1;
++
++					entry.ipv4_hnapt.new_sport = ntohs(pptr->src);
++					entry.ipv4_hnapt.new_dport = ntohs(pptr->dst);
++				}
++			} else {
++				return 0;
++			}
++
++			entry.bfib1.udp = udp;
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++			entry.ipv4_hnapt.eg_keep_ecn = 1;
++			entry.ipv4_hnapt.eg_keep_dscp = 1;
++#endif
++			break;
++
++		default:
++			return -1;
++		}
++		break;
++
++	case ETH_P_IPV6:
++		ip6h = ipv6_hdr(skb);
++		switch (ip6h->nexthdr) {
++		case NEXTHDR_UDP:
++			udp = 1;
++			fallthrough;
++		case NEXTHDR_TCP:
++			entry.ipv6_5t_route.etype = htons(ETH_P_IPV6);
++			entry.ipv6_5t_route.vlan1 = hw_path.vlan_id;
++
++			if (skb_vlan_tagged(skb)) {
++				entry.bfib1.vlan_layer += 1;
++				if (entry.ipv6_5t_route.vlan1)
++					entry.ipv6_5t_route.vlan2 = skb->vlan_tci;
++				else
++					entry.ipv6_5t_route.vlan1 = skb->vlan_tci;
++			}
++
++			if (hnat_priv->data->per_flow_accounting)
++				entry.ipv6_5t_route.iblk2.mibf = 1;
++			entry.bfib1.udp = udp;
++
++			entry.ipv6_3t_route.ipv6_sip0 = unbind_foe.ipv6_3t_route.ipv6_sip0;
++			entry.ipv6_3t_route.ipv6_sip1 = unbind_foe.ipv6_3t_route.ipv6_sip1;
++			entry.ipv6_3t_route.ipv6_sip2 = unbind_foe.ipv6_3t_route.ipv6_sip2;
++			entry.ipv6_3t_route.ipv6_sip3 = unbind_foe.ipv6_3t_route.ipv6_sip3;
++
++			entry.ipv6_3t_route.ipv6_dip0 = unbind_foe.ipv6_3t_route.ipv6_dip0;
++			entry.ipv6_3t_route.ipv6_dip1 = unbind_foe.ipv6_3t_route.ipv6_dip1;
++			entry.ipv6_3t_route.ipv6_dip2 = unbind_foe.ipv6_3t_route.ipv6_dip2;
++			entry.ipv6_3t_route.ipv6_dip3 = unbind_foe.ipv6_3t_route.ipv6_dip3;
++
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++			entry.ipv6_3t_route.eg_keep_ecn = 1;
++			entry.ipv6_3t_route.eg_keep_cls = 1;
++#endif
++			if (IS_IPV6_3T_ROUTE(&entry)) {
++				entry.ipv6_3t_route.prot = unbind_foe.ipv6_3t_route.prot;
++				entry.ipv6_3t_route.hph = unbind_foe.ipv6_3t_route.hph;
++			} else if (IS_IPV6_5T_ROUTE(&entry)) {
++				entry.ipv6_5t_route.sport = unbind_foe.ipv6_5t_route.sport;
++				entry.ipv6_5t_route.dport = unbind_foe.ipv6_5t_route.dport;
++			} else {
++				return 0;
++			}
++
++			entry.ipv6_5t_route.iblk2.dscp =
++				(ip6h->priority << 4 | (ip6h->flow_lbl[0] >> 4));
++			break;
++
++		default:
++			return -1;
++		}
++		break;
++
++	default:
++		return -1;
++	}
++
++hnat_skip_fill_inner:
++	entry = ppe_fill_info_blk(eth_hdr_ptr, entry, &hw_path);
++
++	if (!IS_EXT(dev) && (IS_LAN_GRP(dev) || IS_WAN(dev))) {
++		port_id = hnat_dsa_get_port(&master_dev);
++#if defined(CONFIG_NET_DSA)
++		if (port_id < 0) {
++			struct net_device *dsa_dev = NULL;
++			const struct dsa_port *dp;
++
++			dp = hnat_dsa_resolve_dp(dev, &hw_path, &dsa_dev);
++			if (!IS_ERR(dp) && dsa_dev) {
++				master_dev = dsa_dev;
++				port_id = hnat_dsa_get_port(&master_dev);
++			}
++		}
++#endif
++		if (port_id >= 0) {
++			if (hnat_dsa_fill_stag(dev, &entry, &hw_path, h_proto, 0) < 0)
++				return -1;
++		}
++		if (!master_dev || IS_BOND(master_dev) || IS_BR(master_dev) ||
++		    IS_EXT(master_dev))
++			return -1;
++		rate_dev = master_dev;
++		mac = netdev_priv(master_dev);
++		gmac = HNAT_GMAC_FP(mac->id);
++	} else {
++		pr_notice("Unknown case of dp, iif=%x --> %s\n",
++			  skb_hnat_iface(skb), dev->name);
++		return -1;
++	}
++
++	if (IS_IPV4_GRP(&entry)) {
++		entry.ipv4_hnapt.iblk2.dp = gmac;
++		entry.ipv4_hnapt.iblk2.port_mg =
++			(hnat_priv->data->version == MTK_HNAT_V1_1) ? 0x3f : 0;
++		if (!skb_hnat_tops(skb)) {
++			entry.ipv4_hnapt.dmac_hi = swab32(*((u32 *)hw_path.eth_dest));
++			entry.ipv4_hnapt.dmac_lo = swab16(*((u16 *)&hw_path.eth_dest[4]));
++			entry.ipv4_hnapt.smac_hi = swab32(*((u32 *)hw_path.eth_src));
++			entry.ipv4_hnapt.smac_lo = swab16(*((u16 *)&hw_path.eth_src[4]));
++		}
++		entry.ipv4_hnapt.pppoe_id = hw_path.pppoe_sid;
++	} else {
++		entry.ipv6_5t_route.iblk2.dp = gmac;
++		entry.ipv6_5t_route.iblk2.port_mg =
++			(hnat_priv->data->version == MTK_HNAT_V1_1) ? 0x3f : 0;
++		if (!skb_hnat_tops(skb)) {
++			entry.ipv6_5t_route.dmac_hi = swab32(*((u32 *)hw_path.eth_dest));
++			entry.ipv6_5t_route.dmac_lo = swab16(*((u16 *)&hw_path.eth_dest[4]));
++			entry.ipv6_5t_route.smac_hi = swab32(*((u32 *)hw_path.eth_src));
++			entry.ipv6_5t_route.smac_lo = swab16(*((u16 *)&hw_path.eth_src[4]));
++		}
++		entry.ipv6_5t_route.pppoe_id = hw_path.pppoe_sid;
++	}
++
++	hnat_fill_offload_engine_entry(skb, &entry, rate_dev);
++
++	spin_lock_bh(&hnat_priv->entry_lock);
++	if (!hnat_priv->foe_table_cpu[ppe_id] || !hnat_priv->ppe_base[ppe_id]) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return -ENODEV;
++	}
++	foe = &hnat_priv->foe_table_cpu[ppe_id][foe_idx];
++	if (entry_hnat_is_bound(foe)) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return 0;
++	}
++
++	if (!hnat_mib_bind_begin(hnat_priv, ppe_id, foe_idx, &guard)) {
++		spin_unlock_bh(&hnat_priv->entry_lock);
++		return 0;
++	}
++
++	entry.bfib1.ttl = 1;
++	entry.bfib1.state = BIND;
++	hnat_record_foe_nh_meta_locked(skb, &hw_path, &entry);
++	wmb();
++	hnat_copy_foe_info(foe, &entry);
++	wmb();
++	memcpy(&foe->bfib1, &entry.bfib1, sizeof(entry.bfib1));
++	dma_wmb();
++	hnat_mib_bind_end(hnat_priv, ppe_id, &guard);
++	spin_unlock_bh(&hnat_priv->entry_lock);
++
++	return 0;
++}
++EXPORT_SYMBOL(hnat_bind_crypto_entry);
++
+ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 				     const struct net_device *dev,
+ 				     struct foe_entry *foe,
+@@ -2601,6 +3154,16 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 	/* Fill Layer2 Info.*/
+ 	entry = ppe_fill_L2_info(eth, entry, hw_path);
+ 
++	if ((skb_hnat_tops(skb) && (hw_path->flags & BIT(DEV_PATH_TNL))) ||
++	    (!skb_hnat_cdrt(skb) && skb_hnat_is_encrypt(skb) &&
++	     skb_dst(skb) && dst_xfrm(skb_dst(skb)))) {
++		hnat_copy_foe_info(foe, &entry);
++		wmb();
++		memcpy(&foe->bfib1, &entry.bfib1, sizeof(entry.bfib1));
++		dma_wmb();
++		return 0;
++	}
++
+ 	/* Fill Info Blk*/
+ 	entry = ppe_fill_info_blk(eth, entry, hw_path);
+ 
+@@ -2793,6 +3356,16 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 		}
+ 	}
+ 
++	{
++		const struct net_device *rate_dev = NULL;
++
++		if (!IS_EXT(dev) && (IS_LAN_GRP(dev) || IS_WAN(dev)) &&
++		    master_dev && !IS_BOND(master_dev) &&
++		    !IS_BR(master_dev) && !IS_EXT(master_dev))
++			rate_dev = master_dev;
++		hnat_fill_offload_engine_entry(skb, &entry, rate_dev);
++	}
++
+ 	/* The INFO2.port_mg and 2nd VLAN ID fields of PPE entry are redefined
+ 	 * by Wi-Fi whnat engine. These data and INFO2.dp will be updated and
+ 	 * the entry is set to BIND state in mtk_sw_nat_hook_tx().
+@@ -3180,6 +3753,9 @@ int mtk_sw_nat_hook_rx(struct sk_buff *skb)
+ 	}
+ 
+ 	skb_hnat_alg(skb) = 0;
++	skb_hnat_set_tops(skb, 0);
++	skb_hnat_set_cdrt(skb, 0);
++	skb_hnat_set_is_decrypt(skb, 0);
+ 	skb_hnat_magic_tag(skb) = HNAT_MAGIC_TAG;
+ 
+ 	if (skb_hnat_iface(skb) == FOE_MAGIC_WED0)
+@@ -3296,7 +3872,8 @@ static unsigned int mtk_hnat_accel_type(struct sk_buff *skb)
+ 	 * is from local_out which is also filtered in sanity check.
+ 	 */
+ 	dst = skb_dst(skb);
+-	if (dst && dst_xfrm(dst))
++	if (dst && dst_xfrm(dst) &&
++	    (!mtk_crypto_offloadable || !mtk_crypto_offloadable(skb)))
+ 		return 0;
+ 
+ 	ct = nf_ct_get(skb, &ctinfo);
+@@ -4005,6 +4582,10 @@ mtk_hnat_ipv4_nf_local_out(void *priv, struct sk_buff *skb,
+ 	if (iph->protocol == IPPROTO_IPV6) {
+ 		entry->udib1.pkt_type = IPV6_6RD;
+ 		hnat_set_head_frags(state, skb, 0, hnat_set_alg);
++	} else if (is_magic_tag_valid(skb) &&
++		   ((skb_hnat_cdrt(skb) && skb_hnat_is_encrypt(skb)) ||
++		    skb_hnat_tops(skb))) {
++		hnat_set_head_frags(state, skb, 0, hnat_set_alg);
+ 	} else {
+ 		hnat_set_head_frags(state, skb, 1, hnat_set_alg);
+ 	}
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/nf_hnat_mtk.h b/drivers/net/ethernet/mediatek/mtk_hnat/nf_hnat_mtk.h
+index 83751ad..8de3294 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/nf_hnat_mtk.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/nf_hnat_mtk.h
+@@ -15,6 +15,7 @@
+ #define NF_HNAT_MTK_H
+ 
+ #include <linux/dma-mapping.h>
++#include <linux/in.h>
+ #include <linux/netdevice.h>
+ #include "../mtk_eth_soc.h"
+ 
+@@ -44,7 +45,11 @@ struct hnat_desc {
+ 	u32 is_sp : 1;
+ 	u32 hf : 1;
+ 	u32 amsdu : 1;
+-	u32 resv3 : 19;
++	u32 tops : 6;
++	u32 is_decap : 1;
++	u32 cdrt : 8;
++	u32 is_decrypt : 1;
++	u32 resv3 : 3;
+ 	u32 magic_tag_protect : 16;
+ } __packed;
+ #elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
+@@ -93,6 +98,29 @@ struct hnat_desc {
+ 	((((skb_headroom(skb) >= FOE_INFO_LEN) ? 1 : 0)))
+ 
+ #define skb_hnat_info(skb) ((struct hnat_desc *)(skb->head))
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++#define skb_hnat_tops(skb) (((struct hnat_desc *)((skb)->head))->tops)
++#define skb_hnat_is_decap(skb) (((struct hnat_desc *)((skb)->head))->is_decap)
++#define skb_hnat_is_encap(skb) (!skb_hnat_is_decap(skb))
++#define skb_hnat_set_tops(skb, tops) ((skb_hnat_tops(skb)) = (tops))
++#define skb_hnat_set_is_decap(skb, is_decap) ((skb_hnat_is_decap(skb)) = (is_decap))
++#define skb_hnat_cdrt(skb) (((struct hnat_desc *)((skb)->head))->cdrt)
++#define skb_hnat_is_decrypt(skb) (((struct hnat_desc *)((skb)->head))->is_decrypt)
++#define skb_hnat_is_encrypt(skb) (!skb_hnat_is_decrypt(skb))
++#define skb_hnat_set_cdrt(skb, cdrt) ((skb_hnat_cdrt(skb)) = (cdrt))
++#define skb_hnat_set_is_decrypt(skb, is_dec) ((skb_hnat_is_decrypt(skb)) = (is_dec))
++#else /* !defined(CONFIG_MEDIATEK_NETSYS_V3) */
++#define skb_hnat_tops(skb) (0)
++#define skb_hnat_is_decap(skb) (0)
++#define skb_hnat_is_encap(skb) (0)
++#define skb_hnat_set_tops(skb, tops) do { } while (0)
++#define skb_hnat_set_is_decap(skb, is_decap) do { } while (0)
++#define skb_hnat_cdrt(skb) (0)
++#define skb_hnat_is_decrypt(skb) (0)
++#define skb_hnat_is_encrypt(skb) (0)
++#define skb_hnat_set_cdrt(skb, cdrt) do { } while (0)
++#define skb_hnat_set_is_decrypt(skb, is_dec) do { } while (0)
++#endif /* defined(CONFIG_MEDIATEK_NETSYS_V3) */
+ #define skb_hnat_magic(skb) (((struct hnat_desc *)(skb->head))->magic)
+ #define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)
+ #define skb_hnat_entry(skb) (((struct hnat_desc *)(skb->head))->entry)
+@@ -177,4 +205,47 @@ u32 hnat_set_skb_info(struct sk_buff *skb, u32 *rxd);
+ u32 hnat_reg(struct net_device *, void __iomem *);
+ u32 hnat_unreg(void);
+ 
++static inline int mtk_hnat_skb_headroom_copy(struct sk_buff *new,
++					     struct sk_buff *old)
++{
++	struct sk_buff *temp = new;
++	unsigned int hr_len;
++	bool need_copy = false;
++	bool is_esp = false;
++
++	if (unlikely(!new || !old))
++		return 0;
++
++	if (skb_headroom(old) < sizeof(struct hnat_desc))
++		return 0;
++
++	if (is_magic_tag_valid(old) &&
++	    skb_hnat_reason(old) == HIT_UNBIND_RATE_REACH &&
++	    skb_hnat_tops(old))
++		need_copy = true;
++
++	if (old->inner_protocol == IPPROTO_ESP &&
++	    skb_hnat_cdrt(old) && is_magic_tag_valid(old)) {
++		need_copy = true;
++		is_esp = true;
++	}
++
++	if (!need_copy)
++		return 0;
++
++	hr_len = skb_headroom(old);
++	while (temp) {
++		if (skb_headroom(temp) < hr_len && skb_cow_head(temp, hr_len))
++			return -ENOMEM;
++
++		memcpy(temp->head, old->head, hr_len);
++		if (is_esp)
++			temp->inner_protocol = IPPROTO_ESP;
++
++		temp = temp->next;
++	}
++
++	return 0;
++}
++
+ #endif
+diff --git a/include/net/xfrm.h b/include/net/xfrm.h
+index 3d63e52..2dc802c 100644
+--- a/include/net/xfrm.h
++++ b/include/net/xfrm.h
+@@ -1146,6 +1146,7 @@ static inline struct xfrm_offload *xfrm_offload(struct sk_buff *skb)
+ #ifdef CONFIG_XFRM
+ int __xfrm_policy_check(struct sock *, int dir, struct sk_buff *skb,
+ 			unsigned short family);
++extern bool (*mtk_xfrm_pkt_is_hw_decrypted)(struct sk_buff *skb);
+ 
+ static inline bool __xfrm_check_nopolicy(struct net *net, struct sk_buff *skb,
+ 					 int dir)
+diff --git a/net/8021q/vlan_dev.c b/net/8021q/vlan_dev.c
+index 9a74c04..c5fb396 100644
+--- a/net/8021q/vlan_dev.c
++++ b/net/8021q/vlan_dev.c
+@@ -642,6 +642,9 @@ static netdev_features_t vlan_dev_fix_features(struct net_device *dev,
+ 	features |= old_features & (NETIF_F_SOFT_FEATURES | NETIF_F_GSO_SOFTWARE_ALL);
+ 	features |= NETIF_F_LLTX;
+ 
++	if (old_features & NETIF_F_HW_ESP)
++		features |= NETIF_F_HW_ESP;
++
+ 	return features;
+ }
+ 
+diff --git a/net/ipv4/ip_output.c b/net/ipv4/ip_output.c
+index c8f966d..68c8fa4 100644
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -697,7 +697,7 @@ struct sk_buff *ip_frag_next(struct sk_buff *skb, struct ip_frag_state *state)
+ 	}
+ 
+ 	/* Allocate buffer */
+-	skb2 = alloc_skb(len + state->hlen + state->ll_rs, GFP_ATOMIC);
++	skb2 = alloc_skb(len + state->hlen + state->ll_rs + NET_SKB_PAD + NET_IP_ALIGN, GFP_ATOMIC);
+ 	if (!skb2)
+ 		return ERR_PTR(-ENOMEM);
+ 
+@@ -706,7 +706,7 @@ struct sk_buff *ip_frag_next(struct sk_buff *skb, struct ip_frag_state *state)
+ 	 */
+ 
+ 	ip_copy_metadata(skb2, skb);
+-	skb_reserve(skb2, state->ll_rs);
++	skb_reserve(skb2, state->ll_rs + NET_SKB_PAD + NET_IP_ALIGN);
+ 	skb_put(skb2, len + state->hlen);
+ 	skb_reset_network_header(skb2);
+ 	skb2->transport_header = skb2->network_header + state->hlen;
+diff --git a/net/xfrm/xfrm_output.c b/net/xfrm/xfrm_output.c
+index 21aa65c..ba163d5 100644
+--- a/net/xfrm/xfrm_output.c
++++ b/net/xfrm/xfrm_output.c
+@@ -761,6 +761,15 @@ int xfrm_output(struct sock *sk, struct sk_buff *skb)
+ 			return -EHOSTUNREACH;
+ 		}
+ 
++		if (skb->inner_protocol == IPPROTO_RSVP) {
++			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTERROR);
++			kfree_skb(skb);
++			return -EHOSTUNREACH;
++		}
++
++		if (skb->inner_protocol == IPPROTO_ESP)
++			return 0;
++
+ 		/* Exclusive direct xmit for tunnel mode, as
+ 		 * some filtering or matching rules may apply
+ 		 * in transport mode.
+diff --git a/net/xfrm/xfrm_policy.c b/net/xfrm/xfrm_policy.c
+index 00d9693..bb40363 100644
+--- a/net/xfrm/xfrm_policy.c
++++ b/net/xfrm/xfrm_policy.c
+@@ -3614,6 +3614,9 @@ static inline int secpath_has_nontransport(const struct sec_path *sp, int k, int
+ 	return 0;
+ }
+ 
++bool (*mtk_xfrm_pkt_is_hw_decrypted)(struct sk_buff *skb) = NULL;
++EXPORT_SYMBOL(mtk_xfrm_pkt_is_hw_decrypted);
++
+ int __xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb,
+ 			unsigned short family)
+ {
+@@ -3764,6 +3767,18 @@ int __xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb,
+ 			 */
+ 			goto out;
+ 
++		if (dir == XFRM_POLICY_FWD && sp == &dummy) {
++			bool (*pkt_is_hw_dec)(struct sk_buff *skb);
++
++			rcu_read_lock();
++			pkt_is_hw_dec = READ_ONCE(mtk_xfrm_pkt_is_hw_decrypted);
++			if (pkt_is_hw_dec && pkt_is_hw_dec(skb)) {
++				rcu_read_unlock();
++				goto out;
++			}
++			rcu_read_unlock();
++		}
++
+ 		/* For each tunnel xfrm, find the first matching tmpl.
+ 		 * For each tmpl before that, find corresponding xfrm.
+ 		 * Order is _important_. Later we will implement

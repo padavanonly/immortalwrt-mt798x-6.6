@@ -1,0 +1,101 @@
+Subject: [PATCH] net: ethernet: mtk_hnat: fix bonding with DSA flow offload and ppd_dev selection
+
+When a bonding interface (such as bond0 in 802.3ad LACP mode) aggregates
+MT753x/MT7988 DSA user ports (e.g. lan1/lan2) under br-lan or as a standalone
+interface, mtk_hnat has several defects that either break PPE hardware offload
+or risk out-of-bounds private data casts:
+
+1. In mtk_hnat_nf_post_routing() and skb_to_hnat_info(), if
+   ndo_flow_offload_check() fails to resolve a bond device (e.g. before any
+   802.3ad slave enters the active aggregator), out / master_dev remains the
+   bond net_device. Casting netdev_priv(master_dev) to struct mtk_mac *
+   reads struct bonding private memory out of bounds. Guard with IS_BOND()
+   and abort offload cleanly when unresolved.
+2. In ppd_dev_setting(), iterating br-lan lower devices can pick bond0 (or a
+   bond slave) as ppd_dev, or dereference NULL in pr_info when no lower port
+   has carrier. Skip bond master/slave devices when selecting the ping-pong
+   device and fall back to g_ppdev safely.
+3. In nf_hnat_netdevice_event(NETDEV_CHANGE), flush PPE bound entries for a
+   bond slave on any state/link transition rather than only when carrier is
+   already down, so LACP aggregator state changes do not leave stale PPE bindings.
+4. In hnat_dsa_fill_stag() (hnat_stag.c), extract the resolved DSA port from
+   hw_path->dev when IS_BOND(netdev) is true (just like DEV_PATH_VLAN), instead
+   of passing bond0 to dsa_To_slave_dev() which fails the dsa_user_dev_check()
+   and aborts hardware offload with -EINVAL.
+
+FILES: drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c; hnat_stag.c
+FUNCTIONS: ppd_dev_setting; nf_hnat_netdevice_event; skb_to_hnat_info; mtk_hnat_nf_post_routing; hnat_dsa_fill_stag
+DEPENDENCIES: Ordered after 999-2903-mtk-enhance.patch and 999-3067-net-ethernet-mediatek-fix-build-warnings.patch
+
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -350,6 +350,8 @@ void ppd_dev_setting(void)
+                 struct net_device *dev;
+                 struct list_head *pos;
+                 netdev_for_each_lower_dev(br_dev, dev, pos) {
++                        if (netif_is_bond_master(dev) || netif_is_bond_slave(dev))
++                                continue;
+                         if (dev->flags & IFF_UP) {
+                             if (netif_carrier_ok(dev)){
+                                 ppd_dev = __dev_get_by_name(&init_net, dev->name);
+@@ -387,8 +389,14 @@ void ppd_dev_setting(void)
+                 hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth0");
+                 }
+ 		}
++	if (!ppd_dev || netif_is_bond_master(ppd_dev) ||
++	    netif_is_bond_slave(ppd_dev) || !(ppd_dev->flags & IFF_UP) ||
++	    !netif_carrier_ok(ppd_dev))
++		ppd_dev = hnat_priv->g_ppdev;
+ 	pr_info("%s : now rx dev: %s, tx dev: %s\n", 
+-		__func__, hnat_priv->g_ppdev->name, ppd_dev->name);
++		__func__,
++		hnat_priv->g_ppdev ? hnat_priv->g_ppdev->name : "null",
++		ppd_dev ? ppd_dev->name : "null");
+ }
+ 
+ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
+@@ -413,13 +421,11 @@ int nf_hnat_netdevice_event(struct notif
+ 		break;
+ 
+ 	case NETDEV_CHANGE:
+-		/* Clear PPE entries if the slave of bond device physical link down */
++		/* Clear PPE entries if the slave of bond device state or link changes */
+ 		ppd_dev_setting();
+ 		if (!netif_is_bond_slave(dev) ||
+ 		    (!IS_LAN_GRP(dev) && !IS_WAN(dev)))
+ 			break;
+-		if (netif_carrier_ok(dev))
+-			break;
+ 		foe_clear_ethdev_bind_entries(dev);
+ 		break;
+ 		
+@@ -2038,6 +2044,8 @@ static unsigned int skb_to_hnat_info(str
+ 					       ntohs(eth->h_proto), mape) < 0)
+ 				return 0;
+ 		}
++		if (IS_BOND(master_dev))
++			return 0;
+ 		mac = netdev_priv(master_dev);
+ 		gmac = HNAT_GMAC_FP(mac->id);
+ 		if (IS_WAN(dev) && mape_toggle && mape == 1) {
+@@ -3035,6 +3043,9 @@ mtk_hnat_nf_post_routing(struct sk_buff
+ 		out = (IS_GMAC1_MODE) ? hw_path.virt_dev : hw_path.dev;
+ 	}
+ 
++	if (IS_BOND(out))
++		return 0;
++
+ 	if (!IS_LAN_GRP(out) && !IS_WAN(out) && !IS_EXT(out))
+ 		return 0;
+ 	
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_stag.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_stag.c
+@@ -31,7 +31,7 @@ u32 hnat_dsa_fill_stag(const struct net_
+ 	struct net_device *ndev;
+ 	int port_index;
+ 	u16 dsa_tag;
+-	if (hw_path->flags & BIT(DEV_PATH_VLAN))
++	if ((hw_path->flags & BIT(DEV_PATH_VLAN)) || IS_BOND(netdev))
+ 		ndev = hw_path->dev;
+ 	else
+ 		ndev = (struct net_device *)netdev;
