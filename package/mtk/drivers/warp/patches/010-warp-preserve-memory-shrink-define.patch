@@ -1,0 +1,23 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] warp: preserve MTK_MEMORY_SHRINK fallback define
+
+Ensure CONFIG_MTK_MEMORY_SHRINK retains its fallback definition when omitted from external CFLAGS.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ Makefile | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 897460e..b3be8d8 100644
+--- a/Makefile
++++ b/Makefile
+@@ -4,9 +4,7 @@ ifeq ($(CONFIG_WARP_DBG_SUPPORT), y)
+ ccflags-y += -DCONFIG_WARP_DBG_SUPPORT
+ endif
+ 
+-ifeq ($(CONFIG_MTK_MEMORY_SHRINK), y)
+ ccflags-y += -DMEMORY_SHRINK
+-endif
+ 
+ ifeq ($(CONFIG_WARP_MEMORY_LEAK_DBG), y)
+ ccflags-y += -DMEM_LEAK_DBG

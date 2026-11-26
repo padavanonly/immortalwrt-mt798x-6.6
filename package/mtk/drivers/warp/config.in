@@ -5,12 +5,17 @@ config WARP_CONFIG_MODE
 	help
 		For project Jaguar and before (<= WARP_V3), please use mode = 0
 		For project Griffin and later (>= WARP_V3_1), please use mode = 1
+	default 1 if TARGET_mediatek_filogic_hwifi || TARGET_mediatek_mt7987
 	default 0
-	default 1 if TARGET_mediatek_mt7987
 
 config WARP_CHIPSET
 	string "WARP Driver HW Chipset"
 	default mt7622 if TARGET_mediatek_mt7622
+	default mt7986 if TARGET_mediatek_filogic_mtwifi && MTK_FIRST_IF_MT7986
+	default mt7981 if TARGET_mediatek_filogic_mtwifi && MTK_FIRST_IF_MT7981
+	default mt7981 if TARGET_mediatek_filogic_mtwifi
+	default mt7987 if TARGET_mediatek_filogic_hwifi
+	default mt7988 if TARGET_mediatek_filogic_hwifi_a73
 	default mt7986 if TARGET_mediatek_mt7986
 	default mt7981 if TARGET_mediatek_mt7981
 	default mt7988 if TARGET_mediatek_mt7988
@@ -22,6 +27,9 @@ config WARP_VERSION
 	string "WARP Driver HW Version"
 	default 1 if TARGET_mediatek_mt7622
 	default 1 if TARGET_airoha_en7563
+	default 2 if TARGET_mediatek_filogic_mtwifi
+	default 3_1 if TARGET_mediatek_filogic_hwifi
+	default 3 if TARGET_mediatek_filogic_hwifi_a73
 	default 2 if TARGET_mediatek_mt7986
 	default 2 if TARGET_mediatek_mt7981
 	default 3 if TARGET_mediatek_mt7988
@@ -32,7 +40,7 @@ config WARP_VERSION
 config WED_HW_RRO_SUPPORT
 	bool "WARP Driver WED HW RRO (WO RRO) Support"
 	depends on WARP_CONFIG_MODE = 0
-	default y if TARGET_mediatek_mt7986 || TARGET_mediatek_mt7981 || TARGET_mediatek_mt7988
+	default y if TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi_a73 || TARGET_mediatek_mt7986 || TARGET_mediatek_mt7981 || TARGET_mediatek_mt7988
 	default n
 	help
 		Value will be set depending on TARGET, default not need set by user.
@@ -49,7 +57,7 @@ config WARP_MEMORY_LEAK_DBG
 	bool "Memory leak debug"
 	depends on WARP_CONFIG_MODE = 0
 	depends on !MTK_MEMORY_SHRINK && WARP_DBG_SUPPORT
-	default y
+	default n
 
 config WARP_WO_EMBEDDED_LOAD
 	bool "WARP Driver Emebedded MCU FW"
@@ -57,5 +65,21 @@ config WARP_WO_EMBEDDED_LOAD
 	depends on WED_HW_RRO_SUPPORT
 	help
 		Once enabled, firmware download flow try embedded version once externel version being invalid.
+
+config WARP_ATC_SUPPORT
+	bool "WARP Driver Address Translate Support for CR mirror"
+	depends on TARGET_mediatek_filogic_mtwifi
+	default n
+
+config WARP_WDMA_RECYCLE_SUPPORT
+	bool "WARP WDMA Recycle Support"
+	depends on TARGET_mediatek_filogic_mtwifi
+	default n
+
+config WARP_NEW_FW
+	bool "Use new warp firmware"
+	depends on TARGET_mediatek_filogic_mtwifi
+	default y if TARGET_mediatek_filogic_mtwifi && MTK_FIRST_IF_MT7986
+	default n
 
 endif

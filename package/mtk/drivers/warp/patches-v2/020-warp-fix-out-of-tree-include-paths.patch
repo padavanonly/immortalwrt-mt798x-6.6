@@ -1,0 +1,8 @@
+--- a/Makefile
++++ b/Makefile
+@@ -1,4 +1,4 @@
+-ccflags-y += $(MODULE_FLAGS) -Inet/nat -I$(PKG_BUILD_DIR)../warp -I$(PKG_BUILD_DIR)../warp/mcu -DCONFIG_WARP_VERSION=$(CONFIG_WARP_VERSION)
++ccflags-y += $(MODULE_FLAGS) -Inet/nat -I$(src) -I$(src)/mcu -DCONFIG_WARP_VERSION=$(CONFIG_WARP_VERSION)
+ 
+ ifeq ($(CONFIG_WARP_ATC_SUPPORT), y)
+ ccflags-y += -DCONFIG_WARP_ATC_SUPPORT

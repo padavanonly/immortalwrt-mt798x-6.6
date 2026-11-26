@@ -1,0 +1,140 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] warp: fix v2 FOE_MAGIC_WED2, skb dump safety, and DT resource bounds
+
+- Align FOE_MAGIC_WED2 (0x87 -> 0x7A) with ra_nat.h.
+- Guard wifi_dump_skb() with warp_log_get() and non-mutating network/transport header bounds checks.
+- Add safe resource/IRQ index-0 fallback, NULL/error checks, and of_node_put() in wed.c, warp_mt7986.c, and warp_mt7981.c.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/warp_wifi.c
++++ b/warp_wifi.c
+@@ -36,7 +36,7 @@
+ 	struct wlan_tx_info *info,
+ 	struct sk_buff *skb)
+ {
+-	struct iphdr *hdr = ip_hdr(skb);
++	struct iphdr *hdr;
+ 
+ 	warp_dbg(WARP_DBG_INF,
+ 		 "%s(): add entry: wdma=%d,ringId=%d,wcid=%d,bssid=%d\n",
+@@ -46,6 +46,12 @@
+ 		 info->wcid,
+ 		 info->bssidx);
+ 
++	if (!skb || skb_network_offset(skb) < 0 ||
++	    (unsigned int)skb_network_offset(skb) >= skb_headlen(skb) ||
++	    skb_headlen(skb) - (unsigned int)skb_network_offset(skb) < sizeof(*hdr))
++		return;
++
++	hdr = ip_hdr(skb);
+ 	if (hdr->version != 4)
+ 		return;
+ 
+@@ -65,7 +71,9 @@
+ 		 (0xff0000 & hdr->daddr) >> 16,
+ 		 (0xff000000 & hdr->daddr) >> 24);
+ 
+-	if (hdr->protocol == IPPROTO_TCP) {
++	if (hdr->protocol == IPPROTO_TCP && skb_transport_header_was_set(skb) &&
++	    skb_transport_offset(skb) >= 0 &&
++	    skb_headlen(skb) >= (unsigned int)skb_transport_offset(skb) + sizeof(struct tcphdr)) {
+ 		struct tcphdr *tcph = tcp_hdr(skb);
+ 		warp_dbg(WARP_DBG_INF,
+ 			 "%s(): protocol=TCP,sport=%d,dstport=%d\n",
+@@ -74,7 +82,9 @@
+ 			 tcph->dest);
+ 	}
+ 
+-	if (hdr->protocol == IPPROTO_UDP) {
++	if (hdr->protocol == IPPROTO_UDP && skb_transport_header_was_set(skb) &&
++	    skb_transport_offset(skb) >= 0 &&
++	    skb_headlen(skb) >= (unsigned int)skb_transport_offset(skb) + sizeof(struct udphdr)) {
+ 		struct udphdr *udph = udp_hdr(skb);
+ 		warp_dbg(WARP_DBG_INF,
+ 			 "%s(): protocol=UDP,sport=%d,dstport=%d\n",
+@@ -87,7 +97,7 @@
+ 
+ #define FOE_MAGIC_WED0 0x78
+ #define FOE_MAGIC_WED1 0x79
+-#define FOE_MAGIC_WED2 0x87
++#define FOE_MAGIC_WED2 0x7A
+ 
+ void
+ wifi_rx_tuple_add(struct wifi_entry *wifi, u8 idx, unsigned char *rx_info)
+@@ -173,7 +183,8 @@
+ 			}
+ 		}
+ #ifdef CONFIG_WARP_DBG_SUPPORT
+-		wifi_dump_skb(idx, info, skb);
++		if (WARP_DBG_INF <= warp_log_get())
++			wifi_dump_skb(idx, info, skb);
+ #endif /*CONFIG_WARP_DBG_SUPPORT*/
+ 	}
+ 	return 0;
+--- a/wed.c
++++ b/wed.c
+@@ -679,14 +679,32 @@
+ 	/*assign to pdev*/
+ 	int ret = -1;
+ 	struct resource *res;
++	int irq_num;
+ 	u32 irq;
+ 	unsigned long base_addr;
+ 	struct warp_entry *warp = NULL;
+ 
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, idx);
+-	irq = platform_get_irq(pdev, idx);
++	if (!res && idx > 0)
++		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if (!res) {
++		warp_dbg(WARP_DBG_ERR, "%s(%d): get MEM resource fail!\n", __func__, idx);
++		return -ENODEV;
++	}
++	irq_num = platform_get_irq(pdev, idx);
++	if (irq_num < 0 && idx > 0)
++		irq_num = platform_get_irq(pdev, 0);
++	if (irq_num < 0) {
++		warp_dbg(WARP_DBG_ERR, "%s(%d): get IRQ resource fail!\n", __func__, idx);
++		return irq_num;
++	}
++	irq = (u32)irq_num;
+ 	base_addr = (unsigned long)devm_ioremap(&pdev->dev, res->start,
+ 						resource_size(res));
++	if (!base_addr) {
++		warp_dbg(WARP_DBG_ERR, "%s(%d): ioremap fail!\n", __func__, idx);
++		return -ENOMEM;
++	}
+ 	warp_dbg(WARP_DBG_OFF,
+ 		 "%s(%d): res_start = 0x%llx, size = %x, irq=%d,base_addr=0x%lx\n",
+ 		 __func__, idx, res->start, (u32)resource_size(res), irq, base_addr);
+--- a/regs/reg_v2/warp_mt7986.c
++++ b/regs/reg_v2/warp_mt7986.c
+@@ -186,7 +186,12 @@
+ 	rro_ctrl->miod_desc_base_mcu_view = WOCPU_MCU_VIEW_MIOD_BASE_ADDR;
+ 
+ 	/* get MID/MOD from device tree */
++	if (!node)
++		goto err0;
+ 	rc = of_address_to_resource(node, warp->idx, &res);
++	if (rc && warp->idx > 0)
++		rc = of_address_to_resource(node, 0, &res);
++	of_node_put(node);
+ 	if (rc)
+ 		goto err0;
+ 
+--- a/regs/reg_v2/warp_mt7981.c
++++ b/regs/reg_v2/warp_mt7981.c
+@@ -143,7 +143,12 @@
+ 	rro_ctrl->miod_desc_base_mcu_view = WOCPU_MCU_VIEW_MIOD_BASE_ADDR;
+ 
+ 	/* get MID/MOD from device tree */
++	if (!node)
++		goto err0;
+ 	rc = of_address_to_resource(node, warp->idx, &res);
++	if (rc && warp->idx > 0)
++		rc = of_address_to_resource(node, 0, &res);
++	of_node_put(node);
+ 	if (rc)
+ 		goto err0;
+ 

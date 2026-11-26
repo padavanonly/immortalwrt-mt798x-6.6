@@ -1,0 +1,1535 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] warp: add ring lifecycle state machine, IRQ synchronization,
+ and SER reset unwind
+
+Introduce checked ring init/exit serialization, synchronize IRQs before teardown, propagate reset_rx_traffic errors, and retain bus/DMA resources on reset failure instead of risking double free.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ regs/reg_v1/warp_hw_v1.c |   4 +
+ regs/reg_v2/warp_hw_v2.c |  36 ++--
+ regs/reg_v3/warp_hw.c    |  23 ++-
+ regs/reg_v3_1/warp_hw.c  |  23 ++-
+ regs/reg_v3_2/warp_hw.c  |  23 ++-
+ warp.h                   |  35 ++++
+ warp_main.c              | 374 ++++++++++++++++++++++++++++++++++-----
+ warp_rx_bm.c             |  99 ++++++++---
+ warp_rx_page_bm.c        |  47 ++++-
+ warp_tx_bm_v2.c          |  23 +++
+ warp_utility.c           |   5 +-
+ warp_utility.h           |   2 +
+ wdma.c                   |  22 ++-
+ wed.c                    | 126 ++++++++++---
+ 14 files changed, 712 insertions(+), 130 deletions(-)
+
+diff --git a/regs/reg_v1/warp_hw_v1.c b/regs/reg_v1/warp_hw_v1.c
+index 05b0ffd..45cef18 100644
+--- a/regs/reg_v1/warp_hw_v1.c
++++ b/regs/reg_v1/warp_hw_v1.c
+@@ -1177,6 +1177,10 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ 	case WARP_RESET_INTERFACE:
+ 		reset_all(wed, wdma);
+ 		break;
++	default:
++		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u\n", __func__, reset_type);
++		ret = -EOPNOTSUPP;
++		break;
+ 	}
+ 
+ 	return ret;
+diff --git a/regs/reg_v2/warp_hw_v2.c b/regs/reg_v2/warp_hw_v2.c
+index c3ebf6f..d0b204c 100644
+--- a/regs/reg_v2/warp_hw_v2.c
++++ b/regs/reg_v2/warp_hw_v2.c
+@@ -2873,31 +2873,39 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ 	struct warp_entry *warp = wed->warp;
+ 	struct wdma_entry *wdma = &warp->wdma;
+ 
++	int err;
++
+ 	switch (reset_type) {
+ 	case WARP_RESET_IDX_ONLY:
+ 	case WARP_RESET_IDX_MODULE:
+ 		/* TX data offload path reset */
+-		ret = reset_tx_traffic(wed, reset_type);
++		err = reset_tx_traffic(wed, reset_type);
+ 
+-		if (ret < 0) {
+-			warp_dbg(WARP_DBG_ERR, "%s(): wed_tx reset check fail,ret=%d\n", __func__, ret);
+-			warp_dbg(WARP_DBG_ERR, "%s(): check ser_busy_cnt: echo 18 > wed\n", __func__, ret);
++		if (err < 0) {
++			warp_dbg(WARP_DBG_ERR, "%s(): wed_tx reset check fail,ret=%d\n", __func__, err);
++			warp_dbg(WARP_DBG_ERR, "%s(): check ser_busy_cnt: echo 18 > wed\n", __func__, err);
++			if (!ret)
++				ret = err;
+ 		}
+ 		/* TX free done reset - rx path */
+-		ret = reset_rx_traffic(wed, reset_type);
++		err = reset_rx_traffic(wed, reset_type);
+ 
+-		if (ret < 0) {
+-			warp_dbg(WARP_DBG_ERR, "%s(): wed_rx reset check fail,ret=%d\n", __func__, ret);
+-			warp_dbg(WARP_DBG_ERR, "%s(): check ser_busy_cnt: echo 18 > wed\n", __func__, ret);
++		if (err < 0) {
++			warp_dbg(WARP_DBG_ERR, "%s(): wed_rx reset check fail,ret=%d\n", __func__, err);
++			warp_dbg(WARP_DBG_ERR, "%s(): check ser_busy_cnt: echo 18 > wed\n", __func__, err);
++			if (!ret)
++				ret = err;
+ 		}
+ 
+ #ifdef WED_RX_D_SUPPORT
+ 		/* Rx data offload path reset */
+-		ret = reset_rx_d_traffic(wed, reset_type);
++		err = reset_rx_d_traffic(wed, reset_type);
+ 
+-		if (ret < 0) {
+-			warp_dbg(WARP_DBG_ERR, "%s(): wed_rx_data check fail,ret=%d\n", __func__, ret);
+-			warp_dbg(WARP_DBG_ERR, "%s(): check ser_busy_cnt: echo 18 > wed\n", __func__, ret);
++		if (err < 0) {
++			warp_dbg(WARP_DBG_ERR, "%s(): wed_rx_data check fail,ret=%d\n", __func__, err);
++			warp_dbg(WARP_DBG_ERR, "%s(): check ser_busy_cnt: echo 18 > wed\n", __func__, err);
++			if (!ret)
++				ret = err;
+ 		}
+ #endif
+ 
+@@ -2911,6 +2919,10 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ 			reset_interface(wed, wdma);
+ 		}
+ 		break;
++	default:
++		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u\n", __func__, reset_type);
++		ret = -EOPNOTSUPP;
++		break;
+ 	}
+ 
+ 	return ret;
+diff --git a/regs/reg_v3/warp_hw.c b/regs/reg_v3/warp_hw.c
+index ea2c2f9..b434f9b 100644
+--- a/regs/reg_v3/warp_hw.c
++++ b/regs/reg_v3/warp_hw.c
+@@ -4465,6 +4465,7 @@ int
+ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ {
+ 	int ret = 0;
++	int err;
+ 	struct warp_entry *warp = wed->warp;
+ 	struct wdma_entry *wdma = &warp->wdma;
+ 
+@@ -4472,20 +4473,28 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ 	case WARP_RESET_IDX_ONLY:
+ 
+ 		/* TX data offload path reset */
+-		if (reset_tx_traffic(wed, reset_type)) {
++		err = reset_tx_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_tx_traffic fail\n", __func__);
+-			ret = -EIO;
++			if (!ret)
++				ret = err ? err : -EIO;
+ 		}
+ 
+ 		/* TX free done reset - rx path */
+-		if (reset_rx_traffic(wed, reset_type))
++		err = reset_rx_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_rx_traffic fail\n", __func__);
++			if (!ret)
++				ret = err ? err : -EIO;
++		}
+ 
+ #ifdef WED_RX_D_SUPPORT
+ 		/* Rx data offload path reset */
+-		if (reset_rx_d_traffic(wed, reset_type)) {
++		err = reset_rx_d_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_rx_d_traffic fail\n", __func__);
+-			ret = -EIO;
++			if (!ret)
++				ret = err ? err : -EIO;
+ 		}
+ #endif
+ 		break;
+@@ -4496,6 +4505,10 @@ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ 			reset_interface(wed, wdma);
+ 		}
+ 		break;
++	default:
++		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u\n", __func__, reset_type);
++		ret = -EOPNOTSUPP;
++		break;
+ 	}
+ 
+ 	return ret;
+diff --git a/regs/reg_v3_1/warp_hw.c b/regs/reg_v3_1/warp_hw.c
+index ecd9f90..8d08c9d 100644
+--- a/regs/reg_v3_1/warp_hw.c
++++ b/regs/reg_v3_1/warp_hw.c
+@@ -3276,28 +3276,39 @@ int
+ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ {
+ 	int ret = 0;
++	int err;
+ 
+ 	switch (reset_type) {
+ 	case WARP_RESET_IDX_ONLY:
+ 	case WARP_RESET_INTERFACE:
+ 		/* TX data offload path reset */
+-		if (reset_tx_traffic(wed, reset_type)) {
++		err = reset_tx_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_tx_traffic fail\n", __func__);
+-			ret = -EIO;
++			if (!ret)
++				ret = err ? err : -EIO;
+ 		}
+ 
+ 		/* TX free done reset - rx path */
+-		if (reset_rx_traffic(wed, reset_type))
++		err = reset_rx_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_rx_traffic fail\n", __func__);
++			if (!ret)
++				ret = err ? err : -EIO;
++		}
+ 
+-		if (reset_rx_rro_traffic(wed, reset_type)) {
++		err = reset_rx_rro_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_rx_rro_traffic fail\n", __func__);
+-			ret = -EIO;
++			if (!ret)
++				ret = err ? err : -EIO;
+ 		}
+ 
+ 		break;
+ 	default:
+-		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u", __func__, reset_type);
++		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u\n", __func__, reset_type);
++		ret = -EOPNOTSUPP;
++		break;
+ 	}
+ 
+ 	return ret;
+diff --git a/regs/reg_v3_2/warp_hw.c b/regs/reg_v3_2/warp_hw.c
+index 609de7d..2d273f9 100644
+--- a/regs/reg_v3_2/warp_hw.c
++++ b/regs/reg_v3_2/warp_hw.c
+@@ -2865,30 +2865,41 @@ int
+ warp_reset_hw(struct wed_entry *wed, u32 reset_type)
+ {
+ 	int ret = 0;
++	int err;
+ 
+ 	switch (reset_type) {
+ 	case WARP_RESET_IDX_ONLY:
+ 	case WARP_RESET_INTERFACE:
+ 		/* TX data offload path reset */
+-		if (reset_tx_traffic(wed, reset_type)) {
++		err = reset_tx_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_tx_traffic fail\n", __func__);
+-			ret = -EIO;
++			if (!ret)
++				ret = err ? err : -EIO;
+ 		}
+ 
+ 		/* TX free done reset - rx path */
+-		if (reset_rx_traffic(wed, reset_type))
++		err = reset_rx_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_rx_traffic fail\n", __func__);
++			if (!ret)
++				ret = err ? err : -EIO;
++		}
+ 
+-		if (reset_rx_rro_traffic(wed, reset_type)) {
++		err = reset_rx_rro_traffic(wed, reset_type);
++		if (err) {
+ 			warp_dbg(WARP_DBG_ERR, "%s():reset_rx_rro_traffic fail\n", __func__);
+-			ret = -EIO;
++			if (!ret)
++				ret = err ? err : -EIO;
+ 		}
+ 
+ 		/* Reset write-once protection, need reset whole WED */
+ 		WHNAT_RESET(wed, WED_MOD_RST_ADDR, WED_MOD_RST_WED_MASK);
+ 		break;
+ 	default:
+-		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u", __func__, reset_type);
++		warp_dbg(WARP_DBG_ERR, "%s(): Unknown reset_type = %u\n", __func__, reset_type);
++		ret = -EOPNOTSUPP;
++		break;
+ 	}
+ 
+ 	return ret;
+diff --git a/warp.h b/warp.h
+index bba36f2..1a90434 100644
+--- a/warp.h
++++ b/warp.h
+@@ -17,6 +17,8 @@
+ #ifndef _WARP_H
+ #define _WARP_H
+ 
++#include <linux/mutex.h>
++#include <linux/interrupt.h>
+ #include "wdma.h"
+ #include "wed.h"
+ #include "warp_wifi.h"
+@@ -51,9 +53,30 @@ struct warp_wifi_cr_map {
+ };
+ 
+ #define MAX_MAP_TABLE_SIZE 32
++enum warp_ring_state {
++	WARP_RING_DOWN = 0,
++	WARP_RING_STARTING,
++	WARP_RING_READY,
++	WARP_RING_STOPPING,
++	WARP_RING_FAILED,
++};
++
++#define WARP_RES_TXBM        BIT(0)
++#define WARP_RES_RXBM        BIT(1)
++#define WARP_RES_RX_PAGE_BM  BIT(2)
++#define WARP_RES_DYBM        BIT(3)
++#define WARP_RES_HW_RING     BIT(4)
++#define WARP_RES_HIF_TXD     BIT(5)
++
+ struct warp_entry {
+ 	u8 idx;
+ 	u8 slot_id;
++	bool ring_ready;
++	bool irq_gated;
++	enum warp_ring_state ring_state;
++	u32 res_mask;
++	spinlock_t ring_lock;
++	struct mutex state_lock;
+ 	struct wifi_entry wifi;
+ 	struct platform_driver pdriver;
+ 	struct wdma_entry wdma;
+@@ -200,12 +223,24 @@ warp_register_client(struct wifi_hw *hw, struct wifi_ops *ops);
+ void
+ warp_client_remove(void *priv_data);
+ 
++/*
++*
++*/
++int
++warp_ring_init_checked(void *priv_data, bool *cleanup_failed);
++
+ /*
+ *
+ */
+ int
+ warp_ring_init(void *priv_data);
+ 
++/*
++*
++*/
++int
++warp_ring_exit_checked(void *priv_data);
++
+ /*
+ *
+ */
+diff --git a/warp_main.c b/warp_main.c
+index 81f0636..55c0dc0 100644
+--- a/warp_main.c
++++ b/warp_main.c
+@@ -435,7 +435,8 @@ warp_probe(struct platform_device *pdev)
+ 	wed = &warp->wed;
+ 	wed->warp = warp;
+ 	wed->sw_conf = &warp->sw_conf;
+-	wed_init(pdev, warp->idx, wed);
++	if (wed_init(pdev, warp->idx, wed) < 0)
++		goto err_wed;
+ 	wed_entry_proc_init(warp, wed);
+ #ifdef WED_RX_D_SUPPORT
+ 	rxbm_proc_init(warp, wed);
+@@ -444,14 +445,15 @@ warp_probe(struct platform_device *pdev)
+ 	wdma = &warp->wdma;
+ 	wdma->warp = warp;
+ 	wdma->sw_conf = &warp->sw_conf;
+-	wdma_init(pdev, warp->idx, wdma, wed->ver);
++	if (wdma_init(pdev, warp->idx, wdma, wed->ver) < 0)
++		goto err_wdma;
+ 	wdma_entry_proc_init(warp, wdma);
+ #ifdef WED_INTER_AGENT_SUPPORT
+ 	/*request irq*/
+ 	wifi_chip_set_irq(wifi, WIFI_REQUEST_IRQ, wed->irq);
+ 	/*set msi group setting for wed*/
+-	if (hw->msi_enable)
+-		warp_bus_msi_set(warp, bus, enable);
++	if (hw->msi_enable && warp_bus_msi_set(warp, bus, enable) < 0)
++		goto err_msi;
+ 	/*wifi chip related setting*/
+ 	wifi_chip_probe(wifi, wed->irq, wed->ver, wed->sub_ver,
+ 			wed->branch, wed->hw_cap);
+@@ -481,6 +483,22 @@ warp_probe(struct platform_device *pdev)
+ 
+ 	warp_dbg(WARP_DBG_INF, "%s(): platform device probe is done\n", __func__);
+ 	return 0;
++
++#ifdef WED_INTER_AGENT_SUPPORT
++err_msi:
++	wifi_chip_set_irq(wifi, WIFI_FREE_IRQ, wed->irq);
++	wdma_entry_proc_exit(warp, wdma);
++	wdma_exit(pdev, wdma);
++#endif
++err_wdma:
++#ifdef WED_RX_D_SUPPORT
++	rxbm_proc_exit(warp, wed);
++#endif
++	wed_entry_proc_exit(warp, wed);
++	wed_exit(pdev, wed);
++err_wed:
++	warp_entry_release_pdev(warp);
++	return -1;
+ }
+ 
+ 
+@@ -496,6 +514,7 @@ warp_remove(struct platform_device *pdev)
+ 	struct wifi_entry *wifi;
+ 	struct wifi_hw *hw;
+ 	struct warp_bus *bus = warp_bus_get();
++	unsigned long flags;
+ 	u8 enable = 0;
+ 
+ 	warp = warp_entry_get_by_pdev(pdev);
+@@ -514,6 +533,22 @@ warp_remove(struct platform_device *pdev)
+ 	if (wifi->ops->set_attach)
+ 		wifi->ops->set_attach(wifi->hw.priv, false);
+ 
++#ifdef WED_INTER_AGENT_SUPPORT
++	mutex_lock(&warp->state_lock);
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	warp->irq_gated = true;
++	if (warp->ring_state == WARP_RING_READY)
++		warp->ring_state = WARP_RING_STOPPING;
++	warp->ring_ready = false;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++	warp_eint_ctrl_hw(wed, false);
++	warp_int_ctrl_hw(wed, wifi, wdma, ALL_INT_AGENT,
++			false, bus->pcie_ints_offset, warp->idx);
++	if (wed->irq > 0)
++		synchronize_irq(wed->irq);
++	mutex_unlock(&warp->state_lock);
++#endif
++
+ 	/*free irq*/
+ 	wifi_chip_set_irq(wifi, WIFI_FREE_IRQ, wed->irq);
+ 	/*restore pcie msi group setting*/
+@@ -543,6 +578,11 @@ warp_remove(struct platform_device *pdev)
+ #endif
+ #endif
+ 
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	warp->ring_state = WARP_RING_DOWN;
++	warp->ring_ready = false;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
+ 	/*reomve warp entry from warp_ctrl*/
+ 	warp_entry_release_pdev(warp);
+ #ifdef WED_RX_HW_RRO_2_0
+@@ -745,6 +785,12 @@ warp_entry_init(struct warp_entry *warp, u32 idx)
+ 	warp->idx = idx;
+ 	warp->pdev = NULL;
+ 	warp->slot_id = wed_get_slot_map(idx);
++	mutex_init(&warp->state_lock);
++	spin_lock_init(&warp->ring_lock);
++	warp->ring_state = WARP_RING_DOWN;
++	warp->res_mask = 0;
++	warp->ring_ready = false;
++	warp->irq_gated = true;
+ 	cfg->hw_tx_en = CFG_HW_TX_SUPPORT;
+ 
+ 	//sw_conf->txbm.enable = true;
+@@ -1147,18 +1193,64 @@ EXPORT_SYMBOL(warp_client_remove);
+ /*
+ *
+ */
++static void
++warp_quiesce_and_drain_irq_and_tasks(struct warp_entry *warp, struct wed_entry *wed,
++				    struct wdma_entry *wdma, struct wifi_entry *wifi,
++				    struct warp_bus *bus)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	warp->irq_gated = true;
++	if (warp->ring_state == WARP_RING_READY)
++		warp->ring_state = WARP_RING_STOPPING;
++	warp->ring_ready = false;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
++#ifdef WED_INTER_AGENT_SUPPORT
++	warp_eint_ctrl_hw(wed, false);
++	warp_int_ctrl_hw(wed, wifi, wdma, ALL_INT_AGENT,
++			false, bus->pcie_ints_offset, warp->idx);
++	if (wed->irq > 0)
++		synchronize_irq(wed->irq);
++#endif
++}
++
+ int
+-warp_ring_init(void *priv_data)
++warp_ring_init_checked(void *priv_data, bool *cleanup_failed)
+ {
+ 	int ret = 0;
++	unsigned long flags;
+ 	struct warp_entry *warp = NULL;
+ 	struct wed_entry *wed = NULL;
+ 	struct wdma_entry *wdma = NULL;
+ 	struct wifi_entry *wifi = NULL;
+ 	struct warp_bus *bus = warp_bus_get();
+ 
++	if (cleanup_failed)
++		*cleanup_failed = false;
++
+ 	if (check_and_update_warp(&warp, &wed, &wdma, &wifi, priv_data) == false)
+-		goto end;
++		return -EINVAL;
++
++	mutex_lock(&warp->state_lock);
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	if (warp->ring_state == WARP_RING_FAILED) {
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return -EIO;
++	}
++	if (warp->ring_state != WARP_RING_DOWN) {
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return -EBUSY;
++	}
++	warp->ring_state = WARP_RING_STARTING;
++	warp->ring_ready = false;
++	warp->irq_gated = true;
++	warp->res_mask = 0;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
+ 
+ #ifdef WED_INTER_AGENT_SUPPORT
+ 	warp_dbg(WARP_DBG_INF, "%s(): wed:%p, wdma:%p, wifi:%p\n", __func__, wed, wdma,
+@@ -1177,7 +1269,8 @@ warp_ring_init(void *priv_data)
+ #ifndef WED_BMU_SUPPORT
+ 	ret = wed_txbm_init(wed, &warp->wifi.hw);
+ 	if (ret)
+-		goto end;
++		goto err_unwind;
++	warp->res_mask |= WARP_RES_TXBM;
+ #endif
+ #endif /*WED_HW_TX_SUPPORT*/
+ 
+@@ -1186,7 +1279,8 @@ warp_ring_init(void *priv_data)
+ #ifndef WED_BMU_SUPPORT
+ 	ret = wed_rx_bm_init(wed, &warp->wifi.hw);
+ 	if (ret)
+-		goto end;
++		goto err_unwind;
++	warp->res_mask |= WARP_RES_RXBM;
+ #endif
+ #endif
+ 
+@@ -1194,7 +1288,8 @@ warp_ring_init(void *priv_data)
+ 	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
+ 		ret = wed_rx_page_bm_init(wed, &warp->wifi.hw);
+ 		if (ret)
+-			goto end;
++			goto err_unwind;
++		warp->res_mask |= WARP_RES_RX_PAGE_BM;
+ 	}
+ #endif
+ 
+@@ -1202,42 +1297,129 @@ warp_ring_init(void *priv_data)
+ 	if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
+ 		ret = regist_ul_dybm_task(wed);
+ 		if (ret)
+-			goto end;
++			goto err_unwind;
++		warp->res_mask |= WARP_RES_DYBM;
+ 	}
+ #endif /* WED_DYNAMIC_RXBM_SUPPORT */
+ 	/*hw setting for wed enable*/
+ 	warp_wpdma_ring_init_hw(wed, wifi);
+-	/*enable wed interrupt*/
+-	warp_int_ctrl_hw(wed, wifi, wdma, ALL_INT_AGENT,
+-			true, bus->pcie_ints_offset, warp->idx);
+-	/*enable wed ext interrupt*/
+-	warp_eint_init_hw(wed);
+-	warp_eint_ctrl_hw(wed, true);
++	warp->res_mask |= WARP_RES_HW_RING;
+ #endif
+ #ifdef WED_RX_D_SUPPORT
+ #ifdef WED_RX_HW_RRO_2_0
+ 	/* setup cfg to wo*/
+-	warp_set_rrocfg(wed, warp->idx, &warp->wifi.hw);
++	ret = warp_set_rrocfg(wed, warp->idx, &warp->wifi.hw);
++	if (ret)
++		goto err_unwind;
+ #endif
+ #endif
+ 
+ #ifdef WED_HIF_TXD_SUPPORT
+-	hif_txd_init(wed);
++	ret = hif_txd_init(wed);
++	if (ret)
++		goto err_unwind;
++	warp->res_mask |= WARP_RES_HIF_TXD;
+ 	hif_txd_init_hw(wed, wifi);
+ #endif
+ #ifdef WED_PAO_SUPPORT
+ 	warp_pao_init_hw(wed, wifi);
+ #endif
+-end:
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	warp->ring_state = WARP_RING_READY;
++	warp->ring_ready = true;
++	warp->irq_gated = false;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
++#ifdef WED_INTER_AGENT_SUPPORT
++	/*enable wed interrupt only after all components are initialized and READY*/
++	warp_int_ctrl_hw(wed, wifi, wdma, ALL_INT_AGENT,
++			true, bus->pcie_ints_offset, warp->idx);
++	/*enable wed ext interrupt*/
++	warp_eint_init_hw(wed);
++	warp_eint_ctrl_hw(wed, true);
++#endif
++
++	mutex_unlock(&warp->state_lock);
++	return 0;
++
++err_unwind:
++#ifdef WED_INTER_AGENT_SUPPORT
++	warp_quiesce_and_drain_irq_and_tasks(warp, wed, wdma, wifi, bus);
++
++	if (warp_reset_hw(wed, WARP_RESET_INTERFACE) != 0) {
++		if (cleanup_failed)
++			*cleanup_failed = true;
++		spin_lock_irqsave(&warp->ring_lock, flags);
++		warp->ring_state = WARP_RING_FAILED;
++		warp->ring_ready = false;
++		warp->irq_gated = true;
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return ret;
++	}
++
++	warp->res_mask &= ~WARP_RES_HW_RING;
++
++#ifdef WED_HIF_TXD_SUPPORT
++	if (warp->res_mask & WARP_RES_HIF_TXD) {
++		hif_txd_exit(wed);
++		warp->res_mask &= ~WARP_RES_HIF_TXD;
++	}
++#endif
++#ifdef WED_DYNAMIC_RXBM_SUPPORT
++	if (warp->res_mask & WARP_RES_DYBM) {
++		unregist_ul_dybm_task(wed);
++		warp->res_mask &= ~WARP_RES_DYBM;
++	}
++#endif
++#ifdef WED_RX_HW_RRO_3_0
++	if (warp->res_mask & WARP_RES_RX_PAGE_BM) {
++		wed_rx_page_bm_exit(wed);
++		warp->res_mask &= ~WARP_RES_RX_PAGE_BM;
++	}
++#endif
++#ifdef WED_RX_D_SUPPORT
++#ifndef WED_BMU_SUPPORT
++	if (warp->res_mask & WARP_RES_RXBM) {
++		wed_rx_bm_exit(wed);
++		warp->res_mask &= ~WARP_RES_RXBM;
++	}
++#endif
++#endif
++#ifdef WED_HW_TX_SUPPORT
++#ifndef WED_BMU_SUPPORT
++	if (warp->res_mask & WARP_RES_TXBM) {
++		wed_txbm_exit(wed);
++		warp->res_mask &= ~WARP_RES_TXBM;
++	}
++#endif
++#endif
++#endif /* WED_INTER_AGENT_SUPPORT */
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	warp->ring_state = WARP_RING_DOWN;
++	warp->ring_ready = false;
++	warp->irq_gated = true;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
++	mutex_unlock(&warp->state_lock);
+ 	return ret;
+ }
++EXPORT_SYMBOL(warp_ring_init_checked);
++
++int
++warp_ring_init(void *priv_data)
++{
++	return warp_ring_init_checked(priv_data, NULL);
++}
+ EXPORT_SYMBOL(warp_ring_init);
+ 
+ /*
+ *
+ */
+-void
+-warp_ring_exit(void *priv_data)
++int
++warp_ring_exit_checked(void *priv_data)
+ {
+ #ifdef WED_INTER_AGENT_SUPPORT
+ 	struct warp_entry *warp;
+@@ -1245,42 +1427,95 @@ warp_ring_exit(void *priv_data)
+ 	struct wifi_entry *wifi;
+ 	struct wed_entry *wed;
+ 	struct wdma_entry *wdma;
++	unsigned long flags;
++	int ret;
+ 
+ 	if (check_and_update_warp(&warp, &wed, &wdma, &wifi, priv_data) == false)
+-		goto end;
++		return -EINVAL;
++
++	mutex_lock(&warp->state_lock);
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	if (warp->ring_state == WARP_RING_DOWN) {
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return 0;
++	}
++	if (warp->ring_state == WARP_RING_FAILED) {
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return -EIO;
++	}
++	if (warp->ring_state != WARP_RING_READY) {
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return -EBUSY;
++	}
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
++	warp_quiesce_and_drain_irq_and_tasks(warp, wed, wdma, wifi, bus);
++
++	ret = warp_reset_hw(wed, WARP_RESET_INTERFACE);
++	if (ret) {
++		spin_lock_irqsave(&warp->ring_lock, flags);
++		warp->ring_state = WARP_RING_FAILED;
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		mutex_unlock(&warp->state_lock);
++		return ret;
++	}
+ 
+ 	warp_decrease_ref();
++	warp->res_mask &= ~WARP_RES_HW_RING;
+ 
+-	/*Reset Ring and HW setting*/
+-	warp_eint_ctrl_hw(wed, false);
+-	warp_int_ctrl_hw(wed, wifi, wdma, ALL_INT_AGENT,
+-			false, bus->pcie_ints_offset, warp->idx);
+-	warp_reset_hw(wed, WARP_RESET_INTERFACE);
++#ifdef WED_DYNAMIC_RXBM_SUPPORT
++	if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
++		unregist_ul_dybm_task(wed);
++		warp->res_mask &= ~WARP_RES_DYBM;
++	}
++#endif /* WED_DYNAMIC_RXBM_SUPPORT */
+ 
+ #ifdef WED_HIF_TXD_SUPPORT
+ 	hif_txd_exit(wed);
++	warp->res_mask &= ~WARP_RES_HIF_TXD;
+ #endif
+ #ifdef WED_HW_TX_SUPPORT
+ #ifndef WED_BMU_SUPPORT
+ 	wed_txbm_exit(wed);
++	warp->res_mask &= ~WARP_RES_TXBM;
+ #endif
+ #endif
+ #ifdef WED_RX_D_SUPPORT
+ #ifndef WED_BMU_SUPPORT
+ 	wed_rx_bm_exit(wed);
++	warp->res_mask &= ~WARP_RES_RXBM;
+ #endif
+ #ifdef WED_RX_HW_RRO_3_0
+-	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0))
++	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
+ 		wed_rx_page_bm_exit(wed);
++		warp->res_mask &= ~WARP_RES_RX_PAGE_BM;
++	}
+ #endif
+-#ifdef WED_DYNAMIC_RXBM_SUPPORT
+-	if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM))
+-		unregist_ul_dybm_task(wed);
+-#endif /* WED_DYNAMIC_RXBM_SUPPORT */
+ #endif /* WED_RX_D_SUPPORT */
+-#endif /* WED_INTER_AGENT_SUPPORT */
+-end:
+-	return;
++
++	warp->res_mask = 0;
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	warp->ring_state = WARP_RING_DOWN;
++	warp->ring_ready = false;
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
++	mutex_unlock(&warp->state_lock);
++	return 0;
++#else
++	return 0;
++#endif
++}
++EXPORT_SYMBOL(warp_ring_exit_checked);
++
++void
++warp_ring_exit(void *priv_data)
++{
++	(void)warp_ring_exit_checked(priv_data);
+ }
+ EXPORT_SYMBOL(warp_ring_exit);
+ 
+@@ -1343,18 +1578,30 @@ warp_isr_handler(void *priv_data)
+ 	struct wed_entry *wed;
+ 	unsigned int status = 0;
+ 	unsigned int err_status = 0;
++	unsigned long flags;
+ 
+ 	warp = warp_entry_get_by_privdata(priv_data);
+ 
+ 	if (!warp)
+ 		return;
+ 
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	if (warp->irq_gated || warp->ring_state != WARP_RING_READY) {
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++		return;
++	}
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
++
+ 	wed = &warp->wed;
+ 
+ 	warp_eint_ctrl_hw(wed, false);
+ 	warp_eint_get_stat_hw(wed, &status, &err_status);
+ 	warp_eint_work_hw(wed, status, err_status);
+-	warp_eint_ctrl_hw(wed, true);
++
++	spin_lock_irqsave(&warp->ring_lock, flags);
++	if (!warp->irq_gated && warp->ring_state == WARP_RING_READY)
++		warp_eint_ctrl_hw(wed, true);
++	spin_unlock_irqrestore(&warp->ring_lock, flags);
+ #endif
+ }
+ EXPORT_SYMBOL(warp_isr_handler);
+@@ -1405,27 +1652,62 @@ warp_reset_handler(void *priv_data, u32 ser_status)
+ 	struct wifi_entry *wifi;
+ 	struct wdma_entry *wdma;
+ 	struct wed_entry *wed;
++	struct warp_bus *bus = warp_bus_get();
++	unsigned long flags;
+ 	int ret = 0;
+ 
+ 	if (check_and_update_warp(&warp, &wed, &wdma, &wifi, priv_data) == false)
+ 		return -EINVAL;
+ 
++	mutex_lock(&warp->state_lock);
++
+ 	switch (ser_status) {
+ 	case WIFI_ERR_RECOV_STOP_PDMA0:
++		spin_lock_irqsave(&warp->ring_lock, flags);
++		if (warp->ring_state == WARP_RING_FAILED) {
++			spin_unlock_irqrestore(&warp->ring_lock, flags);
++			mutex_unlock(&warp->state_lock);
++			return -EIO;
++		}
++		if (warp->ring_state == WARP_RING_DOWN) {
++			spin_unlock_irqrestore(&warp->ring_lock, flags);
++			mutex_unlock(&warp->state_lock);
++			return 0;
++		}
++		if (warp->ring_state != WARP_RING_READY) {
++			spin_unlock_irqrestore(&warp->ring_lock, flags);
++			mutex_unlock(&warp->state_lock);
++			return -EBUSY;
++		}
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
++
++		warp_quiesce_and_drain_irq_and_tasks(warp, wed, wdma, wifi, bus);
++
+ 		ret = warp_reset_hw(wed, WARP_RESET_IDX_ONLY);
+ 		if (ret) {
+-			warp_dbg(WARP_DBG_INF, "%s(): Reset index failed, change to reset module!\n",
+-				 __func__);
+-			warp_reset_hw(wed, WARP_RESET_IDX_MODULE);
++			spin_lock_irqsave(&warp->ring_lock, flags);
++			warp->ring_state = WARP_RING_FAILED;
++			spin_unlock_irqrestore(&warp->ring_lock, flags);
++			mutex_unlock(&warp->state_lock);
++			return ret;
+ 		}
+ 
++#ifdef WED_DYNAMIC_RXBM_SUPPORT
++		if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
++			unregist_ul_dybm_task(wed);
++			warp->res_mask &= ~WARP_RES_DYBM;
++		}
++#endif
+ 		wed_tx_ring_reset(wed);
++		warp->res_mask &= ~WARP_RES_HW_RING;
+ #ifdef WED_HIF_TXD_SUPPORT
+ 		hif_txd_exit(wed);
++		warp->res_mask &= ~WARP_RES_HIF_TXD;
+ #endif
+ #ifdef WED_HW_TX_SUPPORT
+ #ifndef WED_BMU_SUPPORT
+ 		wed_txbm_exit(wed);
++		warp->res_mask &= ~WARP_RES_TXBM;
+ #endif
+ #endif
+ #ifdef WED_RX_D_SUPPORT
+@@ -1435,12 +1717,20 @@ warp_reset_handler(void *priv_data, u32 ser_status)
+ 		wdma_tx_ring_reset(wdma);
+ #ifndef WED_BMU_SUPPORT
+ 		wed_rx_bm_exit(wed);
++		warp->res_mask &= ~WARP_RES_RXBM;
+ #endif
+ #ifdef WED_RX_HW_RRO_3_0
+-		if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0))
++		if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_0)) {
+ 			wed_rx_page_bm_exit(wed);
++			warp->res_mask &= ~WARP_RES_RX_PAGE_BM;
++		}
+ #endif
+ #endif
++		warp->res_mask = 0;
++		spin_lock_irqsave(&warp->ring_lock, flags);
++		warp->ring_state = WARP_RING_DOWN;
++		warp->ring_ready = false;
++		spin_unlock_irqrestore(&warp->ring_lock, flags);
+ 		break;
+ 
+ 	case WIFI_ETH_ERR_STOP_WED_RX_TRAFFIC:
+@@ -1451,7 +1741,11 @@ warp_reset_handler(void *priv_data, u32 ser_status)
+ 		warp_restore_hw(wed, wdma, WARP_RESTORE_RX_TRAFFIC);
+ 		break;
+ 
++	default:
++		break;
+ 	}
++
++	mutex_unlock(&warp->state_lock);
+ 	return ret;
+ }
+ EXPORT_SYMBOL(warp_reset_handler);
+diff --git a/warp_rx_bm.c b/warp_rx_bm.c
+index e9601c4..6129199 100644
+--- a/warp_rx_bm.c
++++ b/warp_rx_bm.c
+@@ -22,6 +22,23 @@
+ static void
+ wed_rx_bm_dma_cb_exit(struct wed_entry *wed, struct warp_dma_cb *dma_cb)
+ {
++	struct wed_res_ctrl *res_ctrl = &wed->res_ctrl;
++	struct wed_rx_ctrl *rx_ctrl = &res_ctrl->rx_ctrl;
++	struct wed_rx_bm_res *res = &rx_ctrl->res;
++	struct pci_dev *wdev = res->hif_dev;
++
++	if (dma_cb->pkt) {
++#ifdef WED_MEM_LEAK_DBG
++		pkt_free_mem(dma_cb->pkt);
++#endif /* WED_MEM_LEAK_DBG */
++		if (!dma_cb->rx_token_owned) {
++			if (dma_cb->pkt_mapped && wdev)
++				dma_unmap_single(&wdev->dev, dma_cb->pkt_pa,
++					 dma_cb->pkt_size, DMA_FROM_DEVICE);
++			page_frag_free(dma_cb->pkt);
++		}
++	}
++
+ 	memset(dma_cb, 0, sizeof(struct warp_dma_cb));
+ }
+ 
+@@ -64,13 +81,8 @@ wed_rx_bm_ring_exit(
+ 		return;
+ 	}
+ 
+-	for (i = 0; i < ring_len; i++) {
+-#ifdef WED_MEM_LEAK_DBG
+-		if (i < res->pkt_num)
+-			pkt_free_mem(ring->cell[i].pkt);
+-#endif /* WED_MEM_LEAK_DBG */
++	for (i = 0; i < ring_len; i++)
+ 		wed_rx_bm_dma_cb_exit(wed, &ring->cell[i]);
+-	}
+ 
+ 	for (i = 0; i < 2; i++) {
+ 		if (res->rx_page[i].va) {
+@@ -108,6 +120,11 @@ wed_rx_bm_dma_cb_init(struct platform_device *pdev,
+ 		dma_cb->alloc_va = desc->alloc_va + (idx * dma_cb->alloc_size);
+ 		dma_cb->alloc_pa = desc->alloc_pa + (idx * dma_cb->alloc_size);
+ 		dma_cb->pkt_size = res->pkt_len;
++		dma_cb->pkt = NULL;
++		dma_cb->pkt_va = NULL;
++		dma_cb->pkt_pa = 0;
++		dma_cb->pkt_mapped = false;
++		dma_cb->rx_token_owned = false;
+ 		dma_cb->next = NULL;
+ 
+ 		if (idx < res->pkt_num) {
+@@ -127,6 +144,10 @@ wed_rx_bm_dma_cb_init(struct platform_device *pdev,
+ 						SKB_DATA_ALIGN(SKB_BUF_HEADROOM_RSV + dma_cb->pkt_size)
+ 						+ SKB_DATA_ALIGN(SKB_BUF_TAILROOM_RSV), GFP_ATOMIC);
+ #endif
++			if (!pkt) {
++				warp_dbg(WARP_DBG_ERR, "%s(): allocate pkt fail\n", __func__);
++				return -ENOMEM;
++			}
+ 			dma_cb->pkt = (struct sk_buff *)(pkt);
+ #ifdef WED_MEM_LEAK_DBG
+ 			pkt_alloc_mem((SKB_DATA_ALIGN(SKB_BUF_HEADROOM_RSV + dma_cb->pkt_size)
+@@ -138,6 +159,18 @@ wed_rx_bm_dma_cb_init(struct platform_device *pdev,
+ 
+ 			dma_cb->pkt_pa = dma_map_single(&wdev->dev, dma_cb->pkt_va, dma_cb->pkt_size,
+ 							DMA_FROM_DEVICE);
++			if (unlikely(dma_mapping_error(&wdev->dev, dma_cb->pkt_pa))) {
++				warp_dbg(WARP_DBG_ERR, "%s(): dma map fail\n", __func__);
++#ifdef WED_MEM_LEAK_DBG
++				pkt_free_mem(dma_cb->pkt);
++#endif	/* WED_MEM_LEAK_DBG */
++				page_frag_free(pkt);
++				dma_cb->pkt = NULL;
++				dma_cb->pkt_va = NULL;
++				dma_cb->pkt_pa = 0;
++				return -ENOMEM;
++			}
++			dma_cb->pkt_mapped = true;
+ 
+ 			/* advance to next ring descriptor address */
+ 			rxd = (struct warp_bm_rxdmad *)dma_cb->alloc_va;
+@@ -185,11 +218,16 @@ wed_rx_bm_ring_init(
+ 
+ 	if (!ring->cell) {
+ 		warp_dbg(WARP_DBG_ERR, "%s(): allocate ring->cell faild\n", __func__);
+-		return ret;
++		warp_dma_buf_free(wed->pdev, desc);
++		return -ENOMEM;
+ 	}
+ 
+-	for (i = 0; i < res->ring_len; i++)
+-		wed_rx_bm_dma_cb_init(wed->pdev, res, desc, i, &ring->cell[i]);
++	for (i = 0; i < res->ring_len; i++) {
++		if (wed_rx_bm_dma_cb_init(wed->pdev, res, desc, i, &ring->cell[i]) < 0) {
++			wed_rx_bm_ring_exit(wed, ring, i, desc);
++			return -ENOMEM;
++		}
++	}
+ 
+ 	ring->head = NULL;
+ 
+@@ -255,21 +293,24 @@ wed_rx_bm_token_init(
+ 
+ 		dmad = (struct warp_bm_rxdmad *)cb[pkt_idx].alloc_va;
+ 		/* register packet information once switch DMAD bwtween host/warp */
+-		if (wed_acquire_rx_token(wed, &cb[pkt_idx], &tkn_rx_id) == 0) {
+-			rxdmad_dw2 = READ_ONCE(dmad->token) | (tkn_rx_id << TOKEN_ID_SHIFT);
+-			WRITE_ONCE(dmad->token, rxdmad_dw2);
++		ret = wed_acquire_rx_token(wed, &cb[pkt_idx], &tkn_rx_id);
++		if (ret) {
++			warp_dbg(WARP_DBG_ERR, "%s(): RX token init failed at packet[%d]: %d\n",
++				 __func__, pkt_idx, ret);
++			return ret;
++		}
++
++		rxdmad_dw2 = READ_ONCE(dmad->token) | (tkn_rx_id << TOKEN_ID_SHIFT);
++		WRITE_ONCE(dmad->token, rxdmad_dw2);
+ #ifdef WARP_DVT
+-			if (pkt_idx == 0)
+-				warp_dbg(WARP_DBG_OFF, "%s(): init bm rx ring[%d][%d] start w/ token:%d\n",
+-							__func__, ring_idx, pkt_idx, tkn_rx_id);
++		if (pkt_idx == 0)
++			warp_dbg(WARP_DBG_OFF, "%s(): init bm rx ring[%d][%d] start w/ token:%d\n",
++					__func__, ring_idx, pkt_idx, tkn_rx_id);
+ 
+-			if (pkt_idx == (number-1))
+-				warp_dbg(WARP_DBG_OFF, "%s(): init bm rx ring[%d][%d] end w/ token:%d\n",
+-							__func__, ring_idx, pkt_idx, tkn_rx_id);
++		if (pkt_idx == (number-1))
++			warp_dbg(WARP_DBG_OFF, "%s(): init bm rx ring[%d][%d] end w/ token:%d\n",
++					__func__, ring_idx, pkt_idx, tkn_rx_id);
+ #endif
+-		} else
+-			warp_dbg(WARP_DBG_LOU, "%s(): init bm rx ring[%d] pkt[%d] w/o token!\n",
+-							__func__, ring_idx, pkt_idx);
+ 	}
+ 
+ 	return ret;
+@@ -889,6 +930,7 @@ wed_rx_bm_init(struct wed_entry *wed, struct wifi_hw *hw)
+ 	struct wed_rx_ctrl *rx_ctrl = &res_ctrl->rx_ctrl;
+ 	struct wed_rx_bm_res *res = &rx_ctrl->res;
+ 	struct wed_rx_bm_res *extra_res = &rx_ctrl->extra;
++	int ret = -ENOMEM;
+ 	u32 len;
+ 
+ 	if (hw) {
+@@ -980,11 +1022,18 @@ wed_rx_bm_init(struct wed_entry *wed, struct wifi_hw *hw)
+ 		}
+ 		memset(res->ring, 0, len);
+ 
+-		if (wed_rx_bm_ring_init(wed, 0, res) < 0) {
+-			warp_dbg(WARP_DBG_ERR, "%s(): init rx bm rx ring faild\n", __func__);
++		ret = wed_rx_bm_ring_init(wed, 0, res);
++		if (ret < 0) {
++			warp_dbg(WARP_DBG_ERR, "%s(): init rx bm rx ring faild: %d\n",
++				 __func__, ret);
++			goto err;
++		}
++		ret = wed_rx_bm_token_init(wed, 0, res, res->pkt_num);
++		if (ret) {
++			warp_dbg(WARP_DBG_ERR, "%s(): init rx bm token failed: %d\n",
++				 __func__, ret);
+ 			goto err;
+ 		}
+-		wed_rx_bm_token_init(wed, 0, res, res->pkt_num);
+ 
+ #if defined(WED_DYNAMIC_RXBM_SUPPORT)
+ 		if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
+@@ -1037,6 +1086,6 @@ wed_rx_bm_init(struct wed_entry *wed, struct wifi_hw *hw)
+ 
+ err:
+ 	wed_rx_bm_exit(wed);
+-	return -1;
++	return ret ? ret : -ENOMEM;
+ }
+ 
+diff --git a/warp_rx_page_bm.c b/warp_rx_page_bm.c
+index f1bcb8b..5839d8b 100644
+--- a/warp_rx_page_bm.c
++++ b/warp_rx_page_bm.c
+@@ -57,10 +57,18 @@ wed_rx_page_bm_dma_cb_init(struct platform_device *pdev,
+ 		dma_cb->alloc_va = desc->alloc_va + (idx * dma_cb->alloc_size);
+ 		dma_cb->alloc_pa = desc->alloc_pa + (idx * dma_cb->alloc_size);
+ 		dma_cb->pkt_size = bm->rx_page_size;
++		dma_cb->pkt = NULL;
++		dma_cb->pkt_va = NULL;
++		dma_cb->pkt_pa = 0;
++		dma_cb->pkt_mapped = false;
+ 		dma_cb->next = NULL;
+ 
+ 		if (idx < bm->page_num) {
+ 			pkt = page_frag_alloc(&bm->rx_page, dma_cb->pkt_size, GFP_ATOMIC);
++			if (!pkt) {
++				warp_dbg(WARP_DBG_ERR, "%s(): allocate pkt fail\n", __func__);
++				return -ENOMEM;
++			}
+ #ifdef WED_MEM_LEAK_DBG
+ 			pkt_alloc_mem((dma_cb->pkt_size), (void *)pkt, __builtin_return_address(0));
+ #endif	/* WED_MEM_LEAK_DBG */
+@@ -69,6 +77,18 @@ wed_rx_page_bm_dma_cb_init(struct platform_device *pdev,
+ 			dma_cb->pkt_va = (unsigned char *)pkt;
+ 			dma_cb->pkt_pa = dma_map_single(&wdev->dev, dma_cb->pkt_va,
+ 						dma_cb->pkt_size, DMA_FROM_DEVICE);
++			if (unlikely(dma_mapping_error(&wdev->dev, dma_cb->pkt_pa))) {
++				warp_dbg(WARP_DBG_ERR, "%s(): dma map fail\n", __func__);
++#ifdef WED_MEM_LEAK_DBG
++				pkt_free_mem((void *)dma_cb->pkt);
++#endif	/* WED_MEM_LEAK_DBG */
++				page_frag_free(pkt);
++				dma_cb->pkt = NULL;
++				dma_cb->pkt_va = NULL;
++				dma_cb->pkt_pa = 0;
++				return -ENOMEM;
++			}
++			dma_cb->pkt_mapped = true;
+ 			rxd = (struct warp_bm_rxdmad *)dma_cb->alloc_va;
+ 			/* Set SDP0_L to DW0 */
+ 			WRITE_ONCE(rxd->sdp0, (dma_cb->pkt_pa & PARTIAL_RXDMAD_SDP0_L_MASK));
+@@ -163,6 +183,13 @@ wed_exit_msdu_page_hash(struct wed_rx_page_bm *bm)
+ }
+ 
+ 
++static void
++wed_rx_page_bm_ring_exit(
++	struct wed_entry *wed,
++	struct warp_rx_ring *ring,
++	u32 ring_len,
++	struct warp_dma_buf *desc);
++
+ static int
+ wed_rx_page_bm_ring_init(
+ 	struct wed_entry *wed,
+@@ -186,13 +213,18 @@ wed_rx_page_bm_ring_init(
+ 	ring->cell = vmalloc(len);
+ 	if (!ring->cell) {
+ 		warp_dbg(WARP_DBG_ERR, "%s(): allocate ring->cell faild\n", __func__);
++		warp_dma_buf_free(wed->pdev, desc);
+ 		return -ENOMEM;
+ 	}
+ 
+ 	wed_init_msdu_page_hash(bm);
+ 
+-	for (i = 0; i < bm->ring_len; i++)
+-		wed_rx_page_bm_dma_cb_init(wed->pdev, bm, desc, i, &ring->cell[i]);
++	for (i = 0; i < bm->ring_len; i++) {
++		if (wed_rx_page_bm_dma_cb_init(wed->pdev, bm, desc, i, &ring->cell[i]) < 0) {
++			wed_rx_page_bm_ring_exit(wed, ring, i, desc);
++			return -ENOMEM;
++		}
++	}
+ 
+ 	return 0;
+ }
+@@ -211,12 +243,15 @@ wed_rx_page_bm_dma_cb_exit(struct wed_entry *wed, struct wed_rx_page_bm *bm,
+ 
+ 	if (idx < bm->page_num) {
+ #ifdef WED_MEM_LEAK_DBG
+-		pkt_free_mem((void *)dma_cb->pkt);
++		if (dma_cb->pkt)
++			pkt_free_mem((void *)dma_cb->pkt);
+ #endif	/* WED_MEM_LEAK_DBG */
+-		dma_unmap_single(&wdev->dev, dma_cb->pkt_pa,
+-				dma_cb->pkt_size, DMA_FROM_DEVICE);
++		if (dma_cb->pkt_mapped && wdev)
++			dma_unmap_single(&wdev->dev, dma_cb->pkt_pa,
++					dma_cb->pkt_size, DMA_FROM_DEVICE);
+ 
+-		put_page(virt_to_head_page(dma_cb->pkt));
++		if (dma_cb->pkt)
++			put_page(virt_to_head_page(dma_cb->pkt));
+ 	}
+ 
+ 	memset(dma_cb, 0, sizeof(struct warp_dma_cb));
+diff --git a/warp_tx_bm_v2.c b/warp_tx_bm_v2.c
+index 7422a5a..2eb8dca 100644
+--- a/warp_tx_bm_v2.c
++++ b/warp_tx_bm_v2.c
+@@ -44,6 +44,9 @@ wed_tx_bm_dma_cb_init(struct platform_device *pdev,
+ 		dma_cb->alloc_va = desc->alloc_va + (idx * dma_cb->alloc_size);
+ 		dma_cb->alloc_pa = desc->alloc_pa + (idx * dma_cb->alloc_size);
+ 		dma_cb->pkt_size = bm->pkt_size;
++		dma_cb->pkt = NULL;
++		dma_cb->pkt_va = NULL;
++		dma_cb->pkt_pa = 0;
+ 		dma_cb->next = NULL;
+ 
+ 		if (idx < bm->pkt_num) {
+@@ -56,11 +59,31 @@ wed_tx_bm_dma_cb_init(struct platform_device *pdev,
+ 			pkt_alloc_mem(dma_cb->pkt_size, (void *)pkt, __builtin_return_address(0));
+ #endif	/* WED_MEM_LEAK_DBG */
+ 			skb_id = idr_alloc(&bm->id, pkt, 0, bm->pkt_num, GFP_ATOMIC);
++			if (skb_id < 0) {
++				warp_dbg(WARP_DBG_ERR, "%s(): idr_alloc fail\n", __func__);
++#ifdef WED_MEM_LEAK_DBG
++				pkt_free_mem(pkt);
++#endif	/* WED_MEM_LEAK_DBG */
++				page_frag_free(pkt);
++				return -ENOMEM;
++			}
+ 
+ 			dma_cb->pkt = (struct sk_buff *)(pkt);
+ 			dma_cb->pkt_va = (unsigned char *)pkt;
+ 			dma_cb->pkt_pa = dma_map_single(&wdev->dev, dma_cb->pkt_va,
+ 						dma_cb->pkt_size, DMA_TO_DEVICE);
++			if (unlikely(dma_mapping_error(&wdev->dev, dma_cb->pkt_pa))) {
++				warp_dbg(WARP_DBG_ERR, "%s(): dma map fail\n", __func__);
++				idr_remove(&bm->id, skb_id);
++#ifdef WED_MEM_LEAK_DBG
++				pkt_free_mem(pkt);
++#endif	/* WED_MEM_LEAK_DBG */
++				page_frag_free(pkt);
++				dma_cb->pkt = NULL;
++				dma_cb->pkt_va = NULL;
++				dma_cb->pkt_pa = 0;
++				return -ENOMEM;
++			}
+ 
+ 			txd = (struct warp_bm_txdmad *)dma_cb->alloc_va;
+ 			WRITE_ONCE(txd->sdp0, (dma_cb->pkt_pa & PARTIAL_TXDMAD_SDP0_L_MASK));
+diff --git a/warp_utility.c b/warp_utility.c
+index 313740a..c2655bc 100644
+--- a/warp_utility.c
++++ b/warp_utility.c
+@@ -48,7 +48,7 @@ warp_log_set(char log)
+ void
+ warp_dma_buf_free(struct platform_device *dev, struct warp_dma_buf *dma_buf)
+ {
+-	if (!dev || !dma_buf->alloc_va)
++	if (!dev || !dma_buf || !dma_buf->alloc_va)
+ 		return;
+ #ifdef WED_MEM_LEAK_DBG
+ {
+@@ -67,6 +67,9 @@ warp_dma_buf_free(struct platform_device *dev, struct warp_dma_buf *dma_buf)
+ 	dma_free_coherent(&dev->dev, dma_buf->alloc_size, dma_buf->alloc_va,
+ 			  dma_buf->alloc_pa);
+ 	memset(dma_buf, 0, sizeof(struct warp_dma_buf));
++	dma_buf->alloc_va = NULL;
++	dma_buf->alloc_pa = 0;
++	dma_buf->alloc_size = 0;
+ }
+ 
+ /*
+diff --git a/warp_utility.h b/warp_utility.h
+index 7702d6b..cd14438 100644
+--- a/warp_utility.h
++++ b/warp_utility.h
+@@ -158,6 +158,8 @@ struct warp_dma_cb {
+ 	struct sk_buff *pkt;
+ 	void *pkt_va;
+ 	dma_addr_t pkt_pa;
++	bool pkt_mapped;
++	bool rx_token_owned;
+ 	unsigned int pkt_size;
+ 	struct warp_dma_cb *next;
+ 	struct list_head list;
+diff --git a/wdma.c b/wdma.c
+index 1df6b65..2640458 100644
+--- a/wdma.c
++++ b/wdma.c
+@@ -362,6 +362,7 @@ wdma_ring_init(struct wdma_entry *wdma)
+ 	struct wdma_tx_ctrl *tx_ctrl = &res->tx_ctrl;
+ 	struct wdma_rx_ctrl *rx_ctrl = &res->rx_ctrl;
+ 	struct sw_conf_t *sw_conf = wdma->sw_conf;
++	int ret = 0;
+ 
+ 	/* initial default value */
+ 	if (wdma->ver >= 2) {
+@@ -382,11 +383,19 @@ wdma_ring_init(struct wdma_entry *wdma)
+ 	__func__, tx_ctrl, rx_ctrl);
+ 
+ #ifdef WED_HW_RX_SUPPORT
+-	wdma_tx_ring_init(wdma, &tx_ctrl->tx_ring_ctrl);
++	ret = wdma_tx_ring_init(wdma, &tx_ctrl->tx_ring_ctrl);
++	if (ret < 0)
++		return ret;
+ #endif
+ 
+ #ifdef WED_HW_TX_SUPPORT
+-	wdma_rx_ring_init(wdma, &rx_ctrl->rx_ring_ctrl);
++	ret = wdma_rx_ring_init(wdma, &rx_ctrl->rx_ring_ctrl);
++	if (ret < 0) {
++#ifdef WED_HW_RX_SUPPORT
++		wdma_tx_ring_exit(wdma, &tx_ctrl->tx_ring_ctrl);
++#endif
++		return ret;
++	}
+ #endif
+ 	return 0;
+ }
+@@ -442,11 +451,18 @@ wdma_init(struct platform_device *pdev, u8 idx, struct wdma_entry *wdma, u8 ver)
+ 		warp_dbg(WARP_DBG_ERR,
+ 			"%s(): Unexpected error %d from getting wdma port with idx %u\n",
+ 			__func__, ret, idx);
++		iounmap((void *)wdma->base_addr);
++		wdma->base_addr = 0;
+ 		return ret;
+ 	}
+ 
+ 	/* initial wdma ring resource */
+-	wdma_ring_init(wdma);
++	ret = wdma_ring_init(wdma);
++	if (ret < 0) {
++		iounmap((void *)wdma->base_addr);
++		wdma->base_addr = 0;
++		return ret;
++	}
+ 
+ 	return 0;
+ }
+diff --git a/wed.c b/wed.c
+index e1a2030..a78eafa 100644
+--- a/wed.c
++++ b/wed.c
+@@ -367,12 +367,13 @@ int wed_acquire_rx_token(
+ 	u32 *token_id)
+ {
+ 	int ret = -1;
++	u32 id;
+ 	struct warp_entry *warp = NULL;
+ 	struct wifi_entry *wifi = NULL;
+ 	struct wifi_ops *ops = NULL;
+ 
+-	if (!wed || !wed->warp)
+-		return ret;
++	if (!wed || !wed->warp || !cb || !token_id)
++		return -EINVAL;
+ 
+ 	warp = wed->warp;
+ 	wifi = &warp->wifi;
+@@ -381,10 +382,18 @@ int wed_acquire_rx_token(
+ 	if (!ops || !ops->token_rx_dmad_init)
+ 		return ret;
+ 
+-	*token_id = ops->token_rx_dmad_init(wifi->hw.priv,
+-					    cb->pkt, cb->pkt_size,
+-					    cb->pkt_va, cb->pkt_pa);
++	id = ops->token_rx_dmad_init(wifi->hw.priv,
++				    cb->pkt, cb->pkt_size,
++				    cb->pkt_va, cb->pkt_pa);
++	if ((s32)id < 0)
++		return (s32)id;
+ 
++	/* The callback owns the packet as soon as it returns a token. */
++	cb->rx_token_owned = true;
++	if (id > (TOKEN_ID_MASK >> TOKEN_ID_SHIFT))
++		return -ERANGE;
++
++	*token_id = id;
+ 	return 0;
+ }
+ 
+@@ -1101,28 +1110,69 @@ wed_ring_init(struct wed_entry *entry)
+ #endif /* WED_RX_D_SUPPORT */
+ 	int ret = 0;
+ 
+-	wed_tx_ring_init(entry, tx_ctrl);
++	ret = wed_tx_ring_init(entry, tx_ctrl);
++	if (ret < 0)
++		return ret;
+ #ifdef WED_RX_D_SUPPORT
+ #ifdef WED_RX_HW_RRO_2_0
+-	wed_rx_ring_init(entry, rx_ctrl);
++	ret = wed_rx_ring_init(entry, rx_ctrl);
++	if (ret < 0)
++		goto err_rx_ring;
+ #endif
+ #if defined(WED_RX_HW_RRO_3_0) || defined(WED_RX_HW_RRO_3_1)
+-	if (wifi_cap_rro_3_0 || wifi_cap_rro_3_1)
+-		wed_rx_rro_data_ring_init(entry, rx_ctrl);
++	if (wifi_cap_rro_3_0 || wifi_cap_rro_3_1) {
++		ret = wed_rx_rro_data_ring_init(entry, rx_ctrl);
++		if (ret < 0)
++			goto err_rro_data;
++	}
+ #endif
+ #ifdef WED_RX_HW_RRO_3_0
+ 	if (wifi_cap_rro_3_0) {
+-		wed_rx_rro_page_ring_init(entry, rx_ctrl);
+-		wed_rx_rro_ind_cmd_ring_init(entry, rx_ctrl);
++		ret = wed_rx_rro_page_ring_init(entry, rx_ctrl);
++		if (ret < 0)
++			goto err_rro_page;
++		ret = wed_rx_rro_ind_cmd_ring_init(entry, rx_ctrl);
++		if (ret < 0)
++			goto err_rro_ind_cmd;
+ 	}
+ #endif
+ #ifdef WED_RX_HW_RRO_3_1
+-	if (wifi_cap_rro_3_1)
+-		wed_rx_rro_3_1_ring_init(entry, rx_ctrl);
++	if (wifi_cap_rro_3_1) {
++		ret = wed_rx_rro_3_1_ring_init(entry, rx_ctrl);
++		if (ret < 0)
++			goto err_rro_3_1;
++	}
+ #endif /* WED_RX_HW_RRO_3_1 */
+ #endif /* WED_RX_D_SUPPORT */
+ 
++	return 0;
++
++#ifdef WED_RX_D_SUPPORT
++#ifdef WED_RX_HW_RRO_3_1
++err_rro_3_1:
++#ifdef WED_RX_HW_RRO_3_0
++	if (wifi_cap_rro_3_0)
++		wed_rx_rro_ind_cmd_ring_exit(entry, rx_ctrl);
++#endif
++#endif
++#ifdef WED_RX_HW_RRO_3_0
++err_rro_ind_cmd:
++	if (wifi_cap_rro_3_0)
++		wed_rx_rro_page_ring_exit(entry, rx_ctrl);
++err_rro_page:
++#endif
++#if defined(WED_RX_HW_RRO_3_0) || defined(WED_RX_HW_RRO_3_1)
++	if (wifi_cap_rro_3_0 || wifi_cap_rro_3_1)
++		wed_rx_rro_data_ring_exit(entry, rx_ctrl);
++err_rro_data:
++#endif
++#ifdef WED_RX_HW_RRO_2_0
++	wed_rx_ring_exit(entry, rx_ctrl);
++err_rx_ring:
++#endif
++	wed_tx_ring_exit(entry, tx_ctrl);
+ 	return ret;
++#endif /* WED_RX_D_SUPPORT */
+ }
+ 
+ /*
+@@ -1246,7 +1296,6 @@ wed_init(struct platform_device *pdev, u8 idx, struct wed_entry *wed)
+ 	struct resource *res;
+ 	u32 irq;
+ 	unsigned long base_addr;
+-	struct warp_entry *warp = NULL;
+ 
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, TO_RES_IDX(idx));
+ 	if (!res) {
+@@ -1265,30 +1314,55 @@ wed_init(struct platform_device *pdev, u8 idx, struct wed_entry *wed)
+ 	wed->pdev = pdev;
+ 	wed->irq = irq;
+ 	wed->cr_base_addr = res->start;
++	if (!wed->warp) {
++		devm_iounmap(&pdev->dev, (void *)wed->base_addr);
++		wed->base_addr = 0;
++		return -EINVAL;
++	}
+ 	/*initial wed hw cap for related decision*/
+ 	warp_conf_hwcap(wed);
+ 	/*allocate ring first*/
+-	wed_ring_init(wed);
+-	/*assign tx ring to ad*/
+-	if (wed->warp)
+-		warp = (struct warp_entry *)wed->warp;
+-	else
+-		goto err;
++	ret = wed_ring_init(wed);
++	if (ret < 0)
++		goto err_ring;
+ 
+ #ifdef WED_RX_D_SUPPORT
+ #ifdef WED_RX_HW_RRO_2_0
+-	warp_wed_rro_init(wed);
++	ret = warp_wed_rro_init(wed);
++	if (ret < 0)
++		goto err_rro;
+ #endif
+ #endif
+ 
+ #ifdef WED_DYNAMIC_TXBM_SUPPORT
+-	if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM))
+-		regist_dl_dybm_task(wed);
++	if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM)) {
++		ret = regist_dl_dybm_task(wed);
++		if (ret < 0)
++			goto err_dybm;
++	}
+ #endif	/* WED_DYNAMIC_TXBM_SUPPORT */
+-	wed_ser_init(wed);
+-	ret = 0;
++	ret = wed_ser_init(wed);
++	if (ret < 0)
++		goto err_ser;
+ 
+-err:
++	return 0;
++
++err_ser:
++#ifdef WED_DYNAMIC_TXBM_SUPPORT
++	if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM))
++		unregist_dl_dybm_task(wed);
++err_dybm:
++#endif
++#ifdef WED_RX_D_SUPPORT
++#ifdef WED_RX_HW_RRO_2_0
++	wed_rro_exit(wed);
++err_rro:
++#endif
++#endif
++	wed_ring_exit(wed);
++err_ring:
++	devm_iounmap(&pdev->dev, (void *)wed->base_addr);
++	wed->base_addr = 0;
+ 	return ret;
+ }
+ 
