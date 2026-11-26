@@ -1,0 +1,473 @@
+#!/bin/sh
+
+RTL837X_FUNCTIONS_SH="${RTL837X_FUNCTIONS_SH:-/lib/functions.sh}"
+RTL837X_JSHN_SH="${RTL837X_JSHN_SH:-/usr/share/libubox/jshn.sh}"
+RTL837X_CONFIG_FILE="${RTL837X_CONFIG_FILE:-/etc/config/rtl837x}"
+
+[ -f "$RTL837X_FUNCTIONS_SH" ] && . "$RTL837X_FUNCTIONS_SH"
+[ -f "$RTL837X_JSHN_SH" ] && . "$RTL837X_JSHN_SH"
+
+_to_uint() {
+	case "$1" in
+		''|*[!0-9]*) printf '%s\n' "$2" ;;
+		*) printf '%s\n' "$1" ;;
+	esac
+}
+
+_is_uint() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+		*) return 0 ;;
+	esac
+}
+
+_emit_error() {
+	json_init
+	json_add_string "error" "$1"
+	json_dump
+	json_cleanup
+}
+
+_emit_sfp_error() {
+	json_init
+	json_add_boolean "present" 0
+	json_add_boolean "ddm_supported" 0
+	json_add_string "error" "$1"
+	json_dump
+	json_cleanup
+}
+
+_get_num_ports() {
+	local help_info="$1"
+	local n
+	n=$(printf '%s\n' "$help_info" | grep -o 'ports: [0-9]*' | head -n 1 | awk '{print $2}')
+	n=$(_to_uint "$n" 6)
+	[ "$n" -lt 1 ] && n=6
+	printf '%s\n' "$n"
+}
+
+_parse_port_arg() {
+	local input="$1"
+	local port_type port_val=""
+
+	PARSED_PORT=""
+	case "$input" in
+		*[![:space:]]*) ;;
+		*) return 0 ;;
+	esac
+
+	if ! type json_load >/dev/null 2>&1 || ! command -v jshn >/dev/null 2>&1; then
+		return 1
+	fi
+
+	if ! jshn -r "$input" >/dev/null 2>&1; then
+		return 1
+	fi
+
+	json_init
+	json_load "$input"
+
+	if json_get_type port_type "port"; then
+		case "$port_type" in
+			null)
+				port_val=""
+			;;
+			int)
+				json_get_var port_val "port"
+				if ! _is_uint "$port_val"; then
+					json_cleanup
+					return 1
+				fi
+			;;
+			*)
+				json_cleanup
+				return 1
+			;;
+		esac
+	fi
+
+	json_cleanup
+	PARSED_PORT="$port_val"
+	return 0
+}
+
+find_rtl837x_switch() {
+	local dev
+	for dev in $(swconfig list 2>/dev/null | awk -F'[: -]+' '{print $2}'); do
+		if [ -n "$dev" ] && swconfig dev "$dev" help 2>&1 | grep -qi "RTL837"; then
+			printf '%s\n' "$dev"
+			return 0
+		fi
+	done
+	for dev in switch0 RTL8372n switch1; do
+		if swconfig dev "$dev" help 2>&1 | grep -qi "RTL837"; then
+			printf '%s\n' "$dev"
+			return 0
+		fi
+	done
+	return 1
+}
+
+_add_sfp_json_fields() {
+	local sw="$1"
+	local req_port="$2"
+	local sfp_out sfp_clean vendor part serial ddm temp volt bias tx_pwr rx_pwr
+
+	if [ -n "$req_port" ]; then
+		sfp_out=$(swconfig dev "$sw" port "$req_port" get sfp_info 2>/dev/null)
+	else
+		sfp_out=$(swconfig dev "$sw" get sfp_info 2>/dev/null)
+	fi
+
+	if [ -z "$sfp_out" ] || printf '%s\n' "$sfp_out" | grep -qi "Not present"; then
+		json_add_boolean "present" 0
+		json_add_boolean "ddm_supported" 0
+		json_add_string "message" "Module not present"
+		return 0
+	fi
+
+	sfp_clean=$(printf '%s\n' "$sfp_out" | tr -d '\r')
+	vendor=$(printf '%s\n' "$sfp_clean" | awk '/^Vendor:[ \t]*/ { sub(/^Vendor:[ \t]*/, ""); print; exit }')
+	part=$(printf '%s\n' "$sfp_clean" | awk '/^Part:[ \t]*/ { sub(/^Part:[ \t]*/, ""); print; exit }')
+	serial=$(printf '%s\n' "$sfp_clean" | awk '/^Serial:[ \t]*/ { sub(/^Serial:[ \t]*/, ""); print; exit }')
+
+	ddm=0
+	temp=""
+	volt=""
+	bias=""
+	tx_pwr=""
+	rx_pwr=""
+	if printf '%s\n' "$sfp_clean" | grep -qi "DDM: Supported"; then
+		ddm=1
+		temp=$(printf '%s\n' "$sfp_clean" | awk '/^Temperature:[ \t]*/ { sub(/^Temperature:[ \t]*/, ""); print; exit }')
+		volt=$(printf '%s\n' "$sfp_clean" | awk '/^Voltage:[ \t]*/ { sub(/^Voltage:[ \t]*/, ""); print; exit }')
+		bias=$(printf '%s\n' "$sfp_clean" | awk '/^TX Bias:[ \t]*/ { sub(/^TX Bias:[ \t]*/, ""); print; exit }')
+		tx_pwr=$(printf '%s\n' "$sfp_clean" | awk '/^TX Power:[ \t]*/ { sub(/^TX Power:[ \t]*/, ""); print; exit }')
+		rx_pwr=$(printf '%s\n' "$sfp_clean" | awk '/^RX Power:[ \t]*/ { sub(/^RX Power:[ \t]*/, ""); print; exit }')
+	fi
+
+	json_add_boolean "present" 1
+	json_add_string "vendor" "$vendor"
+	json_add_string "part" "$part"
+	json_add_string "serial" "$serial"
+	json_add_boolean "ddm_supported" "$ddm"
+	json_add_string "temperature" "$temp"
+	json_add_string "voltage" "$volt"
+	json_add_string "tx_bias" "$bias"
+	json_add_string "tx_power" "$tx_pwr"
+	json_add_string "rx_power" "$rx_pwr"
+}
+
+do_get_sfp_info() {
+	local sw="$1"
+	local req_port="$2"
+	local help_info num_ports
+
+	if [ -n "$req_port" ] && ! _is_uint "$req_port"; then
+		_emit_sfp_error "Invalid port"
+		return 0
+	fi
+
+	if [ -z "$sw" ]; then
+		_emit_sfp_error "RTL837x switch device not found"
+		return 0
+	fi
+
+	if [ -n "$req_port" ]; then
+		help_info=$(swconfig dev "$sw" help 2>&1)
+		num_ports=$(_get_num_ports "$help_info")
+		if [ "$req_port" -lt 0 ] || [ "$req_port" -ge "$num_ports" ]; then
+			_emit_sfp_error "Invalid port"
+			return 0
+		fi
+	fi
+
+	json_init
+	_add_sfp_json_fields "$sw" "$req_port"
+	json_dump
+	json_cleanup
+}
+
+do_get_status() {
+	local sw="$1"
+	if [ -z "$sw" ]; then
+		_emit_error "RTL837x switch device not found"
+		return 0
+	fi
+
+	local help_info chip_name num_ports cpu_port
+	help_info=$(swconfig dev "$sw" help 2>&1)
+
+	chip_name=$(printf '%s\n' "$help_info" | grep -o 'RTL837[0-9a-zA-Z]*' | head -n 1)
+	[ -z "$chip_name" ] && chip_name="RTL8372"
+
+	num_ports=$(_get_num_ports "$help_info")
+
+	cpu_port=$(printf '%s\n' "$help_info" | grep -o 'cpu @ [0-9]*' | head -n 1 | awk '{print $3}')
+	cpu_port=$(_to_uint "$cpu_port" 0)
+
+	local igmp_snooping igmp_fast_leave trunk0_ports trunk1_ports trunk_hash_mode
+	igmp_snooping=$(_to_uint "$(swconfig dev "$sw" get igmp_snooping 2>/dev/null | tr -d '\r\n')" 0)
+	igmp_fast_leave=$(_to_uint "$(swconfig dev "$sw" get igmp_fast_leave 2>/dev/null | tr -d '\r\n')" 0)
+	trunk0_ports=$(swconfig dev "$sw" get trunk0_ports 2>/dev/null | tr -d '\r\n')
+	trunk1_ports=$(swconfig dev "$sw" get trunk1_ports 2>/dev/null | tr -d '\r\n')
+	trunk_hash_mode=$(_to_uint "$(swconfig dev "$sw" get trunk_hash_mode 2>/dev/null | tr -d '\r\n')" 0)
+
+	if [ -f "$RTL837X_CONFIG_FILE" ] && type config_load >/dev/null 2>&1; then
+		config_load rtl837x
+	fi
+
+	json_init
+	json_add_string "switch" "$sw"
+	json_add_string "chip" "$chip_name"
+	json_add_int "num_ports" "$num_ports"
+	json_add_int "cpu_port" "$cpu_port"
+	json_add_int "igmp_snooping" "$igmp_snooping"
+	json_add_int "igmp_fast_leave" "$igmp_fast_leave"
+	json_add_string "trunk0_ports" "$trunk0_ports"
+	json_add_string "trunk1_ports" "$trunk1_ports"
+	json_add_int "trunk_hash_mode" "$trunk_hash_mode"
+	json_add_array "ports"
+
+	local p=0
+	while [ "$p" -lt "$num_ports" ]; do
+		local link_raw link_state speed duplex eee stp_state storm_bcast isolation max_frame_size is_sfp port_name uci_name
+		link_raw=$(swconfig dev "$sw" port "$p" get link 2>/dev/null)
+
+		if printf '%s\n' "$link_raw" | grep -qi "link:up"; then
+			link_state="up"
+		else
+			link_state="down"
+		fi
+
+		speed=$(printf '%s\n' "$link_raw" | grep -o 'speed:[^ ]*' | head -n 1 | cut -d: -f2)
+		duplex=$(printf '%s\n' "$link_raw" | grep -o '[a-z]*-duplex' | head -n 1 | cut -d- -f1)
+		[ -z "$duplex" ] && duplex=$(printf '%s\n' "$link_raw" | grep -o '/[a-z]*' | head -n 1 | tr -d '/')
+
+		eee=$(_to_uint "$(swconfig dev "$sw" port "$p" get eee 2>/dev/null | tr -d '\r\n')" 0)
+		stp_state=$(_to_uint "$(swconfig dev "$sw" port "$p" get stp_state 2>/dev/null | tr -d '\r\n')" 3)
+		storm_bcast=$(_to_uint "$(swconfig dev "$sw" port "$p" get storm_bcast 2>/dev/null | tr -d '\r\n')" 0)
+		isolation=$(_to_uint "$(swconfig dev "$sw" port "$p" get isolation 2>/dev/null | tr -d '\r\n')" 0)
+		max_frame_size=$(_to_uint "$(swconfig dev "$sw" port "$p" get max_frame_size 2>/dev/null | tr -d '\r\n')" 1518)
+
+		if { [ "$num_ports" -eq 6 ] && [ "$p" -eq 5 ]; } || { [ "$num_ports" -eq 9 ] && [ "$p" -eq 8 ]; }; then
+			is_sfp=1
+		else
+			is_sfp=0
+		fi
+
+		if [ "$p" -eq "$cpu_port" ]; then
+			port_name="CPU"
+		elif [ "$is_sfp" -eq 1 ]; then
+			port_name="SFP+"
+		else
+			port_name="LAN$p"
+		fi
+
+		uci_name=""
+		if [ -f "$RTL837X_CONFIG_FILE" ] && type config_get >/dev/null 2>&1; then
+			config_get uci_name "port$p" name ""
+			[ -n "$uci_name" ] && port_name="$uci_name"
+		fi
+
+		json_add_object ""
+		json_add_int "port" "$p"
+		json_add_string "name" "$port_name"
+		json_add_string "link" "$link_state"
+		json_add_string "speed" "$speed"
+		json_add_string "duplex" "$duplex"
+		json_add_int "eee" "$eee"
+		json_add_int "stp_state" "$stp_state"
+		json_add_int "storm_bcast" "$storm_bcast"
+		json_add_int "isolation" "$isolation"
+		json_add_int "max_frame_size" "$max_frame_size"
+		json_add_boolean "is_sfp" "$is_sfp"
+
+		if [ "$is_sfp" -eq 1 ]; then
+			json_add_object "sfp"
+			_add_sfp_json_fields "$sw" "$p"
+			json_close_object
+		fi
+
+		json_close_object
+		p=$((p + 1))
+	done
+
+	json_close_array
+	json_dump
+	json_cleanup
+}
+
+_add_cable_diag_port_fields() {
+	local sw="$1"
+	local num_ports="$2"
+	local cpu_port="$3"
+	local p="$4"
+	local is_sfp=0
+
+	if { [ "$num_ports" -eq 6 ] && [ "$p" -eq 5 ]; } || { [ "$num_ports" -eq 9 ] && [ "$p" -eq 8 ]; }; then
+		is_sfp=1
+	fi
+
+	json_add_int "port" "$p"
+
+	if [ "$p" -eq "$cpu_port" ]; then
+		json_add_string "status" "internal"
+		json_add_string "state" "cpu"
+		json_add_string "message" "Internal CPU SerDes link (cable diagnostics not applicable)"
+	elif [ "$is_sfp" -eq 1 ]; then
+		local sfp_info
+		sfp_info=$(swconfig dev "$sw" port "$p" get sfp_info 2>/dev/null)
+		if [ -z "$sfp_info" ] || printf '%s\n' "$sfp_info" | grep -qi "Not present"; then
+			json_add_string "status" "empty"
+			json_add_string "state" "sfp_empty"
+			json_add_string "message" "SFP+ slot is empty"
+		else
+			json_add_string "status" "optical"
+			json_add_string "state" "sfp_active"
+			json_add_string "message" "SFP+ module detected (copper TDR diagnostics not applicable)"
+		fi
+	else
+		local link_raw
+		link_raw=$(swconfig dev "$sw" port "$p" get link 2>/dev/null)
+		if printf '%s\n' "$link_raw" | grep -qi "link:up"; then
+			local sp
+			sp=$(printf '%s\n' "$link_raw" | grep -o 'speed:[^ ]*' | head -n 1 | cut -d: -f2)
+			json_add_string "status" "ok"
+			json_add_string "state" "link_up"
+			json_add_string "speed" "$sp"
+			json_add_string "pair_a" "ok"
+			json_add_string "pair_b" "ok"
+			json_add_string "pair_c" "ok"
+			json_add_string "pair_d" "ok"
+			json_add_string "message" "Port $p link active ($sp)"
+		else
+			local diag_out
+			diag_out=$(swconfig dev "$sw" port "$p" get cable_diag 2>/dev/null)
+			if printf '%s\n' "$diag_out" | grep -qi "Cable Diagnostics"; then
+				local pa pb pc pd la lb lc ld diag_clean
+				diag_clean=$(printf '%s\n' "$diag_out" | tr -d '\r')
+				pa=$(printf '%s\n' "$diag_clean" | awk -F': ' '/Channel A:/ {split($2,a," \\("); print a[1]}')
+				la=$(printf '%s\n' "$diag_clean" | awk -F'Length: ' '/Channel A:/ {split($2,a,"\\)"); print a[1]}')
+				pb=$(printf '%s\n' "$diag_clean" | awk -F': ' '/Channel B:/ {split($2,a," \\("); print a[1]}')
+				lb=$(printf '%s\n' "$diag_clean" | awk -F'Length: ' '/Channel B:/ {split($2,a,"\\)"); print a[1]}')
+				pc=$(printf '%s\n' "$diag_clean" | awk -F': ' '/Channel C:/ {split($2,a," \\("); print a[1]}')
+				lc=$(printf '%s\n' "$diag_clean" | awk -F'Length: ' '/Channel C:/ {split($2,a,"\\)"); print a[1]}')
+				pd=$(printf '%s\n' "$diag_clean" | awk -F': ' '/Channel D:/ {split($2,a," \\("); print a[1]}')
+				ld=$(printf '%s\n' "$diag_clean" | awk -F'Length: ' '/Channel D:/ {split($2,a,"\\)"); print a[1]}')
+				json_add_string "status" "diagnosed"
+				json_add_string "state" "link_down"
+				json_add_string "pair_a" "${pa:-unknown}"
+				json_add_string "pair_b" "${pb:-unknown}"
+				json_add_string "pair_c" "${pc:-unknown}"
+				json_add_string "pair_d" "${pd:-unknown}"
+				json_add_string "length_a" "${la:-unknown}"
+				json_add_string "length_b" "${lb:-unknown}"
+				json_add_string "length_c" "${lc:-unknown}"
+				json_add_string "length_d" "${ld:-unknown}"
+				json_add_string "message" "Hardware RTCT TDR test complete"
+			else
+				json_add_string "status" "open"
+				json_add_string "state" "link_down"
+				json_add_string "pair_a" "open"
+				json_add_string "pair_b" "open"
+				json_add_string "pair_c" "open"
+				json_add_string "pair_d" "open"
+				json_add_string "message" "Port $p cable disconnected or remote end down"
+			fi
+		fi
+	fi
+}
+
+do_cable_diag() {
+	local sw="$1"
+	local req_port="$2"
+	local help_info num_ports cpu_port
+
+	if [ -n "$req_port" ] && ! _is_uint "$req_port"; then
+		_emit_error "Invalid port"
+		return 0
+	fi
+
+	if [ -z "$sw" ]; then
+		_emit_error "RTL837x switch device not found"
+		return 0
+	fi
+
+	help_info=$(swconfig dev "$sw" help 2>&1)
+	num_ports=$(_get_num_ports "$help_info")
+	cpu_port=$(printf '%s\n' "$help_info" | grep -o 'cpu @ [0-9]*' | head -n 1 | awk '{print $3}')
+	cpu_port=$(_to_uint "$cpu_port" 0)
+
+	if [ -n "$req_port" ]; then
+		if [ "$req_port" -lt 0 ] || [ "$req_port" -ge "$num_ports" ]; then
+			_emit_error "Invalid port"
+			return 0
+		fi
+		json_init
+		_add_cable_diag_port_fields "$sw" "$num_ports" "$cpu_port" "$req_port"
+		json_dump
+		json_cleanup
+	else
+		json_init
+		json_add_array "ports"
+		local p=0
+		while [ "$p" -lt "$num_ports" ]; do
+			json_add_object ""
+			_add_cable_diag_port_fields "$sw" "$num_ports" "$cpu_port" "$p"
+			json_close_object
+			p=$((p + 1))
+		done
+		json_close_array
+		json_dump
+		json_cleanup
+	fi
+}
+
+case "$1" in
+	list)
+		json_init
+		json_add_object "get_status"
+		json_close_object
+		json_add_object "get_sfp_info"
+		json_add_int "port" 0
+		json_close_object
+		json_add_object "cable_diag"
+		json_add_int "port" 0
+		json_close_object
+		json_dump
+		json_cleanup
+	;;
+	call)
+		SW=$(find_rtl837x_switch)
+		case "$2" in
+			get_status)
+				do_get_status "$SW"
+			;;
+			get_sfp_info)
+				input=$(cat)
+				if ! _parse_port_arg "$input"; then
+					_emit_sfp_error "Invalid port"
+					exit 0
+				fi
+				do_get_sfp_info "$SW" "$PARSED_PORT"
+			;;
+			cable_diag)
+				input=$(cat)
+				if ! _parse_port_arg "$input"; then
+					_emit_error "Invalid port"
+					exit 0
+				fi
+				do_cable_diag "$SW" "$PARSED_PORT"
+			;;
+			*)
+				_emit_error "Unsupported method"
+				exit 1
+			;;
+		esac
+	;;
+	*)
+		echo "Usage: $0 {list|call <method>}"
+		exit 1
+	;;
+esac

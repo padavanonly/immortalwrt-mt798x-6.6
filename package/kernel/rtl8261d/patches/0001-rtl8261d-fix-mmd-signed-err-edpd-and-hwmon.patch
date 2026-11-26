@@ -1,0 +1,161 @@
+Subject: [PATCH] rtl8261d: fix signed MMD error propagation, EDPD u16 tunable, config_intr, and hwmon error checks
+
+--- a/src/realtek_hwmon.c
++++ b/src/realtek_hwmon.c
+@@ -38,12 +38,18 @@
+ 
+ 	switch (attr) {
+ 	case hwmon_temp_input:
+-		raw = phy_read_mmd(phydev, MDIO_MMD_VEND2, RTL822X_VND2_TSRR) & 0x3ff;
++		raw = phy_read_mmd(phydev, MDIO_MMD_VEND2, RTL822X_VND2_TSRR);
++		if (raw < 0)
++			return raw;
++		raw &= 0x3ff;
+ 		*val = rtl822x_hwmon_get_temp(raw);
+ 		break;
+ 	case hwmon_temp_max:
+ 		/* Chip reduces speed to 1G if threshold is exceeded */
+-		raw = phy_read_mmd(phydev, MDIO_MMD_VEND2, RTL822X_VND2_TSSR) >> 6;
++		raw = phy_read_mmd(phydev, MDIO_MMD_VEND2, RTL822X_VND2_TSSR);
++		if (raw < 0)
++			return raw;
++		raw = (raw & 0xffff) >> 6;
+ 		*val = rtl822x_hwmon_get_temp(raw);
+ 		break;
+ 	default:
+@@ -72,9 +78,12 @@
+ {
+ 	struct device *hwdev, *dev = &phydev->mdio.dev;
+ 	const char *name;
++	int ret;
+ 
+ 	/* Ensure over-temp alarm is reset. */
+-	phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2, RTL822X_VND2_TSALRM, 3);
++	ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2, RTL822X_VND2_TSALRM, 3);
++	if (ret < 0)
++		return ret;
+ 
+ 	name = devm_hwmon_sanitize_name(dev, dev_name(dev));
+ 	if (IS_ERR(name))
+--- a/src/rtl8261d_main.c
++++ b/src/rtl8261d_main.c
+@@ -59,14 +59,13 @@
+ 	if (!val)
+ 		return -EINVAL;
+ 
+-	uint32_t mmd = phy_read_mmd(phydev, devad, regnum);
++	int mmd = phy_read_mmd(phydev, devad, regnum);
+ 
+-	if ((mmd & 0x80000000) == 0)
+-	{
+-		*val = mmd;
+-		return 0;
+-	}
+-	return -EIO;
++	if (mmd < 0)
++		return mmd;
++
++	*val = (uint16_t)mmd;
++	return 0;
+ }
+ 
+ int MmdPhyWrite(struct phy_device *phydev, int devad, uint32_t regnum, uint16_t val)
+@@ -912,19 +911,23 @@
+ 			    struct ethtool_tunable *tuna,
+ 			    const void *data)
+ {
+-	if (tuna->id != 3)
++	u16 tx_msecs;
++
++	if (tuna->id != ETHTOOL_PHY_EDPD)
+ 		return -EOPNOTSUPP;
++	if (!data)
++		return -EINVAL;
+ 
+-	if (data && *((uint32_t*)data))
+-	{
+-		if (*((uint32_t*)data) == 0xFFFF)
+-		{
+-			Nic_Rtl8261X_linkDownPowerSavingEnable_set(phydev, 1);
+-			return 0;
+-		}
++	tx_msecs = *(const u16 *)data;
++	switch (tx_msecs) {
++	case ETHTOOL_PHY_EDPD_DISABLE:
++		return Nic_Rtl8261X_linkDownPowerSavingEnable_set(phydev, false);
++	case ETHTOOL_PHY_EDPD_NO_TX:
++	case ETHTOOL_PHY_EDPD_DFLT_TX_MSECS:
++		return Nic_Rtl8261X_linkDownPowerSavingEnable_set(phydev, true);
++	default:
+ 		return -EINVAL;
+ 	}
+-	return Nic_Rtl8261X_linkDownPowerSavingEnable_set(phydev, 0);
+ }
+ 
+ int rtl8261x_get_tunable(struct phy_device *phydev,
+@@ -932,13 +935,18 @@
+ {
+ 	int ret;
+ 	bool enable;
+-	if (tuna->id != 3)
++
++	if (tuna->id != ETHTOOL_PHY_EDPD)
+ 		return -EOPNOTSUPP;
++	if (!data)
++		return -EINVAL;
+ 
+ 	ret = Nic_Rtl8261X_linkDownPowerSavingEnable_get(phydev, &enable);
+-	if (ret) return ret;
+-	*((uint16_t*)data) = -enable;
++	if (ret)
++		return ret;
+ 
++	*(u16 *)data = enable ? ETHTOOL_PHY_EDPD_DFLT_TX_MSECS :
++				ETHTOOL_PHY_EDPD_DISABLE;
+ 	return 0;
+ }
+ 
+@@ -1192,13 +1200,29 @@
+ 	int ret;
+ 	uint16_t value;
+ 
++	if (phydev->interrupts == PHY_INTERRUPT_ENABLED) {
++		ret = rtl8261x_ack_intr(phydev);
++		if (ret)
++			return ret;
++
++		ret = MmdPhyRead(phydev, MDIO_MMD_VEND2, 0xD20E, &value);
++		if (ret)
++			return ret;
++
++		value |= 0x10;
++		return MmdPhyWrite(phydev, MDIO_MMD_VEND2, 0xD20E, value);
++	}
++
+ 	ret = MmdPhyRead(phydev, MDIO_MMD_VEND2, 0xD20E, &value);
+-	if (ret) return ret;
++	if (ret)
++		return ret;
++
++	value &= 0xFFEF;
++	ret = MmdPhyWrite(phydev, MDIO_MMD_VEND2, 0xD20E, value);
++	if (ret)
++		return ret;
+ 
+-    value = value & 0xFFEF;
+-    if (phydev->interrupts)
+-		value = value | 0x10;
+-    return MmdPhyWrite(phydev, MDIO_MMD_VEND2, 0xD20E, value);
++	return rtl8261x_ack_intr(phydev);
+ }
+ 
+ irqreturn_t rtl8261x_handle_intr(struct phy_device *phydev)
+@@ -1480,7 +1504,7 @@
+ 		.config_aneg      = rtl8261x_config_aneg,
+ 		.aneg_done        = genphy_c45_aneg_done,
+ 		.read_status      = rtl8261x_read_status,
+-		.config_intr      = rtl8261x_ack_intr,
++		.config_intr      = rtl8261x_config_intr,
+ 		.handle_interrupt = rtl8261x_handle_intr,
+ 		.suspend	      = genphy_suspend,
+ 		.resume		      = genphy_resume,

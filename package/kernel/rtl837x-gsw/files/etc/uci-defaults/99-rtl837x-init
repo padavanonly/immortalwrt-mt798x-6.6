@@ -1,0 +1,75 @@
+#!/bin/sh
+
+[ -f /lib/functions.sh ] && . /lib/functions.sh
+
+# If /etc/config/rtl837x already exists, retain user configuration
+[ -f /etc/config/rtl837x ] && exit 0
+
+touch /etc/config/rtl837x
+
+# Generate adaptive initial configuration
+uci -q batch <<EOF
+set rtl837x.global=rtl837x
+set rtl837x.global.igmp_snooping='1'
+set rtl837x.global.igmp_fast_leave='1'
+set rtl837x.global.trunk_hash_mode='0'
+set rtl837x.global.trunk0_ports=''
+set rtl837x.global.trunk1_ports=''
+
+set rtl837x.port0=port
+set rtl837x.port0.port='0'
+set rtl837x.port0.name='CPU'
+set rtl837x.port0.eee='0'
+set rtl837x.port0.max_frame_size='1518'
+set rtl837x.port0.isolation='0'
+set rtl837x.port0.stp_state='3'
+set rtl837x.port0.storm_bcast='0'
+
+set rtl837x.port1=port
+set rtl837x.port1.port='1'
+set rtl837x.port1.name='LAN1'
+set rtl837x.port1.eee='0'
+set rtl837x.port1.max_frame_size='1518'
+set rtl837x.port1.isolation='0'
+set rtl837x.port1.stp_state='3'
+set rtl837x.port1.storm_bcast='0'
+
+set rtl837x.port2=port
+set rtl837x.port2.port='2'
+set rtl837x.port2.name='LAN2'
+set rtl837x.port2.eee='0'
+set rtl837x.port2.max_frame_size='1518'
+set rtl837x.port2.isolation='0'
+set rtl837x.port2.stp_state='3'
+set rtl837x.port2.storm_bcast='0'
+
+set rtl837x.port3=port
+set rtl837x.port3.port='3'
+set rtl837x.port3.name='LAN3'
+set rtl837x.port3.eee='0'
+set rtl837x.port3.max_frame_size='1518'
+set rtl837x.port3.isolation='0'
+set rtl837x.port3.stp_state='3'
+set rtl837x.port3.storm_bcast='0'
+
+set rtl837x.port4=port
+set rtl837x.port4.port='4'
+set rtl837x.port4.name='LAN4'
+set rtl837x.port4.eee='0'
+set rtl837x.port4.max_frame_size='1518'
+set rtl837x.port4.isolation='0'
+set rtl837x.port4.stp_state='3'
+set rtl837x.port4.storm_bcast='0'
+
+set rtl837x.port5=port
+set rtl837x.port5.port='5'
+set rtl837x.port5.name='SFP+'
+set rtl837x.port5.eee='0'
+set rtl837x.port5.max_frame_size='1518'
+set rtl837x.port5.isolation='0'
+set rtl837x.port5.stp_state='3'
+set rtl837x.port5.storm_bcast='0'
+commit rtl837x
+EOF
+
+exit 0
