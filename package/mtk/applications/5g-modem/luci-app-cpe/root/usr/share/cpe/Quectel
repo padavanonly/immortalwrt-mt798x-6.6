@@ -27,11 +27,11 @@ nr_bw() {
 	esac
 }
 
-#查询信息强度
+# Check signal strength
 All_CSQ()
 {
      Debug "All_CSQ"
-	#信号
+	# Signal
 	OX=$( sendat $ATPORT "AT+CSQ" |grep "+CSQ:")
 	OX=$(echo $OX | tr 'a-z' 'A-Z')
 	CSQ=$(echo "$OX" | grep -o "+CSQ: [0-9]\{1,2\}" | grep -o "[0-9]\{1,2\}")
@@ -51,17 +51,17 @@ All_CSQ()
 Quectel_SIMINFO()
 {
     Debug "Quectel_SIMINFO"
-    # 获取IMEI
+    # Get IMEI
 	IMEI=$( sendat $ATPORT "AT+CGSN"  | sed -n '2p'  )
-	# 获取IMSI
+	# Get IMSI
 	IMSI=$( sendat $ATPORT "AT+CIMI"  | sed -n '2p'  )
-	# 获取ICCID
+	# Get ICCID
 	ICCID=$( sendat $ATPORT "AT+ICCID"  | grep -o "+ICCID:[ ]*[-0-9]\+" | grep -o "[-0-9]\{1,4\}"  )
-	# 获取电话号码
+	# Get phone number
 	phone=$( sendat $ATPORT "AT+CNUM"  | grep "+CNUM:"  )
 
 }
-# SIMCOM获取基站信息
+# Get cell information
 Quectel_Cellinfo()
 {
     # return
@@ -189,7 +189,7 @@ Quectel_Cellinfo()
     fi
 }
 
-#Quectel公司查找基站AT
+# Quectel cell lookup AT
 Quectel_AT()
 {
     Debug "Quectel_AT"
@@ -364,7 +364,7 @@ Quectel_AT()
         "NR5G-SA")
             MODE="NR5G-SA"
             if [ -n "$QENG5" ]; then
-                #AT+qnwcfg="NR5G_AMBR"  #查询速度
+                #AT+qnwcfg="NR5G_AMBR"  # Query speed
                 MODE="$RAT $(echo $QENG5 | cut -d, -f4)"
                 PCI=$(echo $QENG5 | cut -d, -f8)
                 CHANNEL=$(echo $QENG5 | cut -d, -f10)
@@ -437,7 +437,7 @@ Quectel_AT()
     OX=$( sendat $ATPORT 'AT+QNWPREFCFG="mode_pref"'  | grep "+QNWPREFCFG:"  )
     QNWP=$(echo $OX | grep -o -i "+QNWPREFCFG: \"MODE_PREF\",[A-Z5:]\+" | cut -d, -f2)
 
-    #温度
+    # Temperature
     OX=$( sendat $ATPORT 'AT+QTEMP'  | grep "+QTEMP:"  )
     QTEMP=$(echo $OX | grep -o -i "+QTEMP: [0-9]\{1,3\}")
     if [ -z "$QTEMP" ]; then

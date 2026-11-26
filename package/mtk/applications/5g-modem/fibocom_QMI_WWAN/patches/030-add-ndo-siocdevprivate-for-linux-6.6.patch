@@ -1,0 +1,40 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] fibocom_QMI_WWAN: wire ndo_siocdevprivate for Linux 6.6 QMAP bridge ioctl
+
+Linux >= 5.15 routes SIOCDEVPRIVATE ioctls exclusively to .ndo_siocdevprivate instead of
+.ndo_do_ioctl. Align qmi_wwan_f.c with quectel_QMI_WWAN so fibocom-dial bridge ioctl
+(0x89F3) works on Linux 6.6.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/qmi_wwan_f.c
++++ b/qmi_wwan_f.c
+@@ -1988,6 +1988,18 @@
+     return retval;
+ }
+ 
++#if (LINUX_VERSION_CODE > KERNEL_VERSION( 5,14,0 ))
++#define use_ndo_siocdevprivate
++#endif
++#ifdef use_ndo_siocdevprivate
++#if defined(FIBOCOM_WWAN_QMAP)
++static int qmap_ndo_siocdevprivate(struct net_device *dev, struct ifreq *ifr, void __user *data, int cmd)
++{
++    return qmap_ndo_do_ioctl(dev, ifr, cmd);
++}
++#endif
++#endif
++
+ static const struct net_device_ops qmi_wwan_netdev_ops = {
+     .ndo_open        = usbnet_open,
+     .ndo_stop        = usbnet_stop,
+@@ -1999,6 +2011,9 @@
+     .ndo_validate_addr    = eth_validate_addr,
+ #if defined(FIBOCOM_WWAN_QMAP)// && defined(CONFIG_ANDROID)
+     .ndo_do_ioctl = qmap_ndo_do_ioctl,
++#ifdef use_ndo_siocdevprivate
++    .ndo_siocdevprivate = qmap_ndo_siocdevprivate,
++#endif
+ #endif
+ };
+ 

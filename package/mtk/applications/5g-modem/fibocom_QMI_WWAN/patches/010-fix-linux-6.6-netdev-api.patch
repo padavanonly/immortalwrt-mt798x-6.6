@@ -1,0 +1,29 @@
+--- a/qmi_wwan_f.c
++++ b/qmi_wwan_f.c
+@@ -712,7 +712,7 @@ static struct rtnl_link_stats64 *_rmnet_
+         stats64 = per_cpu_ptr(dev->stats64, cpu);
+ 
+         do {
+-            start = u64_stats_fetch_begin_irq(&stats64->syncp);
++            start = u64_stats_fetch_begin(&stats64->syncp);
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(5,18,0)
+             rx_packets = stats64->rx_packets;
+             rx_bytes = stats64->rx_bytes;
+@@ -724,7 +724,7 @@ static struct rtnl_link_stats64 *_rmnet_
+ 	    tx_packets = u64_stats_read(&stats64->tx_packets);
+ 	    tx_bytes = u64_stats_read(&stats64->tx_bytes);
+ #endif
+-        } while (u64_stats_fetch_retry_irq(&stats64->syncp, start));
++        } while (u64_stats_fetch_retry(&stats64->syncp, start));
+ 
+         stats->rx_packets += rx_packets;
+         stats->rx_bytes += rx_bytes;
+@@ -1187,7 +1187,7 @@ static int qmap_register_device(sQmiWwan
+     priv->mux_id = FIBOCOM_QMAP_MUX_ID + offset_id;
+     sprintf(qmap_net->name, "%s.%d", real_dev->name, offset_id + 1);
+     qmap_net->netdev_ops = &qmap_netdev_ops;
+-    memcpy (qmap_net->dev_addr, real_dev->dev_addr, ETH_ALEN);
++    dev_addr_set(qmap_net, real_dev->dev_addr);
+ 
+ #ifdef FIBOCOM_BRIDGE_MODE
+     priv->bridge_mode = !!(pDev->bridge_mode & BIT(offset_id));

@@ -1,0 +1,33 @@
+{
+	"luci-app-cpe": {
+		"description": "Grant least-privilege ubus and UCI access for luci-app-cpe",
+		"read": {
+			"ubus": {
+				"luci.cpe": [
+					"get_csq",
+					"action_get_csq",
+					"get_status",
+					"get_modem_env"
+				]
+			},
+			"uci": [
+				"modem",
+				"custom",
+				"system"
+			]
+		},
+		"write": {
+			"ubus": {
+				"luci.cpe": [
+					"exec_at",
+					"send_atcmd",
+					"action_Write",
+					"restart_modem"
+				]
+			},
+			"uci": [
+				"modem"
+			]
+		}
+	}
+}

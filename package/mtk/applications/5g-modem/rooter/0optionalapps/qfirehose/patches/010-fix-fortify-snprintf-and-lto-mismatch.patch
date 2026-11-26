@@ -1,0 +1,125 @@
+diff -Naur a/firehose_protocol.c b/firehose_protocol.c
+--- a/firehose_protocol.c
++++ b/firehose_protocol.c
+@@ -25,7 +25,7 @@
+ 
+ extern unsigned q_erase_all_before_download;
+ extern int update_transfer_bytes(long long bytes_cur);
+-extern int show_progress();
++extern void show_progress(void);
+ 
+ struct fh_configure_cmd {
+     const char *type;
+@@ -515,56 +515,63 @@
+     error_return();
+ }
+ 
+-static int fh_send_cmd(struct fh_data *fh_data, const struct fh_cmd *fh_cmd) {  
++static int fh_send_cmd(struct fh_data *fh_data, const struct fh_cmd *fh_cmd) {
+     int tx_len = 0;
+     char *pstart, *pend;
+     char *xml_buf = fh_data->xml_tx_buf;
+     unsigned xml_size = fh_data->xml_tx_size;
++    size_t len = 0;
++    int n;
++
++    if (!xml_buf || xml_size == 0)
++        error_return();
+     xml_buf[0] = '\0';
+ 
+-    snprintf(xml_buf + strlen(xml_buf), xml_size, "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n");
+-    snprintf(xml_buf + strlen(xml_buf), xml_size, "<data>\n");
++    n = snprintf(xml_buf + len, xml_size - len, "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<data>\n");
++    if (n < 0 || (size_t)n >= xml_size - len)
++        error_return();
++    len += (size_t)n;
+ 
+-    pstart = xml_buf + strlen(xml_buf);
+-    if (!strcmp(fh_cmd->cmd.type, "vendor")) {
+-        snprintf(xml_buf + strlen(xml_buf), xml_size, "%s", fh_cmd->xml_original_data);
+-    }
+-    else if (!strcmp(fh_cmd->cmd.type, "erase")) {
+-        snprintf(xml_buf + strlen(xml_buf), xml_size, "%s", fh_cmd->xml_original_data);
+-    }
+-    else if (!strcmp(fh_cmd->cmd.type, "program")) {
+-        snprintf(xml_buf + strlen(xml_buf), xml_size, "%s", fh_cmd->xml_original_data);
+-    }
+-    else if (!strcmp(fh_cmd->cmd.type, "patch")) {	
+-        snprintf(xml_buf + strlen(xml_buf), xml_size, "%s", fh_cmd->xml_original_data);
++    pstart = xml_buf + len;
++    if (!strcmp(fh_cmd->cmd.type, "vendor") ||
++        !strcmp(fh_cmd->cmd.type, "erase") ||
++        !strcmp(fh_cmd->cmd.type, "program") ||
++        !strcmp(fh_cmd->cmd.type, "patch")) {
++        n = snprintf(xml_buf + len, xml_size - len, "%s", fh_cmd->xml_original_data);
+     }
+     else if (!strcmp(fh_cmd->cmd.type, "configure")) {
+-        snprintf(xml_buf + strlen(xml_buf), xml_size,  
++        n = snprintf(xml_buf + len, xml_size - len,
+             "<configure MemoryName=\"%.8s\" Verbose=\"%d\" AlwaysValidate=\"%d\" MaxDigestTableSizeInBytes=\"%d\" MaxPayloadSizeToTargetInBytes=\"%d\"  ZlpAwareHost=\"%d\" SkipStorageInit=\"%d\" />",
+             fh_cmd->cfg.MemoryName, fh_cmd->cfg.Verbose, fh_cmd->cfg.AlwaysValidate,
+-            fh_cmd->cfg.MaxDigestTableSizeInBytes, 
++            fh_cmd->cfg.MaxDigestTableSizeInBytes,
+             fh_cmd->cfg.MaxPayloadSizeToTargetInBytes,
+             fh_cmd->cfg.ZlpAwareHost, fh_cmd->cfg.SkipStorageInit);
+     }
+     else if (!strcmp(fh_cmd->cmd.type, "setbootablestoragedrive")) {
+-        snprintf(xml_buf + strlen(xml_buf), xml_size, "<setbootablestoragedrive value=\"%d\" />",
++        n = snprintf(xml_buf + len, xml_size - len, "<setbootablestoragedrive value=\"%d\" />",
+             !strcmp(q_device_type, "ufs") ? 1 : 0);
+     }
+     else if (!strcmp(fh_cmd->cmd.type, "reset")) {
+-        snprintf(xml_buf + strlen(xml_buf), xml_size, "<power DelayInSeconds=\"%u\" value=\"reset\" />", 10);
++        n = snprintf(xml_buf + len, xml_size - len, "<power DelayInSeconds=\"%u\" value=\"reset\" />", 10);
+     }
+     else {
+         dbg_time("%s unkonw fh_cmd->cmd.type=%s\n", __func__, fh_cmd->cmd.type);
+         error_return();
+     }
+-    
+-    pend = xml_buf + strlen(xml_buf);
+-    dbg_time("%.*s\n", (int)(pend - pstart),  pstart);
+-    snprintf(xml_buf + strlen(xml_buf), xml_size, "\n</data>");
++    if (n < 0 || (size_t)n >= xml_size - len)
++        error_return();
++    len += (size_t)n;
++
++    pend = xml_buf + len;
++    dbg_time("%.*s\n", (int)(pend - pstart), pstart);
++    n = snprintf(xml_buf + len, xml_size - len, "\n</data>");
++    if (n < 0 || (size_t)n >= xml_size - len)
++        error_return();
++    len += (size_t)n;
+ 
+-    tx_len = qusb_noblock_write(fh_data->usb_handle, xml_buf, strlen(xml_buf), strlen(xml_buf), 3000, fh_data->ZlpAwareHost);
++    tx_len = qusb_noblock_write(fh_data->usb_handle, xml_buf, len, len, 3000, fh_data->ZlpAwareHost);
+ 
+-    if ((size_t)tx_len == strlen(xml_buf))
++    if (tx_len >= 0 && (size_t)tx_len == len)
+         return 0;
+ 
+     error_return();
+diff -Naur a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -1,7 +1,7 @@
+ all: qfirehose
+ 
+ qfirehose:
+-	$(CC) $(CFLAGS) -Wall firehose_protocol.c  qfirehose.c  sahara_protocol.c usb_linux.c stream_download_protocol.c md5.c usb2tcp.c -o $@ $^
++	$(CC) $(CFLAGS) -Wall firehose_protocol.c qfirehose.c sahara_protocol.c usb_linux.c stream_download_protocol.c md5.c usb2tcp.c -o $@ $^ $(LDFLAGS)
+ 
+ clean:
+ 	rm -rf firehose obj libs
+diff -Naur a/qfirehose.c b/qfirehose.c
+--- a/qfirehose.c
++++ b/qfirehose.c
+@@ -514,7 +514,7 @@
+     return percent;
+ }
+ 
+-void show_progress()
++void show_progress(void)
+ {
+     static int percent = 0;
+ 

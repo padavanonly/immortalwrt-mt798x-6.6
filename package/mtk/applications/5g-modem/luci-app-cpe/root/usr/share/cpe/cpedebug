@@ -1,15 +1,15 @@
 #!/bin/sh
 
-en=1 #调试开关：0关闭，1打开 ，2输出到文件
-outfile="/tmp/cpe.log"	#输出文件
-#日志信息
+en=1 # Debug switch: 0=off, 1=on, 2=output to file
+outfile="/tmp/cpe.log"	# Output file
+# Log information
 Debug()
 {
-	tim=$(date "+%Y-%m-%d %H:%M:%S")	#获取系统时间
+	tim=$(date "+%Y-%m-%d %H:%M:%S")	# Get system time
 	if [ $en == 1 ]; then
-		echo $tim $1					#打印输出
+		echo $tim $1					# Print output
 	elif [ $en == 2 ]; then
-		echo $tim $1 >> $outfile		#输出到文件
+		echo $tim $1 >> $outfile		# Output to file
 	fi
 }
 ATPORT()

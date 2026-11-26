@@ -1,22 +1,22 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 source "${SCRIPT_DIR}/modem_debug.sh"
 source "${SCRIPT_DIR}/modem_scan.sh"
 
-#模组扫描任务
+# Modem scan task
 modem_scan_task()
 {
-    sleep 8s #刚开机需要等待移动网络出来
+    sleep 8s # Wait for mobile network to appear after boot
 	while true; do
         enable_dial=$(uci -q get modem.@global[0].enable_dial)
         if [ "$enable_dial" = "1" ]; then
-            #扫描模块
-            debug "开启模块扫描任务"
+            # Scan modem
+            debug "Starting modem scan task"
             modem_scan
-            debug "结束模块扫描任务"
+            debug "Finished modem scan task"
         fi
         sleep 10s
     done

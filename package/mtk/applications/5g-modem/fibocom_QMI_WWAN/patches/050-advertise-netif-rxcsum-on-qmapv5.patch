@@ -1,0 +1,32 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] fibocom_QMI_WWAN: advertise NETIF_F_RXCSUM when QMAPv5 CSUM offload is active
+
+Expose NETIF_F_RXCSUM in hw_features/features on QMAPv5 virtual and parent
+netdevs matching the enabled RMNET_MAP_HEADER_TYPE_CSUM_OFFLOAD RX path.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/qmi_wwan_f.c
++++ b/qmi_wwan_f.c
+@@ -1422,6 +1422,10 @@
+     qmap_net->needed_tailroom = max_t(unsigned int, qmap_net->needed_tailroom, 4U);
+     qmap_net->hw_features |= (real_dev->hw_features & NETIF_F_SG);
+     qmap_net->features |= (real_dev->features & NETIF_F_SG);
++    if (pDev->qmap_version == 9) {
++        qmap_net->hw_features |= NETIF_F_RXCSUM;
++        qmap_net->features |= NETIF_F_RXCSUM;
++    }
+ 
+     err = register_netdev(qmap_net);
+     dev_info(&real_dev->dev, "%s(%s)=%d\n", __func__, qmap_net->name, err);
+@@ -2381,6 +2385,10 @@
+             pQmapDev->rmnet_info.iface_id = 4;
+             pQmapDev->rmnet_info.qmap_mode = pQmapDev->qmap_mode;
+             pQmapDev->rmnet_info.qmap_version = pQmapDev->qmap_version;
++            if (pQmapDev->qmap_version == 9) {
++                dev->net->hw_features |= NETIF_F_RXCSUM;
++                dev->net->features |= NETIF_F_RXCSUM;
++            }
+             pQmapDev->rmnet_info.dl_minimum_padding = 0;
+ 
+             strcpy(rmmet_usb->name, "rmnet_usb%d");

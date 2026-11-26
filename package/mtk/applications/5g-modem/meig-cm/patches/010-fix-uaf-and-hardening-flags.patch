@@ -1,0 +1,46 @@
+diff -Naur a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -12,13 +12,13 @@
+ MEIG_CM_SRC=QmiWwanCM.c GobiNetCM.c main.c MPQMUX.c QMIThread.c util.c udhcpc.c qmap_bridge_mode.c mbim-cm.c device.c
+ 
+ release: clean qmi-proxy
+-	$(CC) -Wall -s ${MEIG_CM_SRC} -o meig-cm -lpthread -ldl
++	$(CC) $(CFLAGS) -Wall ${MEIG_CM_SRC} -o meig-cm $(LDFLAGS) -lpthread -ldl
+ 
+ debug: clean
+-	$(CC) -Wall -g -DCM_DEBUG ${MEIG_CM_SRC} -o meig-cm -lpthread -ldl
++	$(CC) $(CFLAGS) -Wall -g -DCM_DEBUG ${MEIG_CM_SRC} -o meig-cm $(LDFLAGS) -lpthread -ldl
+ 
+ qmi-proxy:
+-	$(CC) -Wall -s meig-qmi-proxy.c  -o meig-qmi-proxy -lpthread -ldl
++	$(CC) $(CFLAGS) -Wall meig-qmi-proxy.c -o meig-qmi-proxy $(LDFLAGS) -lpthread -ldl
+ 
+ clean:
+ 	rm -rf meig-cm *~
+diff -Naur a/QMIThread.c b/QMIThread.c
+--- a/QMIThread.c
++++ b/QMIThread.c
+@@ -1733,8 +1733,9 @@
+             dbg_time("call_end_reason_verbose is %d", verbose_call_end_reason);
+         }
+ 
++        int qmi_err = le16_to_cpu(pMUXMsg->QMUXMsgHdrResp.QMUXError);
+         free(pResponse);
+-        return le16_to_cpu(pMUXMsg->QMUXMsgHdrResp.QMUXError);
++        return qmi_err;
+     }
+ 
+     if (curIpFamily == IpFamilyV4) {
+diff -Naur a/udhcpc.c b/udhcpc.c
+--- a/udhcpc.c
++++ b/udhcpc.c
+@@ -244,7 +244,7 @@
+                         d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10], d[11], d[12], d[13], d[14], d[15]);
+                 }
+                 
+-                update_resolv_conf(6, ifname, profile->ipv6.DnsPrimary[0] ? dns1str : NULL, profile->ipv6.DnsSecondary ? dns2str : NULL);
++                update_resolv_conf(6, ifname, profile->ipv6.DnsPrimary[0] ? dns1str : NULL, profile->ipv6.DnsSecondary[0] ? dns2str : NULL);
+             }
+ #else
+ #ifdef USE_DHCLIENT

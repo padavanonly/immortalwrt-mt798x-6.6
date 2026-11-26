@@ -1,0 +1,59 @@
+diff -Naur a/qmi_wwan.c b/qmi_wwan.c
+--- a/qmi_wwan.c
++++ b/qmi_wwan.c
+@@ -52,13 +52,11 @@
+ 	if (dev->udev->descriptor.idVendor != cpu_to_le16(0x2C7C) &&
+ 	    dev->udev->descriptor.idVendor != cpu_to_le16(0x05c6) &&
+             dev->udev->descriptor.idVendor != cpu_to_le16(0x2dee)){
+-                dev_err(&dev->intf->dev,"zhangqingyun test 1");
+ 		return skb;
+             }
+ 	
+ 	// Skip Ethernet header from message
+-	if (skb_pull(skb, ETH_HLEN)) {
+-                dev_err(&dev->intf->dev, "zhangqingyu test 2");
++	if (pskb_may_pull(skb, ETH_HLEN) && skb_pull(skb, ETH_HLEN)) {
+ 		return skb;
+ 	} else {
+ 		dev_err(&dev->intf->dev, "Packet Dropped ");
+@@ -100,7 +98,7 @@
+ 	__be16 proto;
+ 
+ 	//this check is no longer done by usbnet
+-	if (skb->len < dev->net->hard_header_len) {
++	if (skb->len < dev->net->hard_header_len || !pskb_may_pull(skb, 1)) {
+ 		return 0;
+ 	}
+ 
+@@ -113,6 +111,9 @@
+ 		proto = htons(ETH_P_IPV6);
+ 		break;
+ 	case 0x00:
++		if (!pskb_may_pull(skb, ETH_ALEN)) {
++			return 0;
++		}
+ 		if (is_multicast_ether_addr(skb->data)) {
+ 			return 1;
+ 		}
+@@ -123,7 +124,7 @@
+ 		return 1;
+ 	}
+ 
+-	if (skb_headroom(skb) < ETH_HLEN) {
++	if (skb_cow_head(skb, ETH_HLEN)) {
+ 		return 0;
+ 	}
+ 
+@@ -376,6 +378,12 @@
+ 		dev_addr_mod(dev->net, 0, &addr, 1);
+ 	}
+ 	dev->net->netdev_ops = &qmi_wwan_netdev_ops;
++	dev->net->needed_headroom = max_t(unsigned short, dev->net->needed_headroom, ETH_HLEN);
++	if (usb_device_no_sg_constraint(dev->udev)) {
++		dev->can_dma_sg = 1;
++		dev->net->features |= NETIF_F_SG;
++		dev->net->hw_features |= NETIF_F_SG;
++	}
+ 
+ 	//dev->rx_urb_size = 7600;
+ 

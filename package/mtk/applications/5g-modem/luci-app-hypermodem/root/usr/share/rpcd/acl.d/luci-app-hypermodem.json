@@ -1,0 +1,14 @@
+{
+	"luci-app-hypermodem": {
+		"description": "Grant UCI and RPC access for luci-app-hypermodem",
+		"read": {
+			"ubus": {
+				"luci.hypermodem": [ "getDevices" ]
+			},
+			"uci": [ "hypermodem" ]
+		},
+		"write": {
+			"uci": [ "hypermodem" ]
+		}
+	}
+}

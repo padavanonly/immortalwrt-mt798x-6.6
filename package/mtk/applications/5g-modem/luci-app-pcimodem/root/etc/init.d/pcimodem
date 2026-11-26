@@ -4,7 +4,7 @@
 START=99
 STOP=16
 USE_PROCD=1
-#使用procd启动
+# Use procd
 
 run_5g()
 {
@@ -32,11 +32,13 @@ run_5g()
         config_get atcmd $1 atcmd
 
         if [ "$tool" = "at" ];then
-        at_tool "$atcmd" -d $tty
+            procd_open_instance
+            procd_set_param command at_tool "$atcmd" -d "$tty"
+            procd_close_instance
         else
             procd_open_instance
-        #创建一个实例， 在procd看来一个应用程序可以多个实\E4\BE?
-        #ubus call service list 可以查看实例
+        # Create an instance; procd supports multiple instances
+        # Use ubus call service list to view instances
             procd_set_param command $tool -i rmnet_mhi0 -s $apn
             if [ "$password" != "" ];then
                 procd_append_param command $user $password $auth
@@ -48,7 +50,7 @@ run_5g()
             procd_set_param respawn
             echo "quectel-CM has started."
             procd_close_instance
-            #关闭实例
+            # Close instance
         fi
 
     fi

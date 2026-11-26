@@ -26,10 +26,17 @@ define Package/qfirehose/description
  Quectel FireHose
 endef
 
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/. $(PKG_BUILD_DIR)/
+	$(Build/Patch)
+endef
+
 define Build/Compile
 	$(MAKE) -C $(PKG_BUILD_DIR) \
 		CC="$(TARGET_CC)" \
-		CFLAGS="$(TARGET_CFLAGS) -Wall"
+		CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -Wall" \
+		LDFLAGS="$(TARGET_LDFLAGS)"
 endef
 
 define Package/qfirehose/install

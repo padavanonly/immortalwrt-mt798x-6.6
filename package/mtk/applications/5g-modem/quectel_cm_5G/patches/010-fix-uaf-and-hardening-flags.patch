@@ -1,0 +1,83 @@
+diff -Naur a/device.c b/device.c
+--- a/device.c
++++ b/device.c
+@@ -400,7 +400,7 @@
+ void replaceStr(char *str, char *orig, char *rep) {
+     char buffer[1024];
+     char *p;
+-    while (p = strstr(str, orig)) {
++    while ((p = strstr(str, orig)) != NULL) {
+         memcpy(buffer, str, p - str);
+         buffer[p - str] = '\0';
+         sprintf(buffer + strlen(buffer), "%s%s", rep, p + strlen(orig));
+diff -Naur a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -21,25 +21,25 @@
+ QL_CM_DHCP+=${LIBMNL}
+ endif
+ 
+-LDFLAGS += -lpthread -ldl -lrt
++LIBS := -lpthread -ldl -lrt
+ 
+ release: clean qmi-proxy mbim-proxy atc-proxy #qrtr-proxy
+-	$(CC) ${CFLAGS} ${QL_CM_SRC} ${QL_CM_DHCP} -o quectel-CM ${LDFLAGS}
++	$(CC) ${CFLAGS} ${QL_CM_SRC} ${QL_CM_DHCP} -o quectel-CM ${LDFLAGS} ${LIBS}
+ 
+ debug: clean
+-	$(CC) ${CFLAGS} -g -DCM_DEBUG ${QL_CM_SRC} ${QL_CM_DHCP} -o quectel-CM -lpthread -ldl -lrt
++	$(CC) ${CFLAGS} -g -DCM_DEBUG ${QL_CM_SRC} ${QL_CM_DHCP} -o quectel-CM ${LDFLAGS} ${LIBS}
+ 
+ qmi-proxy:
+-	$(CC) ${CFLAGS} quectel-qmi-proxy.c -o quectel-qmi-proxy ${LDFLAGS} 
++	$(CC) ${CFLAGS} quectel-qmi-proxy.c -o quectel-qmi-proxy ${LDFLAGS} ${LIBS}
+ 
+ mbim-proxy:
+-	$(CC) ${CFLAGS} quectel-mbim-proxy.c -o quectel-mbim-proxy ${LDFLAGS} 
++	$(CC) ${CFLAGS} quectel-mbim-proxy.c -o quectel-mbim-proxy ${LDFLAGS} ${LIBS}
+ 
+ qrtr-proxy:
+-	$(CC) ${CFLAGS} quectel-qrtr-proxy.c -o quectel-qrtr-proxy ${LDFLAGS} 
++	$(CC) ${CFLAGS} quectel-qrtr-proxy.c -o quectel-qrtr-proxy ${LDFLAGS} ${LIBS}
+ 
+ atc-proxy:
+-	$(CC) ${CFLAGS} quectel-atc-proxy.c atchannel.c at_tok.c util.c -o quectel-atc-proxy ${LDFLAGS} 
++	$(CC) ${CFLAGS} quectel-atc-proxy.c atchannel.c at_tok.c util.c -o quectel-atc-proxy ${LDFLAGS} ${LIBS}
+ 
+ clean:
+ 	rm -rf *.o libmnl/*.o quectel-CM quectel-qmi-proxy quectel-mbim-proxy quectel-atc-proxy
+diff -Naur a/QMIThread.c b/QMIThread.c
+--- a/QMIThread.c
++++ b/QMIThread.c
+@@ -1858,8 +1858,9 @@
+             dbg_time("call_end_reason_verbose is %d", verbose_call_end_reason);
+         }
+ 
++        int qmi_err = le16_to_cpu(pMUXMsg->QMUXMsgHdrResp.QMUXError);
+         free(pResponse);
+-        return le16_to_cpu(pMUXMsg->QMUXMsgHdrResp.QMUXError);
++        return qmi_err;
+     }
+ 
+     if (curIpFamily == IpFamilyV4) {
+diff -Naur a/udhcpc_script.c b/udhcpc_script.c
+--- a/udhcpc_script.c
++++ b/udhcpc_script.c
+@@ -95,7 +95,7 @@
+              " netiface=%s interface=%s mtu=%u ip=%s subnet=%s broadcast=%s router=%s"
+              " domain=\"%s %s\" %s",
+              profile->usbnet_adapter,
+-             profile->qmapnet_adapter ? profile->qmapnet_adapter : profile->usbnet_adapter,
++             profile->qmapnet_adapter[0] ? profile->qmapnet_adapter : profile->usbnet_adapter,
+              profile->ipv4.Mtu,
+              ipaddr_to_string_v4(ntohl(profile->ipv4.Address), ip, sizeof(ip)),
+              ipaddr_to_string_v4(ntohl(profile->ipv4.SubnetMask), subnet, sizeof(subnet)),
+@@ -126,7 +126,7 @@
+     snprintf(shell_cmd, sizeof(shell_cmd),
+              "netiface=%s interface=%s %s",
+              profile->usbnet_adapter,
+-             profile->qmapnet_adapter ? profile->qmapnet_adapter : profile->usbnet_adapter,
++             profile->qmapnet_adapter[0] ? profile->qmapnet_adapter : profile->usbnet_adapter,
+              getenv(IFDOWN_SCRIPT));
+     ql_system(shell_cmd);
+ }

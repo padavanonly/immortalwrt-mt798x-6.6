@@ -1,32 +1,32 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+#Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 
-#预设
+#Preset
 fibocom_presets()
 {
-    #设置IPv6地址格式
+    #SetIPv6Addressformat
 	at_command='AT+CGPIAF=1,0,0,0'
 	sh "${SCRIPT_DIR}/modem_at.sh" "$at_port" "$at_command"
 
-    #自动DHCP
+    #autoDHCP
 	at_command='AT+GTAUTODHCP=1'
 	sh "${SCRIPT_DIR}/modem_at.sh" "$at_port" "$at_command"
 
-	#启用IP直通
+	#EnableIPpassthrough
 	at_command='AT+GTIPPASS=1,1'
 	sh "${SCRIPT_DIR}/modem_at.sh" "$at_port" "$at_command"
 
-	#启用自动拨号
+	#EnableautoDial
 	at_command='AT+GTAUTOCONNECT=1'
 	sh "${SCRIPT_DIR}/modem_at.sh" "$at_port" "$at_command"
 }
 
-#获取DNS
-# $1:AT串口
-# $2:连接定义
+#Get DNS
+# $1:ATSerial port
+# $2:Connection definition
 fibocom_get_dns()
 {
     local at_port="$1"
@@ -38,10 +38,10 @@ fibocom_get_dns()
 
     local public_dns1_ipv4="223.5.5.5"
     local public_dns2_ipv4="119.29.29.29"
-    local public_dns1_ipv6="2400:3200::1" #下一代互联网北京研究中心：240C::6666，阿里：2400:3200::1，腾讯：2402:4e00::
+    local public_dns1_ipv6="2400:3200::1" #BII: 240C::6666, Ali: 2400:3200::1, Tencent: 2402:4e00::
     local public_dns2_ipv6="2402:4e00::"
 
-    #获取DNS地址
+    #Get DNS address
     at_command="AT+GTDNS=${define_connect}"
     local response=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+GTDNS: " | grep -E '[0-9]+.[0-9]+.[0-9]+.[0-9]+' | sed -n '1p')
 
@@ -77,9 +77,9 @@ fibocom_get_dns()
     echo "$dns"
 }
 
-#获取拨号模式
-# $1:AT串口
-# $2:平台
+#Get dial mode
+# $1:ATSerial port
+# $2:Platform
 fibocom_get_mode()
 {
     local at_port="$1"
@@ -93,7 +93,7 @@ fibocom_get_mode()
         return
     fi
 
-    #获取芯片平台
+    #Get chipset platform
 	if [ -z "$platform" ]; then
 		local modem_number=$(uci -q get modem.@global[0].modem_number)
         for i in $(seq 0 $((modem_number-1))); do
@@ -141,15 +141,15 @@ fibocom_get_mode()
     echo "${mode}"
 }
 
-#设置拨号模式
-# $1:AT串口
-# $2:拨号模式配置
+#Set dial mode
+# $1:ATSerial port
+# $2:Dial mode config
 fibocom_set_mode()
 {
     local at_port="$1"
     local mode_config="$2"
 
-    #获取芯片平台
+    #Get chipset platform
     local platform
     local modem_number=$(uci -q get modem.@global[0].modem_number)
     for i in $(seq 0 $((modem_number-1))); do
@@ -160,7 +160,7 @@ fibocom_set_mode()
         fi
     done
 
-    #获取拨号模式配置
+    #Get dial mode config
     local mode_num
     case "$platform" in
         "qualcomm")
@@ -196,15 +196,15 @@ fibocom_set_mode()
         ;;
     esac
 
-    #设置模组
+    #Configure modem
     at_command="AT+GTUSBMODE=${mode_num}"
     sh ${SCRIPT_DIR}/modem_at.sh ${at_port} "${at_command}"
 }
 
-#获取网络偏好
-# $1:AT串口
-# $2:数据接口
-# $3:模组名称
+#Get network preference
+# $1:ATSerial port
+# $2:Data interface
+# $3:Modem name
 fibocom_get_network_prefer()
 {
     local at_port="$1"
@@ -215,13 +215,13 @@ fibocom_get_network_prefer()
     local response=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+GTACT:" | sed 's/+GTACT: //g')
     local network_type_num=$(echo "$response" | awk -F',' '{print $1}')
 
-    #获取网络类型
+    #Get network type
     # local network_prefer_2g="0";
     local network_prefer_3g="0";
     local network_prefer_4g="0";
     local network_prefer_5g="0";
 
-    #匹配不同的网络类型
+    #Match different network types
     case "$network_type_num" in
         "1") network_prefer_3g="1" ;;
         "2") network_prefer_4g="1" ;;
@@ -245,13 +245,13 @@ fibocom_get_network_prefer()
         ;;
     esac
 
-    #获取频段信息
+    #Get band information
     # local band_2g_info="[]"
     local band_3g_info="[]"
     local band_4g_info="[]"
     local band_5g_info="[]"
 
-    #生成网络偏好
+    #Generate network preference
     local network_prefer="{
         \"network_prefer\":[
             {\"3G\":{
@@ -271,20 +271,20 @@ fibocom_get_network_prefer()
     echo "${network_prefer}"
 }
 
-#设置网络偏好
-# $1:AT串口
-# $2:网络偏好配置
+#Set network preference
+# $1:ATSerial port
+# $2:Network preference config
 fibocom_set_network_prefer()
 {
     local at_port="$1"
     local network_prefer="$2"
 
-    #获取网络偏好配置
+    #Get network preference config
     local network_prefer_config
 
-    #获取选中的数量
+    #Get selected count
     local count=$(echo "$network_prefer" | grep -o "1" | wc -l)
-    #获取启用的网络偏好
+    #Get enabled network preference
     local enable_5g=$(echo "$network_prefer" | jq -r '.["5G"].enable')
     local enable_4g=$(echo "$network_prefer" | jq -r '.["4G"].enable')
     local enable_3g=$(echo "$network_prefer" | jq -r '.["3G"].enable')
@@ -311,43 +311,43 @@ fibocom_set_network_prefer()
         "3") network_prefer_config="20" ;;
         *) network_prefer_config="10" ;;
     esac
-echo "$network_prefer_config" >> /root/a
-    #设置模组
+
+    #Configure modem
     at_command="AT+GTACT=${network_prefer_config}"
     sh ${SCRIPT_DIR}/modem_at.sh $at_port "$at_command"
 }
 
-#获取电压
-# $1:AT串口
+#Get voltage
+# $1:ATSerial port
 fibocom_get_voltage()
 {
     local at_port="$1"
     
-    #Voltage（电压）
+    #Voltage (Voltage)
     at_command="AT+CBC"
 	local voltage=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CBC:" | awk -F',' '{print $2}' | sed 's/\r//g')
     echo "${voltage}"
 }
 
-#获取温度
-# $1:AT串口
+#Get temperature
+# $1:ATSerial port
 fibocom_get_temperature()
 {
     local at_port="$1"
     
-    #Temperature（温度）
+    #Temperature (Temperature)
     at_command="AT+MTSM=1,6"
 	response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+MTSM: " | sed 's/+MTSM: //g' | sed 's/\r//g')
 
     [ -z "$response" ] && {
-        #Fx160及以后型号
+        #Fx160and subsequent models
         at_command="AT+GTLADC"
 	    response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "cpu" | awk -F' ' '{print $2}' | sed 's/\r//g')
         response="${response:0:2}"
     }
 
     [ -z "$response" ] && {
-        #联发科平台
+        #MediaTekPlatform
         at_command="AT+GTSENRDTEMP=1"
         response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+GTSENRDTEMP: " | awk -F',' '{print $2}' | sed 's/\r//g')
         response="${response:0:2}"
@@ -361,15 +361,15 @@ fibocom_get_temperature()
     echo "${temperature}"
 }
 
-#获取连接状态
-# $1:AT串口
-# $2:连接定义
+#Get connection status
+# $1:ATSerial port
+# $2:Connection definition
 fibocom_get_connect_status()
 {
     local at_port="$1"
     local define_connect="$2"
 
-    #默认值为1
+    #Default value is1
     [ -z "$define_connect" ] && {
         define_connect="1"
     }
@@ -378,7 +378,7 @@ fibocom_get_connect_status()
     local ipv4=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CGPADDR: " | awk -F'"' '{print $2}')
     local not_ip="0.0.0.0"
 
-    #设置连接状态
+    #Set connection status
     local connect_status
     if [ -z "$ipv4" ] || [[ "$ipv4" = *"$not_ip"* ]]; then
         connect_status="disconnect"
@@ -389,30 +389,30 @@ fibocom_get_connect_status()
     echo "${connect_status}"
 }
 
-#基本信息
+#Basic info
 fibocom_base_info()
 {
     debug "Fibocom base info"
 
-    #Name（名称）
+    #Name (Name)
     at_command="AT+CGMM?"
     name=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CGMM: " | awk -F'"' '{print $2}')
-    #Manufacturer（制造商）
+    #Manufacturer (Manufacturer)
     at_command="AT+CGMI?"
     manufacturer=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CGMI: " | awk -F'"' '{print $2}')
-    #Revision（固件版本）
+    #Revision (Firmware version)
     at_command="AT+CGMR?"
     revision=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CGMR: " | awk -F'"' '{print $2}')
 
-    #Mode（拨号模式）
+    #Mode (Dial mode)
     mode=$(fibocom_get_mode ${at_port} ${platform} | tr 'a-z' 'A-Z')
 
-    #Temperature（温度）
+    #Temperature (Temperature)
     temperature=$(fibocom_get_temperature $at_port)
 }
 
-#获取SIM卡状态
-# $1:SIM卡状态标志
+#GetSIMCard status
+# $1:SIM status flag
 fibocom_get_sim_status()
 {
     local sim_status
@@ -440,20 +440,20 @@ fibocom_get_sim_status()
     echo "${sim_status}"
 }
 
-#SIM卡信息
+#SIMCard info
 fibocom_sim_info()
 {
     debug "Fibocom sim info"
     
-    #SIM Slot（SIM卡卡槽）
+    #SIM Slot (SIMSIM slot)
     at_command="AT+GTDUALSIM?"
 	sim_slot=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+GTDUALSIM" | awk -F'"' '{print $2}' | sed 's/SUB//g')
 
-    #IMEI（国际移动设备识别码）
+    #IMEI (IMEI)
     at_command="AT+CGSN?"
 	imei=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CGSN: " | awk -F'"' '{print $2}')
 
-    #SIM Status（SIM状态）
+    #SIM Status (SIMStatus)
     at_command="AT+CPIN?"
 	sim_status_flag=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CPIN: ")
     [ -z "$sim_status_flag" ] && {
@@ -465,41 +465,41 @@ fibocom_sim_info()
         return
     fi
 
-    #ISP（互联网服务提供商）
+    #ISP (Internet Service Provider)
     at_command="AT+COPS?"
     isp=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+COPS" | awk -F'"' '{print $2}'| tr -d '\r\n' | xargs)
     if [[ "$isp" == "4E2D56FD8054901A" ]]; then
     isp="CHN-UNICOM"
     fi    
 # if [ "$isp" = "CHN-CMCC" ] || [ "$isp" = "CMCC" ]|| [ "$isp" = "46000" ]; then
-    #     isp="中国移动"
+    #     isp="China Mobile"
     # elif [ "$isp" = "CHN-UNICOM" ] || [ "$isp" = "UNICOM" ] || [ "$isp" = "46001" ]; then
-    #     isp="中国联通"
+    #     isp="China Unicom"
     # elif [ "$isp" = "CHN-CT" ] || [ "$isp" = "CT" ] || [ "$isp" = "46011" ]; then
-    #     isp="中国电信"
+    #     isp="China Telecom"
     # fi
 
-    #SIM Number（SIM卡号码，手机号）
+    #SIM Number (SIMCard number, Phone number)
     at_command="AT+CNUM"
 	sim_number=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CNUM: " | awk -F'"' '{print $2}')
     [ -z "$sim_number" ] && {
         sim_number=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CNUM: " | awk -F'"' '{print $4}')
     }
 	
-    #IMSI（国际移动用户识别码）
+    #IMSI (IMSI)
     at_command="AT+CIMI?"
     imsi=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CIMI: " | awk -F' ' '{print $2}' | sed 's/"//g' | sed 's/\r//g')
 	[ -z "$sim_number" ] && {
         imsi=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CIMI: " | awk -F'"' '{print $2}')
     }
 
-    #ICCID（集成电路卡识别码）
+    #ICCID (ICCID)
     at_command="AT+ICCID"
 	iccid=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep -o "+ICCID:[ ]*[-0-9]\+" | grep -o "[-0-9]\{1,4\}")
 }
 
-#获取网络类型
-# $1:网络类型数字
+#Get network type
+# $1:Network typenumber
 fibocom_get_rat()
 {
     local rat
@@ -512,8 +512,8 @@ fibocom_get_rat()
     echo "${rat}"
 }
 
-#获取信号强度指示（4G）
-# $1:信号强度指示数字
+#GetRSSI (4G)
+# $1:RSSI value
 fibocom_get_rssi()
 {
     local rssi
@@ -524,18 +524,18 @@ fibocom_get_rssi()
     echo "$rssi"
 }
 
-#网络信息
+#Network info
 fibocom_network_info()
 {
     debug "Fibocom network info"
 
-    #Connect Status（连接状态）
+    #Connect Status (Connection status)
     connect_status=$(fibocom_get_connect_status ${at_port} ${define_connect})
     if [ "$connect_status" != "connect" ]; then
         return
     fi
 
-    #Network Type（网络类型）
+    #Network Type (Network type)
     at_command="AT+PSRAT?"
     network_type=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+PSRAT:" | sed 's/+PSRAT: //g' | sed 's/\r//g')
 
@@ -545,39 +545,39 @@ fibocom_network_info()
         network_type=$(fibocom_get_rat ${rat_num})
     }
 
-    #设置网络类型为5G时，信号强度指示用RSRP代替
+    #Set network type to5Gwhen, RSSI usesRSRPinstead
     # at_command="AT+GTCSQNREN=1"
     # sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command
 
-    #CSQ（信号强度）
+    #CSQ (Signal strength)
     at_command="AT+CSQ"
     response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CSQ:" | sed 's/+CSQ: //g' | sed 's/\r//g')
 
-    #RSSI（4G信号强度指示）
+    #RSSI (4GRSSI)
     # rssi_num=$(echo $response | awk -F',' '{print $1}')
     # rssi=$(fibocom_get_rssi $rssi_num)
-    #BER（4G信道误码率）
+    #BER (4GChannel BER)
     # ber=$(echo $response | awk -F',' '{print $2}')
 
-    # #PER（信号强度）
+    # #PER (Signal strength)
     # if [ -n "$csq" ]; then
     #     per=$(($csq * 100/31))"%"
     # fi
 
-    #速率统计
+    #Rate statistics
     at_command="AT+GTSTATIS?"
     response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+GTSTATIS:" | sed 's/+GTSTATIS: //g' | sed 's/\r//g')
 
-    #当前上传速率（单位，Byte/s）
+    #Current upload rate (Bytes/s)
     tx_rate=$(echo $response | awk -F',' '{print $2}')
 
-    #当前下载速率（单位，Byte/s）
+    #Current download rate (Bytes/s)
     rx_rate=$(echo $response | awk -F',' '{print $1}')
 }
 
-#获取频段
-# $1:网络类型
-# $2:频段数字
+#Get band
+# $1:Network type
+# $2:Band number
 fibocom_get_band()
 {
     local band
@@ -589,9 +589,9 @@ fibocom_get_band()
     echo "$band"
 }
 
-#获取带宽
-# $1:网络类型
-# $2:带宽数字
+#Getbandwidth
+# $1:Network type
+# $2:Bandwidth number
 fibocom_get_bandwidth()
 {
     local network_type="$1"
@@ -615,9 +615,9 @@ fibocom_get_bandwidth()
     echo "$bandwidth"
 }
 
-#获取信噪比
-# $1:网络类型
-# $2:信噪比数字
+#GetSNR
+# $1:Network type
+# $2:SNR value
 fibocom_get_sinr()
 {
     local sinr
@@ -628,9 +628,9 @@ fibocom_get_sinr()
     echo "$sinr"
 }
 
-#获取接收信号功率
-# $1:网络类型
-# $2:接收信号功率数字
+#GetRx signal power
+# $1:Network type
+# $2:Rx signal power value
 fibocom_get_rxlev()
 {
     local rxlev
@@ -643,9 +643,9 @@ fibocom_get_rxlev()
     echo "$rxlev"
 }
 
-#获取参考信号接收功率
-# $1:网络类型
-# $2:参考信号接收功率数字
+#GetRSRP
+# $1:Network type
+# $2:RSRP value
 fibocom_get_rsrp()
 {
     local rsrp
@@ -656,9 +656,9 @@ fibocom_get_rsrp()
     echo "$rsrp"
 }
 
-#获取参考信号接收质量
-# $1:网络类型
-# $2:参考信号接收质量数字
+#GetRSRQ
+# $1:Network type
+# $2:RSRQ value
 fibocom_get_rsrq()
 {
     local rsrq
@@ -669,24 +669,24 @@ fibocom_get_rsrq()
     echo "$rsrq"
 }
 
-#获取信号干扰比
-# $1:信号干扰比数字
+#GetSINR
+# $1:SINR value
 fibocom_get_rssnr()
 {
-    #去掉小数点后的0
+    #Strip trailing decimals0
     local rssnr=$(awk "BEGIN{ printf \"%.2f\", $1 / 2 }" | sed 's/\.*0*$//')
     echo "$rssnr"
 }
 
-#获取Ec/Io
-# $1:Ec/Io数字
+#GetEc/Io
+# $1:Ec/Ionumber
 fibocom_get_ecio()
 {
     local ecio=$(awk "BEGIN{ printf \"%.2f\", $1 * 0.5 - 24.5 }" | sed 's/\.*0*$//')
     echo "$ecio"
 }
 
-#小区信息
+#Cell info
 fibocom_cell_info()
 {
     debug "Fibocom cell info"
@@ -696,7 +696,7 @@ fibocom_cell_info()
     
     local rat=$(echo "$response" | grep "service" | awk -F' ' '{print $1}')
 
-    #适配联发科平台（FM350-GL）
+    #Support MediaTekPlatform (FM350-GL)
     [ -z "$rat" ] && {
         at_command='AT+COPS?'
         rat_num=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+COPS:" | awk -F',' '{print $4}' | sed 's/\r//g')
@@ -704,7 +704,7 @@ fibocom_cell_info()
     }
 
     for response in $response; do
-        #排除+GTCCINFO:、NR service cell:还有空行
+        #exclude+GTCCINFO:, NR service cell:Also has empty line
         [ -n "$response" ] && [[ "$response" = *","* ]] && {
 
             case $rat in
@@ -813,20 +813,20 @@ fibocom_cell_info()
                 ;;
             esac
 
-            #联发科平台特殊处理（FM350-GL）
+            #MediaTekPlatformSpecial handling (FM350-GL)
             [[ "$name" = "FM350-GL" ]] && {
                 nr_sinr="${nr_sinr_num}"
                 endc_nr_sinr="${endc_nr_sinr_num}"
             }
 
-            #只选择第一个，然后退出
+            #Select only the first, then exit
             break
         }
     done
 }
 
 
-# fibocom获取基站信息
+# fibocomGetCell info
 Fibocom_Cellinfo()
 {
     #baseinfo.gcom
@@ -957,41 +957,41 @@ Fibocom_Cellinfo()
     fi
 }
 
-#获取广和通模组信息
-# $1:AT串口
-# $2:平台
-# $3:连接定义
+#GetFibocomModem info
+# $1:ATSerial port
+# $2:Platform
+# $3:Connection definition
 get_fibocom_info()
 {
     debug "get fibocom info"
-    #设置AT串口
+    #SetATSerial port
     at_port="$1"
     platform="$2"
     define_connect="$3"
 
-    #基本信息
+    #Basic info
     fibocom_base_info
 
-	#SIM卡信息
+	#SIMCard info
     fibocom_sim_info
     if [ "$sim_status" != "ready" ]; then
         return
     fi
 
-    #网络信息
+    #Network info
     fibocom_network_info
     if [ "$connect_status" != "connect" ]; then
         return
     fi
 
-    #小区信息
+    #Cell info
     fibocom_cell_info
 
     return
 
     # Fibocom_Cellinfo
 
-    #基站信息
+    #Cell info
 	OX=$( sh ${SCRIPT_DIR}/modem_at.sh $at_port "AT+CPSI?")
 	rec=$(echo "$OX" | grep "+CPSI:")
 	w=$(echo $rec |grep "NO SERVICE"| wc -l)
@@ -1030,9 +1030,9 @@ get_fibocom_info()
 		rect8s="${rect8%%,*}" #-940
 		rect9=${rect8#*,}
 		rect9s="${rect9%%,*}" #-110
-		# "${rec1##*,}" #最后一位
+		# "${rec1##*,}" #Last field
 		rect10=${rect9#*,}
-		rect10s="${rect10%%,*}" #最后一位
+		rect10s="${rect10%%,*}" #Last field
 		PCI=$rect5s
 		LBAND="n"$(echo $rect6s | cut -d, -f0 | grep -o "BAND[0-9]\{1,3\}" | grep -o "[0-9]\+")
 		CHANNEL=$rect7s
@@ -1091,7 +1091,7 @@ get_fibocom_info()
 		esac
 	fi
 	
-	# CMGRMI 信息
+	# CMGRMI info
 	OX=$( sh ${SCRIPT_DIR}/modem_at.sh $at_port "AT+CMGRMI=4")
 	CAINFO=$(echo "$OX" | grep -o "$REGXz" | tr ' ' ':')
 	if [ -n "$CAINFO" ]; then

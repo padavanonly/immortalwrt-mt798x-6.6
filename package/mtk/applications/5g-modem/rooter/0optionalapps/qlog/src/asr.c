@@ -6,7 +6,7 @@ struct CSDLFileHeader
 	uint32_t    dwDataFormat;//0x1
 	uint32_t    dwAPVersion;
 	uint32_t    dwCPVersion;
-	uint32_t    dwSequenceNum;//文件序号，从0开始递增
+	uint32_t    dwSequenceNum;/* File sequence number, incremented from 0 */
 	uint32_t    dwTime;//Total seconds from 1970.1.1 0:0:0
 	uint32_t    dwCheckSum;//0x0
 };
@@ -70,7 +70,7 @@ static int asr_logfile_init(int logfd, unsigned logfile_seq) {
     time(&ltime);
 
     SDLHeader.dwTime = qlog_le32(ltime); //Total seconds from 1970.1.1 0:0:0
-    SDLHeader.dwSequenceNum = qlog_le32(logfile_seq); //文件序号，从0开始递增
+    SDLHeader.dwSequenceNum = qlog_le32(logfile_seq); /* File sequence number, incremented from 0 */
 
     // Write the file header.
     nbytes = write(logfd, &SDLHeader, size);

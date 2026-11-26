@@ -442,7 +442,7 @@ void SIGINT_handle(int sig_num)
         }
     }
     destoryShareMemory();
-	close(lock_file); // 不要忘记释放文件指针
+	close(lock_file); /* Release lock file descriptor */
     exit(0);
 }
 
@@ -1014,6 +1014,6 @@ __main_exit:
         //system("ps -ef|grep fibo|grep -v grep|cut -c 9-15|xargs kill");
     }
     destoryShareMemory();
-    close(lock_file); // 不要忘记释放文件指针
+    close(lock_file); /* Release lock file descriptor */
     return 0;
 }

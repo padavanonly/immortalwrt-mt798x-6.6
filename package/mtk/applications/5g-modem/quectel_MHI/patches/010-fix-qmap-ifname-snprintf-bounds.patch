@@ -1,0 +1,23 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] quectel_MHI: bound QMAP netdev interface name snprintf
+
+Align QMAP mux virtual netdev naming with Linux 6.6 FORTIFY bounds
+(`IFNAMSIZ` = 16): cap base interface prefix to 11 chars (`%.11s.%u`)
+with unsigned index so `%s.%u` cannot truncate or overflow `qmap_net->name`.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ devices/mhi_netdev_quectel.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/devices/mhi_netdev_quectel.c
++++ b/devices/mhi_netdev_quectel.c
+@@ -1589,7 +1589,7 @@ static struct net_device * rmnet_vnd_reg
+ 	priv->pQmapDev = pQmapDev;
+ 	priv->qmap_version = pQmapDev->qmap_version;
+ 	priv->mux_id = mux_id;
+-	sprintf(qmap_net->name, "%.12s.%d", real_dev->name, offset_id + 1);
++	snprintf(qmap_net->name, sizeof(qmap_net->name), "%.11s.%u", real_dev->name, (unsigned int)(offset_id + 1));
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+ 	__dev_addr_set(qmap_net, real_dev->dev_addr, ETH_ALEN);
+ #else

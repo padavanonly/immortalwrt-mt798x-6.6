@@ -1,12 +1,12 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 source "${SCRIPT_DIR}/modem_util.sh"
 
-#获取设备物理地址
-# $1:网络设备或串口
+# Get device physical address
+# $1: Network device or serial port
 get_device_physical_path()
 {
     local device_name="$(basename "$1")"
@@ -15,34 +15,34 @@ get_device_physical_path()
     echo "$device_physical_path"
 }
 
-#设置模组配置
-# $1:网络设备
-# $2:网络设备系统路径
+# Configure modem
+# $1: Network device
+# $2: Network device sysfs path
 set_modem_config()
 {
     local network="$(basename $sys_network)"
     local network_path="$(readlink -f $sys_network)"
 
-    #只处理最上级的网络设备
+    # Only handle top-level network device
     local count=$(echo "${network_path}" | grep -o "/net" | wc -l)
     [ "$count" -ge "2" ] && return
 
-    #判断路径是否带有usb（排除其他eth网络设备）
+    # Check if path contains usb (exclude other eth network devices)
     if [[ "$network" = *"eth"* ]] && [[ "$network_path" != *"usb"* ]]; then
         return
     fi
 
-    #获取物理路径
+    # Get physical path
     local device_physical_path=$(m_get_device_physical_path ${network_path})
-    #设置物理设备
+    # Set physical device
     m_set_physical_device "scan" "${network}" "${device_physical_path}"
 
-    #启用拨号
+    # Enable dialing
     enable_dial "${network}"
 }
 
-#设置系统网络设备
-# $1:系统网络设备列表
+# Set system network device
+# $1: System network device list
 set_sys_network_config()
 {
     local sys_networks="$1"
@@ -53,13 +53,13 @@ set_sys_network_config()
     done
 }
 
-#设置模组信息
+# Set modem info
 modem_scan()
 {
-    #模组配置初始化
+    # Initialize modem configuration
     sh "${SCRIPT_DIR}/modem_init.sh"
 
-    #发起模组添加事件
+    # Emit modem add event
     #USB
     local sys_network
     sys_network="$(find /sys/class/net -name usb*)" #ECM RNDIS NCM
@@ -70,13 +70,13 @@ modem_scan()
     set_sys_network_config "$sys_network"
 
     #PCIE
-    sys_network="$(find /sys/class/net -name mhi_hwip*)" #（通用mhi驱动）
+    sys_network="$(find /sys/class/net -name mhi_hwip*)" # (Generic mhi driver)
     set_sys_network_config "$sys_network"
-    sys_network="$(find /sys/class/net -name rmnet_mhi*)" #（制造商mhi驱动）
+    sys_network="$(find /sys/class/net -name rmnet_mhi*)" # (Vendor mhi driver)
     set_sys_network_config "$sys_network"
 
     echo "modem scan complete"
 }
 
-#测试时打开
-# modem_scan
+# Enable during testing
+modem_scan

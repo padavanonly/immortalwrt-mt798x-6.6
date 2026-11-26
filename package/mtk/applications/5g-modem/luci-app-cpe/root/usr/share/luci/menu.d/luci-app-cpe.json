@@ -1,0 +1,50 @@
+{
+	"admin/modem": {
+		"title": "Mobile Data",
+		"order": 25,
+		"action": {
+			"type": "firstchild"
+		},
+		"acl": [
+			"luci-app-cpe"
+		]
+	},
+	"admin/modem/nets": {
+		"title": "Signal Status",
+		"order": 0,
+		"action": {
+			"type": "view",
+			"path": "cpe/net_status"
+		},
+		"acl": [
+			"luci-app-cpe"
+		]
+	},
+	"admin/modem/at": {
+		"title": "AT Tool",
+		"order": 98,
+		"action": {
+			"type": "view",
+			"path": "cpe/at"
+		},
+		"acl": [
+			"luci-app-cpe"
+		]
+	},
+	"admin/modem/modem": {
+		"title": "Modem Settings",
+		"order": 99,
+		"action": {
+			"type": "view",
+			"path": "cpe/modem"
+		},
+		"acl": [
+			"luci-app-cpe"
+		],
+		"depends": {
+			"uci": {
+				"modem": true
+			}
+		}
+	}
+}

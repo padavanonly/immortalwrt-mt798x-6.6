@@ -1,24 +1,41 @@
 {
 	"luci-app-sms-tool": {
-		"description": "Grant UCI and file access for luci-app-sms-tool",
+		"description": "Grant least-privilege ubus, UCI, and file access for luci-app-sms-tool",
 		"read": {
 			"file": {
 				"/usr/bin/sms_tool *": [ "exec" ],
+				"/etc/config/phonebook.user": [ "read" ],
+				"/etc/config/ussd.user": [ "read" ],
+				"/etc/config/atcmds.user": [ "read" ]
+			},
+			"ubus": {
+				"luci.sms_tool": [
+					"read_sms",
+					"get_ports",
+					"get_user_lists",
+					"sms_count"
+				]
 			},
 			"uci": [ "sms_tool" ]
 		},
 		"write": {
 			"file": {
 				"/usr/bin/sms_tool *": [ "exec" ],
-
+				"/etc/config/phonebook.user": [ "write" ],
+				"/etc/config/ussd.user": [ "write" ],
+				"/etc/config/atcmds.user": [ "write" ]
+			},
+			"ubus": {
+				"luci.sms_tool": [
+					"delete_sms",
+					"send_sms",
+					"send_ussd",
+					"send_at",
+					"led_ctrl",
+					"set_user_lists"
+				]
 			},
 			"uci": [ "sms_tool" ]
 		}
 	}
 }
-
-
-
-
-
-			

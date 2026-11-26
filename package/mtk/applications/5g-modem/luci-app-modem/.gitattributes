@@ -1,4 +1,4 @@
-#指定换行符
+# Specify line endings
 /luasrc/** text eol=lf
 # /old/* text eol=lf
 /root/** text eol=lf

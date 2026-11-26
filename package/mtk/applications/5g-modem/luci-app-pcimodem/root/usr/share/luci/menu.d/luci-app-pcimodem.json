@@ -1,0 +1,14 @@
+{
+	"admin/network/pcimodem": {
+		"title": "PCI Modem Server",
+		"order": 80,
+		"action": {
+			"type": "view",
+			"path": "pcimodem"
+		},
+		"depends": {
+			"acl": [ "luci-app-pcimodem" ],
+			"uci": { "pcimodem": true }
+		}
+	}
+}

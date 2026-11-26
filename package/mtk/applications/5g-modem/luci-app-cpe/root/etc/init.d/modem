@@ -4,19 +4,19 @@
 START=16
 STOP=16
 USE_PROCD=1
-#使用procd启动
+# Use procd
 
 
-# start启动服务
-# stop停止服务
-# restart重新启动服务
-# reload重新加载配置文件（如果服务未实现重新加载，则重新启动）
-# enable启用服务自动启动
-# disable禁用服务自动启动
-# enabled检查服务是否在启动时启动
-# 正在运行检查服务是否正在运行
-# status服务状态
-# trace从系统调用跟踪开始
+# start service
+# stop service
+# restart service
+# reload configuration file
+# enable service auto-start
+# disable service auto-start
+# check if service is enabled
+# check if service is running
+# service status
+# trace system calls
 
 runModem()
 {
@@ -61,8 +61,8 @@ runModem()
 
 
         procd_open_instance
-        #创建一个实例， 在procd看来一个应用程序可以多个实\E4\BE?
-        #ubus call service list 可以查看实例
+        # Create an instance; procd supports multiple instances
+        # Use ubus call service list to view instances
         procd_set_param command $tool -i $ifname -s $apn $pdptype
         if [ "$password" != "" ];then
             procd_append_param command $user $password $auth
@@ -74,7 +74,7 @@ runModem()
         procd_set_param respawn
         echo "quectel-CM has started."
         procd_close_instance
-        #关闭实例
+        # Close instance
     fi
 
 

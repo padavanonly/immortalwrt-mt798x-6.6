@@ -1,0 +1,27 @@
+diff -Naur a/qmi_wwan_f.c b/qmi_wwan_f.c
+--- a/qmi_wwan_f.c
++++ b/qmi_wwan_f.c
+@@ -1381,7 +1381,7 @@
+     priv->dev = pDev->mpNetDev;
+     priv->qmap_version = pDev->qmap_version;
+     priv->mux_id = FIBOCOM_QMAP_MUX_ID + offset_id;
+-    sprintf(qmap_net->name, "%s.%d", real_dev->name, offset_id + 1);
++    snprintf(qmap_net->name, sizeof(qmap_net->name), "%.11s.%u", real_dev->name, (unsigned int)(offset_id + 1));
+     qmap_net->netdev_ops = &qmap_netdev_ops;
+     dev_addr_set(qmap_net, real_dev->dev_addr);
+ 
+@@ -2513,11 +2513,10 @@
+         skb_set_mac_header(qmap_skb, 0);
+         qmap_skb->protocol = protocol;
+ 
+-        if (ul_header && ul_header->header_type == RMNET_MAP_HEADER_TYPE_CSUM_OFFLOAD
+-            && ul_header->csum_valid_required) {
+-#if 0 //TODO
++        if (ul_header &&
++            ul_header->header_type == RMNET_MAP_HEADER_TYPE_CSUM_OFFLOAD &&
++            !ul_header->next_hdr && ul_header->csum_valid_required) {
+             qmap_skb->ip_summed = CHECKSUM_UNNECESSARY;
+-#endif
+         }
+ 
+         if (qmap_skb->dev->type == ARPHRD_ETHER) {

@@ -1,0 +1,206 @@
+diff -Naur a/fibo_qmimsg_server.c b/fibo_qmimsg_server.c
+--- a/fibo_qmimsg_server.c
++++ b/fibo_qmimsg_server.c
+@@ -1134,7 +1134,7 @@
+     return NULL;
+ }
+ 
+-static void qmidevice_detect(char **device_name, char **idproduct) {
++static void qmidevice_detect(char **device_name, char *idproduct, size_t idproduct_len) {
+     struct dirent* ent = NULL;
+     DIR *pDir;
+ 
+@@ -1210,9 +1210,9 @@
+             }
+         }
+ 
+-        strncpy(idproduct,idProduct, sizeof(idProduct));
++        snprintf(idproduct, idproduct_len, "%s", idProduct);
+             psubDir = opendir(pl->subdir);
+-            if (pDir == NULL)  {
++            if (psubDir == NULL)  {
+                 dprintf("Cannot open directory: %s, errno: %d (%s)\n", dir, errno, strerror(errno));
+                 continue;
+             }
+@@ -1270,7 +1270,7 @@
+     }
+     
+     if (cdc_wdm == NULL)
+-        qmidevice_detect(&cdc_wdm, &getidproduct);
++        qmidevice_detect(&cdc_wdm, getidproduct, sizeof(getidproduct));
+     if (cdc_wdm == NULL) {
+         dprintf("Fail to find any /dev/cdc-wdm device. break\n");
+         return -1;
+diff -Naur a/libmnl/ifutils.c b/libmnl/ifutils.c
+--- a/libmnl/ifutils.c
++++ b/libmnl/ifutils.c
+@@ -705,7 +705,7 @@
+ {
+     int ret = 0;
+     char buf[128] = {'\0'};
+-    int fd = open("/etc/resolv.conf", O_CREAT | O_WRONLY | O_TRUNC);
++    int fd = open("/etc/resolv.conf", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+     if (fd < 0)
+     {
+         ERRMSG(" fail to open /etc/resolv.conf");
+diff -Naur a/main.c b/main.c
+--- a/main.c
++++ b/main.c
+@@ -559,8 +559,8 @@
+ 
+         struct dirent *subent = NULL;
+         DIR *psubDir;
+-        char idVendor[4 + 1] = {0};
+-        char idDevice[4 + 1] = {0};
++        char idVendor[6 + 1] = {0};
++        char idDevice[6 + 1] = {0};
+         char tempNetpath[256] = {0};
+         int fd = 0;
+         char netcard[32] = "\0";
+@@ -630,7 +630,8 @@
+     while ((ent = readdir(pDir)) != NULL) {
+     if ( strncmp(ent->d_name, "mhi_QMI", strlen("mhi_QMI")) == 0 ) {
+         *pp_qmichannel = (char *)malloc(32);
+-        sprintf(*pp_qmichannel, "/dev/%s", ent->d_name);
++        if (*pp_qmichannel)
++            snprintf(*pp_qmichannel, 32, "/dev/%.26s", ent->d_name);
+         dbg_time("Find qmichannel = %s", *pp_qmichannel);
+         break;
+         }
+@@ -825,7 +826,8 @@
+         char net_path[255*2];
+ 
+         *pp_qmichannel = (char *)malloc(32);
+-        sprintf(*pp_qmichannel, "/dev/%s", ent->d_name);
++        if (*pp_qmichannel)
++            snprintf(*pp_qmichannel, 32, "/dev/%.26s", ent->d_name);
+         dbg_time("Find qmichannel = %s", *pp_qmichannel);
+ 
+         if (strncmp(ent->d_name, "cdc-wdm", strlen("cdc-wdm")) == 0)
+@@ -919,12 +921,12 @@
+     struct sockaddr_un serv_addr;
+     struct sockaddr_un cli_addr;
+     socklen_t len = sizeof(serv_addr);
+-    sprintf(fibo_dial_filepath,"/tmp/fibocom_dial_%d",*(int*)args);
++    snprintf(fibo_dial_filepath, sizeof(fibo_dial_filepath), "/tmp/fibocom_dial_%d", *(int *)args);
+     char* msg = "receive quit request\n";
+     if ((socket_server_fd = socket(AF_UNIX,SOCK_STREAM,0))< 0)
+     {
+         dbg_time("Socket error:%s\a\n", strerror(errno));
+-        return ;
++        return NULL;
+     }
+     dbg_time("socket[%d] successfuly!", socket_server_fd);
+     if (!access(fibo_dial_filepath, F_OK))
+@@ -990,7 +992,7 @@
+     int rv = -1;
+     struct sockaddr_un servaddr;
+     char fibo_dial_filepath[100] = {0};
+-    sprintf(fibo_dial_filepath,"/tmp/fibocom_dial_%d",pdpindex);
++    snprintf(fibo_dial_filepath, sizeof(fibo_dial_filepath), "/tmp/fibocom_dial_%d", pdpindex);
+     dbg_time("enter startSocketclient %s.",fibo_dial_filepath);
+     char* message = "fibocom-dial quit request";
+     char buf[1024];
+diff -Naur a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -2,7 +2,7 @@
+ CROSS-COMPILE:=$(CROSS_COMPILE)
+ endif
+ 
+-CFLAGS += -DGHT_FEATURE_PCIE_AUTO
++override CFLAGS += -DGHT_FEATURE_PCIE_AUTO
+ 
+ ifeq ($(CC),cc)
+ CC:=$(CROSS-COMPILE)gcc
+@@ -20,22 +20,22 @@
+ FB_NDHCP+=${LIBMNL}
+ 
+ release: clean
+-	$(CC) $(CFLAGS) -Wall -s ${SRC} ${FB_NDHCP} -o fibocom-dial -lpthread -ldl
+-	$(CC) -Wall -s  multi-pdn-manager.c  query_pcie_mode.c util.c -o multi-pdn-manager -lpthread -ldl
+-	$(CC) -Wall -s ${FIBO_PROXY_SRC} -o fibo_qmimsg_server -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall ${SRC} ${FB_NDHCP} -o fibocom-dial -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall multi-pdn-manager.c query_pcie_mode.c util.c -o multi-pdn-manager -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall ${FIBO_PROXY_SRC} -o fibo_qmimsg_server -lpthread -ldl
+ 
+ dhcp: clean
+-	$(CC) $(CFLAGS) -Wall -s ${SRC} ${FB_DHCP} -o fibocom-dial -lpthread -ldl
+-	$(CC) -Wall -s  multi-pdn-manager.c  query_pcie_mode.c util.c -o multi-pdn-manager -lpthread -ldl
+-	$(CC) -Wall -s ${FIBO_PROXY_SRC} -o fibo_qmimsg_server -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall ${SRC} ${FB_DHCP} -o fibocom-dial -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall multi-pdn-manager.c query_pcie_mode.c util.c -o multi-pdn-manager -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall ${FIBO_PROXY_SRC} -o fibo_qmimsg_server -lpthread -ldl
+ 
+ ndhcp: clean
+-	$(CC) $(CFLAGS) -Wall -s ${SRC} ${FB_NDHCP} -o fibocom-dial -lpthread -ldl
+-	$(CC) -Wall -s  multi-pdn-manager.c   query_pcie_mode.cutil.c -o multi-pdn-manager -lpthread -ldl
+-	$(CC) -Wall -s ${FIBO_PROXY_SRC} -o fibo_qmimsg_server -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall ${SRC} ${FB_NDHCP} -o fibocom-dial -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall multi-pdn-manager.c query_pcie_mode.c util.c -o multi-pdn-manager -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall ${FIBO_PROXY_SRC} -o fibo_qmimsg_server -lpthread -ldl
+ 
+ qmi-proxy:
+-	$(CC) -Wall -s fibo-qmi-proxy.c  -o fibo-qmi-proxy -lpthread -ldl
++	$(CC) $(CFLAGS) $(LDFLAGS) -Wall fibo-qmi-proxy.c -o fibo-qmi-proxy -lpthread -ldl
+ 
+ clean:
+ 	rm -rf  fibocom-dial *~ multi-pdn-manager fibo_qmimsg_server
+diff -Naur a/QMIThread.c b/QMIThread.c
+--- a/QMIThread.c
++++ b/QMIThread.c
+@@ -1171,7 +1171,7 @@
+     return -1;
+ }
+ 
+-int requestSimBindSubscription_NAS_WMS()
++int requestSimBindSubscription_NAS_WMS(void)
+ {
+     PQCQMIMSG pRequest_nas;
+     PQCQMIMSG pResponse_nas;
+@@ -1185,7 +1185,7 @@
+     return 0;
+ }
+ 
+-int requestSimBindSubscription_WDS_DMS_QOS()
++int requestSimBindSubscription_WDS_DMS_QOS(void)
+ {
+     PQCQMIMSG pRequest_wds;
+     PQCQMIMSG pRequest_dms;
+@@ -2201,8 +2201,9 @@
+ 	    dbg_time("call_end_reason_verbose is %d", verbose_call_end_reason);
+ 	}
+ 
++	int qmi_err = le16_to_cpu(pMUXMsg->QMUXMsgHdrResp.QMUXError);
+ 	free(pResponse);
+-	return le16_to_cpu(pMUXMsg->QMUXMsgHdrResp.QMUXError);
++	return qmi_err;
+     }
+ 
+     if (curIpFamily == IpFamilyV4) {
+diff -Naur a/QMIThread.h b/QMIThread.h
+--- a/QMIThread.h
++++ b/QMIThread.h
+@@ -229,6 +229,10 @@
+ extern int requestSetOperatingMode(UCHAR OperatingMode);
+ int requestRegistrationState2(UCHAR *pPSAttachedState);
+ 
++extern int requestGetSIMCardNumber(PROFILE_T *profile);
++extern int requestSimBindSubscription_NAS_WMS(void);
++extern int requestSimBindSubscription_WDS_DMS_QOS(void);
++extern int get_private_gateway(char *outgateway);
+ extern int fibo_qmap_mode_set(PROFILE_T *profile);
+ extern int fibo_bridge_mode_detect(PROFILE_T *profile);
+ extern int fibo_qmap_mode_detect(PROFILE_T *profile);
+diff -Naur a/udhcpc_netlink.c b/udhcpc_netlink.c
+--- a/udhcpc_netlink.c
++++ b/udhcpc_netlink.c
+@@ -155,7 +155,7 @@
+         dbg_time("The IPv4 Address in profile is NULL");
+     }
+ 
+-    if (profile->ipv6.Address && (profile->ipv6.PrefixLengthIPAddr != 0))
++    if (profile->ipv6.PrefixLengthIPAddr != 0)
+     {
+         //module do not support DHCPv6, only support 'Router Solicit'
+         //and it seem if enable /proc/sys/net/ipv6/conf/all/forwarding, Kernel do not send RS

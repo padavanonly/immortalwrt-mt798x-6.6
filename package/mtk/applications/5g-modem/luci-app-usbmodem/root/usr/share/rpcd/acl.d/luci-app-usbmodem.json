@@ -1,0 +1,14 @@
+{
+	"luci-app-usbmodem": {
+		"description": "Grant UCI and RPC access for luci-app-usbmodem",
+		"read": {
+			"ubus": {
+				"luci.usbmodem": [ "getDevices" ]
+			},
+			"uci": [ "usbmodem" ]
+		},
+		"write": {
+			"uci": [ "usbmodem" ]
+		}
+	}
+}

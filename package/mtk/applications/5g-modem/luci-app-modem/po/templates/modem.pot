@@ -1,0 +1,734 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-modem\n"
+
+msgid "(After enable, the automatic scanning and configuration function for modem information will be disabled)"
+msgstr ""
+
+msgid "(Check adapted modem)"
+msgstr ""
+
+msgid "(Check the reason)"
+msgstr ""
+
+msgid "2G Band Preferences"
+msgstr ""
+
+msgid "3G Band Preferences"
+msgstr ""
+
+msgid "46000"
+msgstr ""
+
+msgid "46001"
+msgstr ""
+
+msgid "46011"
+msgstr ""
+
+msgid "4G Band Preferences"
+msgstr ""
+
+msgid "5G Band Preferences"
+msgstr ""
+
+msgid "AMBR DL"
+msgstr ""
+
+msgid "AMBR UL"
+msgstr ""
+
+msgid "APN"
+msgstr ""
+
+msgid "ARFCN"
+msgstr ""
+
+msgid "AT Command"
+msgstr ""
+
+msgid "AT Port"
+msgstr ""
+
+msgid "AT command execution failed"
+msgstr ""
+
+msgid "Abnormal"
+msgstr ""
+
+msgid "Advanced Settings"
+msgstr ""
+
+msgid "After checking, enable network interface bridge."
+msgstr ""
+
+msgid "After switching the dialing tool, it may be necessary to restart the module or restart the router to recognize the module."
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Apply Band Prefer"
+msgstr ""
+
+msgid "Apply Network Prefer"
+msgstr ""
+
+msgid "Authentication Type"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "Auto Choose"
+msgstr ""
+
+msgid "BER"
+msgstr ""
+
+msgid "Bad"
+msgstr ""
+
+msgid "Band"
+msgstr ""
+
+msgid "Base Information"
+msgstr ""
+
+msgid "Base Setting"
+msgstr ""
+
+msgid "CHN-CMCC"
+msgstr ""
+
+msgid "CHN-CT"
+msgstr ""
+
+msgid "CHN-TELECOM"
+msgstr ""
+
+msgid "CHN-UNICOM"
+msgstr ""
+
+msgid "CMCC"
+msgstr ""
+
+msgid "CQI"
+msgstr ""
+
+msgid "CQI DL"
+msgstr ""
+
+msgid "CQI UL"
+msgstr ""
+
+msgid "CT"
+msgstr ""
+
+msgid "CTCC"
+msgstr ""
+
+msgid "CUCC"
+msgstr ""
+
+msgid "Cell ID"
+msgstr ""
+
+msgid "Cell Information"
+msgstr ""
+
+msgid "Check and add modem dialing configurations"
+msgstr ""
+
+msgid "Check and modify the plugin configuration"
+msgstr ""
+
+msgid "Check the information of the adapted modem"
+msgstr ""
+
+msgid "Check the version information of the plugin"
+msgstr ""
+
+msgid "China Broadcast"
+msgstr ""
+
+msgid "China Mobile"
+msgstr ""
+
+msgid "China Telecom"
+msgstr ""
+
+msgid "China Unicom"
+msgstr ""
+
+msgid "Clean"
+msgstr ""
+
+msgid "Collecting data..."
+msgstr ""
+
+msgid "Command"
+msgstr ""
+
+msgid "Compression Mode"
+msgstr ""
+
+msgid "Config"
+msgstr ""
+
+msgid "Config ID"
+msgstr ""
+
+msgid "Config List"
+msgstr ""
+
+msgid "Connect Status"
+msgstr ""
+
+msgid "Current"
+msgstr ""
+
+msgid "Custom"
+msgstr ""
+
+msgid "Custom Commands"
+msgstr ""
+
+msgid "Custom quick commands"
+msgstr ""
+
+msgid "Customize your quick commands"
+msgstr ""
+
+msgid "DL Bandwidth"
+msgstr ""
+
+msgid "DNS"
+msgstr ""
+
+msgid "Data Interface"
+msgstr ""
+
+msgid "Debug Your Module"
+msgstr ""
+
+msgid "Define Connect"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Dial Config"
+msgstr ""
+
+msgid "Dial Log"
+msgstr ""
+
+msgid "Dial Overview"
+msgstr ""
+
+msgid "Dial Tool"
+msgstr ""
+
+msgid "Dial Tool Info"
+msgstr ""
+
+msgid "Download Log"
+msgstr ""
+
+msgid "Driver Type"
+msgstr ""
+
+msgid "Duplex Mode"
+msgstr ""
+
+msgid "EARFCN"
+msgstr ""
+
+msgid "EN-DC Mode"
+msgstr ""
+
+msgid "Eb/Io"
+msgstr ""
+
+msgid "Eb/No"
+msgstr ""
+
+msgid "Ec/Io"
+msgstr ""
+
+msgid "Ec/No"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Enable automatic creation of network interface alias (Effective upon reinstatement of dialing configuration)"
+msgstr ""
+
+msgid "Enable dial configurations"
+msgstr ""
+
+msgid "Enable the manual configuration of modem information"
+msgstr ""
+
+msgid "Enter Command"
+msgstr ""
+
+msgid "Excellent"
+msgstr ""
+
+msgid "Excessively High"
+msgstr ""
+
+msgid "Extend Prefix"
+msgstr ""
+
+msgid "Failed to apply band preferences"
+msgstr ""
+
+msgid "Failed to set mode"
+msgstr ""
+
+msgid "Failed to set network preference"
+msgstr ""
+
+msgid "Fair"
+msgstr ""
+
+msgid "Freq band indicator"
+msgstr ""
+
+msgid "GPS Port"
+msgstr ""
+
+msgid "GSM Mode"
+msgstr ""
+
+msgid "General"
+msgstr ""
+
+msgid "General Settings"
+msgstr ""
+
+msgid "Global Config"
+msgstr ""
+
+msgid "Good"
+msgstr ""
+
+msgid "ICCID"
+msgstr ""
+
+msgid "IMEI"
+msgstr ""
+
+msgid "IMSI"
+msgstr ""
+
+msgid "IPv4"
+msgstr ""
+
+msgid "IPv4/IPv6"
+msgstr ""
+
+msgid "IPv6"
+msgstr ""
+
+msgid "ISP"
+msgstr ""
+
+msgid "Item"
+msgstr ""
+
+msgid "Kernel Model"
+msgstr ""
+
+msgid "LAC"
+msgstr ""
+
+msgid "LTE Mode"
+msgstr ""
+
+msgid "Loaded"
+msgstr ""
+
+msgid "Loading modem"
+msgstr ""
+
+msgid "Loading modem information"
+msgstr ""
+
+msgid "Loading modem status"
+msgstr ""
+
+msgid "Low"
+msgstr ""
+
+msgid "MCC"
+msgstr ""
+
+msgid "MNC"
+msgstr ""
+
+msgid "MTU"
+msgstr ""
+
+msgid "Manual"
+msgstr ""
+
+msgid "Manual Configuration"
+msgstr ""
+
+msgid "Manufacturer"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Metric"
+msgstr ""
+
+msgid "Mobile Network"
+msgstr ""
+
+msgid "Mobile network not found"
+msgstr ""
+
+msgid "Mode"
+msgstr ""
+
+msgid "Modem"
+msgstr ""
+
+msgid "Modem Config"
+msgstr ""
+
+msgid "Modem Debug"
+msgstr ""
+
+msgid "Modem General Driver Info"
+msgstr ""
+
+msgid "Modem Information"
+msgstr ""
+
+msgid "Modem Name"
+msgstr ""
+
+msgid "Modem PCIE Driver Info"
+msgstr ""
+
+msgid "Modem Scan"
+msgstr ""
+
+msgid "Modem Select"
+msgstr ""
+
+msgid "Modem Status"
+msgstr ""
+
+msgid "Modem USB Driver Info"
+msgstr ""
+
+msgid "NAT"
+msgstr ""
+
+msgid "NONE"
+msgstr ""
+
+msgid "NR5G-SA Mode"
+msgstr ""
+
+msgid "Net LED"
+msgstr ""
+
+msgid "Network"
+msgstr ""
+
+msgid "Network Bridge"
+msgstr ""
+
+msgid "Network Information"
+msgstr ""
+
+msgid "Network Interface Alias"
+msgstr ""
+
+msgid "Network Mode"
+msgstr ""
+
+msgid "Network Preferences"
+msgstr ""
+
+msgid "Network Type"
+msgstr ""
+
+msgid "No modems found"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
+
+msgid "Not adapted to this modem"
+msgstr ""
+
+msgid "Not installed"
+msgstr ""
+
+msgid "Not loaded"
+msgstr ""
+
+msgid "Not null"
+msgstr ""
+
+msgid "Only display the modes available for the adaptation modem"
+msgstr ""
+
+msgid "Option"
+msgstr ""
+
+msgid "PAP/CHAP (both)"
+msgstr ""
+
+msgid "PAP/CHAP Password"
+msgstr ""
+
+msgid "PAP/CHAP Username"
+msgstr ""
+
+msgid "PDP Type"
+msgstr ""
+
+msgid "PSC"
+msgstr ""
+
+msgid "Physical Cell ID"
+msgstr ""
+
+msgid "Physical Channel"
+msgstr ""
+
+msgid "Platform"
+msgstr ""
+
+msgid "Plugin Config"
+msgstr ""
+
+msgid "Plugin Info"
+msgstr ""
+
+msgid "Plugin Version"
+msgstr ""
+
+msgid "Private"
+msgstr ""
+
+msgid "Private (Fibocom)"
+msgstr ""
+
+msgid "Private (Meig)"
+msgstr ""
+
+msgid "Private (Quectel)"
+msgstr ""
+
+msgid "Quick Commands"
+msgstr ""
+
+msgid "Quick Option"
+msgstr ""
+
+msgid "RAC"
+msgstr ""
+
+msgid "RSCP"
+msgstr ""
+
+msgid "RSRP"
+msgstr ""
+
+msgid "RSRQ"
+msgstr ""
+
+msgid "RSSI"
+msgstr ""
+
+msgid "RSSNR"
+msgstr ""
+
+msgid "Remarks"
+msgstr ""
+
+msgid "Response"
+msgstr ""
+
+msgid "Return to modem debug"
+msgstr ""
+
+msgid "Return to old page"
+msgstr ""
+
+msgid "Revision"
+msgstr ""
+
+msgid "Router Advertisement"
+msgstr ""
+
+msgid "Rx Rate"
+msgstr ""
+
+msgid "RxLev"
+msgstr ""
+
+msgid "SCS"
+msgstr ""
+
+msgid "SIM Information"
+msgstr ""
+
+msgid "SIM Number"
+msgstr ""
+
+msgid "SIM Slot"
+msgstr ""
+
+msgid "SIM Status"
+msgstr ""
+
+msgid "SIM card not inserted"
+msgstr ""
+
+msgid "SINR"
+msgstr ""
+
+msgid "Scan"
+msgstr ""
+
+msgid "Scaning modem..."
+msgstr ""
+
+msgid "Select a modem for debugging"
+msgstr ""
+
+msgid "Self Test"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Serial Number"
+msgstr ""
+
+msgid "Serial Port"
+msgstr ""
+
+msgid "Skytone"
+msgstr ""
+
+msgid "Slot"
+msgstr ""
+
+msgid "Somewhat High"
+msgstr ""
+
+msgid "Speech Code"
+msgstr ""
+
+msgid "Spreading Factor"
+msgstr ""
+
+msgid "Srxlev"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "TAC"
+msgstr ""
+
+msgid "TX Power"
+msgstr ""
+
+msgid "Temperature"
+msgstr ""
+
+msgid "The automatic configuration modem is triggered only at modem startup, otherwise, manual scanning is necessary"
+msgstr ""
+
+msgid "The network device was not found"
+msgstr ""
+
+msgid "Translation"
+msgstr ""
+
+msgid "Tx Rate"
+msgstr ""
+
+msgid "UARFCN"
+msgstr ""
+
+msgid "UL Bandwidth"
+msgstr ""
+
+msgid "UNICOM"
+msgstr ""
+
+msgid "UNKNOWN"
+msgstr ""
+
+msgid "USB Network"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+msgid "Unknown SIM card status"
+msgstr ""
+
+msgid "Update Time"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "Voltage"
+msgstr ""
+
+msgid "WCDMA Mode"
+msgstr ""
+
+msgid "connect"
+msgstr ""
+
+msgid "connected"
+msgstr ""
+
+msgid "disabled"
+msgstr ""
+
+msgid "disconnect"
+msgstr ""
+
+msgid "disconnected"
+msgstr ""
+
+msgid "locked"
+msgstr ""
+
+msgid "miss"
+msgstr ""
+
+msgid "missing"
+msgstr ""
+
+msgid "mmcli"
+msgstr ""
+
+msgid "quectel-CM"
+msgstr ""
+
+msgid "unknown"
+msgstr ""
+

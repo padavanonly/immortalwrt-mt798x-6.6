@@ -1,0 +1,717 @@
+#!/usr/bin/env ucode
+// Copyright (C) 2026 ImmortalWrt.org
+// Native ucode rpcd backend for luci-app-sms-tool (9 RPC methods, strict input sanitization)
+
+'use strict';
+
+import * as fs from 'fs';
+
+const ROOT = getenv('SMS_TOOL_ROOT') || '';
+const UCI_DIR = getenv('UCI_CONFIG_DIR') || (ROOT ? ROOT + '/etc/config' : '/etc/config');
+const SMS_TOOL_BIN = getenv('SMS_TOOL_BIN') || 'sms_tool';
+
+function rpath(p) {
+	if (!p || substr(p, 0, 1) != '/')
+		return p;
+	if (ROOT != '' && substr(p, 0, length(ROOT)) != ROOT)
+		return ROOT + p;
+	return p;
+}
+
+const USSD_FILE_PATH = rpath('/etc/config/ussd.user');
+const PHB_FILE_PATH = rpath('/etc/config/phonebook.user');
+const AT_FILE_PATH = rpath('/etc/config/atcmds.user');
+const SMS_COUNT_PATH = rpath('/etc/config/sms_count');
+
+const SHELL_META_CHARS = [';', '&', '|', '$', '`', '<', '>', '\\', '\n', '\r', "'", '"', '(', ')'];
+
+function has_shell_meta(val) {
+	if (val == null)
+		return false;
+	if (type(val) != 'string')
+		return true;
+	for (let ch in SHELL_META_CHARS) {
+		if (index(val, ch) >= 0)
+			return true;
+	}
+	return false;
+}
+
+function is_valid_tty_port(port) {
+	if (type(port) != 'string' || port == '')
+		return false;
+	if (has_shell_meta(port) || index(port, '..') >= 0)
+		return false;
+	return match(port, /^\/dev\/tty[A-Za-z0-9._-]+$/) != null;
+}
+
+function is_valid_storage(storage) {
+	return storage == 'SM' || storage == 'ME';
+}
+
+function is_valid_phone_number(num) {
+	if (type(num) != 'string')
+		return false;
+	let s = trim(num);
+	if (s == '' || has_shell_meta(s))
+		return false;
+	return match(s, /^\+?[0-9]{3,24}$/) != null;
+}
+
+function is_valid_sms_text(msg) {
+	if (type(msg) != 'string')
+		return false;
+	let normalized = replace(replace(msg, /\r\n/g, ' '), /\n/g, ' ');
+	if (trim(normalized) == '' || length(normalized) > 1024)
+		return false;
+	return true;
+}
+
+function shell_quote(s) {
+	return "'" + replace(`${s ?? ''}`, /'/g, "'\\''") + "'";
+}
+
+function is_valid_ussd_code(code) {
+	if (type(code) != 'string')
+		return false;
+	let s = trim(code);
+	if (s == '' || length(s) > 64 || has_shell_meta(s))
+		return false;
+	return match(s, /^[0-9*#+A-Za-z._-]+$/) != null;
+}
+
+function is_valid_at_command(cmd) {
+	if (type(cmd) != 'string')
+		return false;
+	let s = trim(cmd);
+	if (s == '' || length(s) > 256)
+		return false;
+	if (has_shell_meta(s) || index(s, '..') >= 0)
+		return false;
+	if (match(s, /^AT([+A-Za-z0-9?=,.*\/ _-]*)$/i) == null)
+		return false;
+	return true;
+}
+
+function is_valid_led_name(led) {
+	if (type(led) != 'string' || led == '')
+		return false;
+	if (has_shell_meta(led) || index(led, '..') >= 0 || index(led, '/') >= 0)
+		return false;
+	return match(led, /^[A-Za-z0-9:._-]+$/) != null;
+}
+
+function unquote_uci(val) {
+	let s = trim(val || '');
+	if (length(s) >= 2) {
+		let first = substr(s, 0, 1);
+		let last = substr(s, length(s) - 1, 1);
+		if ((first == "'" && last == "'") || (first == '"' && last == '"'))
+			return substr(s, 1, length(s) - 2);
+	}
+	return s;
+}
+
+function uci_load_general() {
+	let cfg = {
+		readport: '/dev/ttyUSB2',
+		sendport: '/dev/ttyUSB2',
+		ussdport: '/dev/ttyUSB2',
+		atport: '/dev/ttyUSB2',
+		storage: 'SM',
+		mergesms: '0',
+		algorithm: 'Simple',
+		direction: 'Start',
+		pnumber: '48',
+		prefix: '1',
+		information: '1',
+		ussd: '0',
+		pdu: '0',
+		lednotify: '0',
+		checktime: '5',
+		prestart: '6',
+		smsled: '',
+		ledtype: 'D',
+		ledtimeon: '1',
+		ledtimeoff: '5'
+	};
+
+	let raw = fs.readfile(UCI_DIR + '/sms_tool');
+	if (!raw)
+		return cfg;
+
+	let in_general = false;
+	for (let raw_line in split(raw, /\r?\n/)) {
+		let line = trim(raw_line);
+		if (line == '' || substr(line, 0, 1) == '#')
+			continue;
+		let m_sec = match(line, /^config[ \t]+([A-Za-z0-9_-]+)([ \t]+(.+))?$/);
+		if (m_sec) {
+			let sname = m_sec[3] ? unquote_uci(m_sec[3]) : '';
+			in_general = (m_sec[1] == 'sms_tool' || sname == 'general');
+			continue;
+		}
+		if (!in_general)
+			continue;
+		let m_opt = match(line, /^option[ \t]+([A-Za-z0-9_.-]+)[ \t]+(.*)$/);
+		if (m_opt)
+			cfg[m_opt[1]] = unquote_uci(m_opt[2]);
+	}
+	return cfg;
+}
+
+function run_cmd(cmd) {
+	let pipe = fs.popen(cmd, 'r');
+	if (!pipe)
+		return '';
+	let out = pipe.read('all') || '';
+	pipe.close();
+	return out;
+}
+
+function parse_status_output(status_raw) {
+	let use_val = '0';
+	let max_val = '50';
+	let loc_code = 'SM';
+
+	if (type(status_raw) == 'string' && trim(status_raw) != '') {
+		let sub_loc = substr(status_raw, 14, 2);
+		if (sub_loc == 'SM' || sub_loc == 'ME')
+			loc_code = sub_loc;
+		else if (index(status_raw, 'ME') >= 0)
+			loc_code = 'ME';
+
+		let sub_use = substr(status_raw, 22, 5);
+		let m_use = match(sub_use, /([0-9]+)/);
+		if (m_use) {
+			use_val = m_use[1];
+		}
+		else {
+			let m_any = match(status_raw, /([0-9]+)[ \t]*\/[ \t]*([0-9]+)/);
+			if (m_any) {
+				use_val = m_any[1];
+				max_val = m_any[2];
+			}
+		}
+
+		let m_tail = match(trim(status_raw), /([0-9]+)$/);
+		if (m_tail)
+			max_val = m_tail[1];
+	}
+
+	return {
+		use: use_val,
+		all: max_val,
+		storage: loc_code,
+		location: (loc_code == 'ME') ? 'Modem memory' : 'SIM card'
+	};
+}
+
+function parse_recv_messages(recv_raw) {
+	if (type(recv_raw) != 'string' || trim(recv_raw) == '')
+		return [];
+	let trimmed = trim(recv_raw);
+	try {
+		let obj = json(trimmed);
+		if (type(obj) == 'object' && type(obj.msg) == 'array')
+			return obj.msg;
+		if (type(obj) == 'array')
+			return obj;
+	}
+	catch (e) {
+		// Fallback to legacy substring slice if needed
+		if (length(trimmed) > 9) {
+			let sliced = substr(trimmed, 7, length(trimmed) - 8);
+			try {
+				let arr = json(sliced);
+				if (type(arr) == 'array')
+					return arr;
+			}
+			catch (e2) {}
+		}
+	}
+	return [];
+}
+
+function parse_user_lines(filepath, key_name) {
+	let raw = fs.readfile(filepath);
+	let entries = [];
+	let legacy = [];
+	if (!raw)
+		return { raw: '', entries: entries, legacy: legacy };
+
+	for (let raw_line in split(raw, /\r?\n/)) {
+		let line = trim(raw_line);
+		if (line == '')
+			continue;
+		let item = {};
+		item[key_name] = line;
+		push(legacy, item);
+
+		let semi = index(line, ';');
+		if (semi >= 0) {
+			push(entries, {
+				name: trim(substr(line, 0, semi)),
+				value: trim(substr(line, semi + 1)),
+				raw: line
+			});
+		}
+		else {
+			push(entries, {
+				name: line,
+				value: line,
+				raw: line
+			});
+		}
+	}
+	return { raw: raw, entries: entries, legacy: legacy };
+}
+
+function update_sms_count_file(count_str) {
+	if (type(count_str) == 'string' && match(count_str, /^[0-9]+$/))
+		fs.writefile(SMS_COUNT_PATH, count_str + '\n');
+}
+
+const methods = {
+	read_sms: {
+		args: { port: 'port', storage: 'storage' },
+		call: function(args) {
+			let cfg = uci_load_general();
+			let port = (args && args.port) ? args.port : cfg.readport;
+			let storage = (args && args.storage) ? args.storage : cfg.storage;
+
+			if (!is_valid_tty_port(port)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: readport must be /dev/tty* without shell metacharacters' }));
+				return;
+			}
+			if (!is_valid_storage(storage)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: storage must be SM or ME' }));
+				return;
+			}
+
+			let recv_out = run_cmd(`"${SMS_TOOL_BIN}" -s '${storage}' -d '${port}' -f '%Y-%m-%d %H:%M' -j recv 2>/dev/null`);
+			let status_out = run_cmd(`"${SMS_TOOL_BIN}" -s '${storage}' -d '${port}' status 2>/dev/null`);
+
+			let messages = parse_recv_messages(recv_out);
+			let st = parse_status_output(status_out);
+
+			if (cfg.lednotify == '1') {
+				update_sms_count_file(st.use);
+				if (cfg.ledtype == 'D' && is_valid_led_name(cfg.smsled)) {
+					let bright_path = rpath('/sys/class/leds/' + cfg.smsled + '/brightness');
+					if (fs.access(bright_path))
+						fs.writefile(bright_path, '0\n');
+				}
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				port: port,
+				storage: storage,
+				location: st.location,
+				use: st.use,
+				all: st.all,
+				mergesms: cfg.mergesms,
+				algorithm: cfg.algorithm,
+				direction: cfg.direction,
+				messages: messages
+			}));
+		}
+	},
+
+	delete_sms: {
+		args: { port: 'port', index: 'index', all: true },
+		call: function(args) {
+			let cfg = uci_load_general();
+			let port = (args && args.port) ? args.port : cfg.readport;
+			if (!is_valid_tty_port(port)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: readport must be /dev/tty* without shell metacharacters' }));
+				return;
+			}
+
+			let idx_arg = (args && args.index != null) ? `${args.index}` : '';
+			let del_all = (args && args.all === true) || (idx_arg == 'all');
+
+			if (!del_all) {
+				if (idx_arg == '' || has_shell_meta(idx_arg)) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: index rejected by sanitizer' }));
+					return;
+				}
+				if (match(idx_arg, /^[0-9btn, _-]+$/) == null) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: index contains invalid characters' }));
+					return;
+				}
+			}
+
+			let deleted = [];
+			if (del_all) {
+				run_cmd(`"${SMS_TOOL_BIN}" -d '${port}' delete all 2>/dev/null`);
+				push(deleted, 'all');
+			}
+			else {
+				let rem = idx_arg;
+				while (true) {
+					let m = match(rem, /([0-9]+)/);
+					if (!m)
+						break;
+					let d = m[1];
+					run_cmd(`"${SMS_TOOL_BIN}" -d '${port}' delete '${d}' 2>/dev/null`);
+					push(deleted, d);
+					let pos = index(rem, d);
+					rem = substr(rem, pos + length(d));
+				}
+				if (length(deleted) == 0) {
+					print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: no numeric SMS index found' }));
+					return;
+				}
+			}
+
+			if (cfg.lednotify == '1' && is_valid_storage(cfg.storage)) {
+				let status_out = run_cmd(`"${SMS_TOOL_BIN}" -s '${cfg.storage}' -d '${port}' status 2>/dev/null`);
+				let st = parse_status_output(status_out);
+				update_sms_count_file(st.use);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				deleted: deleted
+			}));
+		}
+	},
+
+	send_sms: {
+		args: { port: 'port', number: 'number', message: 'message', scode: 'scode' },
+		call: function(args) {
+			if (type(args) != 'object') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter' }));
+				return;
+			}
+			let cfg = uci_load_general();
+			let port = args.port || cfg.sendport;
+			if (!is_valid_tty_port(port)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: sendport rejected by sanitizer' }));
+				return;
+			}
+
+			let number = args.number ?? args.pnumber ?? '';
+			let message = args.message ?? args.msg ?? '';
+
+			if (number == '' && message == '' && type(args.scode) == 'string' && length(args.scode) > 20) {
+				number = trim(substr(args.scode, 0, 20));
+				message = substr(args.scode, 20);
+			}
+
+			if (!is_valid_phone_number(number)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: phone number rejected by sanitizer' }));
+				return;
+			}
+
+			if (!is_valid_sms_text(message)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: message text rejected by sanitizer' }));
+				return;
+			}
+
+			let clean_num = trim(number);
+			let clean_msg = replace(replace(message, /\r\n/g, ' '), /\n/g, ' ');
+			let odp = run_cmd(`"${SMS_TOOL_BIN}" -d ${shell_quote(port)} send ${shell_quote(clean_num)} ${shell_quote(clean_msg)} 2>&1`);
+
+			print(sprintf('%J\n', {
+				code: 0,
+				number: clean_num,
+				reply: odp,
+				result: odp
+			}));
+		}
+	},
+
+	send_ussd: {
+		args: { port: 'port', code: 'code', ussd: 'ussd', pdu: 'pdu' },
+		call: function(args) {
+			if (type(args) != 'object') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter' }));
+				return;
+			}
+			let cfg = uci_load_general();
+			let port = args.port || cfg.ussdport;
+			if (!is_valid_tty_port(port)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: ussdport rejected by sanitizer' }));
+				return;
+			}
+
+			let ussd_code = args.code ?? args.ussd_code ?? '';
+			if (!is_valid_ussd_code(ussd_code)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: USSD code rejected by sanitizer' }));
+				return;
+			}
+
+			let raw_flag = ((args.ussd ?? cfg.ussd) == '1') ? ' -R' : '';
+			let pdu_flag = ((args.pdu ?? cfg.pdu) == '1') ? ' -r' : '';
+			let clean_code = trim(ussd_code);
+
+			let odp = run_cmd(`"${SMS_TOOL_BIN}" -d '${port}'${raw_flag}${pdu_flag} ussd '${clean_code}' 2>&1`);
+
+			print(sprintf('%J\n', {
+				code: 0,
+				ussd_code: clean_code,
+				reply: odp,
+				result: odp
+			}));
+		}
+	},
+
+	send_at: {
+		args: { port: 'port', code: 'code', command: 'command' },
+		call: function(args) {
+			if (type(args) != 'object') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter' }));
+				return;
+			}
+			let cfg = uci_load_general();
+			let port = args.port || cfg.atport;
+			if (!is_valid_tty_port(port)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: atport rejected by sanitizer' }));
+				return;
+			}
+
+			let at_cmd = args.code ?? args.command ?? args.at ?? '';
+			if (!is_valid_at_command(at_cmd)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: AT command rejected by sanitizer' }));
+				return;
+			}
+
+			let clean_cmd = trim(at_cmd);
+			let odp = run_cmd(`"${SMS_TOOL_BIN}" -d '${port}' at '${clean_cmd}' 2>&1`);
+
+			print(sprintf('%J\n', {
+				code: 0,
+				command: clean_cmd,
+				reply: odp,
+				result: odp
+			}));
+		}
+	},
+
+	get_ports: {
+		args: {},
+		call: function(args) {
+			let dev_dir = rpath('/dev');
+			let dev_entries = fs.lsdir(dev_dir) || [];
+			let ports = [];
+			for (let name in sort(dev_entries)) {
+				if (match(name, /^tty[A-Z][A-Z][A-Za-z0-9._-]*$/))
+					push(ports, '/dev/' + name);
+			}
+			if (length(ports) == 0) {
+				ports = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyUSB2', '/dev/ttyUSB3'];
+			}
+
+			let led_dir = rpath('/sys/class/leds');
+			let led_entries = fs.lsdir(led_dir) || [];
+			let leds = [];
+			for (let name in sort(led_entries)) {
+				if (is_valid_led_name(name))
+					push(leds, name);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				ports: ports,
+				leds: leds
+			}));
+		}
+	},
+
+	get_user_lists: {
+		args: {},
+		call: function(args) {
+			let phb = parse_user_lines(PHB_FILE_PATH, 'phb');
+			let usd = parse_user_lines(USSD_FILE_PATH, 'usd');
+			let atu = parse_user_lines(AT_FILE_PATH, 'atu');
+
+			print(sprintf('%J\n', {
+				code: 0,
+				phonebook: phb.entries,
+				ussd: usd.entries,
+				atcmds: atu.entries,
+				user_phonebook: phb.legacy,
+				user_ussd: usd.legacy,
+				user_atc: atu.legacy,
+				raw_phonebook: phb.raw,
+				raw_ussd: usd.raw,
+				raw_atcmds: atu.raw
+			}));
+		}
+	},
+
+	set_user_lists: {
+		args: { phonebook: 'phonebook', ussd: 'ussd', atcmds: 'atcmds' },
+		call: function(args) {
+			if (type(args) != 'object') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter' }));
+				return;
+			}
+			if (type(args.phonebook) == 'string') {
+				let content = replace(args.phonebook, /\r\n/g, '\n');
+				fs.writefile(PHB_FILE_PATH, content);
+			}
+			if (type(args.ussd) == 'string') {
+				let content = replace(args.ussd, /\r\n/g, '\n');
+				fs.writefile(USSD_FILE_PATH, content);
+			}
+			if (type(args.atcmds) == 'string') {
+				let content = replace(args.atcmds, /\r\n/g, '\n');
+				fs.writefile(AT_FILE_PATH, content);
+			}
+			print(sprintf('%J\n', { code: 0, status: true }));
+		}
+	},
+
+	sms_count: {
+		args: { port: 'port', storage: 'storage' },
+		call: function(args) {
+			let cfg = uci_load_general();
+			let port = (args && args.port) ? args.port : cfg.readport;
+			let storage = (args && args.storage) ? args.storage : cfg.storage;
+
+			if (!is_valid_tty_port(port)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: readport rejected by sanitizer' }));
+				return;
+			}
+			if (!is_valid_storage(storage)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: storage must be SM or ME' }));
+				return;
+			}
+
+			let status_out = run_cmd(`"${SMS_TOOL_BIN}" -s '${storage}' -d '${port}' status 2>/dev/null`);
+			let st = parse_status_output(status_out);
+
+			if (cfg.lednotify == '1')
+				update_sms_count_file(st.use);
+
+			print(sprintf('%J\n', {
+				code: 0,
+				use: st.use,
+				all: st.all,
+				count: st.use,
+				storage: st.storage,
+				location: st.location
+			}));
+		}
+	},
+
+	led_ctrl: {
+		args: { enable: 'enable', lednotify: 'lednotify', smsled: 'smsled', ledtype: 'ledtype' },
+		call: function(args) {
+			if (type(args) != 'object') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter' }));
+				return;
+			}
+			let cfg = uci_load_general();
+			let enable = `${args.enable ?? args.lednotify ?? cfg.lednotify}`;
+			let smsled = args.smsled ?? cfg.smsled ?? '';
+			let ledtype = args.ledtype ?? cfg.ledtype ?? 'D';
+
+			if (enable != '0' && enable != '1') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: enable must be 0 or 1' }));
+				return;
+			}
+			if (smsled != '' && !is_valid_led_name(smsled)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: smsled rejected by sanitizer' }));
+				return;
+			}
+			if (ledtype != 'D' && ledtype != 'S') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: ledtype must be D or S' }));
+				return;
+			}
+
+			let smscount = '0';
+			if (is_valid_tty_port(cfg.readport) && is_valid_storage(cfg.storage)) {
+				let status_out = run_cmd(`"${SMS_TOOL_BIN}" -s '${cfg.storage}' -d '${cfg.readport}' status 2>/dev/null`);
+				let st = parse_status_output(status_out);
+				smscount = st.use;
+			}
+
+			let init_smsled = rpath('/etc/init.d/smsled');
+			let cronsync = rpath('/sbin/cronsync.sh');
+
+			if (enable == '1') {
+				update_sms_count_file(smscount);
+				if (fs.access(init_smsled)) {
+					run_cmd(`"${init_smsled}" enable >/dev/null 2>&1`);
+					run_cmd(`"${init_smsled}" start >/dev/null 2>&1`);
+				}
+				if (fs.access(cronsync))
+					run_cmd(`"${cronsync}" >/dev/null 2>&1`);
+			}
+			else {
+				if (fs.access(init_smsled)) {
+					run_cmd(`"${init_smsled}" stop >/dev/null 2>&1`);
+					run_cmd(`"${init_smsled}" disable >/dev/null 2>&1`);
+				}
+				if (ledtype == 'D' && smsled != '') {
+					let bright_path = rpath('/sys/class/leds/' + smsled + '/brightness');
+					if (fs.access(bright_path))
+						fs.writefile(bright_path, '0\n');
+				}
+				if (fs.access(cronsync))
+					run_cmd(`"${cronsync}" >/dev/null 2>&1`);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				lednotify: enable,
+				count: smscount
+			}));
+		}
+	}
+};
+
+function parseInput() {
+	let raw = getenv('SMS_TOOL_RPC_ARGS');
+	if (raw == null || raw == '') {
+		raw = '';
+		while (true) {
+			let chunk = fs.stdin.read(4096);
+			if (!chunk || chunk == '')
+				break;
+			raw += chunk;
+		}
+	}
+	if (trim(raw) == '')
+		return {};
+	try {
+		let parsed = json(raw);
+		if (type(parsed) != 'object')
+			return {};
+		delete parsed.ubus_rpc_session;
+		return parsed;
+	}
+	catch (e) {
+		print(sprintf('%J\n', { code: 1, error: `Invalid JSON input: ${e}` }));
+		exit(0);
+	}
+}
+
+let cmd = ARGV[0];
+if (cmd == 'list' || cmd == '-l') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+	exit(0);
+}
+else if (cmd == 'call' || cmd == '-c') {
+	let func = ARGV[1];
+	let method = methods[func];
+	if (!method) {
+		print(sprintf('%J\n', { code: 1, error: 'Method not found' }));
+		exit(1);
+	}
+	let args = parseInput();
+	method.call(args);
+	exit(0);
+}
+else {
+	print(sprintf('%J\n', { code: 1, error: 'Usage: luci.sms_tool list | call <method>' }));
+	exit(1);
+}

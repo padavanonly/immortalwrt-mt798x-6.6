@@ -1,0 +1,60 @@
+#!/usr/bin/env ucode
+'use strict';
+
+import * as fs from 'fs';
+
+const ROOT = getenv('MODEM_DEV_ROOT') || getenv('MODEM_ROOT') || '';
+
+function rpath(p) {
+	if (!p || substr(p, 0, 1) != '/')
+		return p;
+	if (ROOT != '' && substr(p, 0, length(ROOT)) != ROOT)
+		return ROOT + p;
+	return p;
+}
+
+function list_cdc_wdm_devices() {
+	let pattern = rpath('/dev/cdc-wdm*');
+	let matches = fs.glob(pattern) || [];
+	let devices = [];
+
+	for (let p in sort(matches)) {
+		if (ROOT != '' && substr(p, 0, length(ROOT)) == ROOT)
+			push(devices, substr(p, length(ROOT)));
+		else
+			push(devices, p);
+	}
+
+	return devices;
+}
+
+const methods = {
+	getDevices: {
+		args: {},
+		call: function() {
+			return { devices: list_cdc_wdm_devices() };
+		}
+	}
+};
+
+let cmd = ARGV[0];
+if (cmd == 'list' || cmd == '-l') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+	exit(0);
+}
+else if (cmd == 'call' || cmd == '-c') {
+	let method_name = ARGV[1];
+	let method = methods[method_name];
+	if (!method) {
+		print(sprintf('%J\n', { error: 'Method not found' }));
+		exit(1);
+	}
+	let res = method.call({});
+	print(sprintf('%J\n', res));
+	exit(0);
+}
+
+return { 'luci.usbmodem': methods };

@@ -1,0 +1,14 @@
+{
+	"admin/network/gobinetmodem": {
+		"title": "Gobinet Modem Server",
+		"order": 80,
+		"action": {
+			"type": "view",
+			"path": "gobinetmodem"
+		},
+		"depends": {
+			"acl": [ "luci-app-gobinetmodem" ],
+			"uci": { "gobinetmodem": true }
+		}
+	}
+}

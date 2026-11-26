@@ -8,7 +8,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=Modem Server
-LUCI_DEPENDS:=+luci-compat +quectel-CM-5G +kmod-gobinet \
+LUCI_DEPENDS:=+quectel-CM-5G +kmod-gobinet \
 	+kmod-usb-net-cdc-ether +kmod-usb-net-qmi-wwan \
 	+kmod-usb-net-rndis +kmod-usb-serial-option
 

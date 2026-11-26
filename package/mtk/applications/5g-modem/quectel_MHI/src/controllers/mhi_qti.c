@@ -430,7 +430,7 @@ rpm_resume_exit:
 	return ret;
 }
 
-static int mhi_system_resume(struct device *dev)
+static int __maybe_unused mhi_system_resume(struct device *dev)
 {
 	int ret = 0;
 	struct mhi_controller *mhi_cntrl = dev_get_drvdata(dev);

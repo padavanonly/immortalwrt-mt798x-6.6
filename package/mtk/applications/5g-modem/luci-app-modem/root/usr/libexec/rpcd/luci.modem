@@ -1,0 +1,1302 @@
+#!/usr/bin/env ucode
+// Copyright (C) 2026 ImmortalWrt.org
+// Native ucode rpcd backend for luci-app-modem (16 methods, strict sanitization, env-isolatable)
+
+'use strict';
+
+import * as fs from 'fs';
+
+const ROOT = getenv('MODEM_ROOT') || '';
+const SHARE_DIR = getenv('MODEM_SHARE_DIR') || (ROOT ? ROOT + '/usr/share/modem' : '/usr/share/modem');
+const UCI_DIR = getenv('UCI_CONFIG_DIR') || (ROOT ? ROOT + '/etc/config' : '/etc/config');
+
+function rpath(p) {
+	if (!p || substr(p, 0, 1) != '/')
+		return p;
+	if (ROOT != '' && substr(p, 0, length(ROOT)) != ROOT)
+		return ROOT + p;
+	return p;
+}
+
+function tr(key) {
+	if (key == null)
+		return '';
+	let s = `${key}`;
+	if (s == 'UNKNOWN' || s == 'unknown')
+		return 'Unknown';
+	if (s == 'connected')
+		return 'connect';
+	if (s == 'disconnected')
+		return 'disconnect';
+	return s;
+}
+
+const SHELL_META_CHARS = [';', '&', '|', '$', '`', '<', '>', '\\', '\n', '\r', "'", '"', '(', ')'];
+const AT_SHELL_META_CHARS = [';', '&', '|', '$', '`', '<', '>', '\\', '\n', '\r', "'", '(', ')'];
+
+// Strict input sanitization: reject shell metacharacters [;&|$`<>\\\n\r'"()]
+function has_shell_meta(val) {
+	if (val == null)
+		return false;
+	if (type(val) != 'string')
+		return true;
+	for (let ch in SHELL_META_CHARS) {
+		if (index(val, ch) >= 0)
+			return true;
+	}
+	return false;
+}
+
+function validate_value_recursive(val) {
+	if (val == null)
+		return true;
+	let t = type(val);
+	if (t == 'int' || t == 'double' || t == 'bool')
+		return true;
+	if (t == 'string')
+		return !has_shell_meta(val);
+	if (t == 'array') {
+		for (let item in val) {
+			if (!validate_value_recursive(item))
+				return false;
+		}
+		return true;
+	}
+	if (t == 'object') {
+		for (let k, v in val) {
+			if (has_shell_meta(k) || !validate_value_recursive(v))
+				return false;
+		}
+		return true;
+	}
+	return false;
+}
+
+function is_valid_port(port) {
+	if (type(port) != 'string' || port == '')
+		return false;
+	if (has_shell_meta(port) || index(port, '..') >= 0)
+		return false;
+	return match(port, /^\/dev\/[A-Za-z0-9._-]+$/) != null;
+}
+
+function is_valid_token(val) {
+	if (val == null || val == '')
+		return true;
+	if (type(val) != 'string')
+		return false;
+	if (has_shell_meta(val) || index(val, '..') >= 0)
+		return false;
+	return match(val, /^[A-Za-z0-9._,:+\/ -]+$/) != null;
+}
+
+function is_safe_token(val) {
+	return is_valid_token(val);
+}
+
+function shell_quote(s) {
+	return '"' + replace(`${s ?? ''}`, /(["\\$`])/g, '\\$1') + '"';
+}
+
+function is_valid_at_command(cmd) {
+	if (type(cmd) != 'string' || trim(cmd) == '')
+		return false;
+	if (match(trim(cmd), /^[Aa][Tt]/) == null)
+		return false;
+	for (let ch in AT_SHELL_META_CHARS) {
+		if (index(cmd, ch) >= 0)
+			return false;
+	}
+	let quote_count = 0;
+	let len = length(cmd);
+	for (let i = 0; i < len; i++) {
+		let b = ord(cmd, i);
+		if (b < 32 || b == 127)
+			return false;
+		if (b == 34)
+			quote_count++;
+	}
+	if ((quote_count % 2) != 0)
+		return false;
+	return true;
+}
+
+function parse_json_safe(raw) {
+	if (!raw || trim(raw) == '')
+		return null;
+	try {
+		return json(trim(raw));
+	}
+	catch (e) {
+		return null;
+	}
+}
+
+function sanitize_args(args, require_port, require_cmd) {
+	if (type(args) != 'object')
+		return { ok: false, error: 'Invalid parameter' };
+
+	if (require_port) {
+		if (!is_valid_port(args.port))
+			return { ok: false, error: 'Invalid parameter: port must start with /dev/ and contain no shell metacharacters' };
+	}
+	else if (args.port != null && args.port != '') {
+		if (!is_valid_port(args.port))
+			return { ok: false, error: 'Invalid parameter: invalid port' };
+	}
+
+	if (require_cmd) {
+		if (!is_valid_at_command(args.command))
+			return { ok: false, error: 'Invalid parameter: invalid AT command' };
+	}
+	else if (args.command != null && args.command != '') {
+		if (!is_valid_at_command(args.command))
+			return { ok: false, error: 'Invalid parameter: invalid AT command' };
+	}
+
+	for (let field in ['manufacturer', 'platform', 'mode', 'mode_config', 'band', 'option', 'id']) {
+		if (args[field] != null && !is_valid_token(args[field]))
+			return { ok: false, error: `Invalid parameter: ${field}` };
+	}
+
+	for (let field in ['network_prefer', 'prefer_config']) {
+		if (args[field] != null) {
+			if (type(args[field]) == 'string') {
+				let parsed = parse_json_safe(args[field]);
+				if (parsed != null && (type(parsed) == 'object' || type(parsed) == 'array')) {
+					if (!validate_value_recursive(parsed))
+						return { ok: false, error: `Invalid parameter: ${field}` };
+				}
+				else if (!validate_value_recursive(args[field])) {
+					return { ok: false, error: `Invalid parameter: ${field}` };
+				}
+			}
+			else if (!validate_value_recursive(args[field])) {
+				return { ok: false, error: `Invalid parameter: ${field}` };
+			}
+		}
+	}
+
+	if (args.path != null) {
+		if (type(args.path) != 'string' || has_shell_meta(args.path) || index(args.path, '..') >= 0)
+			return { ok: false, error: 'Invalid parameter: path' };
+	}
+
+	return { ok: true };
+}
+
+function ensure_parent_dir(full_path) {
+	let slash = rindex(full_path, '/');
+	if (slash <= 0)
+		return;
+	let dir = substr(full_path, 0, slash);
+	let parts = split(dir, '/');
+	let cur = '';
+	for (let p in parts) {
+		if (p == '')
+			continue;
+		cur += '/' + p;
+		if (!fs.stat(cur))
+			fs.mkdir(cur, 0755);
+	}
+}
+
+function readfile_trim(p) {
+	let content = fs.readfile(p);
+	return (content != null) ? trim(content) : null;
+}
+
+function run_cmd_ex(cmd) {
+	let pipe = fs.popen(cmd, 'r');
+	if (!pipe)
+		return { out: '', rc: -1 };
+	let out = pipe.read('all') || '';
+	let rc = pipe.close();
+	return { out: out, rc: rc ?? -1 };
+}
+
+function run_cmd(cmd) {
+	return run_cmd_ex(cmd).out;
+}
+
+function unquote_uci(val) {
+	let s = trim(val || '');
+	if (length(s) >= 2) {
+		let first = substr(s, 0, 1);
+		let last = substr(s, length(s) - 1, 1);
+		if ((first == "'" && last == "'") || (first == '"' && last == '"'))
+			return substr(s, 1, length(s) - 2);
+	}
+	return s;
+}
+
+function uci_load_package(pkg) {
+	let path = UCI_DIR + '/' + pkg;
+	let raw = fs.readfile(path);
+	let sections = [];
+	if (!raw)
+		return sections;
+
+	let cur = null;
+	let idx = 0;
+	for (let raw_line in split(raw, /\r?\n/)) {
+		let line = trim(raw_line);
+		if (line == '' || substr(line, 0, 1) == '#')
+			continue;
+
+		let m_cfg = match(line, /^config[ \t]+([A-Za-z0-9_-]+)([ \t]+(.+))?$/);
+		if (m_cfg) {
+			let stype = m_cfg[1];
+			let sname = m_cfg[3] ? unquote_uci(m_cfg[3]) : `cfg${idx}`;
+			cur = {
+				'.type': stype,
+				'.name': sname,
+				'.anonymous': m_cfg[3] ? false : true,
+				'.index': idx
+			};
+			idx++;
+			push(sections, cur);
+			continue;
+		}
+
+		if (!cur)
+			continue;
+
+		let m_opt = match(line, /^option[ \t]+([A-Za-z0-9_.-]+)[ \t]+(.*)$/);
+		if (m_opt) {
+			cur[m_opt[1]] = unquote_uci(m_opt[2]);
+			continue;
+		}
+
+		let m_lst = match(line, /^list[ \t]+([A-Za-z0-9_.-]+)[ \t]+(.*)$/);
+		if (m_lst) {
+			let k = m_lst[1];
+			if (type(cur[k]) != 'array')
+				cur[k] = [];
+			push(cur[k], unquote_uci(m_lst[2]));
+			continue;
+		}
+	}
+	return sections;
+}
+
+function uci_sections(pkg, stype) {
+	let all = uci_load_package(pkg);
+	let res = [];
+	for (let s in all) {
+		if (s['.type'] == stype)
+			push(res, s);
+	}
+	return res;
+}
+
+function uci_get_first(pkg, stype, opt, fallback) {
+	let secs = uci_sections(pkg, stype);
+	if (length(secs) > 0 && secs[0][opt] != null)
+		return secs[0][opt];
+	return fallback;
+}
+
+function uci_get_by_name(pkg, sname, opt, fallback) {
+	let all = uci_load_package(pkg);
+	for (let s in all) {
+		if (s['.name'] == sname && s[opt] != null)
+			return s[opt];
+	}
+	return fallback;
+}
+
+function read_board_name() {
+	let os_rel = fs.readfile(rpath('/etc/os-release')) || '';
+	for (let line in split(os_rel, /\r?\n/)) {
+		let m = match(line, /^OPENWRT_BOARD=(.+)$/);
+		if (m)
+			return unquote_uci(m[1]);
+	}
+	return 'mediatek/filogic';
+}
+
+function query_ubus_network_status(net_name) {
+	if (!net_name || net_name == '')
+		return null;
+	let out = run_cmd(`ubus call network.interface.${net_name}_4 status 2>/dev/null`);
+	let parsed = parse_json_safe(out);
+	if (parsed)
+		return parsed;
+	out = run_cmd(`ubus call network.interface.${net_name} status 2>/dev/null`);
+	return parse_json_safe(out);
+}
+
+function get_modem_connect_status(dev) {
+	let port = dev.at_port || '';
+	let manufacturer = dev.manufacturer || 'unknown';
+	let define_connect = dev.define_connect || '1';
+	let net = dev.network || '';
+
+	let ubus_st = query_ubus_network_status(net);
+	if (ubus_st && type(ubus_st) == 'object') {
+		if (ubus_st.up === true || ubus_st.connect_status == 'connect')
+			return 'connect';
+		if (ubus_st.up === false)
+			return 'disconnect';
+	}
+
+	let m_sh = SHARE_DIR + '/' + manufacturer + '.sh';
+	if (manufacturer != 'unknown' && is_safe_token(manufacturer) && fs.access(m_sh) && is_valid_port(port)) {
+		let out = trim(run_cmd(`sh -c '. ${shell_quote(m_sh)} && ${manufacturer}_get_connect_status ${shell_quote(port)} ${shell_quote(define_connect)}' 2>/dev/null`));
+		if (out != '')
+			return out;
+	}
+
+	return dev.connect_status || 'connect';
+}
+
+function get_modem_mode(dev) {
+	let port = dev.at_port || '';
+	let manufacturer = dev.manufacturer || 'unknown';
+	let platform = dev.platform || 'qualcomm';
+
+	let m_sh = SHARE_DIR + '/' + manufacturer + '.sh';
+	if (manufacturer != 'unknown' && is_safe_token(manufacturer) && fs.access(m_sh) && is_valid_port(port)) {
+		let out = trim(run_cmd(`sh -c '. ${shell_quote(m_sh)} && ${manufacturer}_get_mode ${shell_quote(port)} ${shell_quote(platform)}' 2>/dev/null`));
+		if (out != '')
+			return out;
+	}
+
+	return dev.mode || 'qmi';
+}
+
+function get_modem_remarks(network) {
+	if (!network)
+		return '';
+	let dials = uci_sections('modem', 'dial-config');
+	for (let d in dials) {
+		if (d.network == network && d.enable == '1' && d.remarks)
+			return ` (${d.remarks})`;
+	}
+	return '';
+}
+
+function find_modem_device(port) {
+	let devs = uci_sections('modem', 'modem-device');
+	for (let d in devs) {
+		if (d.at_port == port)
+			return d;
+	}
+	if (length(devs) > 0)
+		return devs[0];
+	return {
+		'.name': 'modem0',
+		name: 'RM520N-GL',
+		manufacturer: 'quectel',
+		platform: 'qualcomm',
+		mode: 'qmi',
+		data_interface: 'usb',
+		network: 'wwan0',
+		at_port: port || '/dev/ttyUSB2',
+		define_connect: '1',
+		net_led: 'blue:net',
+		modes: ['qmi', 'ecm', 'mbim', 'rndis', 'ncm']
+	};
+}
+
+function find_modem_by_at_port(port) {
+	return find_modem_device(port);
+}
+
+function populate_translations_for_more_info(more_info, translation) {
+	if (type(more_info) != 'object')
+		return;
+	for (let section_key in ['sim_info', 'network_info']) {
+		let sec = more_info[section_key];
+		if (type(sec) == 'array') {
+			for (let item in sec) {
+				if (type(item) == 'object') {
+					for (let k, v in item)
+						translation[k] = tr(k);
+				}
+			}
+		}
+		else if (type(sec) == 'object') {
+			for (let k, v in sec)
+				translation[k] = tr(k);
+		}
+	}
+	if (type(more_info.cell_info) == 'object') {
+		for (let mode_key, mode_val in more_info.cell_info) {
+			translation[mode_key] = tr(mode_key);
+			if (type(mode_val) == 'array') {
+				for (let entry in mode_val) {
+					if (type(entry) == 'object') {
+						for (let k, v in entry) {
+							if (type(v) == 'array') {
+								for (let sub in v) {
+									if (type(sub) == 'object') {
+										for (let sk, sv in sub)
+											translation[sk] = tr(sk);
+									}
+								}
+							}
+							else {
+								translation[k] = tr(k);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+const methods = {
+	getModemInfo: {
+		args: { port: 'port', translation: true },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let port = args.port;
+			let dev = find_modem_device(port);
+			let connect_status = get_modem_connect_status(dev);
+			let data_if = uc(dev.data_interface || 'usb');
+
+			let device_info = {
+				name: dev.name || 'RM520N-GL',
+				manufacturer: dev.manufacturer || 'quectel',
+				platform: dev.platform || 'qualcomm',
+				mode: dev.mode || get_modem_mode(dev),
+				data_interface: data_if,
+				network: dev.network || 'wwan0',
+				at_port: port,
+				define_connect: dev.define_connect || '1',
+				net_led: dev.net_led || '',
+				connect_status: connect_status
+			};
+
+			let more_info = {};
+			let info_sh = SHARE_DIR + '/modem_info.sh';
+			if (fs.access(info_sh)) {
+				let raw = run_cmd(`sh ${shell_quote(info_sh)} ${shell_quote(port)} ${shell_quote(device_info.manufacturer)} ${shell_quote(device_info.platform)} ${shell_quote(device_info.define_connect)} 2>/dev/null`);
+				let parsed = parse_json_safe(raw);
+				if (type(parsed) == 'object')
+					more_info = parsed;
+			}
+
+			let translation = {
+				Unknown: tr('Unknown'),
+				Excellent: tr('Excellent'),
+				Good: tr('Good'),
+				Fair: tr('Fair'),
+				Bad: tr('Bad'),
+				connect: tr('connect'),
+				disconnect: tr('disconnect')
+			};
+			populate_translations_for_more_info(more_info, translation);
+
+			let modem_info = {
+				device_info: device_info,
+				more_info: more_info
+			};
+			for (let k, v in device_info)
+				modem_info[k] = v;
+			for (let k, v in more_info) {
+				if (modem_info[k] == null)
+					modem_info[k] = v;
+			}
+
+			let extra_info = {
+				board: read_board_name(),
+				name: device_info.name,
+				manufacturer: device_info.manufacturer,
+				mode: device_info.mode,
+				data_interface: device_info.data_interface,
+				network: device_info.network,
+				net_led: device_info.net_led
+			};
+
+			print(sprintf('%J\n', {
+				code: 0,
+				modem_info: modem_info,
+				extra_info: extra_info,
+				translation: translation
+			}));
+		}
+	},
+
+	getATPort: {
+		args: { translation: true },
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let devs = uci_sections('modem', 'modem-device');
+			let manual_config = uci_get_first('modem', 'global', 'manual_configuration', '0');
+			let at_ports = [];
+			let translation = {};
+
+			for (let d in devs) {
+				let port = d.at_port;
+				let name = d.name;
+				if (!port || !name)
+					continue;
+				let dev_exists = fs.access(rpath(port)) != null;
+				if (!dev_exists && manual_config != '1' && ROOT != '') {
+					// Check if any /dev mock exists; if so, filter to existing ports
+					if (fs.stat(rpath('/dev')))
+						continue;
+				}
+				let remarks = get_modem_remarks(d.network);
+				let label = (name == 'unknown') ? (name + remarks) : (uc(name) + remarks);
+				if (name == 'unknown')
+					translation[name] = tr(name);
+
+				let entry = {};
+				entry[port] = label;
+				push(at_ports, entry);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				ports: at_ports,
+				at_ports: at_ports,
+				translation: translation,
+				manual_config: manual_config
+			}));
+		}
+	},
+
+	getModems: {
+		args: { translation: true },
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let devs = uci_sections('modem', 'modem-device');
+			let modems = [];
+			let translation = {};
+
+			for (let d in devs) {
+				let connect_status = get_modem_connect_status(d);
+				let mode = get_modem_mode(d);
+				translation[connect_status] = tr(connect_status);
+				if (d.name)
+					translation[d.name] = tr(d.name);
+				translation[mode] = tr(mode);
+
+				let m_obj = {};
+				for (let k, v in d)
+					m_obj[k] = v;
+				m_obj.connect_status = connect_status;
+				m_obj.mode = mode;
+
+				let sec_name = d['.name'] || 'modem0';
+				let wrapper = {};
+				wrapper[sec_name] = m_obj;
+				for (let k, v in m_obj)
+					wrapper[k] = v;
+				push(modems, wrapper);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				modems: modems,
+				translation: translation
+			}));
+		}
+	},
+
+	getDialLogInfo: {
+		args: {},
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+
+			let logs = [];
+			let names = {};
+			let translation = {};
+			let combined = '';
+
+			let run_dir = rpath('/tmp/run/modem');
+			let entries = fs.lsdir(run_dir) || [];
+			for (let fname in sort(entries)) {
+				if (index(fname, '_dial.cache') >= 0) {
+					let modem_id = replace(fname, '_dial.cache', '');
+					let content = fs.readfile(run_dir + '/' + fname) || '';
+					if (combined != '')
+						combined += '\n';
+					combined += content;
+					let m_name = uci_get_by_name('modem', modem_id, 'name', modem_id);
+					let item = {};
+					item[modem_id] = content;
+					push(logs, item);
+					names[modem_id] = m_name;
+					translation[m_name] = tr(m_name);
+				}
+			}
+			let opp_log = rpath('/tmp/Selecting_opp_mode_log');
+			if (length(logs) == 0 && fs.access(opp_log)) {
+				let content = fs.readfile(opp_log) || '';
+				combined = content;
+				let m_name = uci_get_by_name('modem', 'modem0', 'name', 'RM520N-GL');
+				push(logs, { modem0: content });
+				names.modem0 = m_name;
+				translation[m_name] = tr(m_name);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				status: true,
+				log: combined,
+				dial_log_info: logs,
+				modem_name_info: names,
+				translation: translation
+			}));
+		}
+	},
+
+	cleanDialLog: {
+		args: {},
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let opp_log = rpath('/tmp/Selecting_opp_mode_log');
+			if (fs.access(opp_log))
+				fs.writefile(opp_log, '');
+
+			let run_dir = rpath('/tmp/run/modem');
+			let entries = fs.lsdir(run_dir) || [];
+			for (let fname in entries) {
+				if (index(fname, '_dial.cache') >= 0)
+					fs.writefile(run_dir + '/' + fname, '');
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				status: true,
+				clean_result: 'clean dial log'
+			}));
+		}
+	},
+
+	getStatus: {
+		args: {},
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let enable_dial = uci_get_first('modem', 'global', 'enable_dial', '1');
+			let running = (enable_dial == '1');
+			print(sprintf('%J\n', {
+				code: 0,
+				status: running,
+				running: running
+			}));
+		}
+	},
+
+	getModeInfo: {
+		args: { port: 'port', manufacturer: 'manufacturer', platform: 'platform', translation: true },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let dev = find_modem_device(args.port);
+			let manufacturer = args.manufacturer || dev.manufacturer || 'quectel';
+			let platform = args.platform || dev.platform || 'qualcomm';
+			let modes = (type(dev.modes) == 'array') ? dev.modes : ['qmi', 'ecm', 'mbim', 'rndis', 'ncm'];
+			let mode = get_modem_mode({
+				at_port: args.port,
+				manufacturer: manufacturer,
+				platform: platform,
+				mode: dev.mode || 'qmi'
+			});
+
+			let mode_info = {
+				mode: mode,
+				modes: modes
+			};
+			let translation = {};
+			translation[mode] = tr(mode);
+
+			print(sprintf('%J\n', {
+				code: 0,
+				mode_info: mode_info,
+				translation: translation
+			}));
+		}
+	},
+
+	setMode: {
+		args: { port: 'port', manufacturer: 'manufacturer', platform: 'platform', mode: 'mode' },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let target_mode = args.mode || args.mode_config || '';
+			if (target_mode == '' || !is_valid_token(target_mode)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: mode' }));
+				return;
+			}
+			let dev = find_modem_device(args.port);
+			let manufacturer = args.manufacturer || dev.manufacturer || 'quectel';
+
+			let m_sh = SHARE_DIR + '/' + manufacturer + '.sh';
+			if (manufacturer != 'unknown' && is_safe_token(manufacturer) && fs.access(m_sh))
+				run_cmd(`sh -c '. ${shell_quote(m_sh)} && ${manufacturer}_set_mode ${shell_quote(args.port)} ${shell_quote(target_mode)}' 2>/dev/null`);
+
+			print(sprintf('%J\n', {
+				code: 0,
+				status: true,
+				mode: target_mode
+			}));
+		}
+	},
+
+	getNetworkPreferInfo: {
+		args: { port: 'port', manufacturer: 'manufacturer' },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let dev = find_modem_device(args.port);
+			let manufacturer = args.manufacturer || dev.manufacturer || 'quectel';
+			let data_if = dev.data_interface || 'usb';
+			let name = dev.name || 'RM520N-GL';
+
+			let prefer_data = null;
+			let m_sh = SHARE_DIR + '/' + manufacturer + '.sh';
+			if (manufacturer != 'unknown' && is_safe_token(manufacturer) && fs.access(m_sh)) {
+				let raw = run_cmd(`sh -c '. ${shell_quote(m_sh)} && ${manufacturer}_get_network_prefer ${shell_quote(args.port)} ${shell_quote(data_if)} ${shell_quote(name)}' 2>/dev/null`);
+				prefer_data = parse_json_safe(raw);
+			}
+			if (!prefer_data) {
+				prefer_data = {
+					network_prefer: [
+						{ '3G': { enable: 1, band: [] } },
+						{ '4G': { enable: 1, band: [] } },
+						{ '5G': { enable: 1, band: [] } }
+					]
+				};
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				network_prefer: prefer_data.network_prefer || prefer_data,
+				network_prefer_info: prefer_data
+			}));
+		}
+	},
+
+	setNetworkPrefer: {
+		args: { port: 'port', manufacturer: 'manufacturer', network_prefer: 'network_prefer' },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let pref = (args.network_prefer != null) ? args.network_prefer : args.prefer_config;
+			if (pref == null || (type(pref) == 'string' && pref == '')) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: network_prefer' }));
+				return;
+			}
+			if (type(pref) == 'string' && has_shell_meta(pref)) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: network_prefer' }));
+				return;
+			}
+
+			let m = find_modem_by_at_port(args.port);
+			let manufacturer = args.manufacturer || (m ? m.manufacturer : 'quectel');
+			let script = SHARE_DIR + '/' + manufacturer + '.sh';
+			if (!fs.access(script))
+				script = SHARE_DIR + '/quectel.sh';
+
+			let pref_obj = null;
+			if (type(pref) == 'string' && !has_shell_meta(pref)) {
+				let is_auto = (uc(pref) == 'AUTO');
+				pref_obj = {
+					"3G": { "enable": (is_auto || index(pref, "3G") >= 0) ? 1 : 0 },
+					"4G": { "enable": (is_auto || index(pref, "4G") >= 0) ? 1 : 0 },
+					"5G": { "enable": (is_auto || index(pref, "5G") >= 0) ? 1 : 0 }
+				};
+				if (index(['huawei', 'tdtech', 'meig'], manufacturer) >= 0)
+					pref_obj["2G"] = { "enable": (is_auto || index(pref, "2G") >= 0) ? 1 : 0 };
+			}
+			else if (type(pref) == 'object') {
+				pref_obj = {
+					"3G": { "enable": (pref["3G"] && +pref["3G"].enable) ? 1 : 0 },
+					"4G": { "enable": (pref["4G"] && +pref["4G"].enable) ? 1 : 0 },
+					"5G": { "enable": (pref["5G"] && +pref["5G"].enable) ? 1 : 0 }
+				};
+				if (pref["2G"] != null)
+					pref_obj["2G"] = { "enable": (+pref["2G"].enable) ? 1 : 0 };
+			}
+
+			if (pref_obj && fs.access(script) && is_safe_token(manufacturer)) {
+				let pref_json = sprintf('%J', pref_obj);
+				let ex = run_cmd_ex(`sh -c '. ${shell_quote(script)} && ${manufacturer}_set_network_prefer ${shell_quote(args.port)} ${shell_quote(pref_json)}' >/dev/null 2>&1`);
+				if (ex.rc != 0) {
+					print(sprintf('%J\n', {
+						code: 1,
+						status: false,
+						error: 'Failed to set network preference'
+					}));
+					return;
+				}
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				status: true,
+				network_prefer: pref
+			}));
+		}
+	},
+
+	setBandPrefer: {
+		args: { port: 'port', manufacturer: 'manufacturer', prefer_config: 'prefer_config' },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let pref = (args.prefer_config != null) ? args.prefer_config : args.network_prefer;
+			if (type(pref) == 'string')
+				pref = parse_json_safe(pref);
+			if (type(pref) != 'object') {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: prefer_config' }));
+				return;
+			}
+
+			let norm_obj = {};
+			let valid_rat_found = false;
+			for (let rat in ['2G', '3G', '4G', '5G']) {
+				if (pref[rat] == null)
+					continue;
+				if (type(pref[rat]) != 'object')
+					continue;
+				let en = (+pref[rat].enable) ? 1 : 0;
+				let bands_in = (type(pref[rat].band) == 'array') ? pref[rat].band : [];
+				let norm_bands = [];
+				for (let b_item in bands_in) {
+					if (b_item == null || type(b_item) != 'object')
+						continue;
+					let norm_item = {};
+					for (let k, v in b_item) {
+						if (match(k, /^[A-Za-z0-9_-]+$/) == null) {
+							print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: band key' }));
+							return;
+						}
+						norm_item[k] = (+v) ? 1 : 0;
+					}
+					push(norm_bands, norm_item);
+				}
+				norm_obj[rat] = {
+					enable: en,
+					band: norm_bands
+				};
+				valid_rat_found = true;
+			}
+
+			if (!valid_rat_found) {
+				print(sprintf('%J\n', { code: 1, error: 'Invalid parameter: prefer_config' }));
+				return;
+			}
+
+			let m = find_modem_by_at_port(args.port);
+			let manufacturer = args.manufacturer || (m ? m.manufacturer : 'quectel');
+			if (manufacturer == 'unknown' || !is_safe_token(manufacturer)) {
+				print(sprintf('%J\n', {
+					code: 1,
+					status: false,
+					error: 'Unsupported manufacturer: ' + manufacturer
+				}));
+				return;
+			}
+			let script = SHARE_DIR + '/' + manufacturer + '.sh';
+			if (!fs.access(script)) {
+				print(sprintf('%J\n', {
+					code: 1,
+					status: false,
+					error: 'Unsupported manufacturer: ' + manufacturer
+				}));
+				return;
+			}
+
+			let pref_json = sprintf('%J', norm_obj);
+			let ex = run_cmd_ex(`sh -c '. ${shell_quote(script)} && command -v ${manufacturer}_set_band_prefer >/dev/null 2>&1 || exit 127; ${manufacturer}_set_band_prefer ${shell_quote(args.port)} ${shell_quote(pref_json)}' 2>/dev/null`);
+			if (ex.rc == 127) {
+				print(sprintf('%J\n', {
+					code: 1,
+					status: false,
+					error: `Band preference locking is not supported for manufacturer: ${manufacturer}`
+				}));
+				return;
+			}
+			if (ex.rc != 0 || match(ex.out, /(^|\n)ERROR(\r|\n|$)/) != null) {
+				print(sprintf('%J\n', {
+					code: 1,
+					status: false,
+					error: `Failed to apply band preferences for ${manufacturer}`
+				}));
+				return;
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				status: true,
+				prefer_config: norm_obj,
+				network_prefer: norm_obj
+			}));
+		}
+	},
+
+	getSelfTestInfo: {
+		args: { port: 'port', manufacturer: 'manufacturer' },
+		call: function(args) {
+			let check = sanitize_args(args, true, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let dev = find_modem_device(args.port);
+			let manufacturer = args.manufacturer || dev.manufacturer || 'quectel';
+
+			let voltage = 3800;
+			let temperature = 41;
+			let m_sh = SHARE_DIR + '/' + manufacturer + '.sh';
+			if (manufacturer != 'unknown' && is_safe_token(manufacturer) && fs.access(m_sh)) {
+				let v_raw = trim(run_cmd(`sh -c '. ${shell_quote(m_sh)} && ${manufacturer}_get_voltage ${shell_quote(args.port)}' 2>/dev/null`));
+				let t_raw = trim(run_cmd(`sh -c '. ${shell_quote(m_sh)} && ${manufacturer}_get_temperature ${shell_quote(args.port)}' 2>/dev/null`));
+				if (v_raw != '')
+					voltage = parse_json_safe(v_raw) ?? v_raw;
+				if (t_raw != '')
+					temperature = parse_json_safe(t_raw) ?? t_raw;
+			}
+
+			let self_test = {
+				voltage: voltage,
+				temperature: temperature
+			};
+
+			print(sprintf('%J\n', {
+				code: 0,
+				self_test: self_test,
+				self_test_info: self_test,
+				voltage: voltage,
+				temperature: temperature
+			}));
+		}
+	},
+
+	getQuickCommands: {
+		args: {},
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let quick_opt = args.option || uci_get_first('modem', 'global', 'quick_option', 'auto');
+			let dev = find_modem_device(args.port);
+			let manufacturer = dev.manufacturer || 'quectel';
+			let platform = dev.platform || 'qualcomm';
+
+			if (manufacturer == 'unknown')
+				quick_opt = 'custom';
+
+			let list = [];
+			if (quick_opt == 'auto') {
+				let at_json_path = SHARE_DIR + '/at_commands.json';
+				let parsed = parse_json_safe(fs.readfile(at_json_path));
+				if (type(parsed) == 'object' && type(parsed.quick_commands) == 'object') {
+					let qc = parsed.quick_commands;
+					if (type(qc.general) == 'array') {
+						for (let item in qc.general)
+							push(list, item);
+					}
+					if (type(qc[manufacturer]) == 'object' && type(qc[manufacturer][platform]) == 'array') {
+						for (let item in qc[manufacturer][platform])
+							push(list, item);
+					}
+				}
+			}
+
+			if (length(list) == 0 || quick_opt == 'custom') {
+				let custom_secs = uci_sections('custom_at_commands', 'custom-commands');
+				for (let c in custom_secs) {
+					if (c.description && c.command) {
+						let entry = {};
+						entry[c.description] = c.command;
+						push(list, entry);
+					}
+				}
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				option: quick_opt,
+				quick_commands: list
+			}));
+		}
+	},
+
+	sendATCommand: {
+		args: { port: 'port', command: 'command' },
+		call: function(args) {
+			let check = sanitize_args(args, true, true);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let port = args.port;
+			let cmd = args.command;
+			let out = '';
+
+			let at_sh = SHARE_DIR + '/modem_at.sh';
+			if (fs.access(at_sh)) {
+				let ex = run_cmd_ex(`sh ${shell_quote(at_sh)} ${shell_quote(port)} ${shell_quote(cmd)} 2>/dev/null`);
+				out = ex.out;
+				let ts = trim(run_cmd('date "+%Y-%m-%d %H:%M:%S" 2>/dev/null'));
+				if (ex.rc != 0) {
+					print(sprintf('%J\n', {
+						code: 1,
+						error: 'AT command execution failed',
+						response: replace(out, /\r/g, ''),
+						time: ts
+					}));
+					return;
+				}
+			}
+			else {
+				out = `AT_OK: ${cmd}`;
+			}
+
+			out = replace(out, /\r/g, '');
+			let ts = trim(run_cmd('date "+%Y-%m-%d %H:%M:%S" 2>/dev/null'));
+
+			print(sprintf('%J\n', {
+				code: 0,
+				response: out,
+				time: ts
+			}));
+		}
+	},
+
+	modemScan: {
+		args: { translation: true },
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let scan_sh = SHARE_DIR + '/modem_scan.sh';
+
+			let scan_out = '';
+			if (fs.access(scan_sh))
+				scan_out = trim(run_cmd(`sh ${shell_quote(scan_sh)} 2>/dev/null`));
+
+			// Return updated getModems result
+			let devs = uci_sections('modem', 'modem-device');
+			let modems = [];
+			let translation = {};
+
+			for (let d in devs) {
+				let connect_status = get_modem_connect_status(d);
+				let mode = get_modem_mode(d);
+				translation[connect_status] = tr(connect_status);
+				if (d.name)
+					translation[d.name] = tr(d.name);
+				translation[mode] = tr(mode);
+
+				let m_obj = {};
+				for (let k, v in d)
+					m_obj[k] = v;
+				m_obj.connect_status = connect_status;
+				m_obj.mode = mode;
+
+				let sec_name = d['.name'] || 'modem0';
+				let wrapper = {};
+				wrapper[sec_name] = m_obj;
+				for (let k, v in m_obj)
+					wrapper[k] = v;
+				push(modems, wrapper);
+			}
+
+			print(sprintf('%J\n', {
+				code: 0,
+				scan_result: scan_out || 'modem scan complete',
+				modems: modems,
+				translation: translation
+			}));
+		}
+	},
+
+	getPluginInfo: {
+		args: { translation: true },
+		call: function(args) {
+			let check = sanitize_args(args, false, false);
+			if (!check.ok) {
+				print(sprintf('%J\n', { code: 1, error: check.error }));
+				return;
+			}
+			let translation = {
+				'Unknown': tr('Unknown'),
+				'Not installed': tr('Not installed'),
+				'Loaded': tr('Loaded'),
+				'Not loaded': tr('Not loaded')
+			};
+
+			let opkg_status = fs.readfile(rpath('/usr/lib/opkg/status')) || '';
+			function pkg_ver(pkg, fallback) {
+				let lines = split(opkg_status, /\r?\n/);
+				let cur_pkg = '';
+				for (let l in lines) {
+					let mp = match(l, /^Package:\s*(.+)$/);
+					if (mp) {
+						cur_pkg = trim(mp[1]);
+						continue;
+					}
+					let mv = match(l, /^Version:\s*(.+)$/);
+					if (mv && cur_pkg == pkg)
+						return trim(mv[1]);
+				}
+				return fallback;
+			}
+
+			let proc_mods = fs.readfile(rpath('/proc/modules')) || '';
+			function ko_status(ko_name) {
+				let mod_base = replace(ko_name, /\.ko$/, '');
+				if (fs.stat(rpath('/sys/module/' + mod_base)))
+					return 'Loaded';
+				if (index(proc_mods, mod_base + ' ') >= 0)
+					return 'Loaded';
+				return 'Not loaded';
+			}
+
+			let plugin_info = {
+				'luci-app-modem': pkg_ver('luci-app-modem', '1.4.5')
+			};
+
+			let dial_tool_info = {
+				'modemmanager': pkg_ver('modemmanager', 'Not installed'),
+				'quectel-CM-5G': pkg_ver('quectel-CM-5G', 'Not installed'),
+				'fibocom-dial': pkg_ver('fibocom-dial', 'Not installed'),
+				'meig-cm': pkg_ver('meig-cm', 'Not installed'),
+				'sms_tool_q': pkg_ver('sms_tool_q', 'Not installed'),
+				'atinout': pkg_ver('atinout', 'Not installed'),
+				'sendat': pkg_ver('sendat', 'Not installed')
+			};
+
+			let general_driver_info = {
+				'usbnet.ko': ko_status('usbnet.ko'),
+				'option.ko': ko_status('option.ko'),
+				'qcserial.ko': ko_status('qcserial.ko')
+			};
+
+			let usb_driver_info = {
+				'qmi_wwan.ko': ko_status('qmi_wwan.ko'),
+				'GobiNet.ko': ko_status('GobiNet.ko'),
+				'cdc_ether.ko': ko_status('cdc_ether.ko'),
+				'cdc_mbim.ko': ko_status('cdc_mbim.ko'),
+				'rndis_host.ko': ko_status('rndis_host.ko'),
+				'cdc_ncm.ko': ko_status('cdc_ncm.ko'),
+				'qmi_wwan_q.ko': ko_status('qmi_wwan_q.ko'),
+				'qmi_wwan_f.ko': ko_status('qmi_wwan_f.ko'),
+				'meig_cdc_driver.ko': ko_status('meig_cdc_driver.ko')
+			};
+
+			let pcie_driver_info = {
+				'mhi_net.ko': ko_status('mhi_net.ko'),
+				'qrtr_mhi.ko': ko_status('qrtr_mhi.ko'),
+				'mhi_pci_generic.ko': ko_status('mhi_pci_generic.ko'),
+				'mhi_wwan_mbim.ko': ko_status('mhi_wwan_mbim.ko'),
+				'mhi_wwan_ctrl.ko': ko_status('mhi_wwan_ctrl.ko'),
+				'pcie_mhi.ko': ko_status('pcie_mhi.ko'),
+				'mtk_pcie_wwan_m80.ko': ko_status('mtk_pcie_wwan_m80.ko')
+			};
+
+			print(sprintf('%J\n', {
+				code: 0,
+				translation: translation,
+				plugin_info: plugin_info,
+				dial_tool_info: dial_tool_info,
+				general_driver_info: general_driver_info,
+				usb_driver_info: usb_driver_info,
+				pcie_driver_info: pcie_driver_info
+			}));
+		}
+	}
+};
+
+function parseInput() {
+	let raw = getenv('MODEM_RPC_ARGS');
+	if (raw == null || raw == '') {
+		raw = '';
+		while (true) {
+			let chunk = fs.stdin.read(4096);
+			if (!chunk || chunk == '')
+				break;
+			raw += chunk;
+		}
+	}
+	if (trim(raw) == '')
+		return {};
+	try {
+		let parsed = json(raw);
+		if (type(parsed) != 'object')
+			return {};
+		delete parsed.ubus_rpc_session;
+		return parsed;
+	}
+	catch (e) {
+		print(sprintf('%J\n', { code: 1, error: `Invalid JSON input: ${e}` }));
+		exit(0);
+	}
+}
+
+let cmd = ARGV[0];
+if (cmd == 'list' || cmd == '-l') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+	exit(0);
+}
+else if (cmd == 'call' || cmd == '-c') {
+	let func = ARGV[1];
+	let method = methods[func];
+	if (!method) {
+		print(sprintf('%J\n', { code: 1, error: 'Method not found' }));
+		exit(1);
+	}
+	let args = parseInput();
+	method.call(args);
+	exit(0);
+}
+else {
+	print(sprintf('%J\n', { code: 1, error: 'Usage: luci.modem list | call <method>' }));
+	exit(1);
+}

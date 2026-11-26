@@ -1,0 +1,66 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-hypermodem\n"
+"Language: zh_Hans\n"
+
+msgid "APN"
+msgstr "接入点 APN"
+
+msgid "After checking, enable network interface bridge."
+msgstr "勾选后，启用网络接口桥接。"
+
+msgid "Authentication Type"
+msgstr "认证类型"
+
+msgid "Auto Choose"
+msgstr "自动选择"
+
+msgid "Base Setting"
+msgstr "基本设置"
+
+msgid "China Broadcast"
+msgstr "中国广电"
+
+msgid "China Mobile"
+msgstr "中国移动"
+
+msgid "China Telecom"
+msgstr "中国电信"
+
+msgid "China Unicom"
+msgstr "中国联通"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "Enable IPv6"
+msgstr "启用IPv6协商"
+
+msgid "Enable Network bridge"
+msgstr "启用网络桥架"
+
+msgid "Hyper Modem Server"
+msgstr "超级移动网络拨号服务"
+
+msgid "Modem Server For OpenWrt"
+msgstr "OpenWrt移动网络拨号服务"
+
+msgid "Modem device"
+msgstr "调制解调器设备"
+
+msgid "NONE"
+msgstr "无"
+
+msgid "PAP/CHAP (both)"
+msgstr "PAP/CHAP (均使用)"
+
+msgid "PAP/CHAP Password"
+msgstr "PAP/CHAP 密码"
+
+msgid "PAP/CHAP Username"
+msgstr "PAP/CHAP 用户名"
+
+msgid "Skytone"
+msgstr "天际通"
+

@@ -1,0 +1,41 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-gobinetmodem\n"
+
+msgid "-- Please choose --"
+msgstr ""
+
+msgid "APN"
+msgstr ""
+
+msgid "Authentication Type"
+msgstr ""
+
+msgid "Base Setting"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Gobinet Modem Server"
+msgstr ""
+
+msgid "Modem Server For OpenWrt"
+msgstr ""
+
+msgid "PAP/CHAP password"
+msgstr ""
+
+msgid "PAP/CHAP username"
+msgstr ""
+
+msgid "PIN"
+msgstr ""
+
+msgid "Tools"
+msgstr ""
+
+msgid "gobinet Modem Server"
+msgstr ""
+

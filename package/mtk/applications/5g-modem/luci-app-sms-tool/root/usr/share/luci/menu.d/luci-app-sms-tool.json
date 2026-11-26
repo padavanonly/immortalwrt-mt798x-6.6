@@ -1,0 +1,68 @@
+{
+	"admin/modem/sms": {
+		"title": "SMS Messages",
+		"order": 20,
+		"action": {
+			"type": "alias",
+			"path": "admin/modem/sms/readsms"
+		},
+		"acl": [
+			"luci-app-sms-tool"
+		]
+	},
+	"admin/modem/sms/readsms": {
+		"title": "Received Messages",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "modem/readsms"
+		},
+		"acl": [
+			"luci-app-sms-tool"
+		]
+	},
+	"admin/modem/sms/sendsms": {
+		"title": "Send Messages",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "modem/sendsms"
+		},
+		"acl": [
+			"luci-app-sms-tool"
+		]
+	},
+	"admin/modem/sms/ussd": {
+		"title": "USSD Codes",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "modem/ussd"
+		},
+		"acl": [
+			"luci-app-sms-tool"
+		]
+	},
+	"admin/modem/sms/atcommands": {
+		"title": "AT Commands",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "modem/atcommands"
+		},
+		"acl": [
+			"luci-app-sms-tool"
+		]
+	},
+	"admin/modem/sms/smsconfig": {
+		"title": "Configuration",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "modem/smsconfig"
+		},
+		"acl": [
+			"luci-app-sms-tool"
+		]
+	}
+}
