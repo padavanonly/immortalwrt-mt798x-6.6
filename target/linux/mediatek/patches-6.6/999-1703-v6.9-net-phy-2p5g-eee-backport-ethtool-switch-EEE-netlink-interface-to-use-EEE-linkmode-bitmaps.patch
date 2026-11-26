@@ -466,7 +466,7 @@
  		return -EOPNOTSUPP;
 --- a/drivers/net/ethernet/broadcom/genet/bcmgenet.h
 +++ b/drivers/net/ethernet/broadcom/genet/bcmgenet.h
-@@ -647,7 +647,7 @@ struct bcmgenet_priv {
+@@ -662,7 +662,7 @@ struct bcmgenet_priv {
  
  	struct bcmgenet_mib_counters mib;
  
@@ -474,7 +474,7 @@
 +	struct ethtool_keee eee;
  };
  
- #define GENET_IO_MACRO(name, offset)					\
+ static inline bool bcmgenet_has_40bits(struct bcmgenet_priv *priv)
 --- a/drivers/net/ethernet/broadcom/tg3.c
 +++ b/drivers/net/ethernet/broadcom/tg3.c
 @@ -2339,10 +2339,10 @@ static void tg3_phy_apply_otp(struct tg3
@@ -2044,27 +2044,3 @@
  	if (!ret)
  		ethtool_notify(dev, ETHTOOL_MSG_EEE_NTF, NULL);
  	return ret;
---- a/drivers/net/ethernet/microchip/lan743x_ethtool.c
-+++ b/drivers/net/ethernet/microchip/lan743x_ethtool.c
-@@ -1088,7 +1088,7 @@ static int lan743x_ethtool_get_eee(struct net_device *netdev,
- 	buf = lan743x_csr_read(adapter, MAC_CR);
- 	if (buf & MAC_CR_EEE_EN_) {
- 		eee->eee_enabled = true;
--		eee->eee_active = !!(eee->advertised & eee->lp_advertised);
-+		eee->eee_active = !!(eee->advertised_u32 & eee->lp_advertised_u32);
- 		eee->tx_lpi_enabled = true;
- 		/* EEE_TX_LPI_REQ_DLY & tx_lpi_timer are same uSec unit */
- 		buf = lan743x_csr_read(adapter, MAC_EEE_TX_LPI_REQ_DLY_CNT);
---- a/drivers/net/usb/lan78xx.c
-+++ b/drivers/net/usb/lan78xx.c
-@@ -1693,8 +1693,8 @@ static int lan78xx_get_eee(struct net_device *net, struct ethtool_keee *edata)
- 	ret = lan78xx_read_reg(dev, MAC_CR, &buf);
- 	if (buf & MAC_CR_EEE_EN_) {
- 		edata->eee_enabled = true;
--		edata->eee_active = !!(edata->advertised &
--				       edata->lp_advertised);
-+		edata->eee_active = !!(edata->advertised_u32 &
-+				       edata->lp_advertised_u32);
- 		edata->tx_lpi_enabled = true;
- 		/* EEE_TX_LPI_REQ_DLY & tx_lpi_timer are same uSec unit */
- 		ret = lan78xx_read_reg(dev, EEE_TX_LPI_REQ_DLY, &buf);

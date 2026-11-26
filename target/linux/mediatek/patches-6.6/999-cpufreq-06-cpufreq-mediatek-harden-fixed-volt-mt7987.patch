@@ -1,0 +1,114 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] cpufreq: mediatek: harden fixed-voltage scaling and transition delay for MT7987
+
+Avoid divide-by-zero in vtrack_max when min_volt_shift is zero on
+fixed-voltage SoCs such as MT7987, allow optional proc regulator when
+proc_fixed_volt is set, and tune transition_delay_us to 2000 us for
+responsive ARMPLL-only schedutil scaling.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/cpufreq/mediatek-cpufreq.c	2026-11-23 11:58:46.290162520 +0800
++++ b/drivers/cpufreq/mediatek-cpufreq.c	2026-11-23 11:58:46.303992142 +0800
+@@ -276,10 +276,14 @@ static int mtk_cpufreq_set_target(struct
+ 
+ 	mutex_lock(&info->reg_lock);
+ 
+-	if (unlikely(info->pre_vproc <= 0))
+-		pre_vproc = regulator_get_voltage(info->proc_reg);
+-	else
++	if (unlikely(info->pre_vproc <= 0)) {
++		if (info->soc_data->proc_fixed_volt && !info->proc_reg)
++			pre_vproc = info->intermediate_voltage;
++		else
++			pre_vproc = regulator_get_voltage(info->proc_reg);
++	} else {
+ 		pre_vproc = info->pre_vproc;
++	}
+ 
+ 	if (pre_vproc < 0) {
+ 		dev_err(cpu_dev, "invalid Vproc value: %d\n", pre_vproc);
+@@ -485,15 +489,21 @@ static int mtk_cpu_dvfs_info_init(struct
+ 	info->proc_reg = regulator_get_optional(cpu_dev, "proc");
+ 	if (IS_ERR(info->proc_reg)) {
+ 		ret = PTR_ERR(info->proc_reg);
+-		dev_err_probe(cpu_dev, ret,
+-			      "cpu%d: failed to get proc regulator\n", cpu);
+-		goto out_free_inter_clock;
+-	}
+-
+-	ret = regulator_enable(info->proc_reg);
+-	if (ret) {
+-		dev_warn(cpu_dev, "cpu%d: failed to enable vproc\n", cpu);
+-		goto out_free_proc_reg;
++		if (info->soc_data->proc_fixed_volt && ret == -ENODEV) {
++			info->proc_reg = NULL;
++		} else {
++			dev_err_probe(cpu_dev, ret,
++				      "cpu%d: failed to get proc regulator\n",
++				      cpu);
++			goto out_free_inter_clock;
++		}
++	} else {
++		ret = regulator_enable(info->proc_reg);
++		if (ret) {
++			dev_warn(cpu_dev, "cpu%d: failed to enable vproc\n",
++				 cpu);
++			goto out_free_proc_reg;
++		}
+ 	}
+ 
+ 	/* Both presence and absence of sram regulator are valid cases. */
+@@ -577,9 +587,12 @@ static int mtk_cpu_dvfs_info_init(struct
+ 	 * min_volt_shift for each iteration.
+ 	 * The vtrack_max is 3 times of expeted iteration count.
+ 	 */
+-	info->vtrack_max = 3 * DIV_ROUND_UP(max(info->soc_data->sram_max_volt,
+-						info->soc_data->proc_max_volt),
+-					    info->soc_data->min_volt_shift);
++	if (info->need_voltage_tracking && info->soc_data->min_volt_shift)
++		info->vtrack_max = 3 * DIV_ROUND_UP(max(info->soc_data->sram_max_volt,
++							info->soc_data->proc_max_volt),
++						    info->soc_data->min_volt_shift);
++	else
++		info->vtrack_max = 0;
+ 
+ 	return 0;
+ 
+@@ -601,10 +614,12 @@ out_free_sram_reg:
+ 		regulator_put(info->sram_reg);
+ 
+ out_disable_proc_reg:
+-	regulator_disable(info->proc_reg);
++	if (info->proc_reg)
++		regulator_disable(info->proc_reg);
+ 
+ out_free_proc_reg:
+-	regulator_put(info->proc_reg);
++	if (info->proc_reg)
++		regulator_put(info->proc_reg);
+ 
+ out_free_inter_clock:
+ 	clk_put(info->inter_clk);
+@@ -617,8 +632,10 @@ out_free_mux_clock:
+ 
+ static void mtk_cpu_dvfs_info_release(struct mtk_cpu_dvfs_info *info)
+ {
+-	regulator_disable(info->proc_reg);
+-	regulator_put(info->proc_reg);
++	if (info->proc_reg) {
++		regulator_disable(info->proc_reg);
++		regulator_put(info->proc_reg);
++	}
+ 	if (info->sram_reg) {
+ 		regulator_disable(info->sram_reg);
+ 		regulator_put(info->sram_reg);
+@@ -665,6 +682,8 @@ static int mtk_cpufreq_init(struct cpufr
+ 	policy->freq_table = freq_table;
+ 	policy->driver_data = info;
+ 	policy->clk = info->cpu_clk;
++	if (info->soc_data->proc_fixed_volt)
++		policy->transition_delay_us = 2000;
+ 
+ 	return 0;
+ }

@@ -15,14 +15,14 @@ Subject: [PATCH] mtd: spinand: add support for HeYangTek HYF1GQ4UDACAE
 +++ b/drivers/mtd/nand/spi/Makefile
 @@ -1,5 +1,5 @@
  # SPDX-License-Identifier: GPL-2.0
- spinand-objs := core.o alliancememory.o ato.o esmt.o etron.o fidelix.o fmsh.o foresee.o gigadevice.o
+ spinand-objs := core.o alliancememory.o ato.o esmt.o etron.o fmsh.o foresee.o gigadevice.o
 -spinand-objs += dosilicon.o gsto.o
 +spinand-objs += dosilicon.o gsto.o heyangtek.o
  spinand-objs += macronix.o micron.o paragon.o toshiba.o winbond.o xtx.o
  obj-$(CONFIG_MTD_SPI_NAND) += spinand.o
 --- a/drivers/mtd/nand/spi/core.c
 +++ b/drivers/mtd/nand/spi/core.c
-@@ -1016,6 +1016,7 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
+@@ -1015,6 +1015,7 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
  	&foresee_spinand_manufacturer,
  	&gigadevice_spinand_manufacturer,
  	&gsto_spinand_manufacturer,
@@ -147,7 +147,7 @@ Subject: [PATCH] mtd: spinand: add support for HeYangTek HYF1GQ4UDACAE
 +};
 --- a/include/linux/mtd/spinand.h
 +++ b/include/linux/mtd/spinand.h
-@@ -324,6 +324,7 @@ extern const struct spinand_manufacturer fidelix_spinand_manufacturer;
+@@ -323,6 +323,7 @@ extern const struct spinand_manufacturer fmsh_spinand_manufacturer;
  extern const struct spinand_manufacturer foresee_spinand_manufacturer;
  extern const struct spinand_manufacturer gigadevice_spinand_manufacturer;
  extern const struct spinand_manufacturer gsto_spinand_manufacturer;

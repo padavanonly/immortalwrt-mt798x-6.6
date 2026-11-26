@@ -1,0 +1,54 @@
+---
+[v1] clk: mediatek: mt7981: mark SEJ clocks as critical
+
+Mark clocks used by OP-TEE driver as CLK_IS_CRITICAL to prevent them from being
+disabled during the kernel's unused clock cleanup flow. The driver implementation
+is not in kernel space but in OP-TEE, so we keep these clocks critical to prevent
+them from being disabled by the kernel clock framework.
+---
+v2: Rename from 999-clk-06-clk-mediatek-mt7986-mark-sej-clks-as-critical.patch
+v1: Move openwrt-master files to openwrt-25.12 branch after OpenWrt official
+    25.12 branch release.
+---
+
+diff --git a/drivers/clk/mediatek/clk-mt7981-infracfg.c b/drivers/clk/mediatek/clk-mt7981-infracfg.c
+index 0487b6bb8..4c1f72aea 100644
+--- a/drivers/clk/mediatek/clk-mt7981-infracfg.c
++++ b/drivers/clk/mediatek/clk-mt7981-infracfg.c
+@@ -98,6 +98,22 @@ static const struct mtk_gate_regs infra2_cg_regs = {
+ 	.sta_ofs = 0x68,
+ };
+ 
++#define GATE_INFRA0_FLAGS(_id, _name, _parent, _shift, _flags)                                 \
++	GATE_MTK_FLAGS(_id, _name, _parent, &infra0_cg_regs, _shift, &mtk_clk_gate_ops_setclr, \
++		       _flags)
++
++#define GATE_INFRA1_FLAGS(_id, _name, _parent, _shift, _flags)                                 \
++	GATE_MTK_FLAGS(_id, _name, _parent, &infra1_cg_regs, _shift, &mtk_clk_gate_ops_setclr, \
++		       _flags)
++
++#define GATE_INFRA2_FLAGS(_id, _name, _parent, _shift, _flags)                                 \
++	GATE_MTK_FLAGS(_id, _name, _parent, &infra2_cg_regs, _shift, &mtk_clk_gate_ops_setclr, \
++		       _flags)
++
++#define GATE_INFRA3_FLAGS(_id, _name, _parent, _shift, _flags)                                 \
++	GATE_MTK_FLAGS(_id, _name, _parent, &infra3_cg_regs, _shift, &mtk_clk_gate_ops_setclr, \
++		       _flags)
++
+ #define GATE_INFRA0(_id, _name, _parent, _shift)                               \
+ 	{                                                                      \
+ 		.id = _id, .name = _name, .parent_name = _parent,              \
+@@ -137,8 +153,8 @@ static const struct mtk_gate infra_clks[] = {
+ 		    14),
+ 	GATE_INFRA0(CLK_INFRA_DBG_CK, "infra_dbg", "infra_66m_mck", 15),
+ 	GATE_INFRA0(CLK_INFRA_AP_DMA_CK, "infra_ap_dma", "infra_66m_mck", 16),
+-	GATE_INFRA0(CLK_INFRA_SEJ_CK, "infra_sej", "infra_66m_mck", 24),
+-	GATE_INFRA0(CLK_INFRA_SEJ_13M_CK, "infra_sej_13m", "csw_f26m_sel", 25),
++	GATE_INFRA0_FLAGS(CLK_INFRA_SEJ_CK, "infra_sej", "infra_66m_mck", 24, CLK_IS_CRITICAL),
++	GATE_INFRA0_FLAGS(CLK_INFRA_SEJ_13M_CK, "infra_sej_13m", "csw_f26m_sel", 25, CLK_IS_CRITICAL),
+ 	GATE_INFRA0(CLK_INFRA_PWM3_CK, "infra_pwm3", "infra_pwm3_sel", 27),
+ 	/* INFRA1 */
+ 	GATE_INFRA1(CLK_INFRA_THERM_CK, "infra_therm", "csw_f26m_sel", 0),
+-- 
+2.45.2
+

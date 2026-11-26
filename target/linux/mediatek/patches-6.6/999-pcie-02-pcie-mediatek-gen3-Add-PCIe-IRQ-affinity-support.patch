@@ -416,11 +416,11 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
 -	int err;
 +	int err, i;
  
- 	err = mtk_pcie_init_irq_domains(pcie);
- 	if (err)
-@@ -806,7 +1005,14 @@ static int mtk_pcie_setup_irq(struct mtk
+ 	pcie->irq = platform_get_irq(pdev, 0);
  	if (pcie->irq < 0)
- 		return pcie->irq;
+@@ -809,7 +1008,14 @@ static int mtk_pcie_setup_irq(struct mtk
+ 	if (err)
+ 		return err;
  
 -	irq_set_chained_handler_and_data(pcie->irq, mtk_pcie_irq_handler, pcie);
 +	for (i = 0; i < pcie->num_irqs; i++) {

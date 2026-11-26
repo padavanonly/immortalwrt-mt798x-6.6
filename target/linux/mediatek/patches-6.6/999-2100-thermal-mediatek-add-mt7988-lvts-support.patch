@@ -131,7 +131,7 @@ Without this patch, the behavior of LVTS will not be as expected.
  #ifdef CONFIG_MTK_LVTS_THERMAL_DEBUGFS
  
  #define LVTS_DEBUG_FS_REGS(__reg)		\
-@@ -316,6 +353,39 @@ static int lvts_get_temp(struct thermal_
+@@ -357,6 +394,39 @@ static int lvts_get_temp(struct thermal_
  	return 0;
  }
  
@@ -170,7 +170,7 @@ Without this patch, the behavior of LVTS will not be as expected.
 +
  static void lvts_update_irq_mask(struct lvts_ctrl *lvts_ctrl)
  {
- 	u32 masks[] = {
+ 	static const u32 high_offset_inten_masks[] = {
 @@ -375,36 +445,39 @@ static int lvts_set_trips(struct thermal
  		lvts_ctrl->high_thresh = high;
  		lvts_ctrl->low_thresh = low;

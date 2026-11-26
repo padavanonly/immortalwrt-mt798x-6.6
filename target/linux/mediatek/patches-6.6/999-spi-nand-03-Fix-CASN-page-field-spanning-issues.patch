@@ -1,0 +1,38 @@
+---
+[v2] mtd: spinand: fix CASN page field-spanning write issues
+
+Fix field-spanning write warnings during CASN parameter page detection by
+replacing loop-based memory copy with explicit per-field assignment. This
+resolves compiler warnings and ensures correct endianness handling.
+---
+v2: Fix additional CASN page build warnings.
+v1: Fix field-spanning write warning during CASN page detection.
+---
+
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -1929,15 +1929,18 @@ static int spinand_init_via_casn(struct
+ 				 struct nand_casn *casn)
+ {
+ 	struct nand_device *nand = spinand_to_nand(spinand);
+-	u32 val;
+ 	int ret;
+-	int i;
+ 
+ 	/* Set members of nand->memorg via CASN. */
+-	for (i = 0; i < 9; i++) {
+-		val = be32_to_cpu(*(&casn->bits_per_cell + i));
+-		memcpy((u32 *)&nand->memorg.bits_per_cell + i, &val, sizeof(u32));
+-	}
++	nand->memorg.bits_per_cell = be32_to_cpu(casn->bits_per_cell);
++	nand->memorg.pagesize = be32_to_cpu(casn->bytes_per_page);
++	nand->memorg.oobsize = be32_to_cpu(casn->spare_bytes_per_page);
++	nand->memorg.pages_per_eraseblock = be32_to_cpu(casn->pages_per_block);
++	nand->memorg.eraseblocks_per_lun = be32_to_cpu(casn->blocks_per_lun);
++	nand->memorg.max_bad_eraseblocks_per_lun = be32_to_cpu(casn->max_bb_per_lun);
++	nand->memorg.planes_per_lun = be32_to_cpu(casn->planes_per_lun);
++	nand->memorg.luns_per_target = be32_to_cpu(casn->luns_per_target);
++	nand->memorg.ntargets = be32_to_cpu(casn->total_target);
+ 	nand->ecc.requirements.strength = be32_to_cpu(casn->ecc_strength);
+ 	nand->ecc.requirements.step_size = be32_to_cpu(casn->ecc_step_size);
+ 	spinand->flags = casn->flags;
