@@ -23,16 +23,23 @@ EXTRA_CFLAGS+= -Wall -Werror
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
-	$(CP) -r src/* $(PKG_BUILD_DIR)/
+	$(CP) -r ./src/* $(PKG_BUILD_DIR)/
+	$(Build/Patch)
 endef
 
 define Build/Compile
-	$(MAKE) -C "$(LINUX_DIR)" \
+	+$(MAKE) -C "$(LINUX_DIR)" \
 		$(KERNEL_MAKE_FLAGS) \
+		$(PKG_JOBS) \
 		M="$(PKG_BUILD_DIR)" \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		$(EXTRA_KCONFIG) \
 		modules
+endef
+
+define Build/InstallDev
+	$(INSTALL_DIR) $(1)/usr/include/mtk-pce
+	$(CP) $(PKG_BUILD_DIR)/inc/pce $(1)/usr/include/mtk-pce/
 endef
 
 # pce kernel package configuration
@@ -40,9 +47,11 @@ define KernelPackage/pce
   CATEGORY:=MTK Properties
   SUBMENU:=Drivers
   TITLE:= MTK Packet Classification Engine Driver
+  DEFAULT:=n
   FILES+=$(PKG_BUILD_DIR)/pce.ko
   KCONFIG:=
   DEPENDS:= \
+	@(TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) \
 	PACKAGE_kmod-mediatek_hnat:kmod-mediatek_hnat
 endef
 
@@ -59,6 +68,7 @@ define KernelPackage/pce-autoload
   CATEGORY:=MTK Properties
   SUBMENU:=Drivers
   TITLE:= MTK Packet Classification Engine Auto Load
+  DEFAULT:=n
   AUTOLOAD:=$(call AutoLoad,50,pce)
   KCONFIG:=
   DEPENDS:= \

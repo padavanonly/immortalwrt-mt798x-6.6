@@ -10,6 +10,7 @@
 #include <linux/uaccess.h>
 
 #include "pce/cls.h"
+#include "pce/cdrt.h"
 #include "pce/debugfs.h"
 #include "pce/dipfilter.h"
 #include "pce/internal.h"
@@ -446,6 +447,34 @@ static int cls_entry_debug_open(struct inode *inode, struct file *file)
 	return single_open(file, cls_entry_debug_read, file->private_data);
 }
 
+static ssize_t cdrt_debug_write(struct file *file, const char __user *buffer,
+					size_t count, loff_t *data)
+{
+	return 0;
+}
+static int cdrt_debug_read(struct seq_file *s, void *private)
+{
+	struct cdrt_desc desc;
+	int ret;
+	u32 i;
+
+	for (i = 1; i < (FE_MEM_CDRT_MAX_INDEX / 3) - 1; i++) {
+		ret = mtk_pce_cdrt_desc_read(&desc, i);
+
+		seq_printf(s, "CDRT Entry%02u, Type: %02u, aad len: %u\n", i,
+				desc.desc1.ipsec.type, desc.desc1.token_len);
+		seq_printf(s, "\tTransform Record Address: %x\n", desc.desc1.p_tr[0]);
+		seq_printf(s, "\tHW Service: %u\n", desc.desc2.hw_srv);
+	}
+
+	return 0;
+}
+
+static int cdrt_debug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, cdrt_debug_read, file->private_data);
+}
+
 static int dipfilter_debug_read(struct seq_file *s, void *private)
 {
 	struct dip_desc ddesc;
@@ -501,7 +530,11 @@ static ssize_t dipfilter_debug_write(struct file *file, const char __user *buffe
 
 	memset(&ddesc, 0, sizeof(struct dip_desc));
 
-	ret = sscanf(buf, "%4s %39s", arg, s_dip);
+	if (!strncmp(buf, "del", 3) || !strncmp(buf, "add", 3))
+		ret = sscanf(&buf[4], "%4s %39s", arg, s_dip);
+	else
+		ret = sscanf(buf, "%4s %39s", arg, s_dip);
+
 	if (ret != 2)
 		return -EINVAL;
 
@@ -521,10 +554,18 @@ static ssize_t dipfilter_debug_write(struct file *file, const char __user *buffe
 		return -EINVAL;
 	}
 
-	ret = mtk_pce_dipfilter_entry_add(&ddesc);
-	if (ret) {
-		PCE_ERR("add dipfilter entry failed: %d\n", ret);
-		return ret;
+	if (!strncmp(buf, "del", 3)) {
+		ret = mtk_pce_dipfilter_entry_del(&ddesc);
+		if (ret) {
+			PCE_ERR("del dipfilter entry failed: %d\n", ret);
+			return ret;
+		}
+	} else {
+		ret = mtk_pce_dipfilter_entry_add(&ddesc);
+		if (ret) {
+			PCE_ERR("add dipfilter entry failed: %d\n", ret);
+			return ret;
+		}
 	}
 
 	return count;
@@ -669,6 +710,14 @@ static ssize_t tport_map_debug_write(struct file *file, const char __user *buffe
 	return count;
 }
 
+static const struct file_operations cdrt_debug_ops = {
+	.open = cdrt_debug_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = cdrt_debug_write,
+	.release = single_release,
+};
+
 static const struct file_operations cls_entry_debug_ops = {
 	.open = cls_entry_debug_open,
 	.read = seq_read,
@@ -707,6 +756,8 @@ int mtk_pce_debugfs_init(struct platform_device *pdev)
 			    &dipfilter_debug_ops);
 	debugfs_create_file("tport_map", 0444, debug_root, NULL,
 			    &tport_map_debug_ops);
+	debugfs_create_file("cdrt", 0444, debug_root, NULL,
+				&cdrt_debug_ops);
 
 	return 0;
 }

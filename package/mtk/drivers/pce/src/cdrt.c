@@ -216,9 +216,9 @@ void mtk_pce_cdrt_entry_free(struct cdrt_entry *cdrt)
 	spin_lock_irqsave(&cdrt_hw.lock, flag);
 
 	if (cdrt->type == CDRT_ENCRYPT)
-		clear_bit(cdrt->idx, cdrt_hw.enc_used);
+		clear_bit(cdrt->idx - CDRT_ENC_IDX_OFS, cdrt_hw.enc_used);
 	else
-		clear_bit(cdrt->idx, cdrt_hw.dec_used);
+		clear_bit(cdrt->idx - CDRT_DEC_IDX_OFS, cdrt_hw.dec_used);
 
 	spin_unlock_irqrestore(&cdrt_hw.lock, flag);
 }

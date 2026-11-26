@@ -1,0 +1,531 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] pce: add MT7987 CDRT fallback and sport classifier support
+
+Guard CDRT hardware register accesses on platforms without CDRT support
+(such as MT7987), propagate classifier cleanup failures cleanly, and
+extend debugfs/sport classifier handling.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -uNr a/cdrt.c b/cdrt.c
+--- a/cdrt.c	2026-11-20 09:06:06.542286890 +0800
++++ b/cdrt.c	2026-11-20 09:06:06.549561601 +0800
+@@ -36,6 +36,9 @@
+ 	struct fe_mem_msg msg;
+ 	int ret;
+ 
++	if (!mtk_pce_has_cdrt())
++		return -ENODEV;
++
+ 	if (unlikely(!desc || idx >= FE_MEM_CDRT_MAX_INDEX / 3))
+ 		return -EINVAL;
+ 
+@@ -74,6 +77,9 @@
+ 	struct fe_mem_msg msg;
+ 	int ret;
+ 
++	if (!mtk_pce_has_cdrt())
++		return -ENODEV;
++
+ 	if (unlikely(!desc || idx >= FE_MEM_CDRT_MAX_INDEX / 3))
+ 		return -EINVAL;
+ 
+@@ -230,6 +236,9 @@
+ 	int ret = 0;
+ 	u32 i;
+ 
++	if (!mtk_pce_has_cdrt())
++		return;
++
+ 	memset(&msg.raw, 0, sizeof(msg.raw));
+ 
+ 	spin_lock_irqsave(&cdrt_hw.lock, flag);
+@@ -249,6 +258,9 @@
+ 
+ int mtk_pce_cdrt_enable(void)
+ {
++	if (!mtk_pce_has_cdrt())
++		return 0;
++
+ 	mtk_pce_netsys_setbits(GLO_MEM_CFG, CDM_CDRT_EN);
+ 
+ 	return 0;
+@@ -256,6 +268,9 @@
+ 
+ void mtk_pce_cdrt_disable(void)
+ {
++	if (!mtk_pce_has_cdrt())
++		return;
++
+ 	mtk_pce_netsys_clrbits(GLO_MEM_CFG, CDM_CDRT_EN);
+ }
+ 
+diff -uNr a/cls.c b/cls.c
+--- a/cls.c	2026-09-18 10:18:56.492055502 +0800
++++ b/cls.c	2026-11-20 09:06:06.548730272 +0800
+@@ -57,7 +57,7 @@
+ 	mtk_pce_netsys_clrbits(GLO_MEM_CFG, GDM_CLS_EN);
+ }
+ 
+-static void mtk_pce_cls_clean_up(void)
++static int mtk_pce_cls_clean_up(void)
+ {
+ 	struct fe_mem_msg msg = {
+ 		.cmd = FE_MEM_CMD_WRITE,
+@@ -81,15 +81,20 @@
+ 
+ unlock:
+ 	spin_unlock_irqrestore(&cls_hw.lock, flag);
++
++	return ret;
+ }
+ 
+ int mtk_pce_cls_init(struct platform_device *pdev)
+ {
++	int ret;
+ 	u32 i;
+ 
+ 	spin_lock_init(&cls_hw.lock);
+ 
+-	mtk_pce_cls_clean_up();
++	ret = mtk_pce_cls_clean_up();
++	if (ret)
++		return ret;
+ 
+ 	for (i = 0; i < FE_MEM_CLS_MAX_INDEX; i++)
+ 		cls_hw.cls_tbl[i].idx = i + 1;
+diff -uNr a/debugfs.c b/debugfs.c
+--- a/debugfs.c	2026-11-20 09:06:06.542530083 +0800
++++ b/debugfs.c	2026-11-20 09:06:06.551594555 +0800
+@@ -7,6 +7,7 @@
+ 
+ #include <linux/debugfs.h>
+ #include <linux/inet.h>
++#include <linux/of.h>
+ #include <linux/uaccess.h>
+ 
+ #include "pce/cls.h"
+@@ -146,6 +147,17 @@
+ 	return 0;
+ }
+ 
++static int cls_entry_debug_fill_sport(struct cls_desc *cdesc, u32 mask, u32 data)
++{
++	if (mask > CLS_DESC_SPORT_MASK || data > CLS_DESC_SPORT_MASK)
++		return -EINVAL;
++
++	cdesc->sport_m = mask;
++	cdesc->sport = data;
++
++	return 0;
++}
++
+ static int cls_entry_debug_fill_tag(struct cls_desc *cdesc, u32 mask, u32 data)
+ {
+ 	if (mask > CLS_DESC_TAG_MASK || data > CLS_DESC_TAG_MASK)
+@@ -334,6 +346,7 @@
+ }
+ 
+ struct cls_entry_debug_config cls_entry_dbg_cfgs[] = {
++	CLS_ENTRY_DBG_CFG_MASK_DATA(sport),
+ 	CLS_ENTRY_DBG_CFG_MASK_DATA(tag),
+ 	CLS_ENTRY_DBG_CFG_MASK_DATA(udplite_l4_hdr_nez),
+ 	CLS_ENTRY_DBG_CFG_MASK_DATA(dip_match),
+@@ -458,6 +471,11 @@
+ 	int ret;
+ 	u32 i;
+ 
++	if (!mtk_pce_has_cdrt()) {
++		seq_puts(s, "CDRT hardware is unavailable\n");
++		return 0;
++	}
++
+ 	for (i = 1; i < (FE_MEM_CDRT_MAX_INDEX / 3) - 1; i++) {
+ 		ret = mtk_pce_cdrt_desc_read(&desc, i);
+ 		if (ret)
+@@ -581,7 +599,7 @@
+ 	u32 i;
+ 
+ 	for (i = 0; i < __PSE_PORT_MAX; i++) {
+-		if (TS_CONFIG_MASK & BIT(i)) {
++		if (mtk_pce_has_ts_port((enum pse_port)i)) {
+ 			ret = mtk_pce_tport_map_ts_config_read(i, &tdesc);
+ 			if (ret)
+ 				return ret;
+@@ -593,7 +611,8 @@
+ 			seq_printf(s, "default TPORT_IDX: %02u, ", tdesc.tport);
+ 			seq_printf(s, "default CDRT_IDX: %02u, ", tdesc.cdrt_idx);
+ 			seq_printf(s, "default TOPS_ENTRY: %02u\n", tdesc.tops_entry);
+-		} else if (PSE_PORT_PPE_MASK & BIT(i)) {
++		} else if ((PSE_PORT_PPE_MASK & BIT(i)) &&
++			   mtk_pce_has_ppe_port((enum pse_port)i)) {
+ 			ret = mtk_pce_tport_map_ppe_read((enum pse_port)i, &map);
+ 			if (ret)
+ 				return ret;
+@@ -629,7 +648,9 @@
+ 		target = port_map & PSE_PER_PORT_MASK;
+ 		port_map >>= PSE_PER_PORT_BITS;
+ 
+-		if (TS_CONFIG_MASK & BIT(port) || PSE_PORT_PPE_MASK & BIT(port)) {
++		if (mtk_pce_has_ts_port(port) ||
++		    ((PSE_PORT_PPE_MASK & BIT(port)) &&
++		     mtk_pce_has_ppe_port(port))) {
+ 			ret = mtk_pce_tport_map_pse_port_update(port,
+ 								tport_idx,
+ 								target);
+@@ -754,7 +775,7 @@
+ 		return -ENOMEM;
+ 	}
+ 
+-	debugfs_create_file("cls_entry", 0444, debug_root, NULL,
++	debugfs_create_file("cls_entry", 0644, debug_root, NULL,
+ 			    &cls_entry_debug_ops);
+ 	debugfs_create_file("dipfilter_entry", 0444, debug_root, NULL,
+ 			    &dipfilter_debug_ops);
+diff -uNr a/dipfilter.c b/dipfilter.c
+--- a/dipfilter.c	2026-09-18 10:18:56.492055502 +0800
++++ b/dipfilter.c	2026-11-20 09:06:06.548901084 +0800
+@@ -211,7 +211,7 @@
+ }
+ EXPORT_SYMBOL(mtk_pce_dipfilter_entry_del);
+ 
+-static void mtk_pce_dipfilter_clean_up(void)
++static int mtk_pce_dipfilter_clean_up(void)
+ {
+ 	struct fe_mem_msg fmsg = {
+ 		.cmd = FE_MEM_CMD_WRITE,
+@@ -237,15 +237,15 @@
+ 
+ unlock:
+ 	spin_unlock_irqrestore(&dip_hw.lock, flag);
++
++	return ret;
+ }
+ 
+ int mtk_pce_dipfilter_init(struct platform_device *pdev)
+ {
+ 	spin_lock_init(&dip_hw.lock);
+ 
+-	mtk_pce_dipfilter_clean_up();
+-
+-	return 0;
++	return mtk_pce_dipfilter_clean_up();
+ }
+ 
+ void mtk_pce_dipfilter_deinit(struct platform_device *pdev)
+diff -uNr a/inc/pce/netsys.h b/inc/pce/netsys.h
+--- a/inc/pce/netsys.h	2026-09-18 10:18:56.492933773 +0800
++++ b/inc/pce/netsys.h	2026-11-20 09:06:06.547222784 +0800
+@@ -79,6 +79,8 @@
+ void mtk_pce_netsys_rmw(u32 reg, u32 mask, u32 val);
+ u32 mtk_pce_netsys_read(u32 reg);
+ 
++bool mtk_pce_has_cdrt(void);
++
+ int mtk_pce_netsys_init(struct platform_device *pdev);
+ void mtk_pce_netsys_deinit(struct platform_device *pdev);
+ #endif /* _PCE_NETSYS_H_ */
+diff -uNr a/inc/pce/tport_map.h b/inc/pce/tport_map.h
+--- a/inc/pce/tport_map.h	2026-09-18 10:18:56.492933773 +0800
++++ b/inc/pce/tport_map.h	2026-11-20 09:06:06.547332245 +0800
+@@ -26,6 +26,9 @@
+ 	__TS_CONFIG_MAX,
+ };
+ 
++bool mtk_pce_has_ppe_port(enum pse_port ppe);
++bool mtk_pce_has_ts_port(enum pse_port port);
++
+ int mtk_pce_tport_map_ts_config_read(enum ts_config_entry entry,
+ 				    struct tsc_desc *ts_cfg);
+ int mtk_pce_tport_map_ts_config_write(enum ts_config_entry entry,
+diff -uNr a/init.c b/init.c
+--- a/init.c	2026-09-18 10:18:56.492933773 +0800
++++ b/init.c	2026-11-20 09:06:06.547996193 +0800
+@@ -22,6 +22,7 @@
+ #include "pce/pce.h"
+ 
+ struct device *pce_dev;
++static struct platform_device *pce_fallback_pdev;
+ 
+ static int mtk_pce_probe(struct platform_device *pdev)
+ {
+@@ -70,6 +71,8 @@
+ netsys_deinit:
+ 	mtk_pce_netsys_deinit(pdev);
+ 
++	pce_dev = NULL;
++
+ 	return ret;
+ }
+ 
+@@ -86,6 +89,8 @@
+ 	mtk_pce_cls_deinit(pdev);
+ 
+ 	mtk_pce_netsys_deinit(pdev);
++
++	pce_dev = NULL;
+ }
+ 
+ #if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+@@ -124,11 +129,42 @@
+ 
+ static int __init mtk_pce_init(void)
+ {
+-	return platform_driver_register(&mtk_pce_driver);
++	int ret;
++
++	ret = platform_driver_register(&mtk_pce_driver);
++	if (ret)
++		return ret;
++
++	if (!pce_dev) {
++		struct device_node *eth_np;
++
++		eth_np = of_find_compatible_node(NULL, NULL,
++						 "mediatek,mt7988-eth");
++		if (eth_np) {
++			of_node_put(eth_np);
++			pce_fallback_pdev = platform_device_register_simple(
++						"mediatek,pce", -1, NULL, 0);
++			if (IS_ERR(pce_fallback_pdev)) {
++				pr_warn("pce: fallback device register failed: %ld\n",
++					PTR_ERR(pce_fallback_pdev));
++				pce_fallback_pdev = NULL;
++			} else if (!pce_dev) {
++				platform_device_unregister(pce_fallback_pdev);
++				pce_fallback_pdev = NULL;
++			}
++		}
++	}
++
++	return 0;
+ }
+ 
+ static void __exit mtk_pce_exit(void)
+ {
++	if (pce_fallback_pdev) {
++		platform_device_unregister(pce_fallback_pdev);
++		pce_fallback_pdev = NULL;
++	}
++
+ 	platform_driver_unregister(&mtk_pce_driver);
+ }
+ 
+diff -uNr a/netsys.c b/netsys.c
+--- a/netsys.c	2026-11-20 09:06:06.542780596 +0800
++++ b/netsys.c	2026-11-20 09:06:06.548536979 +0800
+@@ -105,15 +105,25 @@
+ 		   FIELD_PREP(GLO_MEM_CTRL_CMD_MASK, cmd));
+ }
+ 
+-static inline void mtk_pce_fe_mem_wait_transfer_done(void)
++static int mtk_pce_fe_mem_wait_transfer_done(void)
+ {
+-	while (FIELD_GET(GLO_MEM_CTRL_CMD_MASK, mtk_pce_netsys_read(GLO_MEM_CTRL)))
++	u32 retry = 1000;
++
++	while (FIELD_GET(GLO_MEM_CTRL_CMD_MASK, mtk_pce_netsys_read(GLO_MEM_CTRL))) {
++		if (!retry--) {
++			mtk_pce_netsys_write(GLO_MEM_CTRL, 0);
++			return -ETIMEDOUT;
++		}
+ 		udelay(10);
++	}
++
++	return 0;
+ }
+ 
+ static int mtk_pce_fe_mem_write(enum fe_mem_type type, u32 *raw_data, u32 idx)
+ {
+ 	unsigned long flag;
++	int ret;
+ 	u32 i = 0;
+ 
+ 	spin_lock_irqsave(&netsys.lock, flag);
+@@ -126,16 +136,20 @@
+ 
+ 	mtk_pce_fe_mem_start(FE_MEM_CMD_WRITE);
+ 
+-	mtk_pce_fe_mem_wait_transfer_done();
++	ret = mtk_pce_fe_mem_wait_transfer_done();
+ 
+ 	spin_unlock_irqrestore(&netsys.lock, flag);
+ 
+-	return 0;
++	if (ret && pce_dev)
++		PCE_ERR("fe_mem write timeout: type=%u idx=%u\n", type, idx);
++
++	return ret;
+ }
+ 
+ static int mtk_pce_fe_mem_read(enum fe_mem_type type, u32 *raw_data, u32 idx)
+ {
+ 	unsigned long flag;
++	int ret;
+ 	u32 i = 0;
+ 
+ 	spin_lock_irqsave(&netsys.lock, flag);
+@@ -144,15 +158,19 @@
+ 
+ 	mtk_pce_fe_mem_start(FE_MEM_CMD_READ);
+ 
+-	mtk_pce_fe_mem_wait_transfer_done();
+-
+-	/* read data out */
+-	for (i = 0; i < FE_MEM_DATA_WLEN; i++)
+-		raw_data[i] = mtk_pce_netsys_read(GLO_MEM_DATA_IDX(i));
++	ret = mtk_pce_fe_mem_wait_transfer_done();
++	if (!ret) {
++		/* read data out */
++		for (i = 0; i < FE_MEM_DATA_WLEN; i++)
++			raw_data[i] = mtk_pce_netsys_read(GLO_MEM_DATA_IDX(i));
++	}
+ 
+ 	spin_unlock_irqrestore(&netsys.lock, flag);
+ 
+-	return 0;
++	if (ret && pce_dev)
++		PCE_ERR("fe_mem read timeout: type=%u idx=%u\n", type, idx);
++
++	return ret;
+ }
+ 
+ int mtk_pce_fe_mem_msg_send(struct fe_mem_msg *msg)
+@@ -189,13 +207,41 @@
+ }
+ EXPORT_SYMBOL(mtk_pce_fe_mem_msg_send);
+ 
++bool mtk_pce_has_cdrt(void)
++{
++	struct device_node *np;
++	struct platform_device *pdev;
++	bool ready;
++
++	np = of_find_compatible_node(NULL, NULL,
++				     "inside-secure,safexcel-eip197b");
++	if (!np)
++		return false;
++
++	pdev = of_find_device_by_node(np);
++	of_node_put(np);
++	if (!pdev)
++		return false;
++
++	ready = of_device_is_available(pdev->dev.of_node) &&
++		READ_ONCE(pdev->dev.driver) != NULL;
++	put_device(&pdev->dev);
++
++	return ready;
++}
++EXPORT_SYMBOL(mtk_pce_has_cdrt);
++
+ int mtk_pce_netsys_init(struct platform_device *pdev)
+ {
+ 	struct device_node *fe_mem = NULL;
+ 	struct resource res;
+ 	int ret = 0;
+ 
+-	fe_mem = of_parse_phandle(pdev->dev.of_node, "fe_mem", 0);
++	if (pdev->dev.of_node)
++		fe_mem = of_parse_phandle(pdev->dev.of_node, "fe_mem", 0);
++	if (!fe_mem)
++		fe_mem = of_find_compatible_node(NULL, NULL,
++						 "mediatek,mt7988-eth");
+ 	if (!fe_mem) {
+ 		PCE_ERR("can not find fe_mem node\n");
+ 		return -ENODEV;
+@@ -232,7 +278,8 @@
+ 
+ 	mtk_pce_dipfilter_enable();
+ 
+-	mtk_pce_cdrt_enable();
++	if (mtk_pce_has_cdrt())
++		mtk_pce_cdrt_enable();
+ 
+ 	return 0;
+ }
+@@ -240,7 +287,8 @@
+ 
+ void mtk_pce_disable(void)
+ {
+-	mtk_pce_cdrt_disable();
++	if (mtk_pce_has_cdrt())
++		mtk_pce_cdrt_disable();
+ 
+ 	mtk_pce_dipfilter_disable();
+ 
+diff -uNr a/tport_map.c b/tport_map.c
+--- a/tport_map.c	2026-09-18 10:18:56.492933773 +0800
++++ b/tport_map.c	2026-11-20 09:06:06.550256670 +0800
+@@ -13,6 +13,29 @@
+ #include "pce/internal.h"
+ #include "pce/tport_map.h"
+ 
++bool mtk_pce_has_ppe_port(enum pse_port ppe)
++{
++	if (ppe == PSE_PORT_PPE2 && of_machine_is_compatible("mediatek,mt7987"))
++		return false;
++
++	return true;
++}
++
++bool mtk_pce_has_ts_port(enum pse_port port)
++{
++	if (!(TS_CONFIG_MASK & BIT(port)))
++		return false;
++
++	if (port == PSE_PORT_EIP197 && !mtk_pce_has_cdrt())
++		return false;
++
++	if ((port == PSE_PORT_TDMA || port == PSE_PORT_WDMA2) &&
++	    of_machine_is_compatible("mediatek,mt7987"))
++		return false;
++
++	return true;
++}
++
+ int mtk_pce_tport_map_ts_config_read(enum ts_config_entry entry,
+ 				    struct tsc_desc *ts_cfg)
+ {
+@@ -22,7 +45,7 @@
+ 	if (!ts_cfg)
+ 		return -EINVAL;
+ 
+-	if (!(TS_CONFIG_MASK & BIT(entry))) {
++	if (!mtk_pce_has_ts_port((enum pse_port)entry)) {
+ 		PCE_ERR("invalid ts config entry: %u\n", entry);
+ 		return -EPERM;
+ 	}
+@@ -50,7 +73,7 @@
+ 	if (!ts_cfg)
+ 		return -EINVAL;
+ 
+-	if (!(TS_CONFIG_MASK & BIT(entry))) {
++	if (!mtk_pce_has_ts_port((enum pse_port)entry)) {
+ 		PCE_NOTICE("invalid ts config entry: %u\n", entry);
+ 		return -EPERM;
+ 	}
+@@ -78,6 +101,9 @@
+ 		return -EPERM;
+ 	}
+ 
++	if (!mtk_pce_has_ppe_port(ppe))
++		return -ENODEV;
++
+ 	*map = mtk_pce_ppe_read(ppe, PPE_TPORT_TBL_0);
+ 	*map |= ((u64)mtk_pce_ppe_read(ppe, PPE_TPORT_TBL_1)) << 32;
+ 
+@@ -151,10 +177,11 @@
+ 		return -EPERM;
+ 	}
+ 
+-	if (TS_CONFIG_MASK & BIT(pse_port))
++	if (mtk_pce_has_ts_port(pse_port))
+ 		ret = mtk_pce_tport_map_update_ts_config((enum ts_config_entry)pse_port,
+ 							 tport_idx, target);
+-	else if (PSE_PORT_PPE_MASK & BIT(pse_port))
++	else if ((PSE_PORT_PPE_MASK & BIT(pse_port)) &&
++		 mtk_pce_has_ppe_port(pse_port))
+ 		ret = mtk_pce_tport_map_update_ppe(pse_port, tport_idx, target);
+ 	else
+ 		ret = -EINVAL;

@@ -1,4 +1,4 @@
-# SPDX-Liscense-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 # Copyright (C) 2023 MediaTek Inc.
 #
@@ -29,13 +29,15 @@ EXTRA_CFLAGS+=	-Wall -Werror
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/firmware
-	$(CP) -r `find ./firmware -maxdepth 1 | grep -v ".git"` $(PKG_BUILD_DIR)/firmware/
-	$(CP) -r `find ./src -maxdepth 1 | grep -v ".git"` $(PKG_BUILD_DIR)/
+	$(CP) -r ./firmware/* $(PKG_BUILD_DIR)/firmware/
+	$(CP) -r ./src/* $(PKG_BUILD_DIR)/
+	$(Build/Patch)
 endef
 
 define Build/Compile
-	$(MAKE) -C "$(LINUX_DIR)" \
+	+$(MAKE) -C "$(LINUX_DIR)" \
 		$(KERNEL_MAKE_FLAGS) \
+		$(PKG_JOBS) \
 		M="$(PKG_BUILD_DIR)" \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		$(EXTRA_KCONFIG) \

@@ -1,4 +1,4 @@
-# SPDX-Liscense-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-2.0-or-later
 #
 # Copyright (C) 2023 MediaTek Inc.
 #
@@ -13,6 +13,7 @@ define Package/crypto-eip-inline-fw
   TITLE:=Mediatek EIP Firmware
   SECTION:=firmware
   CATEGORY:=Firmware
+  DEFAULT:=n
   DEPENDS:=@CRYPTO_OFFLOAD_INLINE
 endef
 

@@ -40,6 +40,8 @@
 // Logging API
 #include "log.h"            // LOG_INFO
 
+#include "moddep.h"
+
 
 /*----------------------------------------------------------------------------
  * DrivDriver197_PEC_PCL_Initer197_Init
@@ -48,6 +50,7 @@ int
 Driver197_PEC_PCL_Init(void)
 {
     LOG_INFO("\n\t Driver197_PEC_PCL_Init \n");
+    app_dep = 1;
 
     LOG_INFO("%s driver: initializing\n", ADAPTER_DRIVER_NAME);
 

@@ -417,6 +417,7 @@ Device_Internal_Initialize(
         // Exported under GPL
         *p = platform_get_irq(HWPALLib_Device_Global.Platform.Platform_Device_p,
                               HWPAL_PLATFORM_IRQ_IDX);
+        pr_notice("irq num (Device_Internal_Initialize): %d\n", *p);
     }
 #endif // HWPAL_USE_UMDEVXS_DEVICE
 

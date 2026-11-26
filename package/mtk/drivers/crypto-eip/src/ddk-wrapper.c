@@ -286,7 +286,7 @@ static void mtk_crypto_ring3_handler(void)
 
 			CBFunc = mtk_crypto_ring3_handler;
 			if (OutTokenDscr.ErrorCode == 0)
-				ret = 0;
+				continue;
 			else if (OutTokenDscr.ErrorCode & BIT(9))
 				ret = -EBADMSG;
 			else if (OutTokenDscr.ErrorCode == 0x4003)
@@ -330,7 +330,7 @@ static void mtk_crypto_ring2_handler(void)
 
 			CBFunc = mtk_crypto_ring2_handler;
 			if (OutTokenDscr.ErrorCode == 0)
-				ret = 0;
+				continue;
 			else if (OutTokenDscr.ErrorCode & BIT(9))
 				ret = -EBADMSG;
 			else if (OutTokenDscr.ErrorCode == 0x4003)
@@ -374,7 +374,7 @@ static void mtk_crypto_ring1_handler(void)
 
 			CBFunc = mtk_crypto_ring1_handler;
 			if (OutTokenDscr.ErrorCode == 0)
-				ret = 0;
+				continue;
 			else if (OutTokenDscr.ErrorCode & BIT(9))
 				ret = -EBADMSG;
 			else if (OutTokenDscr.ErrorCode == 0x4003)
@@ -418,7 +418,7 @@ static void mtk_crypto_ring0_handler(void)
 
 			CBFunc = mtk_crypto_ring0_handler;
 			if (OutTokenDscr.ErrorCode == 0)
-				ret = 0;
+				continue;
 			else if (OutTokenDscr.ErrorCode & BIT(9))
 				ret = -EBADMSG;
 			else if (OutTokenDscr.ErrorCode == 0x4003)
@@ -1778,10 +1778,10 @@ bool crypto_hmac_precompute(SABuilder_Auth_t AuthAlgo,
 	ret = true;
 
 free_request:
-	kfree(state);
 	ahash_request_free(areq);
 free_ahash:
 	crypto_free_ahash(atfm);
+	kfree(state);
 
 	return ret;
 }

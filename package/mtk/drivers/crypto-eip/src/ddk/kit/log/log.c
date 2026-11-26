@@ -74,6 +74,7 @@ Log_HexDump(
         Log_FormattedMessage("\n");
     } // for
 }
+EXPORT_SYMBOL(Log_HexDump);
 
 
 /*----------------------------------------------------------------------------

@@ -54,8 +54,6 @@
 #ifndef LOG_SEVERITY_MAX
 #ifdef _MSC_VER
 #pragma message("LOG_SEVERITY_MAX is undefined; assuming LOG_SEVERITY_INFO")
-#else
-#warning "LOG_SEVERITY_MAX is undefined; assuming LOG_SEVERITY_INFO"
 #endif
 #define LOG_SEVERITY_MAX  LOG_SEVERITY_INFO
 #endif

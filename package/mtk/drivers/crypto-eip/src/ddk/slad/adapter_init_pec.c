@@ -98,6 +98,7 @@ Adapter_Init(void)
         return false;
     }
 
+    pr_notice("Adapter_Init (adapter_init_pec.c) irq num: %d\n", Device_IRQ);
 #ifdef ADAPTER_PEC_INTERRUPTS_ENABLE
     if (Adapter_Interrupts_Init(Device_IRQ) < 0)
     {

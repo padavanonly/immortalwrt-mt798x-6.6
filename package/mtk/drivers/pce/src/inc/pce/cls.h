@@ -9,6 +9,7 @@
 #define _PCE_CLS_H_
 
 #include <linux/platform_device.h>
+#include <linux/notifier.h>
 
 #include "pce/pce.h"
 
@@ -24,6 +25,15 @@ struct cls_entry {
 	u32 idx;
 	struct cls_desc cdesc;
 };
+
+enum cls_notifier_event {
+	CLS_NOTIFY_DELETE_ENTRY,
+
+	__CLS_NOTIFY_MAX,
+};
+
+int mtk_pce_register_cls_notifier(struct notifier_block *nb);
+int mtk_pce_unregister_cls_notifier(struct notifier_block *nb);
 
 int mtk_pce_cls_enable(void);
 void mtk_pce_cls_disable(void);

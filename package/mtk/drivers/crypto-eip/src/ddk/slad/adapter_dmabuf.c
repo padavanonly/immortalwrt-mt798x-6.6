@@ -277,6 +277,63 @@ DMABuf_Alloc(
     }
 }
 
+DMABuf_Status_t
+DMABuf_Particle_Alloc(
+        const DMABuf_Properties_t RequestedProperties,
+        dma_addr_t DmaAddress,
+        DMABuf_HostAddress_t * const Buffer_p,
+        DMABuf_Handle_t * const Handle_p)
+{
+    DMAResource_Handle_t DMAHandle;
+    DMAResource_AddrPair_t AddrPair;
+    DMAResource_Properties_t ActualProperties;
+
+    ZEROINIT(AddrPair);
+    ZEROINIT(ActualProperties);
+
+    if (Handle_p == NULL ||
+        Buffer_p == NULL)
+    {
+        return DMABUF_ERROR_BAD_ARGUMENT;
+    }
+
+    // initialize the output parameters
+    Handle_p->p = NULL;
+    Buffer_p->p = NULL;
+
+    ActualProperties.Size       = RequestedProperties.Size;
+    ActualProperties.Bank       = RequestedProperties.Bank;
+    ActualProperties.fCached    = RequestedProperties.fCached;
+
+    if (Adapter_DMABuf_Alignment != ADAPTER_DMABUF_ALIGNMENT_INVALID &&
+        RequestedProperties.Alignment < Adapter_DMABuf_Alignment)
+        ActualProperties.Alignment = Adapter_DMABuf_Alignment;
+    else
+        ActualProperties.Alignment = RequestedProperties.Alignment;
+
+    if(!DMAResource_SG_Alloc(ActualProperties, DmaAddress, &AddrPair,&DMAHandle))
+    {
+        // set the output parameters
+        Handle_p->p = (void*)DMAHandle;
+        Buffer_p->p = AddrPair.Address_p;
+
+        LOG_INFO("DMABuf_Alloc: allocated handle=%p, host addr=%p, "
+                 "alignment requested/actual %d/%d, "
+                 "bank requested %d, cached requested %d\n",
+                 Handle_p->p,
+                 Buffer_p->p,
+                 RequestedProperties.Alignment,
+                 ActualProperties.Alignment,
+                 RequestedProperties.Bank,
+                 RequestedProperties.fCached);
+
+        return DMABUF_STATUS_OK;
+    }
+    else
+    {
+        return DMABUF_ERROR_OUT_OF_MEMORY;
+    }
+}
 
 /*----------------------------------------------------------------------------
  * DMABuf_Register
@@ -391,6 +448,24 @@ DMABuf_Release(
     LOG_INFO("DMABuf_Release: handle to release=%p\n",Handle.p);
 
     if( DMAResource_Release(DMAHandle) == 0 )
+    {
+        return DMABUF_STATUS_OK;
+    }
+    else
+    {
+        return DMABUF_ERROR_INVALID_HANDLE;
+    }
+}
+
+DMABuf_Status_t
+DMABuf_Particle_Release(
+        DMABuf_Handle_t Handle)
+{
+    DMAResource_Handle_t DMAHandle =
+            Adapter_DMABuf_Handle2DMAResourceHandle(Handle);
+    LOG_INFO("DMABuf_Particle_Release: handle to release=%p\n",Handle.p);
+
+    if( DMAResource_SG_Release(DMAHandle) == 0 )
     {
         return DMABUF_STATUS_OK;
     }

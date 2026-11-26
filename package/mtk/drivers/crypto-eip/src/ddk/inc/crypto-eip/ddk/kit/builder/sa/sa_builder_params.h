@@ -117,7 +117,7 @@ typedef enum
     SAB_CRYPTO_MODE_UEA2,     /* Only with SNOW */
     SAB_CRYPTO_MODE_EEA3,     /* Only with ZUC */
     SAB_CRYPTO_MODE_CHACHA_CTR32, /* Only with Chacha20 */
-    SAB_CRYPTO_MODE_CHACHA_CTR64, /* Only with Chacha20 */w
+    SAB_CRYPTO_MODE_CHACHA_CTR64, /* Only with Chacha20 */
 } SABuilder_Crypto_Mode_t;
 
 /* Specify one of the IV sources. Not all methods are supported with all

@@ -60,6 +60,12 @@ DMAResource_Alloc(
         DMAResource_AddrPair_t * const AddrPair_p,
         DMAResource_Handle_t * const Handle_p);
 
+int
+DMAResource_SG_Alloc(
+        const DMAResource_Properties_t RequestedProperties,
+        dma_addr_t DmaAddress,
+        DMAResource_AddrPair_t * const AddrPair_p,
+        DMAResource_Handle_t * const Handle_p);
 
 /*----------------------------------------------------------------------------
  * DMAResource_CheckAndRegister
@@ -166,6 +172,9 @@ int
 DMAResource_Release(
         const DMAResource_Handle_t Handle);
 
+int
+DMAResource_SG_Release(
+        const DMAResource_Handle_t Handle);
 
 /*----------------------------------------------------------------------------
  * DMAResource_SwapEndianness_Set

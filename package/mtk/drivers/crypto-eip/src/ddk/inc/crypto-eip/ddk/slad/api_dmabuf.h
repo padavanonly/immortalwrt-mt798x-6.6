@@ -160,7 +160,12 @@ DMABuf_Alloc(
         DMABuf_HostAddress_t * const Buffer_p,
         DMABuf_Handle_t * const Handle_p);
 
-
+DMABuf_Status_t
+DMABuf_Particle_Alloc(
+        const DMABuf_Properties_t RequestedProperties,
+        dma_addr_t DmaAddress,
+        DMABuf_HostAddress_t * const Buffer_p,
+        DMABuf_Handle_t * const Handle_p);
 /*----------------------------------------------------------------------------
  * DMABuf_Register
  *
@@ -226,6 +231,9 @@ DMABuf_Status_t
 DMABuf_Release(
         DMABuf_Handle_t Handle);
 
+DMABuf_Status_t
+DMABuf_Particle_Release(
+        DMABuf_Handle_t Handle);
 
 #endif /* Include Guard */
 

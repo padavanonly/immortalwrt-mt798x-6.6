@@ -185,7 +185,6 @@ static HWPAL_FreeList_t FreeRecords;
 
 static void * HWPAL_Lock_p;
 
-
 /*----------------------------------------------------------------------------
  * DMAResourceLib_IdxPair2RecordPtr
  *
@@ -575,6 +574,101 @@ HWPAL_DMAResource_Lock_Release(
 #endif
 }
 
+int
+HWPAL_SG_DMAResource_Alloc(
+        const DMAResource_Properties_t RequestedProperties,
+        const HWPAL_DMAResource_Properties_Ext_t RequestedPropertiesExt,
+        dma_addr_t DmaAddress,
+        DMAResource_AddrPair_t * const AddrPair_p,
+        DMAResource_Handle_t * const Handle_p)
+{
+    DMAResource_Properties_t ActualProperties;
+    DMAResource_AddrPair_t * Pair_p;
+    DMAResource_Handle_t Handle;
+    DMAResource_Record_t * Rec_p = NULL;
+
+    unsigned int AlignTo = RequestedProperties.Alignment;
+
+    ZEROINIT(ActualProperties);
+
+#ifdef HWPAL_DMARESOURCE_STRICT_ARGS_CHECKS
+    if ((NULL == AddrPair_p) || (NULL == Handle_p))
+        return -1;
+
+    if (!DMAResourceLib_IsSaneInput(NULL, NULL, &RequestedProperties))
+        return -1;
+#endif
+    // Allocate record
+    Handle = DMAResource_CreateRecord();
+    if (NULL == Handle)
+        return -1;
+
+    Rec_p = DMAResource_Handle2RecordPtr(Handle);
+    if (NULL == Rec_p)
+    {
+        DMAResource_DestroyRecord(Handle);
+        return -1;
+    }
+
+    ActualProperties.Bank       = RequestedProperties.Bank;
+    
+#ifdef HWPAL_ARCH_COHERENT
+    ActualProperties.fCached    = false;
+#else
+    ActualProperties.fCached    = true;
+#endif // HWPAL_ARCH_COHERENT
+
+#ifdef HWPAL_DMARESOURCE_ALLOC_CACHE_COHERENT
+    ActualProperties.fCached    = false;
+#endif // HWPAL_DMARESOURCE_ALLOC_CACHE_COHERENT
+
+    if (ActualProperties.fCached &&
+        HWPAL_DMAResource_DCache_Alignment_Get() > AlignTo)
+    {
+        AlignTo = HWPAL_DMAResource_DCache_Alignment_Get();
+    }
+
+    ActualProperties.Alignment  = AlignTo;
+
+    // Hide the allocated size from the caller, since (s)he is not
+    // supposed to access/use any space beyond what was requested
+    ActualProperties.Size = RequestedProperties.Size;
+
+    Rec_p->BankType = RequestedPropertiesExt.BankType;
+
+    // Allocate DMA resource
+    {
+        size_t n = 0;
+
+        // Align if required
+        n = DMAResourceLib_AlignForAddress(
+             DMAResourceLib_AlignForSize(RequestedProperties.Size,
+             AlignTo),
+             AlignTo);
+
+        DMAResourceLib_Setup_Record(&ActualProperties, 'A', Rec_p, n);
+
+        Pair_p = Rec_p->AddrPairs;
+        Pair_p->Address_p = (void *)(uintptr_t) DmaAddress;
+        Pair_p->Domain = DMARES_DOMAIN_BUS;
+
+        ++Pair_p;
+        Pair_p->Address_p = (void *)(uintptr_t) DmaAddress; //UnalignedAddr_p;
+        Pair_p->Domain = DMARES_DOMAIN_HOST;
+
+        // Return this address
+        *AddrPair_p = *Pair_p;
+
+        // This host address will be used for freeing the allocated buffer
+        ++Pair_p;
+        Pair_p->Address_p = (void *)(uintptr_t) DmaAddress; //UnalignedAddr_p;
+        Pair_p->Domain = DMARES_DOMAIN_HOST_UNALIGNED;
+    }
+
+    *Handle_p = Handle;
+
+    return 0;
+}
 
 /*----------------------------------------------------------------------------
  * HWPAL_DMAResource_Alloc
@@ -921,6 +1015,48 @@ HWPAL_DMAResource_Alloc(
     return 0;
 }
 
+int
+HWPAL_DMAResource_SG_Release(
+        const DMAResource_Handle_t Handle)
+{
+    DMAResource_Record_t * Rec_p;
+
+#ifdef HWPAL_TRACE_DMARESOURCE_BUF
+    void* UnalignedAddr_p = NULL;
+#endif
+
+    Rec_p = DMAResource_Handle2RecordPtr(Handle);
+    if (Rec_p == NULL)
+    {
+        LOG_WARN(
+            "HW_DMAResource_SG_Release: "
+            "Invalid handle %p\n",
+            Handle);
+        return -1;
+    }
+
+    // request the kernel to unmap the DMA resource
+    if (Rec_p->AllocatorRef == 'A' || Rec_p->AllocatorRef == 'k' ||
+        Rec_p->AllocatorRef == 'R')
+    {
+        DMAResource_AddrPair_t * Pair_p;
+
+        Pair_p = DMAResourceLib_LookupDomain(Rec_p, DMARES_DOMAIN_BUS);
+        if (Pair_p == NULL)
+        {
+            LOG_WARN(
+                "HW_DMAResource_SG_Release: "
+                "No bus address found for Handle %p?\n",
+                Handle);
+            return -1;
+        }
+    }
+    // free administration resources
+    Rec_p->Magic = 0;
+    DMAResource_DestroyRecord(Handle);
+
+    return 0;
+}
 
 /*----------------------------------------------------------------------------
  * HWPAL_DMAResource_Release
@@ -1969,10 +2105,10 @@ DMAResource_PreDMA(
     Rec_p = DMAResource_Handle2RecordPtr(Handle);
     if (Rec_p == NULL)
     {
-        LOG_WARN(
-            "DMAResource_PreDMA: "
-            "Invalid handle %p\n",
-            Handle);
+        //LOG_WARN(
+        //    "DMAResource_PreDMA: "
+        //    "Invalid handle %p\n",
+        //    Handle);
         return;
     }
 
@@ -2089,10 +2225,10 @@ DMAResource_PostDMA(
     Rec_p = DMAResource_Handle2RecordPtr(Handle);
     if (Rec_p == NULL)
     {
-        LOG_WARN(
-            "DMAResource_PostDMA: "
-            "Invalid handle %p\n",
-            Handle);
+        //LOG_WARN(
+        //    "DMAResource_PostDMA: "
+        //    "Invalid handle %p\n",
+        //    Handle);
         return;
     }
 

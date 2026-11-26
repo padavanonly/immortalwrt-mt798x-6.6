@@ -48,8 +48,10 @@ module_exit(Driver197_PEC_PCL_Exit);
 EXPORT_SYMBOL(DMABuf_NULLHandle);
 EXPORT_SYMBOL(DMABuf_Handle_IsSame);
 EXPORT_SYMBOL(DMABuf_Alloc);
+EXPORT_SYMBOL(DMABuf_Particle_Alloc);
 EXPORT_SYMBOL(DMABuf_Register);
 EXPORT_SYMBOL(DMABuf_Release);
+EXPORT_SYMBOL(DMABuf_Particle_Release);
 
 
 // PEC API LKM implementation extensions

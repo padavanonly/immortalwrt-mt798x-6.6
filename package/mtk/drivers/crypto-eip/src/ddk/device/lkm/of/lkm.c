@@ -298,7 +298,7 @@ LKM_Remove_new(
     LOG_INFO(LKM_LOG_PREFIX "%s: left\n", __func__);
 }
 
-#if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+#if KERNEL_VERSION(6, 1, 30) > LINUX_VERSION_CODE
 static int
 LKM_Remove(
 	struct platform_device * Platform_Device_p)
@@ -339,7 +339,7 @@ LKM_Init(
     p->ResId                         = InitData_p->ResId; // not used
 
     p->Platform_Driver.probe         = LKM_Probe;
-#if KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE
+#if KERNEL_VERSION(6, 1, 30) > LINUX_VERSION_CODE
 	// Only .remove(int) is supported
 	p->Platform_Driver.remove = LKM_Remove;
 #elif KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE

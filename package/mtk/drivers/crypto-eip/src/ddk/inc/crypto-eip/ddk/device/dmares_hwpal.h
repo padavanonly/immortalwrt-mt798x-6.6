@@ -137,6 +137,13 @@ HWPAL_DMAResource_Alloc(
         DMAResource_AddrPair_t * const AddrPair_p,
         DMAResource_Handle_t * const Handle_p);
 
+int
+HWPAL_SG_DMAResource_Alloc(
+        const DMAResource_Properties_t RequestedProperties,
+        const HWPAL_DMAResource_Properties_Ext_t RequestedPropertiesExt,
+        dma_addr_t DmaAddress,
+        DMAResource_AddrPair_t * const AddrPair_p,
+        DMAResource_Handle_t * const Handle_p);
 
 /*----------------------------------------------------------------------------
  * HWPAL_DMAResource_Release
@@ -145,6 +152,9 @@ int
 HWPAL_DMAResource_Release(
         const DMAResource_Handle_t Handle);
 
+int
+HWPAL_DMAResource_SG_Release(
+        const DMAResource_Handle_t Handle);
 
 /*----------------------------------------------------------------------------
  * HWPAL_DMAResource_Init

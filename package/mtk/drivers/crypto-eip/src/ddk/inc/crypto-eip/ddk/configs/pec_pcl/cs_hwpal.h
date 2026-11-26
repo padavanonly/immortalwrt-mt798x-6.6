@@ -110,9 +110,7 @@
 
 // Enable use of UMDevXS device
 // Note: This parameter must be used for the Driver GC, PEC or PEC-PCL build!
-#ifdef DRIVER_USE_SHDEVXS_DEVICE
 #define HWPAL_USE_UMDEVXS_DEVICE
-#endif
 
 // DMA buffer allocation alignment
 #ifdef DRIVER_DMA_ALIGNMENT_BYTE_COUNT

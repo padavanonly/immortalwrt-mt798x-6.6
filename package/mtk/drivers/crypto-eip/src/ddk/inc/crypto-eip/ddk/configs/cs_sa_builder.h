@@ -51,7 +51,6 @@
 #define SAB_ENABLE_PROTO_BASIC
 #define SAB_ENABLE_PROTO_IPSEC
 #define SAB_ENABLE_PROTO_SSLTLS
-//#define SAB_ENABLE_PROTO_MACSEC
 //#define SAB_ENABLE_PROTO_SRTP
 
 /* Which protcol-specific options are enabled? */
@@ -65,7 +64,7 @@
 
 /* Enable if the SA Builder must support extended use case for DTLS
    processing */
-//#define SAB_ENABLE_DTLS_EXTENDED
+#define SAB_ENABLE_DTLS_EXTENDED
 
 /* Enable if the SA Builder must support extended use case for Basic
    processing */

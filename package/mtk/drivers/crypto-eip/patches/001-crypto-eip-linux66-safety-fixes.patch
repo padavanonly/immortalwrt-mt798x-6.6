@@ -1,0 +1,379 @@
+diff -uNr a/debugfs.c b/debugfs.c
+--- a/debugfs.c	2026-09-18 10:18:56.468990150 +0800
++++ b/debugfs.c	2026-11-19 00:21:36.984740304 +0800
+@@ -85,8 +85,8 @@
+ 	struct net_device *dev;
+ 	char *p, *tmp;
+ 
+-	if (count >= IFNAMSIZ)
+-		return -EFAULT;
++	if (!count || count >= IFNAMSIZ)
++		return -EINVAL;
+ 
+ 	memset(buf, 0, IFNAMSIZ);
+ 
+@@ -132,9 +132,11 @@
+ 						  size_t count, loff_t *data)
+ {
+ 	char buf[8] = {0};
+-	int len = count;
+ 
+-	if ((len > 8) || copy_from_user(buf, buffer, len))
++	if (!count || count > sizeof(buf))
++		return -EINVAL;
++
++	if (copy_from_user(buf, buffer, count))
+ 		return -EFAULT;
+ 
+ 	if (buf[0] == '1' && !mac_filter_enable) {
+@@ -145,7 +147,7 @@
+ 		mac_filter_enable = 0;
+ 	}
+ 
+-	return len;
++	return count;
+ }
+ 
+ static const struct file_operations mtk_crypto_mac_filter_enable_fops = {
+diff -uNr a/init.c b/init.c
+--- a/init.c	2026-09-18 10:18:56.469895540 +0800
++++ b/init.c	2026-11-19 00:21:36.987613739 +0800
+@@ -22,6 +22,7 @@
+ 
+ #if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
+ #include <mtk_hnat/hnat.h>
++#include <mtk_hnat/nf_hnat_mtk.h>
+ #include <net/netfilter/nf_flow_table.h>
+ #elif defined(CONFIG_CRYPTO_OFFLOAD_INLINE_FLOWBLOCK)
+ #include <mtk_ppe.h>
+@@ -245,7 +246,7 @@
+ 	struct flow_offload_hw_path hw_path = { .dev = (struct net_device *) dev,
+ 						.virt_dev = (struct net_device *) dev };
+ 
+-	if (dev->netdev_ops->ndo_flow_offload_check) {
++	if (dev->netdev_ops && dev->netdev_ops->ndo_flow_offload_check) {
+ 		dev->netdev_ops->ndo_flow_offload_check(&hw_path);
+ 		dev = hw_path.dev;
+ 	}
+@@ -293,15 +294,13 @@
+ 	.xdo_dev_policy_free = mtk_xfrm_offload_policy_free,
+ };
+ 
+-void mtk_crypto_enable_ipsec_dev_features(struct net_device *dev)
++static void __mtk_crypto_enable_ipsec_dev_features(struct net_device *dev)
+ {
+ 	dev->xfrmdev_ops = &mtk_xfrmdev_ops;
+ 	dev->features |= NETIF_F_HW_ESP;
+ 	dev->hw_enc_features |= NETIF_F_HW_ESP;
+ 
+-	rtnl_lock();
+ 	netdev_change_features(dev);
+-	rtnl_unlock();
+ 
+ 	if (dev->features & NETIF_F_HW_ESP)
+ 		CRYPTO_INFO("dev: %s, enable hw offload ipsec success\n", dev->name);
+@@ -309,17 +308,49 @@
+ 		CRYPTO_INFO("dev: %s, enable hw offload ipsec failed\n", dev->name);
+ }
+ 
+-void mtk_crypto_disable_ipsec_dev_features(struct net_device *dev)
++static void __mtk_crypto_disable_ipsec_dev_features(struct net_device *dev)
+ {
+ 	dev->xfrmdev_ops = NULL;
+ 	dev->features &= (~NETIF_F_HW_ESP);
+ 	dev->hw_enc_features &= (~NETIF_F_HW_ESP);
+ 
+-	rtnl_lock();
+ 	netdev_change_features(dev);
++}
++
++void mtk_crypto_enable_ipsec_dev_features(struct net_device *dev)
++{
++	rtnl_lock();
++	__mtk_crypto_enable_ipsec_dev_features(dev);
+ 	rtnl_unlock();
+ }
+ 
++void mtk_crypto_disable_ipsec_dev_features(struct net_device *dev)
++{
++	rtnl_lock();
++	__mtk_crypto_disable_ipsec_dev_features(dev);
++	rtnl_unlock();
++}
++
++#if IS_ENABLED(CONFIG_XFRM)
++static bool mtk_crypto_pkt_is_hw_decrypted(struct sk_buff *skb)
++{
++	if (!skb || !skb->head)
++		return false;
++
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
++	if (skb_headroom(skb) < sizeof(struct hnat_desc))
++		return false;
++
++	return is_magic_tag_valid(skb) && skb_hnat_cdrt(skb) &&
++	       skb_hnat_is_decrypt(skb);
++#else
++	if (skb_headroom(skb) < sizeof(struct tnl_desc))
++		return false;
++
++	return is_tnl_tag_valid(skb) && skb_tnl_cdrt(skb);
++#endif
++}
++#endif
+ 
+ static void mtk_crypto_xfrm_offload_deinit(struct mtk_eth *eth)
+ {
+@@ -331,27 +362,42 @@
+ 	mtk_flow_offload_get_cdrt = NULL;
+ #endif // HNAT
+ 
++#if IS_ENABLED(CONFIG_XFRM)
++	mtk_xfrm_pkt_is_hw_decrypted = NULL;
++	synchronize_rcu();
++#endif
++
++	mtk_xfrm_offload_state_tear_down();
++
++	rtnl_lock();
+ 	for_each_netdev(&init_net, dev)
+-		mtk_crypto_disable_ipsec_dev_features(dev);
++		__mtk_crypto_disable_ipsec_dev_features(dev);
++	rtnl_unlock();
+ }
+ 
+ static void mtk_crypto_xfrm_offload_init(struct mtk_eth *eth)
+ {
+ 	struct net_device *dev;
+ 
++	rtnl_lock();
+ 	for_each_netdev(&init_net, dev)
+-		mtk_crypto_enable_ipsec_dev_features(dev);
++		__mtk_crypto_enable_ipsec_dev_features(dev);
++	rtnl_unlock();
+ 
+ #if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
+ 	mtk_crypto_offloadable = mtk_crypto_eip_offloadable;
+ #elif defined(CONFIG_CRYPTO_OFFLOAD_INLINE_FLOWBLOCK)
+ 	mtk_flow_offload_get_cdrt = mtk_crypto_xfrm_get_cdrt;
+ #endif // HNAT
++
++#if IS_ENABLED(CONFIG_XFRM)
++	mtk_xfrm_pkt_is_hw_decrypted = mtk_crypto_pkt_is_hw_decrypted;
++#endif
+ }
+ 
+ static int __init mtk_crypto_eth_dts_init(struct platform_device *pdev)
+ {
+-	struct platform_device *eth_pdev;
++	struct platform_device *eth_pdev = NULL;
+ 	struct device_node *crypto_node;
+ 	struct device_node *eth_node;
+ 	struct resource res;
+@@ -389,6 +435,8 @@
+ 	mcrypto.eth = platform_get_drvdata(eth_pdev);
+ 
+ out:
++	if (eth_pdev)
++		platform_device_put(eth_pdev);
+ 	of_node_put(eth_node);
+ 
+ 	return ret;
+@@ -467,6 +515,10 @@
+ #endif /* CONFIG_CRYPTO_MTK_DDK_LOOKASIDE */
+ 
+ out:
++	if (ret && crypto_pdev) {
++		crypto_dev = NULL;
++		platform_device_put(crypto_pdev);
++	}
+ 	of_node_put(crypto_node);
+ 
+ 	return ret;
+@@ -507,12 +559,19 @@
+ 	ret = mtk_crypto_eip_hw_init();
+ 	if (ret) {
+ 		CRYPTO_ERR("crypto-eip hw init failed: %d\n", ret);
++		put_device(crypto_dev);
++		crypto_dev = NULL;
+ 		return ret;
+ 	}
+ 
+ 	ret = mtk_crypto_register_nf_hooks();
+-	if (ret)
++	if (ret) {
+ 		CRYPTO_ERR("crypto-eip register hook failed: %d\n", ret);
++		mtk_crypto_eip_hw_deinit();
++		put_device(crypto_dev);
++		crypto_dev = NULL;
++		return ret;
++	}
+ 
+ 	mtk_crypto_xfrm_offload_init(mcrypto.eth);
+ 	mtk_crypto_debugfs_init();
+@@ -546,7 +605,10 @@
+ 
+ 	mtk_crypto_unregister_nf_hooks();
+ 	mtk_crypto_eip_hw_deinit();
+-
++	if (crypto_dev) {
++		put_device(crypto_dev);
++		crypto_dev = NULL;
++	}
+ }
+ 
+ module_init(mtk_crypto_eip_init);
+diff -uNr a/xfrm-offload.c b/xfrm-offload.c
+--- a/xfrm-offload.c	2026-09-18 10:18:56.469895540 +0800
++++ b/xfrm-offload.c	2026-11-19 00:21:36.987685190 +0800
+@@ -320,8 +320,10 @@
+ 	xs->xso.offload_handle = (unsigned long)xfrm_params;
+ 
+ #if KERNEL_VERSION(6, 3, 0) < LINUX_VERSION_CODE
+-	memcpy(extack->cookie, &xfrm_params->cdrt->idx, sizeof(xfrm_params->cdrt->idx));
+-	extack->cookie_len = sizeof(xfrm_params->cdrt->idx);
++	if (extack) {
++		memcpy(extack->cookie, &xfrm_params->cdrt->idx, sizeof(xfrm_params->cdrt->idx));
++		extack->cookie_len = sizeof(xfrm_params->cdrt->idx);
++	}
+ #endif
+ 
+ 	spin_lock_bh(&xfrm_params_list.lock);
+@@ -338,45 +340,74 @@
+ {
+ }
+ 
+-void mtk_xfrm_offload_state_free(struct xfrm_state *xs)
++static bool mtk_xfrm_state_is_inbound(const struct xfrm_state *xs)
+ {
+-	struct mtk_xfrm_params *xfrm_params;
+-
+-	if (!xs->xso.offload_handle)
+-		return;
+-
+-	xfrm_params = (struct mtk_xfrm_params *)xs->xso.offload_handle;
+-	xs->xso.offload_handle = 0;
+-
+-	spin_lock_bh(&xfrm_params_list.lock);
+-	list_del(&xfrm_params->node);
+-	spin_unlock_bh(&xfrm_params_list.lock);
+-
++	if (!xs)
++		return false;
+ #if KERNEL_VERSION(6, 3, 0) < LINUX_VERSION_CODE
+-	if (xs->xso.dir == XFRM_DEV_OFFLOAD_IN)
++	return xs->xso.dir == XFRM_DEV_OFFLOAD_IN;
+ #else
+-	if (xs->xso.flags & XFRM_OFFLOAD_INBOUND)
++	return !!(xs->xso.flags & XFRM_OFFLOAD_INBOUND);
+ #endif
++}
++
++static void mtk_xfrm_offload_params_release(struct mtk_xfrm_params *xfrm_params,
++					    bool inbound)
++{
++	if (inbound)
+ 		mtk_xfrm_offload_cls_entry_tear_down(xfrm_params);
+ 
++	mtk_xfrm_offload_context_tear_down(xfrm_params);
++
+ 	if (xfrm_params->cdrt)
+ 		mtk_pce_cdrt_entry_free(xfrm_params->cdrt);
+ 
+-	mtk_xfrm_offload_context_tear_down(xfrm_params);
+-
+ 	devm_kfree(crypto_dev, xfrm_params);
+ }
+ 
+-void mtk_xfrm_offload_state_tear_down(void)
++void mtk_xfrm_offload_state_free(struct xfrm_state *xs)
+ {
+-	struct mtk_xfrm_params *xfrm_params, *tmp;
++	struct mtk_xfrm_params *xfrm_params;
++	bool inbound;
+ 
+ 	spin_lock_bh(&xfrm_params_list.lock);
++	xfrm_params = (struct mtk_xfrm_params *)xs->xso.offload_handle;
++	if (!xfrm_params) {
++		spin_unlock_bh(&xfrm_params_list.lock);
++		return;
++	}
++	xs->xso.offload_handle = 0;
++	list_del_init(&xfrm_params->node);
++	inbound = mtk_xfrm_state_is_inbound(xs);
++	spin_unlock_bh(&xfrm_params_list.lock);
+ 
+-	list_for_each_entry_safe(xfrm_params, tmp, &xfrm_params_list.list, node)
+-		mtk_xfrm_offload_state_free(xfrm_params->xs);
++	mtk_xfrm_offload_params_release(xfrm_params, inbound);
++}
+ 
+-	spin_unlock_bh(&xfrm_params_list.lock);
++void mtk_xfrm_offload_state_tear_down(void)
++{
++	struct mtk_xfrm_params *xfrm_params;
++	struct xfrm_state *xs;
++	bool inbound;
++
++	for (;;) {
++		spin_lock_bh(&xfrm_params_list.lock);
++		xfrm_params = list_first_entry_or_null(&xfrm_params_list.list,
++						       struct mtk_xfrm_params,
++						       node);
++		if (!xfrm_params) {
++			spin_unlock_bh(&xfrm_params_list.lock);
++			break;
++		}
++		list_del_init(&xfrm_params->node);
++		xs = xfrm_params->xs;
++		inbound = mtk_xfrm_state_is_inbound(xs);
++		if (xs && xs->xso.offload_handle == (unsigned long)xfrm_params)
++			xs->xso.offload_handle = 0;
++		spin_unlock_bh(&xfrm_params_list.lock);
++
++		mtk_xfrm_offload_params_release(xfrm_params, inbound);
++	}
+ }
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+@@ -387,16 +418,22 @@
+ {
+ 	struct mtk_xfrm_params *xfrm_params;
+ 	struct xfrm_state *xs;
+-	struct xfrm_tmpl xt = xp->xfrm_vec[0];
++	struct xfrm_tmpl xt;
++
++	if (!xp->xfrm_nr)
++		return 0;
+ 
++	xt = xp->xfrm_vec[0];
+ 	if (xt.id.spi) {
+ 		xs = xfrm_state_lookup_byspi(&init_net, xt.id.spi, xt.encap_family);
+ 		if (!xs)
+ 			return 0;
+ 
+ 		xfrm_params = (struct mtk_xfrm_params *)xs->xso.offload_handle;
+-		if (!xfrm_params)
++		if (!xfrm_params) {
++			xfrm_state_put(xs);
+ 			return 0;
++		}
+ 		xp->xdo.offload_handle = (unsigned long) xfrm_params;
+ 		xfrm_state_put(xs);
+ 	}
+@@ -583,10 +620,14 @@
+ 	}
+ 
+ 	xfrm_params = (struct mtk_xfrm_params *)xs->xso.offload_handle;
++	if (unlikely(!xfrm_params || !xfrm_params->cdrt))
++		return false;
+ 
+ 	/* Make sure we have enough skb headroom for cdrt_idx */
+-	if (skb_cow_head(skb, NET_SKB_PAD + NET_IP_ALIGN))
++	if (skb_cow_head(skb, NET_SKB_PAD + NET_IP_ALIGN)) {
++		skb->inner_protocol = IPPROTO_RSVP;
+ 		return true;
++	}
+ 
+ #if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
+ 	skb_hnat_cdrt(skb) = xfrm_params->cdrt->idx;
