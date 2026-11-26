@@ -191,45 +191,13 @@ static int mtk_get_channel(const char *dev, int *buf)
 
 static int mtk_get_center_chan1(const char *dev, int *buf)
 {
-	const char *ifname;
-	unsigned char ch = 0;
-	struct iwreq wrq = {};
-
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
-		return -1;
-
-	wrq.u.data.flags   = OID_GET_CEN_CH1;
-	wrq.u.data.pointer = &ch;
-	wrq.u.data.length  = sizeof(ch);
-
-	if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0) {
-		*buf = ch;
-		return 0;
-	}
-
+	/* Not Supported */
 	return -1;
 }
 
 static int mtk_get_center_chan2(const char *dev, int *buf)
 {
-	const char *ifname;
-	unsigned char ch = 0;
-	struct iwreq wrq = {};
-
-	ifname = mtk_dev2phy(dev);
-	if (!ifname)
-		return -1;
-
-	wrq.u.data.flags   = OID_GET_CEN_CH2;
-	wrq.u.data.pointer = &ch;
-	wrq.u.data.length  = sizeof(ch);
-
-	if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0) {
-		*buf = ch;
-		return 0;
-	}
-
+	/* Not Supported */
 	return -1;
 }
 
@@ -510,95 +478,45 @@ enum {
 	SCAN_DATA_SECURITY,
 	SCAN_DATA_RSSI,
 	SCAN_DATA_SIG,
-	SCAN_DATA_EXTCH,
 	SCAN_DATA_NT,
 	SCAN_DATA_SSID_LEN,
-	SCAN_DATA_VHT_CW,
-	SCAN_DATA_CCFS0,
-	SCAN_DATA_CCFS1,
 	SCAN_DATA_MAX
 };
 
-static int mtk_get_op_band(const char *ifname)
-{
-	unsigned char ch_band = 0;
-	struct iwreq wrq = {};
-
-	wrq.u.data.flags   = OID_GET_WIRELESS_BAND;
-	wrq.u.data.pointer = &ch_band;
-	wrq.u.data.length  = sizeof(ch_band);
-
-	if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0) {
-		switch (ch_band) {
-			case MTK_CH_BAND_24G: return IWINFO_BAND_24;
-			case MTK_CH_BAND_5G:  return IWINFO_BAND_5;
-			case MTK_CH_BAND_6G:  return IWINFO_BAND_6;
-		}
-	}
-
-	return 0;
-}
-
-/* Set a driver proc "<name>=<value>" via RTPRIV_IOCTL_SET (iwpriv's path, no shell). */
-static void mtk_drv_set(const char *ifname, const char *arg)
-{
-	struct iwreq wrq = {};
-
-	wrq.u.data.pointer = (caddr_t)arg;
-	wrq.u.data.length = strlen(arg) + 1;	/* include NUL, matching iwpriv */
-
-	mtk_ioctl(ifname, RTPRIV_IOCTL_SET, &wrq);
-}
-
-/* init the custom dwell. */
-static void mtk_init_partial_scan(const char *ifname, int op_band)
-{
-	mtk_drv_set(ifname, "PartialScan=1");
-	mtk_drv_set(ifname, "PartialScanTimerInterval=250");
-	mtk_drv_set(ifname, op_band == IWINFO_BAND_24 ? "ScanDwellTime=2:40" : "ScanDwellTime=5:40");
-	mtk_drv_set(ifname, "SiteSurvey=");
-}
-
-/* clear the custom dwell. */
-static void mtk_cleanup_partial_scan(const char *ifname)
-{
-	mtk_drv_set(ifname, "PartialScan=0");
-	mtk_drv_set(ifname, "ScanDwellTime=0:0");
-}
-
 static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 {
-	char *pos;
+	struct iwinfo_scanlist_entry *e = (struct iwinfo_scanlist_entry *)buf;
+	char *data = NULL;
+	unsigned int data_len = 5000;
+	int offsets[SCAN_DATA_MAX];
+	char cmd[128];
 	int index = 0;
 	int total = -1;
-	int op_band = 0;
-	char *data = NULL;
+	char *pos;
 	const char *ifname;
-	int offsets[SCAN_DATA_MAX];
-	unsigned int data_len = 5000;
-	struct iwinfo_scanlist_entry *e = (struct iwinfo_scanlist_entry *)buf;
 
 	ifname = mtk_dev2phy(dev);
 	if (!ifname)
 		return -1;
 
+	*len = 0;
+
 	if ((data = (char *)malloc(data_len)) == NULL)
 		return -1;
 
-	*len = 0;
-	op_band = mtk_get_op_band(ifname);
+	sprintf(cmd, "iwpriv %s set SiteSurvey=", ifname);
+	system(cmd);
 
-	mtk_cleanup_partial_scan(ifname);
-	mtk_init_partial_scan(ifname, op_band);
-
-	sleep(3);
+	sleep(5);
 
 	while (1) {
 		memset(data, 0, data_len);
-		if (mtk_get_scanlist_dump(ifname, index, data, data_len)) {
+		if (mtk_get_scanlist_dump(ifname, index, data, sizeof(data))) {
 			free(data);
 			return -1;
 		}
+
+		//printf("%s\n", data);
 
 		sscanf(data, "\nTotal=%d", &total);
 
@@ -611,12 +529,8 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 		offsets[SCAN_DATA_SECURITY] = strstr(pos, "Security ") - pos;
 		offsets[SCAN_DATA_RSSI] = strstr(pos, "Rssi") - pos;
 		offsets[SCAN_DATA_SIG] = strstr(pos, "Siganl") - pos;
-		offsets[SCAN_DATA_EXTCH] = strstr(pos, " ExtCH") - pos;
 		offsets[SCAN_DATA_NT] = strstr(pos, "NT") - pos;
 		offsets[SCAN_DATA_SSID_LEN] = strstr(pos, "SSID_Len") - pos;
-		offsets[SCAN_DATA_VHT_CW] = strstr(pos, "VHT_CW") - pos;
-		offsets[SCAN_DATA_CCFS0]  = strstr(pos, "CCFS0") - pos;
-		offsets[SCAN_DATA_CCFS1]  = strstr(pos, "CCFS1") - pos;
 
 		while (1) {
 			struct iwinfo_crypto_entry *crypto = &e->crypto;
@@ -636,9 +550,6 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 			security = pos + offsets[SCAN_DATA_SECURITY];
 			if (!strstr(security, "PSK") && !strstr(security, "OPEN") && !strstr(security, "OWE"))
 				continue;
-
-			if (*len + (int)sizeof(struct iwinfo_scanlist_entry) > IWINFO_BUFSIZE)
-				break;
 
 			memset(crypto, 0, sizeof(struct iwinfo_crypto_entry));
 
@@ -689,35 +600,6 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 			e->mode = IWINFO_OPMODE_MASTER;
 
 			sscanf(pos + offsets[SCAN_DATA_CH], "%"SCNu8, &e->channel);
-			if (op_band)
-				e->band = op_band;
-			else if (e->channel <= 14)
-				e->band = IWINFO_BAND_24;
-			else
-				e->band = IWINFO_BAND_5;
-			memset(&e->ht_chan_info, 0, sizeof(e->ht_chan_info));
-			memset(&e->vht_chan_info, 0, sizeof(e->vht_chan_info));
-			if (strstr(pos + offsets[SCAN_DATA_EXTCH], "ABOVE")) {
-				e->ht_chan_info.primary_chan = e->channel;
-				e->ht_chan_info.secondary_chan_off = 1; /* above */
-				e->ht_chan_info.chan_width = 1;        /* ht_chan_width[1]=2040 */
-			} else if (strstr(pos + offsets[SCAN_DATA_EXTCH], "BELOW")) {
-				e->ht_chan_info.primary_chan = e->channel;
-				e->ht_chan_info.secondary_chan_off = 3; /* below */
-				e->ht_chan_info.chan_width = 1;        /* ht_chan_width[1]=2040 */
-			}
-			/* chan_width: raw IEEE 0/1/2/3 -> 40/80/160/80+80; clamp invalid to 0 */
-			{
-				unsigned int vht_cw = 0, ccfs0 = 0, ccfs1 = 0;
-				sscanf(pos + offsets[SCAN_DATA_VHT_CW], "%u", &vht_cw);
-				sscanf(pos + offsets[SCAN_DATA_CCFS0],  "%u", &ccfs0);
-				sscanf(pos + offsets[SCAN_DATA_CCFS1],  "%u", &ccfs1);
-				if (vht_cw > 3)
-					vht_cw = 0;
-				e->vht_chan_info.chan_width    = (uint8_t)vht_cw;
-				e->vht_chan_info.center_chan_1 = (uint8_t)ccfs0;
-				e->vht_chan_info.center_chan_2 = (uint8_t)ccfs1;
-			}
 			sscanf(pos + offsets[SCAN_DATA_RSSI], "%"SCNu8, &e->signal);
 			sscanf(pos + offsets[SCAN_DATA_SIG], "%"SCNu8, &e->quality);
 			e->quality_max = 100;
@@ -726,12 +608,7 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 				mac + 0, mac + 1, mac + 2, mac + 3, mac + 4, mac + 5);
 
 			sscanf(pos + offsets[SCAN_DATA_SSID_LEN], "%d", &ssid_len);
-			if (ssid_len < 0)
-				ssid_len = 0;
-			if (ssid_len > IWINFO_ESSID_MAX_SIZE)
-				ssid_len = IWINFO_ESSID_MAX_SIZE;
 			memcpy(e->ssid, pos + offsets[SCAN_DATA_SSID], ssid_len);
-			e->ssid[ssid_len] = '\0';
 
 			*len += sizeof(struct iwinfo_scanlist_entry);
 			e++;
@@ -739,9 +616,6 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
 			if (index + 1 == total)
 				break;
 		}
-
-		if (*len + (int)sizeof(struct iwinfo_scanlist_entry) > IWINFO_BUFSIZE)
-			break;
 
 		if (index + 1 == total)
 			break;
@@ -759,7 +633,7 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
 	struct iw_range range;
 	struct iwinfo_freqlist_entry entry;
 	const char* ifname;
-	int i, bl, op_band;
+	int i, bl;
 
 	ifname = mtk_dev2phy(dev);
 	if (!ifname)
@@ -767,8 +641,6 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
 
 	if (!mtk_is_ifup(ifname))
 		return -1;
-
-	op_band = mtk_get_op_band(ifname);
 
 	wrq.u.data.pointer = (caddr_t) &range;
 	wrq.u.data.length  = sizeof(struct iw_range);
@@ -782,12 +654,6 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
 		{
 			entry.mhz        = range.freq[i].m;
 			entry.channel    = range.freq[i].i;
-			if (op_band)
-				entry.band = op_band;
-			else if (entry.channel <= 14)
-				entry.band = IWINFO_BAND_24;
-			else
-				entry.band = IWINFO_BAND_5;
 			entry.restricted = 0;
 
 			memcpy(&buf[bl], &entry, sizeof(struct iwinfo_freqlist_entry));

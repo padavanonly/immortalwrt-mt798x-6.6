@@ -1,0 +1,88 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] iwinfo: cli: validate scan result length before formatting
+
+Validate returned scan entry counts and non-negative lengths in iwinfo_cli before formatting scan output.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ iwinfo_cli.c | 37 +++++++++++++++++++++++++++++--------
+ 1 file changed, 29 insertions(+), 8 deletions(-)
+
+diff --git a/iwinfo_cli.c b/iwinfo_cli.c
+index 8cee21b..9b3917d 100644
+--- a/iwinfo_cli.c
++++ b/iwinfo_cli.c
+@@ -37,7 +37,7 @@ static char * format_ssid(char *ssid)
+ 	static char buf[IWINFO_ESSID_MAX_SIZE+3];
+ 
+ 	if (ssid && ssid[0])
+-		snprintf(buf, sizeof(buf), "\"%s\"", ssid);
++		snprintf(buf, sizeof(buf), "\"%.*s\"", IWINFO_ESSID_MAX_SIZE, ssid);
+ 	else
+ 		snprintf(buf, sizeof(buf), "unknown");
+ 
+@@ -681,11 +681,16 @@ static void print_info(const struct iwinfo_ops *iw, const char *ifname)
+ 
+ static void print_scanlist(const struct iwinfo_ops *iw, const char *ifname)
+ {
+-	int i, x, len;
+-	char buf[IWINFO_BUFSIZE];
++	int x, len = 0;
++	size_t i, entries;
++	union {
++		struct iwinfo_scanlist_entry align;
++		char data[IWINFO_BUFSIZE];
++	} res;
+ 	struct iwinfo_scanlist_entry *e;
+ 
+-	if (iw->scanlist(ifname, buf, &len))
++	memset(res.data, 0, sizeof(res.data));
++	if (iw->scanlist(ifname, res.data, &len))
+ 	{
+ 		printf("Scanning not possible\n\n");
+ 		return;
+@@ -696,9 +701,25 @@ static void print_scanlist(const struct iwinfo_ops *iw, const char *ifname)
+ 		return;
+ 	}
+ 
+-	for (i = 0, x = 1; i < len; i += sizeof(struct iwinfo_scanlist_entry), x++)
++	if (len > IWINFO_BUFSIZE || (size_t)len % sizeof(*e) != 0)
++	{
++		fprintf(stderr, "Invalid scanlist response length: %d\n", len);
++		return;
++	}
++
++	entries = (size_t)len / sizeof(*e);
++	for (i = 0, x = 1; i < entries; i++, x++)
+ 	{
+-		e = (struct iwinfo_scanlist_entry *) &buf[i];
++		const char *mode = IWINFO_OPMODE_NAMES[IWINFO_OPMODE_UNKNOWN];
++		const char *secondary_offset = "unknown";
++
++		e = (struct iwinfo_scanlist_entry *)res.data + i;
++
++		if ((unsigned int)e->mode < IWINFO_OPMODE_COUNT)
++			mode = IWINFO_OPMODE_NAMES[e->mode];
++
++		if (e->ht_chan_info.secondary_chan_off < ARRAY_SIZE(ht_secondary_offset))
++			secondary_offset = ht_secondary_offset[e->ht_chan_info.secondary_chan_off];
+ 
+ 		printf("Cell %02d - Address: %s\n",
+ 			x,
+@@ -706,7 +727,7 @@ static void print_scanlist(const struct iwinfo_ops *iw, const char *ifname)
+ 		printf("          ESSID: %s\n",
+ 			format_ssid(e->ssid));
+ 		printf("          Mode: %s  Frequency: %s  Band: %s  Channel: %s\n",
+-			IWINFO_OPMODE_NAMES[e->mode],
++			mode,
+ 			format_frequency(e->mhz),
+ 			format_band(e->band),
+ 			format_channel(e->channel));
+@@ -721,7 +742,7 @@ static void print_scanlist(const struct iwinfo_ops *iw, const char *ifname)
+ 			printf("                    Primary Channel: %d\n",
+ 				e->ht_chan_info.primary_chan);
+ 			printf("                    Secondary Channel Offset: %s\n",
+-				ht_secondary_offset[e->ht_chan_info.secondary_chan_off]);
++				secondary_offset);
+ 			printf("                    Channel Width: %s\n",
+ 				format_chan_width(false, e->ht_chan_info.chan_width));
+ 		}

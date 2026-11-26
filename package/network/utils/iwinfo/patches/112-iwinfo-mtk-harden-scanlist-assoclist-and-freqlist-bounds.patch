@@ -1,0 +1,1144 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] iwinfo: mtk: harden scanlist, assoclist, config lifetime, and
+ security queries
+
+Bound MTK scanlist/assoclist outputs, retain UCI config strings before context unload, zero-initialize freqlist entries, and validate security type ioctls.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ iwinfo_mtk.c | 834 ++++++++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 664 insertions(+), 170 deletions(-)
+
+diff --git a/iwinfo_mtk.c b/iwinfo_mtk.c
+index bf2d6ea..92a2a60 100644
+--- a/iwinfo_mtk.c
++++ b/iwinfo_mtk.c
+@@ -1,4 +1,5 @@
+ #include <inttypes.h>
++#include <stddef.h>
+ #include "iwinfo.h"
+ #include "iwinfo_wext.h"
+ #include "mtwifi.h"
+@@ -15,23 +16,50 @@ static inline int mtk_ioctl(const char *ifname, int cmd, struct iwreq *wrq)
+ 	return iwinfo_ioctl(cmd, wrq);
+ }
+ 
+-static const char *mtk_dev2phy(const char *devname)
++static int mtk_dev2phy(const char *devname, char *phy, size_t phy_size)
+ {
+-	const char *phy = NULL;
++	const char *mapped_phy;
+ 	struct uci_section *s;
++	size_t len;
++	int ret = -1;
++
++	if (!phy || !phy_size)
++		return -1;
++
++	if (phy_size > IFNAMSIZ)
++		phy_size = IFNAMSIZ;
+ 
+-	if (strstr(devname,"ra") || strstr(devname,"apcli"))
+-		return devname;
++	phy[0] = '\0';
++	if (!devname || !*devname)
++		return -1;
++
++	if (strstr(devname, "ra") || strstr(devname, "apcli")) {
++		len = strnlen(devname, phy_size);
++		if (len >= phy_size)
++			return -1;
++
++		memcpy(phy, devname, len + 1);
++		return 0;
++	}
+ 
+ 	s = iwinfo_uci_get_radio(devname, "mtwifi");
+ 	if (!s)
+ 		goto out;
+-	
+-	phy = uci_lookup_option_string(uci_ctx, s, "phy");
++
++	mapped_phy = uci_lookup_option_string(uci_ctx, s, "phy");
++	if (!mapped_phy || !*mapped_phy)
++		goto out;
++
++	len = strnlen(mapped_phy, phy_size);
++	if (len >= phy_size)
++		goto out;
++
++	memcpy(phy, mapped_phy, len + 1);
++	ret = 0;
+ 
+ out:
+ 	iwinfo_uci_free();
+-	return phy;
++	return ret;
+ }
+ 
+ static int mtk_probe(const char *dev)
+@@ -57,6 +85,39 @@ out:
+ 	return false;
+ }
+ 
++enum mtk_config_band {
++	MTK_CONFIG_BAND_NONE,
++	MTK_CONFIG_BAND_OTHER,
++	MTK_CONFIG_BAND_2G,
++	MTK_CONFIG_BAND_5G,
++};
++
++static enum mtk_config_band mtk_get_config_band(const char *dev)
++{
++	const char *band;
++	struct uci_section *s;
++	enum mtk_config_band result = MTK_CONFIG_BAND_NONE;
++
++	s = iwinfo_uci_get_radio(dev, "mtwifi");
++	if (!s)
++		goto out;
++
++	band = uci_lookup_option_string(uci_ctx, s, "band");
++	if (!band)
++		goto out;
++
++	if (!strcmp(band, "2g"))
++		result = MTK_CONFIG_BAND_2G;
++	else if (!strcmp(band, "5g"))
++		result = MTK_CONFIG_BAND_5G;
++	else
++		result = MTK_CONFIG_BAND_OTHER;
++
++out:
++	iwinfo_uci_free();
++	return result;
++}
++
+ static void mtk_close(void)
+ {
+ 	iwinfo_close();
+@@ -80,10 +141,9 @@ static int mtk_is_ifup(const char *ifname)
+ static int mtk_get_mode(const char *dev, int *buf)
+ {
+ 	struct iwreq wrq;
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if(mtk_ioctl(ifname, SIOCGIWMODE, &wrq) >= 0)
+@@ -120,10 +180,9 @@ static int mtk_get_mode(const char *dev, int *buf)
+ static int mtk_get_ssid(const char *dev, char *buf)
+ {
+ 	struct iwreq wrq = {};
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	wrq.u.essid.pointer = buf;
+@@ -138,10 +197,9 @@ static int mtk_get_ssid(const char *dev, char *buf)
+ static int mtk_get_bssid(const char *dev, char *buf)
+ {
+ 	struct iwreq wrq;
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if(mtk_ioctl(ifname, SIOCGIWAP, &wrq) >= 0)
+@@ -160,10 +218,9 @@ static int mtk_get_bssid(const char *dev, char *buf)
+ static int mtk_get_bitrate(const char *dev, int *buf)
+ {
+ 	struct iwreq wrq;
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if(mtk_ioctl(ifname, SIOCGIWRATE, &wrq) >= 0)
+@@ -178,10 +235,9 @@ static int mtk_get_bitrate(const char *dev, int *buf)
+ static int mtk_get_channel(const char *dev, int *buf)
+ {
+ 	struct iwreq wrq;
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) >= 0)
+@@ -209,10 +265,9 @@ static int mtk_get_frequency(const char *dev, int *buf)
+ {
+ 	int channel;
+ 	struct iwreq wrq;
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) >= 0)
+@@ -243,10 +298,9 @@ static int mtk_get_frequency(const char *dev, int *buf)
+ static int mtk_get_txpower(const char *dev, int *buf)
+ {
+ 	struct iwreq wrq;
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	wrq.u.txpower.flags = 0;
+@@ -414,10 +468,15 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
+ 	struct iwreq wrq = {};
+ 	RT_802_11_MAC_TABLE *table;
+ 	int i;
+-	const char *ifname;
++	int ret = -1;
++	size_t returned_len;
++	size_t driver_entry_capacity;
++	size_t output_entry_capacity;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	*len = 0;
++
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	table = calloc(1, sizeof(RT_802_11_MAC_TABLE));
+@@ -428,11 +487,24 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
+ 	wrq.u.data.length  = sizeof(RT_802_11_MAC_TABLE);
+ 
+ 	if (mtk_ioctl(ifname, RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT, &wrq) < 0) {
+-		free(table);
+-		return -1;
++		goto out;
+ 	}
+ 
+-	*len = 0;
++	returned_len = wrq.u.data.length;
++	if (returned_len < offsetof(RT_802_11_MAC_TABLE, Entry) ||
++	    returned_len > sizeof(*table))
++		goto out;
++
++	driver_entry_capacity = sizeof(table->Entry) / sizeof(table->Entry[0]);
++	if (table->Num > driver_entry_capacity ||
++	    table->Num > (returned_len - offsetof(RT_802_11_MAC_TABLE, Entry)) /
++	                 sizeof(table->Entry[0]))
++		goto out;
++
++	output_entry_capacity = IWINFO_BUFSIZE /
++	                         sizeof(struct iwinfo_assoclist_entry);
++	if (table->Num > output_entry_capacity)
++		goto out;
+ 
+ 	for (i = 0; i < table->Num; i++) {
+ 		RT_802_11_MAC_ENTRY *pe = &(table->Entry[i]);
+@@ -453,8 +525,10 @@ static int mtk_get_assoclist(const char *dev, char *buf, int *len)
+ 		*len += sizeof(struct iwinfo_assoclist_entry);
+ 	}
+ 
++	ret = 0;
++out:
+ 	free(table);
+-	return 0;
++	return ret;
+ }
+ 
+ static int mtk_get_txpwrlist(const char *dev, char *buf, int *len)
+@@ -462,17 +536,27 @@ static int mtk_get_txpwrlist(const char *dev, char *buf, int *len)
+ 	return -1;
+ }
+ 
+-static int mtk_get_scanlist_dump(const char *ifname, int index, char *data, size_t len)
++static int mtk_get_scanlist_dump(const char *ifname, int index, char *data,
++				 size_t len, size_t *response_len)
+ {
+ 	struct iwreq wrq = {};
++	int index_len;
++	int ret;
+ 
+-	snprintf(data, len, "%d", index);
++	index_len = snprintf(data, len, "%d", index);
++	if (index_len < 0 || (size_t)index_len >= len)
++		return -1;
+ 
+ 	wrq.u.data.pointer = data;
+-	wrq.u.data.length = len;
++	wrq.u.data.length = (uint16_t)index_len;
+ 	wrq.u.data.flags = GET_MAC_TABLE_STRUCT_FLAG_RAW_SSID;
+ 
+-	return mtk_ioctl(ifname, RTPRIV_IOCTL_GSITESURVEY, &wrq);
++	ret = mtk_ioctl(ifname, RTPRIV_IOCTL_GSITESURVEY, &wrq);
++	if (ret < 0)
++		return ret;
++
++	*response_len = wrq.u.data.length;
++	return 0;
+ }
+ 
+ enum {
+@@ -482,80 +566,432 @@ enum {
+ 	SCAN_DATA_SECURITY,
+ 	SCAN_DATA_RSSI,
+ 	SCAN_DATA_SIG,
++	SCAN_DATA_WMODE,
++	SCAN_DATA_EXTCH,
+ 	SCAN_DATA_NT,
+ 	SCAN_DATA_SSID_LEN,
+ 	SCAN_DATA_MAX
+ };
+ 
+-static int mtk_get_scanlist(const char *dev, char *buf, int *len)
++#define MTK_SCANLIST_MAX_BSS 512
++#define MTK_SCANLIST_RESPONSE_CAPACITY 5000
++#define MTK_SCANLIST_SECURITY_MAX 64
++/* BSS_ENTRY.Rssi is signed CHAR; the Vendor formatter adds 0x100. */
++#define MTK_SCANLIST_MAX_ENCODED_RSSI 383
++
++static int mtk_scanlist_field_fits(size_t row_len, size_t offset, size_t width)
+ {
+-	struct iwinfo_scanlist_entry *e = (struct iwinfo_scanlist_entry *)buf;
+-	char *data = NULL;
+-	unsigned int data_len = 5000;
+-	int offsets[SCAN_DATA_MAX];
+-	char cmd[128];
+-	int index = 0;
+-	int total = -1;
+-	char *pos;
+-	const char *ifname;
++	return offset <= row_len && width <= row_len - offset;
++}
++
++static int mtk_scanlist_parse_uint(const char *field, size_t field_len,
++				   unsigned long max_value,
++				   unsigned long *value)
++{
++	size_t i = 0;
++	unsigned long parsed = 0;
++	int digits = 0;
++
++	while (i < field_len && field[i] == ' ')
++		i++;
++
++	while (i < field_len && field[i] >= '0' && field[i] <= '9') {
++		unsigned long digit = (unsigned long)(field[i] - '0');
++
++		if (digit > max_value || parsed > (max_value - digit) / 10)
++			return -1;
++
++		parsed = parsed * 10 + digit;
++		digits++;
++		i++;
++	}
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (!digits)
+ 		return -1;
+ 
+-	*len = 0;
++	while (i < field_len && field[i] == ' ')
++		i++;
+ 
+-	if ((data = (char *)malloc(data_len)) == NULL)
++	if (i != field_len)
+ 		return -1;
+ 
+-	sprintf(cmd, "iwpriv %s set SiteSurvey=", ifname);
+-	system(cmd);
++	*value = parsed;
++	return 0;
++}
+ 
+-	sleep(5);
++static int mtk_scanlist_header_offsets(const char *header, size_t header_len,
++				       size_t offsets[SCAN_DATA_MAX])
++{
++	static const size_t expected_offsets[SCAN_DATA_MAX] = {
++		4, 8, 42, 62, 85, 93, 102, 114, 121, 124
++	};
++	static const char * const columns[SCAN_DATA_MAX] = {
++		"Ch ", "SSID ", "BSSID ", "Security ", "Rssi", "Siganl",
++		"W-Mode", "ExtCH", "NT", "SSID_Len"
++	};
++	int i;
++
++	if (header_len < 4 || memcmp(header, "No  ", 4))
++		return -1;
+ 
+-	while (1) {
+-		memset(data, 0, data_len);
+-		if (mtk_get_scanlist_dump(ifname, index, data, sizeof(data))) {
+-			free(data);
++	for (i = 0; i < SCAN_DATA_MAX; i++) {
++		offsets[i] = expected_offsets[i];
++		if (offsets[i] + strlen(columns[i]) > header_len)
+ 			return -1;
+-		}
++		if (memcmp(header + offsets[i], columns[i], strlen(columns[i])))
++			return -1;
++	}
++
++	if (offsets[SCAN_DATA_CH] != 4 ||
++	    offsets[SCAN_DATA_SSID] - offsets[SCAN_DATA_CH] != 4 ||
++	    offsets[SCAN_DATA_BSSID] - offsets[SCAN_DATA_SSID] != 34 ||
++	    offsets[SCAN_DATA_SECURITY] - offsets[SCAN_DATA_BSSID] != 20 ||
++	    offsets[SCAN_DATA_RSSI] - offsets[SCAN_DATA_SECURITY] != 23 ||
++	    offsets[SCAN_DATA_SIG] - offsets[SCAN_DATA_RSSI] != 8 ||
++	    offsets[SCAN_DATA_WMODE] - offsets[SCAN_DATA_SIG] != 9 ||
++	    offsets[SCAN_DATA_EXTCH] - offsets[SCAN_DATA_WMODE] != 12 ||
++	    offsets[SCAN_DATA_NT] - offsets[SCAN_DATA_EXTCH] != 7 ||
++	    offsets[SCAN_DATA_SSID_LEN] - offsets[SCAN_DATA_NT] != 3)
++		return -1;
++
++	return 0;
++}
++
++static int mtk_scanlist_fixed_field_matches(const char *field, size_t width,
++					   const char *value)
++{
++	size_t value_len = strlen(value);
++	size_t i;
++
++	if (value_len > width || memcmp(field, value, value_len))
++		return 0;
++
++	for (i = value_len; i < width; i++) {
++		if (field[i] != ' ')
++			return 0;
++	}
++
++	return 1;
++}
+ 
+-		//printf("%s\n", data);
++static int mtk_scanlist_row_offsets(const char *row, size_t row_len,
++				    const size_t header_offsets[SCAN_DATA_MAX],
++				    size_t row_offsets[SCAN_DATA_MAX])
++{
++	static const char * const wireless_modes[] = {
++		"b", "a", "a/n", "a/n/ac", "b/g", "b/g/n", "b/g/n/ax",
++		"a/n/ac/ax", "b/g/n/ax/be", "a/n/ac/ax/be", "unknown"
++	};
++	static const char * const ext_channels[] = {
++		" ABOVE", " BELOW", " NONE"
++	};
++	size_t security_start = header_offsets[SCAN_DATA_SECURITY];
++	size_t base_rssi = header_offsets[SCAN_DATA_RSSI];
++	size_t candidate;
++	size_t max_candidate;
++	size_t found_rssi = 0;
++	size_t found_wmode_width = 0;
++	unsigned long value;
++	unsigned long ssid_length;
++	int found = 0;
++	int i;
+ 
+-		sscanf(data, "\nTotal=%d", &total);
++	if (row_len < 47 || base_rssi < security_start ||
++	    base_rssi - security_start < 23)
++		return -1;
+ 
+-		strtok(data, "\n");
+-		pos = strtok(NULL, "\n");
++	max_candidate = row_len - 47;
++	if (max_candidate > security_start + MTK_SCANLIST_SECURITY_MAX)
++		max_candidate = security_start + MTK_SCANLIST_SECURITY_MAX;
++	if (max_candidate < base_rssi)
++		return -1;
+ 
+-		offsets[SCAN_DATA_CH] = strstr(pos, "Ch ") - pos;
+-		offsets[SCAN_DATA_SSID] = strstr(pos, "SSID ") - pos;
+-		offsets[SCAN_DATA_BSSID] = strstr(pos, "BSSID ") - pos;
+-		offsets[SCAN_DATA_SECURITY] = strstr(pos, "Security ") - pos;
+-		offsets[SCAN_DATA_RSSI] = strstr(pos, "Rssi") - pos;
+-		offsets[SCAN_DATA_SIG] = strstr(pos, "Siganl") - pos;
+-		offsets[SCAN_DATA_NT] = strstr(pos, "NT") - pos;
+-		offsets[SCAN_DATA_SSID_LEN] = strstr(pos, "SSID_Len") - pos;
++	for (candidate = base_rssi; candidate <= max_candidate; candidate++) {
++		size_t wmode_start = candidate + 17;
++		size_t security_width = candidate - security_start;
++		size_t security_len = security_width;
++		size_t j;
++		int padding = 0;
+ 
+-		while (1) {
+-			struct iwinfo_crypto_entry *crypto = &e->crypto;
+-			const char *security;
+-			uint8_t *mac = e->mac;
+-			int ssid_len;
++		if (!mtk_scanlist_field_fits(row_len, candidate, 8) ||
++		    !mtk_scanlist_field_fits(row_len, candidate + 8, 9))
++			continue;
+ 
+-			pos = strtok(NULL, "\n");
+-			if (!pos)
++		if (mtk_scanlist_parse_uint(row + candidate, 8,
++					    MTK_SCANLIST_MAX_ENCODED_RSSI, &value) ||
++		    mtk_scanlist_parse_uint(row + candidate + 8, 9, 100, &value))
++			continue;
++
++		if (security_width > MTK_SCANLIST_SECURITY_MAX)
++			continue;
++		for (j = 0; j < security_width; j++) {
++			if (row[security_start + j] == ' ') {
++				padding = 1;
++				security_len = j;
++			} else if (padding || (unsigned char)row[security_start + j] < 0x21 ||
++				   (unsigned char)row[security_start + j] > 0x7e) {
+ 				break;
++			}
++		}
++		if (j != security_width || security_len == 0)
++			continue;
+ 
+-			sscanf(pos, "%d", &index);
++		for (i = 0; i < (int)(sizeof(wireless_modes) / sizeof(wireless_modes[0])); i++) {
++			size_t wmode_width = strlen(wireless_modes[i]);
++			size_t extch_start;
++			size_t nt_start;
++			size_t ssid_len_start;
++			int matches_extch = 0;
++
++			if (wmode_width < 11)
++				wmode_width = 11;
++			if (!mtk_scanlist_field_fits(row_len, wmode_start, wmode_width) ||
++			    !mtk_scanlist_fixed_field_matches(row + wmode_start, wmode_width,
++							     wireless_modes[i]))
++				continue;
+ 
+-			if (strncmp(pos + offsets[SCAN_DATA_NT], "In", 2))
++			extch_start = wmode_start + wmode_width;
++			nt_start = extch_start + 7;
++			ssid_len_start = nt_start + 4;
++			if (!mtk_scanlist_field_fits(row_len, extch_start, 7) ||
++			    !mtk_scanlist_field_fits(row_len, nt_start, 3) ||
++			    !mtk_scanlist_field_fits(row_len, ssid_len_start - 1, 1) ||
++			    row[ssid_len_start - 1] != ' ' ||
++			    !mtk_scanlist_field_fits(row_len, ssid_len_start, 8) ||
++			    mtk_scanlist_parse_uint(row + ssid_len_start, 8,
++						    IWINFO_ESSID_MAX_SIZE, &ssid_length))
+ 				continue;
+ 
+-			security = pos + offsets[SCAN_DATA_SECURITY];
+-			if (!strstr(security, "PSK") && !strstr(security, "OPEN") && !strstr(security, "OWE"))
++			if (!((row[nt_start] == ' ' && row[nt_start + 1] == 'I' &&
++			       row[nt_start + 2] == 'n') ||
++			      (row[nt_start] == ' ' && row[nt_start + 1] == 'A' &&
++			       row[nt_start + 2] == 'd')))
+ 				continue;
+ 
+-			memset(crypto, 0, sizeof(struct iwinfo_crypto_entry));
++			for (j = 0; j < (int)(sizeof(ext_channels) / sizeof(ext_channels[0])); j++) {
++				if (mtk_scanlist_fixed_field_matches(row + extch_start, 7,
++								     ext_channels[j])) {
++					matches_extch = 1;
++					break;
++				}
++			}
++			if (!matches_extch)
++				continue;
++
++			if (found)
++				return -1;
++			found = 1;
++			found_rssi = candidate;
++			found_wmode_width = wmode_width;
++		}
++	}
++
++	if (!found)
++		return -1;
++
++	memcpy(row_offsets, header_offsets, sizeof(size_t) * SCAN_DATA_MAX);
++	row_offsets[SCAN_DATA_RSSI] = found_rssi;
++	row_offsets[SCAN_DATA_SIG] = found_rssi + 8;
++	row_offsets[SCAN_DATA_WMODE] = found_rssi + 17;
++	row_offsets[SCAN_DATA_EXTCH] = found_rssi + 18 + found_wmode_width;
++	row_offsets[SCAN_DATA_NT] = found_rssi + 25 + found_wmode_width;
++	row_offsets[SCAN_DATA_SSID_LEN] = found_rssi + 28 + found_wmode_width;
++	return 0;
++}
++
++static int mtk_scanlist_hex_nibble(char value)
++{
++	if (value >= '0' && value <= '9')
++		return value - '0';
++	if (value >= 'a' && value <= 'f')
++		return value - 'a' + 10;
++	if (value >= 'A' && value <= 'F')
++		return value - 'A' + 10;
++	return -1;
++}
++
++static int mtk_scanlist_parse_bssid(const char *field, size_t field_len,
++				    uint8_t mac[6])
++{
++	size_t pos = 0;
++	int i;
++
++	if (field_len != 20)
++		return -1;
++
++	for (i = 0; i < 6; i++) {
++		int high = mtk_scanlist_hex_nibble(field[pos]);
++		int low = mtk_scanlist_hex_nibble(field[pos + 1]);
++
++		if (high < 0 || low < 0)
++			return -1;
++
++		mac[i] = (uint8_t)((high << 4) | low);
++		pos += 2;
++
++		if (i < 5) {
++			if (field[pos] != ':')
++				return -1;
++			pos++;
++		}
++	}
++
++	if (pos != 17)
++		return -1;
++
++	while (pos < field_len) {
++		if (field[pos] != ' ')
++			return -1;
++		pos++;
++	}
++
++	return 0;
++}
++
++static int mtk_scanlist_parse_page(char *data, size_t data_len,
++				   int requested_index, int expected_total,
++				   char *buf, size_t output_cap,
++				   size_t *output_len, int *total_out,
++				   int *next_index)
++{
++	struct iwinfo_scanlist_entry *entry;
++	struct iwinfo_crypto_entry *crypto;
++	char security[MTK_SCANLIST_SECURITY_MAX + 1];
++	char *total_line;
++	char *line_end;
++	char *header;
++	char *row;
++	char *row_end;
++	size_t offsets[SCAN_DATA_MAX];
++	size_t row_offsets[SCAN_DATA_MAX];
++	size_t total_line_len;
++	size_t header_len;
++	size_t row_len;
++	size_t security_len;
++	size_t ssid_len;
++	size_t ssid_field_len;
++	size_t expected_row;
++	unsigned long parsed;
++	unsigned long row_index;
++	unsigned long channel;
++	unsigned long signal;
++	unsigned long quality;
++	unsigned long ssid_length;
++	uint8_t mac[6];
++	int total;
++	int is_infrastructure;
++	int supported_security;
++
++	if (data_len < 2 || data[0] != '\n' || data[data_len - 1] != '\n')
++		return -1;
++
++	total_line = data + 1;
++	line_end = memchr(total_line, '\n', data_len - 1);
++	if (!line_end)
++		return -1;
++	total_line_len = (size_t)(line_end - total_line);
++	if (total_line_len < sizeof("Total=") - 1 ||
++	    memcmp(total_line, "Total=", sizeof("Total=") - 1) ||
++	    mtk_scanlist_parse_uint(total_line + sizeof("Total=") - 1,
++				    total_line_len - (sizeof("Total=") - 1),
++				    MTK_SCANLIST_MAX_BSS, &parsed))
++		return -1;
++
++	total = (int)parsed;
++	if (total <= 0 || total > MTK_SCANLIST_MAX_BSS ||
++	    (expected_total >= 0 && total != expected_total) ||
++	    requested_index < 0 || requested_index >= total)
++		return -1;
++
++	header = line_end + 1;
++	line_end = memchr(header, '\n', (size_t)((data + data_len) - header));
++	if (!line_end)
++		return -1;
++	header_len = (size_t)(line_end - header);
++	*line_end = '\0';
++	if (mtk_scanlist_header_offsets(header, header_len, offsets))
++		return -1;
++
++	expected_row = (size_t)requested_index;
++	row = line_end + 1;
++	while (row < data + data_len) {
++		if (*output_len == output_cap)
++			break;
++
++		row_end = memchr(row, '\n', (size_t)((data + data_len) - row));
++		if (!row_end)
++			return -1;
++
++		row_len = (size_t)(row_end - row);
++		if (row_len == 0 ||
++		    !mtk_scanlist_field_fits(row_len, 0, 4) ||
++		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_CH], 4) ||
++		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_SSID],
++					     offsets[SCAN_DATA_BSSID] - offsets[SCAN_DATA_SSID]) ||
++		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_BSSID],
++					     offsets[SCAN_DATA_SECURITY] - offsets[SCAN_DATA_BSSID]) ||
++		    mtk_scanlist_row_offsets(row, row_len, offsets, row_offsets))
++			return -1;
++
++		if (mtk_scanlist_parse_uint(row, 4, MTK_SCANLIST_MAX_BSS - 1,
++					    &row_index) ||
++		    row_index != expected_row || row_index >= (unsigned long)total ||
++		    mtk_scanlist_parse_uint(row + offsets[SCAN_DATA_CH], 4,
++					    UINT8_MAX, &channel) ||
++		    mtk_scanlist_parse_uint(row + row_offsets[SCAN_DATA_RSSI],
++					    row_offsets[SCAN_DATA_SIG] - row_offsets[SCAN_DATA_RSSI],
++					    MTK_SCANLIST_MAX_ENCODED_RSSI, &signal) ||
++		    mtk_scanlist_parse_uint(row + row_offsets[SCAN_DATA_SIG],
++					    row_offsets[SCAN_DATA_WMODE] - row_offsets[SCAN_DATA_SIG],
++					    100, &quality) ||
++		    mtk_scanlist_parse_uint(row + row_offsets[SCAN_DATA_SSID_LEN], 8,
++					    IWINFO_ESSID_MAX_SIZE, &ssid_length))
++			return -1;
++
++		if (mtk_scanlist_parse_bssid(row + offsets[SCAN_DATA_BSSID],
++					     offsets[SCAN_DATA_SECURITY] - offsets[SCAN_DATA_BSSID],
++					     mac))
++			return -1;
++
++		ssid_field_len = offsets[SCAN_DATA_BSSID] - offsets[SCAN_DATA_SSID];
++		ssid_len = (size_t)ssid_length;
++		if (ssid_len > ssid_field_len ||
++		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_SSID], ssid_len))
++			return -1;
++
++		security_len = row_offsets[SCAN_DATA_RSSI] - offsets[SCAN_DATA_SECURITY];
++		while (security_len > 0 && row[offsets[SCAN_DATA_SECURITY] + security_len - 1] == ' ')
++			security_len--;
++		if (security_len == 0 || security_len >= sizeof(security))
++			return -1;
++		memcpy(security, row + offsets[SCAN_DATA_SECURITY], security_len);
++		security[security_len] = '\0';
++
++		if (row[row_offsets[SCAN_DATA_NT]] == 'I' &&
++		    row[row_offsets[SCAN_DATA_NT] + 1] == 'n' &&
++		    row[row_offsets[SCAN_DATA_NT] + 2] == ' ')
++			is_infrastructure = 1;
++		else if (row[row_offsets[SCAN_DATA_NT]] == 'A' &&
++			 row[row_offsets[SCAN_DATA_NT] + 1] == 'd' &&
++			 row[row_offsets[SCAN_DATA_NT] + 2] == ' ')
++			is_infrastructure = 0;
++		else
++			return -1;
++
++		supported_security = strstr(security, "PSK") ||
++			strstr(security, "OPEN") || strstr(security, "OWE");
++		if (is_infrastructure && supported_security &&
++		    *output_len <= output_cap &&
++		    output_cap - *output_len >= sizeof(*entry)) {
++			entry = (struct iwinfo_scanlist_entry *)(buf + *output_len);
++			memset(entry, 0, sizeof(*entry));
++			crypto = &entry->crypto;
++			memcpy(entry->mac, mac, sizeof(mac));
++			entry->channel = (uint8_t)channel;
++			entry->signal = (uint8_t)signal;
++			entry->quality = (uint8_t)quality;
++			entry->quality_max = 100;
++			entry->mode = IWINFO_OPMODE_MASTER;
+ 
+ 			if (strstr(security, "PSK") || strstr(security, "OWE")) {
+ 				crypto->enabled = true;
+@@ -580,69 +1016,136 @@ static int mtk_get_scanlist(const char *dev, char *buf, int *len)
+ 					crypto->auth_suites |= IWINFO_KMGMT_OWE;
+ 				}
+ 
+-				if (strstr(security, "AES")) {
++				if (strstr(security, "AES"))
+ 					crypto->pair_ciphers |= IWINFO_CIPHER_CCMP;
+-				}
+ 
+-				if (strstr(security, "CCMP256")) {
++				if (strstr(security, "CCMP256"))
+ 					crypto->pair_ciphers |= IWINFO_CIPHER_CCMP256;
+-				}
+ 
+-				if (strstr(security, "TKIP")) {
++				if (strstr(security, "TKIP"))
+ 					crypto->pair_ciphers |= IWINFO_CIPHER_TKIP;
+-				}
+ 
+-				if (strstr(security, "GCMP128")) {
++				if (strstr(security, "GCMP128"))
+ 					crypto->pair_ciphers |= IWINFO_CIPHER_GCMP;
+-				}
+ 
+-				if (strstr(security, "GCMP256")) {
++				if (strstr(security, "GCMP256"))
+ 					crypto->pair_ciphers |= IWINFO_CIPHER_GCMP256;
+-				}
+ 			}
+ 
+-			e->mode = IWINFO_OPMODE_MASTER;
++			memcpy(entry->ssid, row + offsets[SCAN_DATA_SSID], ssid_len);
++			entry->ssid[ssid_len] = '\0';
++			*output_len += sizeof(*entry);
++		}
++
++		expected_row++;
++		row = row_end + 1;
++	}
++
++	if (expected_row == (size_t)requested_index)
++		return -1;
+ 
+-			sscanf(pos + offsets[SCAN_DATA_CH], "%"SCNu8, &e->channel);
+-			sscanf(pos + offsets[SCAN_DATA_RSSI], "%"SCNu8, &e->signal);
+-			sscanf(pos + offsets[SCAN_DATA_SIG], "%"SCNu8, &e->quality);
+-			e->quality_max = 100;
++	*total_out = total;
++	*next_index = (int)expected_row;
++	return 0;
++}
+ 
+-			sscanf(pos + offsets[SCAN_DATA_BSSID], "%02"SCNx8":%02"SCNx8":%02"SCNx8":%02"SCNx8":%02"SCNx8":%02"SCNx8"",
+-				mac + 0, mac + 1, mac + 2, mac + 3, mac + 4, mac + 5);
++static int mtk_get_scanlist(const char *dev, char *buf, int *len)
++{
++	struct iwreq scan_wrq = {};
++	char scan_cmd[1536] = "SiteSurvey=";
++	char *data = NULL;
++	size_t data_len = MTK_SCANLIST_RESPONSE_CAPACITY;
++	size_t output_len = 0;
++	size_t output_cap = IWINFO_BUFSIZE;
++	size_t entry_cap = output_cap / sizeof(struct iwinfo_scanlist_entry);
++	size_t response_len;
++	size_t page_count = 0;
++	char ifname[IFNAMSIZ];
++	int requested_index = 0;
++	int total = -1;
++	int page_total;
++	int next_index;
++	int ret = -1;
+ 
+-			sscanf(pos + offsets[SCAN_DATA_SSID_LEN], "%d", &ssid_len);
+-			memcpy(e->ssid, pos + offsets[SCAN_DATA_SSID], ssid_len);
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
++		return -1;
+ 
+-			*len += sizeof(struct iwinfo_scanlist_entry);
+-			e++;
++	*len = 0;
++	output_cap = entry_cap * sizeof(struct iwinfo_scanlist_entry);
+ 
+-			if (index + 1 == total)
+-				break;
++	data = (char *)malloc(data_len + 1);
++	if (!data)
++		return -1;
++
++	scan_wrq.u.data.pointer = scan_cmd;
++	scan_wrq.u.data.length = (uint16_t)(sizeof("SiteSurvey=") - 1);
++	if (mtk_ioctl(ifname, RTPRIV_IOCTL_SET, &scan_wrq) < 0)
++		goto out;
++
++	sleep(5);
++
++	while (total < 0 || requested_index < total) {
++		if (++page_count > MTK_SCANLIST_MAX_BSS)
++			goto out;
++
++		memset(data, 0, data_len + 1);
++		if (mtk_get_scanlist_dump(ifname, requested_index, data, data_len,
++					  &response_len) < 0)
++			goto out;
++
++		if (response_len > data_len || response_len == 0)
++			goto out;
++
++		if (response_len == sizeof("No BssInfo\n") - 1 &&
++		    !memcmp(data, "No BssInfo\n", sizeof("No BssInfo\n") - 1)) {
++			if (requested_index != 0)
++				goto out;
++			ret = 0;
++			goto out;
+ 		}
+ 
+-		if (index + 1 == total)
+-			break;
+-		else
+-			index++;
++		data[response_len] = '\0';
++		if (data[response_len - 1] != '\n')
++			goto out;
++
++		if (mtk_scanlist_parse_page(data, response_len, requested_index,
++					    total, buf, output_cap, &output_len,
++					    &page_total, &next_index))
++			goto out;
++
++		if (total < 0)
++			total = page_total;
++		else if (page_total != total)
++			goto out;
++
++		if (output_len == output_cap) {
++			*len = (int)output_len;
++			ret = 0;
++			goto out;
++		}
++
++		if (next_index <= requested_index || next_index > total)
++			goto out;
++
++		requested_index = next_index;
+ 	}
+ 
++	*len = (int)output_len;
++	ret = 0;
++out:
++	if (ret < 0)
++		*len = 0;
+ 	free(data);
+-	return 0;
++	return ret;
+ }
+ 
+-static int mtk_get_freqlist(const char *dev, char *buf, int *len)
++static int mtk_get_freqlist_by_ifname(const char *ifname, char *buf, int *len)
+ {
+ 	struct iwreq wrq;
+ 	struct iw_range range;
+ 	struct iwinfo_freqlist_entry entry;
+-	const char* ifname;
+ 	int i, bl;
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
+-		return -1;
+-
+ 	if (!mtk_is_ifup(ifname))
+ 		return -1;
+ 
+@@ -656,6 +1159,8 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
+ 
+ 		for (i = 0; i < range.num_frequency; i++)
+ 		{
++			/* MTK range data does not provide iwinfo band or flag fields. */
++			memset(&entry, 0, sizeof(entry));
+ 			entry.mhz        = range.freq[i].m;
+ 			entry.channel    = range.freq[i].i;
+ 			entry.restricted = 0;
+@@ -671,14 +1176,23 @@ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
+ 	return -1;
+ }
+ 
++static int mtk_get_freqlist(const char *dev, char *buf, int *len)
++{
++	char ifname[IFNAMSIZ];
++
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
++		return -1;
++
++	return mtk_get_freqlist_by_ifname(ifname, buf, len);
++}
++
+ static int mtk_get_country(const char *dev, char *buf)
+ {
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 	char data[4] = {0};
+ 	struct iwreq wrq;
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	wrq.u.data.length = sizeof(data);
+@@ -710,39 +1224,29 @@ static int mtk_get_countrylist(const char *dev, char *buf, int *len)
+ 
+ static int mtk_get_hwmodelist(const char *dev, int *buf)
+ {
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 	char chans[IWINFO_BUFSIZE] = { 0 };
+ 	struct iwinfo_freqlist_entry *e = NULL;
+-	struct uci_section *s;
+-	const char* band = NULL;
++	enum mtk_config_band band;
+ 	int len = 0;
+ 
+ 	*buf = 0;
+ 
+ 	/* get hwmode base on uci band config */
+-	s = iwinfo_uci_get_radio(dev, "mtwifi");
+-	if (!s)
+-		goto uciout;
+-	
+-	band = uci_lookup_option_string(uci_ctx, s, "band");
+-
+-uciout:
+-	iwinfo_uci_free();
+-
+-	if (band) {
+-		if (!strcmp(band,"2g"))
++	band = mtk_get_config_band(dev);
++	if (band != MTK_CONFIG_BAND_NONE) {
++		if (band == MTK_CONFIG_BAND_2G)
+ 			*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
+-		else if (!strcmp(band,"5g"))
++		else if (band == MTK_CONFIG_BAND_5G)
+ 			*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
+ 		return 0;
+ 	}
+ 
+ 	/* get hwmode base on iwrange */
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+-	if (!mtk_get_freqlist(ifname, chans, &len))
++	if (!mtk_get_freqlist_by_ifname(ifname, chans, &len))
+ 	{
+ 		for (e = (struct iwinfo_freqlist_entry *)chans; e->channel; e++ )
+ 		{
+@@ -764,29 +1268,20 @@ uciout:
+ 
+ static int mtk_get_htmodelist(const char *dev, int *buf)
+ {
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 	char chans[IWINFO_BUFSIZE] = { 0 };
+ 	struct iwinfo_freqlist_entry *e = NULL;
+-	struct uci_section *s;
+-	const char* band = NULL;
++	enum mtk_config_band band;
+ 	int len = 0;
+ 
+ 	*buf = 0;
+ 
+ 	/* get htmode base on uci band config */
+-	s = iwinfo_uci_get_radio(dev, "mtwifi");
+-	if (!s)
+-		goto uciout;
+-	
+-	band = uci_lookup_option_string(uci_ctx, s, "band");
+-
+-uciout:
+-	iwinfo_uci_free();
+-
+-	if (band) {
+-		if (!strcmp(band,"2g"))
++	band = mtk_get_config_band(dev);
++	if (band != MTK_CONFIG_BAND_NONE) {
++		if (band == MTK_CONFIG_BAND_2G)
+ 			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
+-		else if (!strcmp(band,"5g"))
++		else if (band == MTK_CONFIG_BAND_5G)
+ 			*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
+ 			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+ 			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
+@@ -794,11 +1289,10 @@ uciout:
+ 	}
+ 
+ 	/* get htmode base on iwrange */
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+-	if (!mtk_get_freqlist(ifname, chans, &len))
++	if (!mtk_get_freqlist_by_ifname(ifname, chans, &len))
+ 	{
+ 		for (e = (struct iwinfo_freqlist_entry *)chans; e->channel; e++ )
+ 		{
+@@ -822,13 +1316,12 @@ uciout:
+ 
+ static int mtk_get_htmode(const char *dev, int *buf)
+ {
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 	struct iwreq wrq;
+ 	unsigned char bw = 0;
+ 	unsigned long wmode = 0;
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if (!mtk_is_ifup(ifname))
+@@ -888,14 +1381,14 @@ static int mtk_get_htmode(const char *dev, int *buf)
+ 
+ static int mtk_get_encryption(const char *dev, char *buf)
+ {
+-	const char *ifname;
+-	struct iwreq wrq;
+-	struct security_info secinfo;
++	char ifname[IFNAMSIZ];
++	struct iwreq wrq = { 0 };
++	struct security_info secinfo = { .ifindex = ~0U };
+ 	unsigned int authMode, encryMode;
++	int ret;
+ 	struct iwinfo_crypto_entry *c = (struct iwinfo_crypto_entry *)buf;
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	if (!mtk_is_ifup(ifname))
+@@ -905,7 +1398,9 @@ static int mtk_get_encryption(const char *dev, char *buf)
+ 	wrq.u.data.pointer = &secinfo;
+ 	wrq.u.data.flags = OID_802_11_SECURITY_TYPE;
+ 
+-	if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) >= 0)
++	ret = mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq);
++	if (ret == 0 && wrq.u.data.length == sizeof(secinfo) &&
++	    secinfo.ifindex != ~0U)
+ 	{
+ 		authMode = secinfo.auth_mode;
+ 		encryMode = secinfo.encryp_type;
+@@ -979,10 +1474,9 @@ static int mtk_get_encryption(const char *dev, char *buf)
+ 
+ static int mtk_get_phyname(const char *dev, char *buf)
+ {
+-	const char *ifname;
++	char ifname[IFNAMSIZ];
+ 
+-	ifname = mtk_dev2phy(dev);
+-	if (!ifname)
++	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+ 	strcpy(buf, ifname);

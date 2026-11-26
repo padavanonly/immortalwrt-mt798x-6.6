@@ -1,0 +1,57 @@
+--- a/iwlib.c
++++ b/iwlib.c
+@@ -1245,7 +1245,7 @@ iw_print_txpower(char *			buffer,
+       /* Check for relative values */
+       if(txpower->flags & IW_TXPOW_RELATIVE)
+ 	{
+-	  snprintf(buffer, buflen, "%d", txpower->value);
++	  snprintf(buffer, buflen, "%lld", (long long)txpower->value);
+ 	}
+       else
+ 	{
+--- a/iwconfig.c
++++ b/iwconfig.c
+@@ -351,9 +351,9 @@ display_info(struct wireless_info *	info
+       else
+ 	{
+ 	  /* Fixed ? */
+-	  printf("RTS thr%c%d B   ",
++	  printf("RTS thr%c%lld B   ",
+ 		 info->rts.fixed ? '=' : ':',
+-		 info->rts.value);
++		 (long long)info->rts.value);
+ 	}
+       tokens += 3;
+     }
+@@ -375,9 +375,9 @@ display_info(struct wireless_info *	info
+       else
+ 	{
+ 	  /* Fixed ? */
+-	  printf("Fragment thr%c%d B   ",
++	  printf("Fragment thr%c%lld B   ",
+ 		 info->frag.fixed ? '=' : ':',
+-		 info->frag.value);
++		 (long long)info->frag.value);
+ 	}
+     }
+ 
+--- a/iwlist.c
++++ b/iwlist.c
+@@ -464,7 +464,7 @@ print_scanning_token(struct stream_descr
+       if(event->u.nwid.disabled)
+ 	printf("                    NWID:off/any\n");
+       else
+-	printf("                    NWID:%X\n", event->u.nwid.value);
++	printf("                    NWID:%X\n", (unsigned int)event->u.nwid.value);
+       break;
+     case SIOCGIWFREQ:
+       {
+@@ -1380,7 +1380,7 @@ print_txpower_info(int			skfd,
+ 		   * driver specific, so not very meaningfull to apps.
+ 		   * But, we have to support that, because
+ 		   * this is the way hardware is... */
+-		  printf("\t  %d (no units)\n", wrq.u.txpower.value);
++		  printf("\t  %lld (no units)\n", (long long)wrq.u.txpower.value);
+ 		}
+ 	      else
+ 		{

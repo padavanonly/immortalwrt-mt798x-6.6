@@ -303,6 +303,7 @@ typedef enum _SEC_AKM_MODE {
 
 void getRate(HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate);
 void get_rate_he(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate);
+void get_rate_eht(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate);
 UINT32 cck_to_mcs(UINT32 mcs);
 
 int mtk_get_id_by_l1util(const char *dev, struct iwinfo_hardware_id *id);
