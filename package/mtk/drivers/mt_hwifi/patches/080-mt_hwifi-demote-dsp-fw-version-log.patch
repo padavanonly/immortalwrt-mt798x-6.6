@@ -1,0 +1,31 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: demote DSP and WM firmware version banners from dev_err to dev_info
+
+Printing loaded DSP and WM firmware versions and build timestamps during probe
+is informational; real firmware load errors and failures continue to use
+dev_err().
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/wlan_hwifi/mcu/mcu_dsp.c
++++ b/wlan_hwifi/mcu/mcu_dsp.c
+@@ -205,7 +205,7 @@
+ 	hdr = (const struct mcu_fw_trailer *)(fw->data + fw->size -
+ 					sizeof(*hdr));
+ 
+-	dev_err(dev->dev, "DSP Firmware Version: %.10s, Build Time: %.15s\n",
++	dev_info(dev->dev, "DSP Firmware Version: %.10s, Build Time: %.15s\n",
+ 		 hdr->fw_ver, hdr->build_date);
+ 
+ 	ret = mcu_dsp_send_ram_firmware(dev, hdr, fw->data);
+--- a/wlan_hwifi/mcu/mcu_wm.c
++++ b/wlan_hwifi/mcu/mcu_wm.c
+@@ -329,7 +329,7 @@
+ 		}
+ 	}
+ 
+-	dev_err(dev->dev, "HW/SW Version: 0x%x, Build Time: %.16s\n",
++	dev_info(dev->dev, "HW/SW Version: 0x%x, Build Time: %.16s\n",
+ 		 be32_to_cpu(hdr->hw_sw_ver), hdr->build_date);
+ 
+ 	n_region = be32_to_cpu(hdr->desc.n_region);

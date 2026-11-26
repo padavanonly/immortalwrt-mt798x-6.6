@@ -1,0 +1,22 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: skip WED/HNAT hook on BMC TX
+
+Exclude broadcast/multicast (TK_MGMT_BMC) token management entries from
+WED hardware TX path in wed_hw_tx_allow() so BMC traffic avoids WED/HNAT
+acceleration hooks.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/wlan_hwifi/bus/mtk_wed.c
++++ b/wlan_hwifi/bus/mtk_wed.c
+@@ -190,7 +190,9 @@ wed_hw_tx_allow(u8 *tx_info)
+ 	struct wed_trans *trans = to_wed_trans(bus_tx->txq_trans);
+ 	struct wifi_hw *hw = (struct wifi_hw *) trans->wifi_hw;
+ 
+-	if ((test_bit(BUS_TX_SW, &bus_tx->flags)) || (tk_entry->wcid >= hw->max_wcid_nums))
++	if ((test_bit(BUS_TX_SW, &bus_tx->flags)) ||
++	    (tk_entry->wcid >= hw->max_wcid_nums) ||
++	    (tk_entry->hw_dev && tk_entry->tk_mgmt == &tk_entry->hw_dev->hw_ctrl.tk_mgmt[TK_MGMT_BMC]))
+ 		return false;
+ 
+ 	mtk_dbg(MTK_BUS, "%s(): %d\n", __func__, __LINE__);

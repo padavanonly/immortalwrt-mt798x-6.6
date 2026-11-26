@@ -1,0 +1,19 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: drop unconditional -g from core ccflags-y
+
+Respect OpenWrt kernel CONFIG_DEBUG_INFO rather than forcing -g on every
+translation unit unconditionally.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/wlan_hwifi/Makefile
++++ b/wlan_hwifi/Makefile
+@@ -17,7 +17,7 @@
+ endif
+ 
+ #core
+-ccflags-y += -Werror -Wall -g \
++ccflags-y += -Werror -Wall \
+ 	     -I$(SRC_DIR) \
+ 	     -I$(MTK_WIFI_MAC)/include \
+ 	     -I$(MTK_WIFI_MAC)/include/lib \

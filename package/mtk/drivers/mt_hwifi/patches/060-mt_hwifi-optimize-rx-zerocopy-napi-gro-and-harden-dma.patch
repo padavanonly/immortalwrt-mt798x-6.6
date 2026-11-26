@@ -1,0 +1,407 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: optimize RX zero-copy, NAPI GRO context, and harden DMA/RRO bounds
+
+Shrink WED v3.1 RX copy and ARM64 cache sync in pci_dma_get_data_buf_by_copy()
+to actual rx_info->len into new_dma_buf.alloc_va, shrink rx headroom zeroing
+to 64 bytes with BUILD_BUG_ON safety, release overflow fragment pages in
+pci_dma_gather_frag(), switch RX build_skb() calls to napi_build_skb() with
+prefetching and napi_complete_done(), pass per-CPU active RX NAPI via mt_wifi7
+helpers with mlo_rx_lock deadlock isolation, guard get_addr_elem() and
+mtk_wed.c queue bounds, add HW_RRO_V3_1 to rro_get_mode(), fix txp[0] TCP bit
+clobber and mt7992 rro_mode debugfs validation, and size MT7992 MEM_SHRINK RX
+rings cleanly.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/mt_wifi/include/os/hwifi_mac.h
++++ b/mt_wifi/include/os/hwifi_mac.h
+@@ -681,4 +681,10 @@
+ 	return physical_device_find_physical_dev(hw_dev);
+ }
+ 
++struct napi_struct;
++
++/* Per-CPU active NAPI accessor helpers exported by mt_wifi7.ko. */
++void mtk_mac_set_active_rx_napi(struct napi_struct *napi);
++struct napi_struct *mtk_mac_get_active_rx_napi(void);
++
+ #endif
+--- a/wlan_hwifi/bus/mtk_pci_dma.c
++++ b/wlan_hwifi/bus/mtk_pci_dma.c
+@@ -29,7 +29,9 @@
+  */
+ 
+ #include <linux/interrupt.h>
++#include <linux/prefetch.h>
+ #include <linux/version.h>
++#include <os/hwifi_mac.h>
+ #include "mac_ops.h"
+ #include "bus.h"
+ #include "mtk_pci_dma.h"
+@@ -650,7 +652,9 @@
+ 	if (rq->buf_flags & BUF_ZERO)
+ 		memset((void *)((u8 *)pkt + SKB_HEADROOM_RSV), 0, buf->alloc_size);
+ 
+-	memset((void *)(u8 *)pkt, 0, SKB_HEADROOM_RSV);
++	/* Zero 64B (covering FOE_INFO_LEN) to clear stale HNAT tags on recycled pages. */
++	BUILD_BUG_ON(SKB_HEADROOM_RSV < 64);
++	memset((void *)(u8 *)pkt, 0, 64);
+ 
+ 	buf->alloc_va = (void *)((u8 *)pkt + SKB_HEADROOM_RSV);
+ 
+@@ -1606,7 +1610,8 @@
+ 	void *pkt_va, *new_pkt;
+ 	dma_addr_t pkt_pa;
+ 	struct pci_dma_buf new_dma_buf;
+-	int offset, ret;
++	u32 copy_len;
++	int ret;
+ 
+ 	pci_dma_rxdmad_parser(trans, desc, rx_info);
+ 
+@@ -1623,12 +1628,11 @@
+ 	if (new_pkt == NULL)
+ 		return -ENOMEM;
+ 
+-	offset = SKB_HEADROOM_RSV - (pkt_va - rx_info->pkt);
+-
+-	if (unlikely(offset < 0)) {
++	copy_len = rx_info->len;
++	if (unlikely(copy_len > dma_buf->alloc_size)) {
+ 		dev_err_once(to_device(trans),
+-			"%s(): idx = %u, tkid = %u, offset = %d should not negative\n",
+-			__func__, idx, rx_info->id, offset);
++			"%s(): idx = %u, tkid = %u, len = %u exceeds alloc_size = %zu\n",
++			__func__, idx, rx_info->id, copy_len, dma_buf->alloc_size);
+ 		goto err;
+ 	}
+ 
+@@ -1642,17 +1646,23 @@
+ 		goto err;
+ 	}
+ 
+-	dma_sync_single_for_cpu(to_device(trans), pkt_pa,
+-		dma_buf->alloc_size, DMA_FROM_DEVICE);
++	/*
++	 * Sync and copy only the valid DMA payload [0, copy_len) directly into
++	 * new_dma_buf.alloc_va (new_pkt + SKB_HEADROOM_RSV), avoiding stale WARP
++	 * headroom contamination and redundant tail/shinfo cache ops.
++	 */
++	if (likely(copy_len)) {
++		dma_sync_single_for_cpu(to_device(trans), pkt_pa,
++			copy_len, DMA_FROM_DEVICE);
++		memcpy(new_dma_buf.alloc_va, pkt_va, copy_len);
++		dma_sync_single_for_device(to_device(trans), pkt_pa,
++			copy_len, DMA_FROM_DEVICE);
++	}
+ 
+-	memcpy(new_pkt + offset, rx_info->pkt, rx_pkt_total_size(dma_buf->alloc_size - offset));
+ 	rx_info->pkt = new_pkt;
+ 	dma_buf->alloc_va = pkt_va;
+ 	dma_buf->alloc_pa = pkt_pa;
+ 
+-	dma_sync_single_for_device(to_device(trans), pkt_pa,
+-		dma_buf->alloc_size, DMA_FROM_DEVICE);
+-
+ 	clear_ddone(cb->alloc_va);
+ 	fill_rxd(cb, rx_info->id, rq->magic_cnt);
+ 
+@@ -1731,6 +1741,8 @@
+ 		skb_add_rx_frag(skb, nr_frags,
+ 				page, offset, rx_info->len,
+ 				rx_pkt_total_size(rq->rx_buf_size));
++	} else {
++		put_page(virt_to_head_page(rx_info->pkt));
+ 	}
+ }
+ 
+@@ -1769,6 +1781,8 @@
+ 			break;
+ 		}
+ 
++		prefetch(q->cb[(q->head + 1) % q->q_size].alloc_va);
++
+ 		if (!rx_info.pkt)
+ 			continue;
+ 
+@@ -1789,7 +1803,8 @@
+ 			goto process;
+ 		}
+ 
+-		skb = build_skb(rx_info.pkt,
++		prefetch((u8 *)rx_info.pkt + SKB_HEADROOM_RSV);
++		skb = napi_build_skb(rx_info.pkt,
+ 						rx_pkt_total_size(rq->rx_buf_size));
+ 
+ 		/* TODO: Need to fix if fragment packet. */
+@@ -1872,6 +1887,8 @@
+ 			q->hw_didx_addr, q->hw_didx_mask);
+ 
+ 	mt_rcu_read_lock();
++	/* Expose active NAPI context on current CPU for softirq GRO receive. */
++	mtk_mac_set_active_rx_napi(napi);
+ 
+ 	do {
+ 		cur = rq->q_ops->process(trans, q, budget - done);
+@@ -1882,12 +1899,13 @@
+ #endif
+ 	} while (cur && done < budget);
+ 
++	mtk_mac_set_active_rx_napi(NULL);
+ 	mt_rcu_read_unlock();
+ 
+ 	if (done < budget) {
+ #ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
+ 		if (test_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags)) {
+-			napi_complete(napi);
++			napi_complete_done(napi, done);
+ 			smp_mb__after_atomic();
+ 			if (!kfifo_is_full(&rq->bus_rx_process_fifo) &&
+ 			    !test_bit(RXQ_STOPPING, &rq->runtime_flags) &&
+@@ -1905,7 +1923,7 @@
+ 		if (((q->head + 1) % q->q_size) != q->tail)
+ 			return budget;
+ 
+-		napi_complete(napi);
++		napi_complete_done(napi, done);
+ 		pci_dma_irq_enable(vec_data, q->hw_int_mask);
+ 	}
+ 	return done;
+--- a/wlan_hwifi/bus/mtk_rro.c
++++ b/wlan_hwifi/bus/mtk_rro.c
+@@ -256,13 +256,24 @@
+ 	u16 seid, u16 start_sn)
+ {
+ 	u32 index;
++	u32 cr_idx;
+ 	void *addr_elem;
+ 
++	if (!rro_cfg || !rro_cfg->win_sz)
++		return NULL;
++
+ 	if (seid == rro_cfg->particular_se_id) {
+ 		addr_elem = rro_cfg->particular_session_va;
++		if (!addr_elem)
++			return NULL;
+ 		index = start_sn % rro_cfg->win_sz;
+ 	} else {
+-		addr_elem = rro_cfg->addr_elem_alloc_va[seid / HW_RRO_SESSION_CNT_PER_CR];
++		cr_idx = seid / HW_RRO_SESSION_CNT_PER_CR;
++		if (cr_idx >= rro_cfg->addr_elem_cr_cnt)
++			return NULL;
++		addr_elem = rro_cfg->addr_elem_alloc_va[cr_idx];
++		if (!addr_elem)
++			return NULL;
+ 		index = (seid % HW_RRO_SESSION_CNT_PER_CR) * rro_cfg->win_sz
+ 			+ (start_sn % rro_cfg->win_sz);
+ 	}
+@@ -416,6 +427,8 @@
+ 		for (i = 0; i < cmd->ind_cnt; i++) {
+ 			sn = (cmd->start_sn + i) & RRO_MAX_SEQ;
+ 			elem = get_addr_elem(trans, rro_cfg, cmd->se_id, sn);
++			if (!elem)
++				goto update_ack_sn;
+ 			if (elem->signature != (sn / rro_cfg->win_sz)) {
+ 				mtk_dbg(MTK_RRO,
+ 				"%s() signature fail(%d!=%d), go next (sn, idx) = (%d %d)\n",
+@@ -473,8 +486,15 @@
+ 				if (!rx_info.pkt)
+ 					continue;
+ 
+-				skb = build_skb(rx_info.pkt,
++				skb = napi_build_skb(rx_info.pkt,
+ 					rx_pkt_total_size(rq->rx_buf_size));
++				if (unlikely(!skb)) {
++					put_page(virt_to_head_page(rx_info.pkt));
++					dev_err(to_device(trans),
++						"%s(): napi_build_skb failed\n",
++						__func__);
++					continue;
++				}
+ 
+ 				skb_reserve(skb, SKB_HEADROOM_RSV);
+ 
+@@ -711,6 +731,10 @@
+ 			last_err_pg = NULL;
+ 			sn = (cmd->start_sn + i) & RRO_MAX_SEQ;
+ 			elem = get_addr_elem(trans, rro_cfg, cmd->se_id, sn);
++			if (!elem) {
++				sign_fail += 1;
++				continue;
++			}
+ 
+ 			if (elem->signature != (sn / rro_cfg->win_sz)) {
+ 				sign_fail += 1;
+@@ -937,6 +961,8 @@
+ 		for (i = 0; i < cmd->ind_cnt; i++) {
+ 			sn = (cmd->start_sn + i) & RRO_MAX_SEQ;
+ 			elem = get_addr_elem(trans, rro_cfg, cmd->se_id, sn);
++			if (!elem)
++				goto update_ack_sn;
+ 			if (elem->signature != (sn / rro_cfg->win_sz)) {
+ 				mtk_dbg(MTK_RRO,
+ 				"%s() signature fail(%d!=%d), go next (sn, idx) = (%d %d)\n",
+@@ -1039,7 +1065,7 @@
+ 					goto process;
+ 				}
+ 
+-				skb = build_skb(rx_info.pkt,
++				skb = napi_build_skb(rx_info.pkt,
+ 					rx_pkt_total_size(rq->rx_buf_size));
+ 
+ 				/* TODO: Need to fix if fragment packet. */
+@@ -1233,7 +1259,7 @@
+ 			goto process;
+ 		}
+ 
+-		skb = build_skb(rx_info.pkt,
++		skb = napi_build_skb(rx_info.pkt,
+ 			rx_pkt_total_size(rq->rx_buf_size));
+ 
+ 		/* TODO: Need to fix if fragment packet. */
+@@ -1352,6 +1378,8 @@
+ 
+ 	for (i = 0; i < MAX_HW_RRO_WIN_SIZE; i++) {
+ 		elem = get_addr_elem(trans, rro_cfg, seid, i);
++		if (!elem)
++			return false;
+ 		elem->signature = 0xFF;
+ 	}
+ 
+@@ -1378,6 +1406,7 @@
+ 	case HW_RRO_V3_0_BUF_PG:
+ 	case HW_RRO_V3_0_BUF_PG_DBG:
+ 	case HW_RRO_V3_1_BUF_PG_EMUL:
++	case HW_RRO_V3_1:
+ 		return HW_RRO_MODE_BUF_PG;
+ 	default:
+ 		dev_err(to_device(trans), "%s(): rro_mode = %u undefined\n",
+--- a/wlan_hwifi/bus/mtk_wed.c
++++ b/wlan_hwifi/bus/mtk_wed.c
+@@ -241,7 +241,7 @@
+ 		}
+ 	}
+ 
+-	if (!q || idx >= q->desc_size)
++	if (!q || idx >= q->q_size)
+ 		return;
+ 
+ 	cb = &q->cb[idx];
+--- a/wlan_hwifi/chips/bmac_connac.c
++++ b/wlan_hwifi/chips/bmac_connac.c
+@@ -1064,7 +1064,7 @@
+ 	}
+ 
+ 	if (GET_PACKET_TCP(fskb))
+-		txp[0] = HIF_TXP_TCP_MASK;
++		txp[0] |= HIF_TXP_TCP_MASK;
+ 
+ 	if (TX_BLK_TEST_FLAG(tx_blk, fTX_bClearEAPFrame))
+ 		txp[0] |= HIF_TXP_NON_CIPHER_MASK;
+@@ -1179,7 +1179,7 @@
+ 	}
+ 
+ 	if (GET_PACKET_TCP(fskb))
+-		txp[0] = HIF_TXP_TCP_MASK;
++		txp[0] |= HIF_TXP_TCP_MASK;
+ 
+ 	if (TX_BLK_TEST_FLAG(tx_blk, fTX_bClearEAPFrame))
+ 		txp[0] |= HIF_TXP_NON_CIPHER_MASK;
+@@ -1743,7 +1743,12 @@
+ 				(struct _RXINFO_STRUC *)(&cur_blk->hw_rx_info[12]);
+ 			__skb_queue_tail(msdu_q, skb);
+ 			break;
+-		case FINAL_AMSDU_FORMAT:
++		case FINAL_AMSDU_FORMAT: {
++			/* Never invoke napi_gro_receive() synchronously while holding mlo_rx_lock. */
++			struct napi_struct *saved_napi = mtk_mac_get_active_rx_napi();
++
++			if (saved_napi)
++				mtk_mac_set_active_rx_napi(NULL);
+ 			spin_lock(&mlo_hw_phy->mlo_rx_lock);
+ 			skb_queue_walk_safe(msdu_q, pre_skb, tmp) {
+ 				__skb_unlink(pre_skb, msdu_q);
+@@ -1753,12 +1758,22 @@
+ 			}
+ 			mtk_mac_rx(mlo_hw_phy->mac_hw, NULL, skb, &rx_blk);
+ 			spin_unlock(&mlo_hw_phy->mlo_rx_lock);
++			if (saved_napi)
++				mtk_mac_set_active_rx_napi(saved_napi);
+ 			break;
+-		case MSDU_FORMAT:
++		}
++		case MSDU_FORMAT: {
++			struct napi_struct *saved_napi = mtk_mac_get_active_rx_napi();
++
++			if (saved_napi)
++				mtk_mac_set_active_rx_napi(NULL);
+ 			spin_lock(&mlo_hw_phy->mlo_rx_lock);
+ 			mtk_mac_rx(mlo_hw_phy->mac_hw, NULL, skb, &rx_blk);
+ 			spin_unlock(&mlo_hw_phy->mlo_rx_lock);
++			if (saved_napi)
++				mtk_mac_set_active_rx_napi(saved_napi);
+ 			break;
++		}
+ 		default:
+ 			goto err;
+ 		}
+--- a/wlan_hwifi/chips/mt7992/mt7992.c
++++ b/wlan_hwifi/chips/mt7992/mt7992.c
+@@ -1185,9 +1185,9 @@
+ 
+ 	ret = kstrtou8(buf, 10, &rro_mode);
+ 
+-	if (ret || (dev->rro_mode &&
+-	    dev->rro_mode != HW_RRO_V3_1_BUF_PG_EMUL &&
+-	    dev->rro_mode != HW_RRO_V3_1)) {
++	if (ret || (rro_mode &&
++	    rro_mode != HW_RRO_V3_1_BUF_PG_EMUL &&
++	    rro_mode != HW_RRO_V3_1)) {
+ 		ret = -EINVAL;
+ 		goto done;
+ 	}
+--- a/wlan_hwifi/chips/mt7992/mt7992.h
++++ b/wlan_hwifi/chips/mt7992/mt7992.h
+@@ -81,7 +81,7 @@
+ /* SW Tx BMC token */
+ #define MT7992_SW_TX_BMC_TOKEN_NUM	1024
+ /* SW Rx token */
+-#define MT7992_SW_RX_TOKEN_NUM		800	/* 2 legacy RxRing */
++#define MT7992_SW_RX_TOKEN_NUM		1056	/* 2 legacy RxRing (512 + 512 + margin) */
+ #define MT7992_SW_RRO_RX_TOKEN_NUM	5200
+ #else
+ /* SW Tx token */
+--- a/wlan_hwifi/chips/mt7992/mt7992_wfdma_wa.h
++++ b/wlan_hwifi/chips/mt7992/mt7992_wfdma_wa.h
+@@ -49,7 +49,7 @@
+ #define RX_PROC_FIFO_SIZE	4096
+ 
+ #ifdef CONFIG_HWIFI_MEM_SHRINK
+-#define MT7992_Q_RX_EVENT_WM_SIZE			256
++#define MT7992_Q_RX_EVENT_WM_SIZE			512
+ #define MT7992_Q_RX_EVENT_WA_SIZE			512
+ #define MT7992_Q_RX_EVENT_TX_FREE_DONE_SRC0_SIZE	512
+ #ifdef CONFIG_HWIFI_HIF_WED
+@@ -57,9 +57,9 @@
+ #else
+ #define MT7992_Q_RX_EVENT_TX_FREE_DONE_SRC1_SIZE	10
+ #endif
+-#define MT7992_Q_RX_DATA_R4_SIZE			256
++#define MT7992_Q_RX_DATA_R4_SIZE			512
+ #define MT7992_Q_RX_DATA_R5_SIZE			512
+-#define MT7992_Q_RX_DATA_RRO_R8_SIZE			512
++#define MT7992_Q_RX_DATA_RRO_R8_SIZE			1024
+ #define MT7992_Q_RX_DATA_RRO_R9_SIZE			1536
+ #define MT7992_Q_RX_DATA_MSDU_PG_SIZE			1536
+ #define MT7992_Q_RX_IND_SIZE				1536
+--- a/wlan_hwifi/tools/mt7992_dbg.c
++++ b/wlan_hwifi/tools/mt7992_dbg.c
+@@ -3350,6 +3350,8 @@
+ 	for (i = 0; i < size; i++) {
+ 		elem = get_addr_elem(pci_trans, rro_cfg, bus_trans->ae_info->seid,
+ 		bus_trans->ae_info->start_sn + i);
++		if (!elem)
++			break;
+ 		index = (start_sn + i) % rro_cfg->win_sz;
+ 		seq_printf(s, "|%4u|%4u| 0x%08llx| %08x %08x|%3d| %1d | %4d|    0x%1x   |0x%08x|\n",
+ 				 start_sn + i,

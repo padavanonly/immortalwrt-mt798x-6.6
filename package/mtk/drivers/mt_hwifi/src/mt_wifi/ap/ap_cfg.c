@@ -10046,7 +10046,7 @@ INT RTMPAPQueryInformation(
 			Status = copy_to_user(wrq->u.data.pointer, &pAd->ApCfg.MBSSID[ifIndex].AccessControlList, sizeof(RT_802_11_ACL));
 
 		break;
-#if 1
+#ifdef CONFIG_HOTSPOT
 #ifdef CONFIG_DOT11V_WNM
 
 	case OID_802_11_WNM_IPV4_PROXY_ARP_LIST: {
@@ -10108,9 +10108,8 @@ INT RTMPAPQueryInformation(
 
 	case OID_802_11_SECURITY_TYPE: {
 		BSS_STRUCT *pMbss;
-		PSTA_ADMIN_CONFIG pApCliEntry;
 		PUCHAR pType;
-		struct security_type_new *SecurityType;
+		struct security_type *SecurityType;
 
 		if (!VALID_MBSS(pAd, ifIndex)) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "error index\n");
@@ -10119,33 +10118,19 @@ INT RTMPAPQueryInformation(
 		}
 		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
 				 "Query:OID_802_11_SECURITY_TYPE\n");
-		if (pObj->ioctl_if_type == INT_APCLI && ifIndex >= MAX_APCLI_NUM) 
-		{	
-			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "error station index\n");
-			return FALSE;
-		}
 		os_alloc_mem(NULL, &pType, sizeof(*SecurityType));
 		if (pType == NULL) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR,
 					"Fail to allocate memory!\n");
 			Status = -ENOMEM;
 		} else {
-			SecurityType = (struct security_type_new *)pType;
-			if (pObj->ioctl_if_type == INT_APCLI) {
-				pApCliEntry = &pAd->StaCfg[ifIndex];
-				SecurityType->ifindex = ifIndex;
-				SecurityType->auth_mode = pApCliEntry->wdev.SecConfig.AKMMap;
-				SecurityType->encryp_type = pApCliEntry->wdev.SecConfig.PairwiseCipher;
-				wrq->u.data.length = sizeof(*SecurityType);
-				Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
-		} else if(pObj->ioctl_if_type == INT_MAIN || pObj->ioctl_if_type == INT_MBSSID) {
+			SecurityType = (struct security_type *)pType;
 			pMbss = &pAd->ApCfg.MBSSID[ifIndex];
 			SecurityType->ifindex = ifIndex;
-			SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
-			SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
+			SecurityType->auth_mode = SecAuthModeNewToOld(pMbss->wdev.SecConfig.AKMMap);
+			SecurityType->encryp_type = SecEncryModeNewToOld(pMbss->wdev.SecConfig.PairwiseCipher);
 			wrq->u.data.length = sizeof(*SecurityType);
 			Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
-			}
 			os_free_mem(pType);
 		}
 	}
@@ -11091,20 +11076,13 @@ INT RTMPAPQueryInformation(
 #endif
 	case OID_GET_WIRELESS_BAND:
 	{
-		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
 		UCHAR wireless_band;
 
 		if (wdev) {
 			wireless_band = wlan_operate_get_ch_band(wdev);
 			wrq->u.data.length = sizeof(wireless_band);
 			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
-			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
-				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
-		} else {
-			wireless_band = wlan_config_get_ch_band(wdev);
-			wrq->u.data.length = sizeof(wireless_band);
-			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
-			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
+			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_NOTICE,
 				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
 		}
 		break;
@@ -28501,9 +28479,9 @@ static BOOLEAN ch_switch_monitor_sanity_check(IN PRTMP_ADAPTER pAd, UCHAR channe
 		&& !WMODE_CAP_6G(wdev->PhyMode)
 #endif /* MAP_R3_6E_SUPPORT */
 		) ||
-		(channel > 14 && WMODE_CAP_2G(wdev->PhyMode))
+		(channel > 14 && WMODE_CAP_2G(wdev->PhyMode)) ||
 #ifdef MAP_R3_6E_SUPPORT
-		|| (channel > 233 && WMODE_CAP_6G(wdev->PhyMode))
+		(channel > 233 && WMODE_CAP_6G(wdev->PhyMode))
 #endif /* MAP_R3_6E_SUPPORT */
 	) {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,

@@ -1,0 +1,436 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: bound MT799x MCU RX headers, response copy, and SNR
+ callbacks
+
+Validate MCU RX header lengths, response copy capacities, and per-station SNR event payloads before accessing or copying buffers.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/chip/mcu/cmm_fw_uni_event.c |  25 +++++--
+ mt_wifi/common/cmm_info.c           |   6 +-
+ mt_wifi/hw_ctrl/hw_ctrl.c           |   9 ++-
+ mt_wifi/include/os/hwifi_mac.h      |   2 +-
+ wlan_hwifi/chips/bmac.c             |  10 ++-
+ wlan_hwifi/interface/connac_if.c    |  26 +++++--
+ wlan_hwifi/mcu/mcu.c                | 106 +++++++++++++++++++++++-----
+ wlan_hwifi/mcu/mcu.h                |   3 +-
+ wlan_hwifi/mcu/mcu_wa.c             |   9 ++-
+ wlan_hwifi/mcu/mcu_wm.c             |   9 ++-
+ 10 files changed, 167 insertions(+), 38 deletions(-)
+
+diff --git a/mt_wifi/chip/mcu/cmm_fw_uni_event.c b/mt_wifi/chip/mcu/cmm_fw_uni_event.c
+index c458941..7abc8a1 100644
+--- a/mt_wifi/chip/mcu/cmm_fw_uni_event.c
++++ b/mt_wifi/chip/mcu/cmm_fw_uni_event.c
+@@ -7075,11 +7075,28 @@ VOID uni_event_per_sta_per_handler(struct cmd_msg *msg, char *rsp_payload,
+ VOID uni_event_per_sta_snr_handler(struct cmd_msg *msg, char *rsp_payload,
+ 					UINT16 rsp_payload_len)
+ {
+-	PUINT8 pu1SNR = (PUINT8) msg->attr.rsp.wb_buf_in_calbk;
+-	struct UNI_EVENT_PER_STA_INFO_T *event = (struct UNI_EVENT_PER_STA_INFO_T *)rsp_payload;
+-	struct UNI_EVENT_PER_STA_INFO_COMMON_T *tlv = (struct UNI_EVENT_PER_STA_INFO_COMMON_T *) &(event->au1TlvBuffer[0]);
+-	struct UNI_EVENT_PER_STA_SNR_T *ptr = (struct UNI_EVENT_PER_STA_SNR_T *) &(tlv->au1PerStaContent[0]);
++	PUINT8 pu1SNR;
++	struct UNI_EVENT_PER_STA_INFO_T *event;
++	struct UNI_EVENT_PER_STA_INFO_COMMON_T *tlv;
++	struct UNI_EVENT_PER_STA_SNR_T *ptr;
++
++	if (!msg || !rsp_payload ||
++	    rsp_payload_len < sizeof(struct UNI_EVENT_PER_STA_INFO_T) +
++				 sizeof(struct UNI_EVENT_PER_STA_INFO_COMMON_T) +
++				 sizeof(struct UNI_EVENT_PER_STA_SNR_T) ||
++	    rsp_payload_len > (0xFFFF - sizeof(EVENT_RXD)))
++		return;
++
++	pu1SNR = (PUINT8)msg->attr.rsp.wb_buf_in_calbk;
++	if (!pu1SNR)
++		return;
++
++	event = (struct UNI_EVENT_PER_STA_INFO_T *)rsp_payload;
++	tlv = (struct UNI_EVENT_PER_STA_INFO_COMMON_T *)&event->au1TlvBuffer[0];
++	if (le2cpu16(tlv->u2Tag) != UNI_EVENT_PER_STA_SNR)
++		return;
+ 
++	ptr = (struct UNI_EVENT_PER_STA_SNR_T *)&tlv->au1PerStaContent[0];
+ 	pu1SNR[0] = ptr->au1Snr[0];
+ 	pu1SNR[1] = ptr->au1Snr[1];
+ 	pu1SNR[2] = ptr->au1Snr[2];
+diff --git a/mt_wifi/common/cmm_info.c b/mt_wifi/common/cmm_info.c
+index b34a1a1..fcc78a6 100644
+--- a/mt_wifi/common/cmm_info.c
++++ b/mt_wifi/common/cmm_info.c
+@@ -7632,7 +7632,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
+ 	IN PRTMP_ADAPTER pAd,
+ 	IN RTMP_IOCTL_INPUT_STRUCT *wrq)
+ {
+-	UINT8 u1Snr = 0;
++	UINT8 u1Snr[4] = {0};
+ 	INT i, rssi_len;
+ 	BOOLEAN need_send = FALSE;
+ 	RT_802_11_MAC_TABLE_FIX *pMacTab = NULL;
+@@ -7683,8 +7683,8 @@ VOID RTMPIoctlGetMacTableStaInfo(
+ 			pDst->AvgRssi2 = rssi[2];
+ 			pDst->AvgRssi3 = rssi[3];
+ 			/* Fill in SNR per entry*/
+-			UniCmdPerStaGetSNR(pAd, pEntry->wcid, &u1Snr);
+-			pDst->AvgSnr = u1Snr;
++			UniCmdPerStaGetSNR(pAd, pEntry->wcid, u1Snr);
++			pDst->AvgSnr = u1Snr[0];
+ 			/* the connected time per entry*/
+ 			pDst->ConnectedTime = pEntry->StaConnectTime;
+ 			pDst->TxRate.word = RTMPGetLastTxRate_FIX(pAd, pEntry);
+diff --git a/mt_wifi/hw_ctrl/hw_ctrl.c b/mt_wifi/hw_ctrl/hw_ctrl.c
+index 344cb9e..123efff 100644
+--- a/mt_wifi/hw_ctrl/hw_ctrl.c
++++ b/mt_wifi/hw_ctrl/hw_ctrl.c
+@@ -2185,17 +2185,20 @@ static NTSTATUS HwCtrlSetRxFilterCntl(RTMP_ADAPTER *pAd, HwCmdQElmt *CMDQelmt)
+ static NTSTATUS HwCtrlGetStaSnr(RTMP_ADAPTER *pAd, HwCmdQElmt *CMDQelmt)
+ {
+ 	UINT8 uwcid = *((UINT8 *)CMDQelmt->buffer);
+-	UINT8 snr = 0;
++	UINT8 snr[4] = {0};
+ #ifdef WIFI_UNIFIED_COMMAND
+ 	RTMP_CHIP_CAP * cap = NULL;
+ #endif
+ 
++	if (!CMDQelmt->RspBuffer || CMDQelmt->RspBufferLen != sizeof(snr[0]))
++		return NDIS_STATUS_INVALID_DATA;
++
+ #ifdef WIFI_UNIFIED_COMMAND
+ 	cap = hc_get_chip_cap(pAd->hdev_ctrl);
+ 	if (cap->uni_cmd_support)
+-		UniCmdPerStaGetSNR(pAd, uwcid, &snr);
++		UniCmdPerStaGetSNR(pAd, uwcid, snr);
+ #endif /* WIFI_UNIFIED_COMMAND */
+-	os_move_mem(CMDQelmt->RspBuffer, &snr, CMDQelmt->RspBufferLen);
++	os_move_mem(CMDQelmt->RspBuffer, &snr[0], sizeof(snr[0]));
+ 	return NDIS_STATUS_SUCCESS;
+ }
+ static NTSTATUS HwCtrlUpdateChannelInfo(RTMP_ADAPTER *pAd, HwCmdQElmt *CMDQelmt)
+diff --git a/mt_wifi/include/os/hwifi_mac.h b/mt_wifi/include/os/hwifi_mac.h
+index 3ef1255..398fb1f 100644
+--- a/mt_wifi/include/os/hwifi_mac.h
++++ b/mt_wifi/include/os/hwifi_mac.h
+@@ -385,7 +385,7 @@ enum MTK_MAC_MCU_DEST {
+  * @data: Point to cmd payload buffer head.
+  * @rx_data: Point to cmd response buffer head for rx response.
+  * @len: Indicate buffer size (in bytes) ready for tx.
+- * @rx_len: Indicate max rx response size (in bytes) ready for rx response.
++ * @rx_len: Input response capacity; output actual response length in bytes.
+  * @is_wait: Indicate if driver need to handle wait rsp.
+  * @dest: Indicate this cmd target destination see &enum MTK_MAC_MCU_DEST.
+  * @action: Indicate this cmd type see &enum MTK_MAC_MCU_ACTION.
+diff --git a/wlan_hwifi/chips/bmac.c b/wlan_hwifi/chips/bmac.c
+index 3076464..47a838f 100644
+--- a/wlan_hwifi/chips/bmac.c
++++ b/wlan_hwifi/chips/bmac.c
+@@ -39,7 +39,15 @@ bmac_rx_event(struct mtk_hw_dev *dev, struct mtk_bus_trans *trans,
+ {
+ 	enum rx_pkt_type type;
+ 	enum rx_pkt_type sw_type;
+-	__le32 *rxd = (__le32 *)skb->data;
++	__le32 *rxd;
++
++	if (!pskb_may_pull(skb, sizeof(*rxd))) {
++		dbg_bus_rx_err_inc(trans);
++		dev_kfree_skb(skb);
++		return;
++	}
++
++	rxd = (__le32 *)skb->data;
+ 
+ 	type = GET_FIELD(WF_RX_DESCRIPTOR_PACKET_TYPE,
+ 					le32_to_cpu(rxd[0]));
+diff --git a/wlan_hwifi/interface/connac_if.c b/wlan_hwifi/interface/connac_if.c
+index 6946399..c637575 100644
+--- a/wlan_hwifi/interface/connac_if.c
++++ b/wlan_hwifi/interface/connac_if.c
+@@ -31,6 +31,7 @@
+ #include <linux/etherdevice.h>
+ #include <linux/platform_device.h>
+ #include <linux/kernel.h>
++#include <linux/limits.h>
+ #include <linux/module.h>
+ #include <os/hwifi_mac.h>
+ #include "core.h"
+@@ -241,10 +242,14 @@ connac_to_mcu_dest(u8 dest, u8 *out_dest)
+ }
+ 
+ static int
+-connac_to_mcu_txblk(struct mtk_mcu_txblk *mcu_txblk, struct mtk_mac_mcu_msg *mcu_msg, struct mtk_mcu_resp *resp)
++connac_to_mcu_txblk(struct mtk_mcu_txblk *mcu_txblk, struct mtk_mac_mcu_msg *mcu_msg,
++	struct mtk_mcu_resp *resp, u32 rx_capacity)
+ {
+ 	int ret;
+ 
++	if (rx_capacity > (u32)INT_MAX || (rx_capacity && !mcu_msg->rx_data))
++		return -EINVAL;
++
+ 	mcu_txblk->cmd = mcu_msg->cmd;
+ 	mcu_txblk->ext_cmd = mcu_msg->ext_cmd;
+ 	mcu_txblk->data = mcu_msg->data;
+@@ -257,7 +262,7 @@ connac_to_mcu_txblk(struct mtk_mcu_txblk *mcu_txblk, struct mtk_mac_mcu_msg *mcu
+ 	mcu_txblk->frag_total_num = mcu_msg->frag_total_num;
+ 	mcu_txblk->timeout = mcu_msg->timeout;
+ 	resp->rx_data = mcu_msg->rx_data;
+-	resp->rx_len = 0;
++	resp->rx_len = (int)rx_capacity;
+ 	ret = connac_to_mcu_dest(mcu_msg->dest, &mcu_txblk->dest);
+ 	if (ret)
+ 		goto err;
+@@ -295,10 +300,16 @@ connac_if_mcu_tx(struct mtk_mac_hw *hw, struct mtk_mac_mcu_msg *mcu_msg)
+ 	int ret;
+ 	struct mtk_hw_phy *hw_phy = hw->priv;
+ 	struct mtk_hw_dev *hw_dev = hw_phy->hw_dev;
+-	struct mtk_mcu_resp resp;
++	struct mtk_mcu_resp resp = {0};
+ 	struct mtk_mcu_txblk mcu_txblk = {0};
++	u32 rx_capacity;
++
++	if (!mcu_msg)
++		return -EINVAL;
+ 
+-	ret = connac_to_mcu_txblk(&mcu_txblk, mcu_msg, &resp);
++	rx_capacity = mcu_msg->rx_len;
++	mcu_msg->rx_len = 0;
++	ret = connac_to_mcu_txblk(&mcu_txblk, mcu_msg, &resp, rx_capacity);
+ 
+ 	mtk_dbg(MTK_MCU, "%s(ret=%d):len=%d,cmd=0x%x,ext_cmd=0x%x,\n",
+ 		__func__, ret, mcu_txblk.len, mcu_txblk.cmd,
+@@ -319,7 +330,12 @@ connac_if_mcu_tx(struct mtk_mac_hw *hw, struct mtk_mac_mcu_msg *mcu_msg)
+ 
+ 	mtk_dbg(MTK_MCU, "%s(): resp %p, res_len :%d, ret: %d\n",
+ 		__func__, resp.rx_data, resp.rx_len, ret);
+-	mcu_msg->rx_len = resp.rx_len;
++	if (!ret && mcu_txblk.wait_resp && resp.rx_data) {
++		if (resp.rx_len < 0 || (u32)resp.rx_len > rx_capacity)
++			ret = -EINVAL;
++		else
++			mcu_msg->rx_len = (u32)resp.rx_len;
++	}
+ out:
+ 	return ret;
+ }
+diff --git a/wlan_hwifi/mcu/mcu.c b/wlan_hwifi/mcu/mcu.c
+index 8387a48..3fa3800 100755
+--- a/wlan_hwifi/mcu/mcu.c
++++ b/wlan_hwifi/mcu/mcu.c
+@@ -29,6 +29,8 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/limits.h>
++#include <linux/skbuff.h>
+ #include <linux/firmware.h>
+ #include "mcu.h"
+ #include "core.h"
+@@ -58,13 +60,56 @@ mcu_get_response(struct mtk_hw_dev *dev,
+ }
+ 
+ static int
+-mcu_write_back_resp(struct mtk_mcu_resp *rx_info, struct mtk_mcu_resp *resp)
++mcu_resp_skb_offset(struct sk_buff *skb, const void *data, int len, int *offset)
+ {
+-	if (resp && resp->rx_data) {
+-		resp->rx_len = rx_info->rx_len;
+-		resp->seq = rx_info->seq;
+-		memcpy(resp->rx_data, rx_info->rx_data, rx_info->rx_len);
++	unsigned long skb_data, data_addr, data_offset;
++
++	if (!skb || !data || !offset || len < 0)
++		return -EINVAL;
++
++	skb_data = (unsigned long)skb->data;
++	data_addr = (unsigned long)data;
++	if (data_addr < skb_data)
++		return -EINVAL;
++
++	data_offset = data_addr - skb_data;
++	if (data_offset > skb_headlen(skb) || data_offset > skb->len)
++		return -EINVAL;
++	if (data_offset > (unsigned long)INT_MAX || (unsigned int)len > skb->len - (unsigned int)data_offset)
++		return -EMSGSIZE;
++
++	*offset = (int)data_offset;
++	return 0;
++}
++
++static int
++mcu_write_back_resp(struct sk_buff *skb, struct mtk_mcu_resp *rx_info,
++	struct mtk_mcu_resp *resp)
++{
++	int capacity, offset, ret;
++
++	if (!resp)
++		return 0;
++
++	capacity = resp->rx_len;
++	resp->rx_len = 0;
++	if (capacity < 0 || rx_info->rx_len < 0)
++		return -EINVAL;
++	if (!resp->rx_data)
++		return 0;
++	if (rx_info->rx_len > capacity)
++		return -EMSGSIZE;
++	if (rx_info->rx_len) {
++		ret = mcu_resp_skb_offset(skb, rx_info->rx_data, rx_info->rx_len, &offset);
++		if (ret)
++			return ret;
++		ret = skb_copy_bits(skb, offset, resp->rx_data, rx_info->rx_len);
++		if (ret)
++			return ret;
+ 	}
++
++	resp->seq = rx_info->seq;
++	resp->rx_len = rx_info->rx_len;
+ 	return 0;
+ }
+ 
+@@ -72,9 +117,9 @@ static int
+ mcu_parse_response(struct mtk_hw_dev *dev,
+ 	struct mtk_mcu_entry *mcu_entry, struct mtk_mcu_txblk *mcu_txblk, struct sk_buff *skb)
+ {
+-	int ret;
++	int ret, offset;
+ 	struct mtk_mcu_resp rx_info = {0};
+-	struct uni_event_cmd_result *result = NULL;
++	u16 cmd_id;
+ 
+ 	if (!mcu_entry->ops->rx_prepare)
+ 		return -EOPNOTSUPP;
+@@ -90,16 +135,25 @@ mcu_parse_response(struct mtk_hw_dev *dev,
+ 	if (mcu_txblk->seq != rx_info.seq)
+ 		return -EAGAIN;
+ 
+-	result = (struct uni_event_cmd_result *)rx_info.rx_data;
+-	if (result &&
++	if (rx_info.rx_data &&
+ 		mcu_txblk->uni_cmd &&
+ 		mcu_txblk->action == MCU_ACT_SET &&
+-		mcu_txblk->ack &&
+-		mcu_txblk->cmd != result->cid)
+-		return -EAGAIN;
++		mcu_txblk->ack) {
++		if (rx_info.rx_len < (int)sizeof(cmd_id))
++			return -EMSGSIZE;
++		ret = mcu_resp_skb_offset(skb, rx_info.rx_data, (int)sizeof(cmd_id), &offset);
++		if (ret)
++			return ret;
++		ret = skb_copy_bits(skb, offset, &cmd_id, (int)sizeof(cmd_id));
++		if (ret)
++			return ret;
++		if (mcu_txblk->cmd != cmd_id)
++			return -EAGAIN;
++	}
+ 
+-	if (mcu_write_back_resp(&rx_info, mcu_txblk->resp))
+-		return -EINVAL;
++	ret = mcu_write_back_resp(skb, &rx_info, mcu_txblk->resp);
++	if (ret)
++		return ret;
+ 
+ 	return ret;
+ }
+@@ -227,6 +281,10 @@ _mcu_rx_event(struct mtk_hw_dev *dev, struct mtk_mcu_entry *mcu_entry, struct sk
+ 	wake_up(&mcu_entry->wait);
+ }
+ 
++/*
++ * Consume skb on every path: free rejected input, or pass valid input to rx
++ * and queue it if rx returns nonzero.
++ */
+ int
+ mtk_mcu_rx_event(struct mtk_hw_dev *dev, struct sk_buff *skb, u32 mcu_type)
+ {
+@@ -234,10 +292,26 @@ mtk_mcu_rx_event(struct mtk_hw_dev *dev, struct sk_buff *skb, u32 mcu_type)
+ 	struct mtk_mcu_entry *mcu_entry = mcu_get_entry_by_type(&dev->mcu_ctrl, mcu_type);
+ 	struct mtk_mcu_rx_data rx_data = {0};
+ 
+-	if (!mcu_entry || mcu_entry->state == MCU_STATE_NONE)
++	if (!mcu_entry || mcu_entry->state == MCU_STATE_NONE) {
++		dev_kfree_skb(skb);
+ 		return -EINVAL;
++	}
++
++	if (!pskb_may_pull(skb, mcu_entry->rx_ignore_sz)) {
++		dev_kfree_skb(skb);
++		return -EMSGSIZE;
++	}
++
++	if (!skb_pull(skb, mcu_entry->rx_ignore_sz)) {
++		dev_kfree_skb(skb);
++		return -EMSGSIZE;
++	}
++
++	if (!pskb_may_pull(skb, mcu_entry->mcu_rxd_sz)) {
++		dev_kfree_skb(skb);
++		return -EMSGSIZE;
++	}
+ 
+-	skb_pull(skb, mcu_entry->rx_ignore_sz);
+ 	rx_data.skb = skb;
+ 
+ 
+diff --git a/wlan_hwifi/mcu/mcu.h b/wlan_hwifi/mcu/mcu.h
+index e797f16..94111d6 100755
+--- a/wlan_hwifi/mcu/mcu.h
++++ b/wlan_hwifi/mcu/mcu.h
+@@ -191,7 +191,8 @@ struct uni_event_cmd_result {
+  * struct mtk_mcu_resp - MCU response format
+  *
+  * @param rx_data: point to rx response data buffer
+- * @param rx_len: length of rx response data
++ * @param rx_len: output buffer capacity on entry; actual copied length on success;
++ *                 parsed payload length when used as receive metadata
+  * @param seq: sequence number for related to tx command
+  */
+ struct mtk_mcu_resp {
+diff --git a/wlan_hwifi/mcu/mcu_wa.c b/wlan_hwifi/mcu/mcu_wa.c
+index 59ab0b5..61c93a1 100644
+--- a/wlan_hwifi/mcu/mcu_wa.c
++++ b/wlan_hwifi/mcu/mcu_wa.c
+@@ -303,10 +303,15 @@ static int
+ mcu_wa_rx_prepare(struct mtk_hw_dev *dev, struct mtk_mcu_entry *mcu_entry, struct sk_buff *skb,
+ 	struct mtk_mcu_resp *rx_info)
+ {
+-	struct mcu_rxd *rxd = (struct mcu_rxd *)skb->data;
++	struct mcu_rxd *rxd;
+ 
+-	skb_pull(skb, mcu_entry->mcu_rxd_sz);
++	if (!pskb_may_pull(skb, mcu_entry->mcu_rxd_sz))
++		return -EMSGSIZE;
++
++	rxd = (struct mcu_rxd *)skb->data;
+ 	rx_info->seq = rxd->seq;
++	if (!skb_pull(skb, mcu_entry->mcu_rxd_sz))
++		return -EMSGSIZE;
+ 	rx_info->rx_data = skb->data;
+ 	rx_info->rx_len = skb->len;
+ 	return 0;
+diff --git a/wlan_hwifi/mcu/mcu_wm.c b/wlan_hwifi/mcu/mcu_wm.c
+index e016580..f801fb8 100644
+--- a/wlan_hwifi/mcu/mcu_wm.c
++++ b/wlan_hwifi/mcu/mcu_wm.c
+@@ -810,8 +810,12 @@ static int
+ mcu_wm_rx_prepare(struct mtk_hw_dev *dev, struct mtk_mcu_entry *mcu_entry, struct sk_buff *skb,
+ 	struct mtk_mcu_resp *rx_info)
+ {
+-	struct mcu_rxd *rxd = (struct mcu_rxd *)skb->data;
++	struct mcu_rxd *rxd;
++
++	if (!pskb_may_pull(skb, mcu_entry->mcu_rxd_sz))
++		return -EMSGSIZE;
+ 
++	rxd = (struct mcu_rxd *)skb->data;
+ 	rx_info->seq = rxd->seq;
+ 
+ 	/*special case, patch sem using mcu_rxd as data*/
+@@ -821,7 +825,8 @@ mcu_wm_rx_prepare(struct mtk_hw_dev *dev, struct mtk_mcu_entry *mcu_entry, struc
+ 		rx_info->rx_len = sizeof(rxd->ext_eid);
+ 		break;
+ 	default:
+-		skb_pull(skb, mcu_entry->mcu_rxd_sz);
++		if (!skb_pull(skb, mcu_entry->mcu_rxd_sz))
++			return -EMSGSIZE;
+ 		rx_info->rx_data = skb->data;
+ 		rx_info->rx_len = skb->len;
+ 		break;

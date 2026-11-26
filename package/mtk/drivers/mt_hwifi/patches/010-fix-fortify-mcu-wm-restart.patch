@@ -1,0 +1,49 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: fix fortify string bounds in mcu_wm_restart
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi_ap/Makefile     | 1 -
+ wlan_hwifi/Makefile     | 1 -
+ wlan_hwifi/mcu/mcu_wm.c | 4 ++--
+ 3 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/mt_wifi_ap/Makefile b/mt_wifi_ap/Makefile
+index 009b6f5..ab598b4 100644
+--- a/mt_wifi_ap/Makefile
++++ b/mt_wifi_ap/Makefile
+@@ -94,7 +94,6 @@ include $(TOP_DIR)/mk/obj/profiles.mk
+ 
+ ccflags-y += $(WFLAGS)
+ ccflags-y += -Wno-error=misleading-indentation
+-ccflags-y += -Wno-error=attribute-warning
+ ccflags-y += -Wno-error=enum-conversion
+ ccflags-y += -Wno-error=enum-int-mismatch
+ ccflags-y += -Wno-error=cast-function-type
+diff --git a/wlan_hwifi/Makefile b/wlan_hwifi/Makefile
+index 7e1474a..7f951bb 100644
+--- a/wlan_hwifi/Makefile
++++ b/wlan_hwifi/Makefile
+@@ -81,7 +81,6 @@ endif
+ 
+ #ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
+ ccflags-y += -Wno-error=enum-conversion
+-ccflags-y += -Wno-error=attribute-warning
+ ccflags-y += -Wno-error=enum-int-mismatch
+ ccflags-y += -Wno-error=cast-function-type
+ ccflags-y += -Wno-error=implicit-fallthrough
+diff --git a/wlan_hwifi/mcu/mcu_wm.c b/wlan_hwifi/mcu/mcu_wm.c
+index 705579e..e016580 100644
+--- a/wlan_hwifi/mcu/mcu_wm.c
++++ b/wlan_hwifi/mcu/mcu_wm.c
+@@ -637,8 +637,8 @@ mcu_wm_restart_uni_cmd(struct mtk_hw_dev *dev, struct mtk_mcu_entry *mcu_entry)
+ 	tag.length = sizeof(tag);
+ 	tag.power_mode = 1;
+ 
+-	memset(req, 0, sizeof(size));
+-	memcpy(req->buf, &tag, sizeof(tag));
++	memset(req, 0, size);
++	memcpy((u8 *)req + sizeof(*req), &tag, sizeof(tag));
+ 
+ 	/* this is normal ram code cmd not fwdl cmd */
+ 	memset(&mcu_txblk, 0, sizeof(struct mtk_mcu_txblk));

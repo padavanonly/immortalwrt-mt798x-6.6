@@ -3,32 +3,124 @@
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 
+# The order-only guard is not fail-closed under make -i. Refuse it before rules.mk
+# and package.mk can alter MAKEFLAGS or any package recipe can run.
+ifneq ($(origin MAKEFLAGS),file)
+  $(error Vendor Wi-Fi guarded packages reject explicit MAKEFLAGS overrides)
+endif
+ifneq ($(flavor MAKEFLAGS),recursive)
+  $(error Vendor Wi-Fi guarded packages reject immediate MAKEFLAGS assignments)
+endif
+ifneq ($(findstring i,$(filter-out --% %=%,$(firstword $(MAKEFLAGS)))),)
+  $(error Vendor Wi-Fi guarded packages refuse make -i/--ignore-errors)
+endif
+ifneq ($(filter --ignore-errors,$(MAKEFLAGS)),)
+  $(error Vendor Wi-Fi guarded packages refuse make -i/--ignore-errors)
+endif
+ifneq ($(origin CURDIR),file)
+  $(error mt_hwifi requires CURDIR from GNU make)
+endif
+ifneq ($(origin USE_SOURCE_DIR),undefined)
+  $(error mt_hwifi rejects USE_SOURCE_DIR before package.mk expansion)
+endif
+ifneq ($(origin USE_GIT_TREE),undefined)
+  $(error mt_hwifi rejects USE_GIT_TREE before package.mk expansion)
+endif
+ifneq ($(origin USE_GIT_SRC_CHECKOUT),undefined)
+  $(error mt_hwifi rejects USE_GIT_SRC_CHECKOUT before package.mk expansion)
+endif
+ifneq ($(origin KERNEL_BUILD_DIR),undefined)
+  ifneq ($(origin KERNEL_BUILD_DIR),file)
+    $(error Vendor Wi-Fi guarded packages require KERNEL_BUILD_DIR from the package build rules)
+  endif
+endif
+ifneq ($(origin BUILD_DIR_BASE),undefined)
+  $(error Vendor Wi-Fi guarded packages reject BUILD_DIR_BASE overrides)
+endif
+ifneq ($(origin BUILD_DIR),undefined)
+  $(error Vendor Wi-Fi guarded packages reject BUILD_DIR overrides)
+endif
+ifneq ($(origin PKG_NAME),undefined)
+  $(error mt_hwifi rejects PKG_NAME overrides before package includes)
+endif
+ifneq ($(origin PKG_BUILD_DIR),undefined)
+  $(error mt_hwifi rejects PKG_BUILD_DIR overrides before package includes)
+endif
+ifneq ($(origin WIFI_DRIVER_NAME),undefined)
+  $(error mt_hwifi rejects WIFI_DRIVER_NAME before package includes)
+endif
+
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt_hwifi
 WIFI_DRIVER_NAME:=mt_hwifi
+ifneq ($(origin PKG_NAME),file)
+  $(error mt_hwifi rejects command-line/environment identity override)
+endif
+ifneq ($(origin WIFI_DRIVER_NAME),file)
+  $(error mt_hwifi rejects command-line/environment WIFI_DRIVER_NAME)
+endif
 P4REV:=
 PKG_VERSION:=TEST
+PKG_RELEASE:=13
 PKG_SOURCE_URL:=
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(WIFI_DRIVER_NAME)
+PKG_EXTMOD_SUBDIRS:=wlan_hwifi
+ifneq ($(origin PKG_BUILD_DIR),file)
+  $(error mt_hwifi rejects command-line/environment build path override)
+endif
 PKG_KCONFIG:= \
 	SUPPORT_OPENWRT \
 	CCN34_SPLIT_MAC_SUPPORT \
         CCN67_SPLIT_MAC_SUPPORT \
 
-PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)))
+PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c))) \
+	CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be5040 \
+	CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be7200 \
+	CONFIG_PACKAGE_kmod-mt_wifi7-mt7990-be19000 \
+	CONFIG_PACKAGE_kmod-mt7990 \
+	CONFIG_PACKAGE_kmod-mt7990_dbg \
+	CONFIG_PACKAGE_kmod-mt7992 \
+	CONFIG_PACKAGE_kmod-mt7992_dbg \
+	CONFIG_PACKAGE_kmod-mtk_wed \
+	CONFIG_PACKAGE_kmod-en_npu \
+	CONFIG_PACKAGE_kmod-mtk_pci \
+	CONFIG_PACKAGE_kmod-connac_if
 
 PKG_BUILD_PARALLEL:=1
 
+MTK_DEFAULT_EEPROM := $(CURDIR)/files/eeprom-default/bin/MT7991_MT7976_EEPROM_BE5040_iPAiLNA.bin
+MTK_DEFAULT_EEPROM_SHA256 := a500477cbe4a9dc6f3b4d672d58871859af0219d215670a8c7bbdcbf7072287b
+PKG_FILE_DEPENDS += $(MTK_DEFAULT_EEPROM)
+
 include $(INCLUDE_DIR)/package.mk
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	test -f "$(MTK_DEFAULT_EEPROM)" || { echo "missing pinned default EEPROM: $(MTK_DEFAULT_EEPROM)" >&2; exit 1; }
+	eeprom_digest="$$$$($(MKHASH) sha256 "$(MTK_DEFAULT_EEPROM)")" && test "$$$$eeprom_digest" = "$(MTK_DEFAULT_EEPROM_SHA256)" || { echo "pinned default EEPROM source hash mismatch or mkhash failed" >&2; exit 1; }
+	$(INSTALL_DIR) "$(PKG_BUILD_DIR)/bin/mt7992/rebb"
+	$(CP) "$(MTK_DEFAULT_EEPROM)" "$(PKG_BUILD_DIR)/bin/mt7992/rebb/MT7991_MT7976_EEPROM_BE5040_iPAiLNA.bin"
+	eeprom_digest="$$$$($(MKHASH) sha256 "$(PKG_BUILD_DIR)/bin/mt7992/rebb/MT7991_MT7976_EEPROM_BE5040_iPAiLNA.bin")" && test "$$$$eeprom_digest" = "$(MTK_DEFAULT_EEPROM_SHA256)" || { echo "prepared default EEPROM hash mismatch or mkhash failed" >&2; exit 1; }
+endef
+
+
+# Validate the package source/build boundary before package.mk's prepared/clean rm -rf.
+override VENDOR_WIFI_GUARD := $(TOPDIR)/package/mtk/drivers/vendor-wifi-guard.sh
+override VENDOR_WIFI_SOURCE_DIR := $(CURDIR)/src
+.PHONY: vendor-wifi-predelete-guard
+vendor-wifi-predelete-guard:
+	@$(VENDOR_WIFI_GUARD) "$(TOPDIR)" "$(VENDOR_WIFI_SOURCE_DIR)" "$(KERNEL_BUILD_DIR)" "$(PKG_BUILD_DIR)" "mt_hwifi" "$(if $(filter-out undefined,$(origin USE_SOURCE_DIR)),active,)" "$(if $(filter-out undefined,$(origin USE_GIT_TREE)),active,)" "$(if $(filter-out undefined,$(origin USE_GIT_SRC_CHECKOUT)),active,)"
+STAMP_PREPARED_DEPENDS += | vendor-wifi-predelete-guard
+force-clean-build: vendor-wifi-predelete-guard
 
 TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 
 define KernelPackage/mt_hwifi
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HW abstraction layer driver
-	DEPENDS:=+kmod-mt_wifi7 +kmod-mt_wifi_cmn
+	DEPENDS:=@(TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) kmod-mt_wifi7 +kmod-mt_wifi_cmn
 	FILES:=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_hwifi.ko
 	AUTOLOAD:=$(call AutoLoad,62,mtk_hwifi)
 	SUBMENU:=Drivers
@@ -46,7 +138,7 @@ endef
 define KernelPackage/mtk_pci
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI PCI driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_PCI_SUPPORT +kmod-mt_wifi_cmn
+	DEPENDS:=kmod-mt_hwifi +kmod-mt_wifi_cmn
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_pci.ko
 	AUTOLOAD:=$(call AutoLoad,63,mtk_pci)
 	SUBMENU:=Drivers
@@ -55,7 +147,7 @@ endef
 define KernelPackage/mtk_wed
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI WED driver
-	DEPENDS:=kmod-mt_hwifi kmod-warp kmod-mtk_pci @MTK_HWIFI_WED_SUPPORT
+	DEPENDS:=kmod-mt_hwifi kmod-warp-hwifi kmod-mtk_pci
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_wed.ko
 	AUTOLOAD:=$(call AutoLoad,64,mtk_wed)
 	SUBMENU:=Drivers
@@ -64,7 +156,7 @@ endef
 define KernelPackage/en_npu
 	CATEGORY:=MTK Properties
 	TITLE:=AIROHA HWIFI NPU driver
-	DEPENDS:=kmod-mt_hwifi kmod-warp kmod-mtk_pci kmod-mtk_wed @EN_HWIFI_NPU_SUPPORT
+	DEPENDS:=kmod-mt_hwifi kmod-warp-hwifi kmod-mtk_pci kmod-mtk_wed
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/en_npu.ko
 	AUTOLOAD:=$(call AutoLoad,65,en_npu)
 	SUBMENU:=Drivers
@@ -73,7 +165,7 @@ endef
 define KernelPackage/connac_if
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI CONNAC3/5 interface layer driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_CONNAC_IF_SUPPORT
+	DEPENDS:=kmod-mt_hwifi
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/connac_if.ko
 	AUTOLOAD:=$(call AutoLoad,63,connac_if)
 	SUBMENU:=Drivers
@@ -110,7 +202,7 @@ endef
 define KernelPackage/mt7990
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI MT7990 driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_MT7990
+	DEPENDS:=kmod-mt_hwifi
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt7990.ko
 	MODPARAMS.mt7990:=option_type=$(CONFIG_MTK_HWIFI_MT7990_OPTION_TYPE) \
 			  rro_enable=$(CONFIG_MTK_HWIFI_MT7990_RRO_SUPPORT) \
@@ -124,12 +216,12 @@ define KernelPackage/mt7990/config
 
 	config MTK_HWIFI_MT7990_RRO_SUPPORT
 		string "HWIFI MT7990 RRO Support"
-		default Y
+		default "N"
 		depends on PACKAGE_kmod-mt_hwifi
 
 	config MTK_HWIFI_MT7990_OPTION_TYPE
 		int "HWIFI MT7990 Option Type"
-		default 1
+		default 2
 		depends on PACKAGE_kmod-mt_hwifi
 
 	config MTK_HWIFI_MT7990_INTR_OPTION_SET
@@ -143,16 +235,15 @@ endef
 define KernelPackage/mt7990_dbg
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI MT7990 Debug driver
-	DEPENDS:=kmod-mt7990 kmod-mtk_pci @MTK_HWIFI_MT7990
+	DEPENDS:=kmod-mt7990 kmod-mtk_pci
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt7990_dbg.ko
 	SUBMENU:=Drivers
-	DEFAULT:=PACKAGE_kmod-mt7990
 endef
 
 define KernelPackage/mt7991
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI MT7991 driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_MT7991
+	DEPENDS:=kmod-mt_hwifi
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt7991.ko
 	AUTOLOAD:=$(call AutoLoad,66,mt7991)
 	SUBMENU:=Drivers
@@ -161,7 +252,7 @@ endef
 define KernelPackage/mt7992
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI MT7992 driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_MT7992
+	DEPENDS:=kmod-mt_hwifi
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt7992.ko
 	MODPARAMS.mt7992:=option_type=$(CONFIG_MTK_HWIFI_MT7992_OPTION_TYPE) \
 			  rro_mode=$(CONFIG_MTK_HWIFI_MT7992_RRO_MODE) \
@@ -175,17 +266,17 @@ define KernelPackage/mt7992/config
 
 	config MTK_HWIFI_MT7992_RRO_MODE
 		int "HWIFI MT7992 RRO Mode"
-		default 5
+		default 4
 		depends on PACKAGE_kmod-mt_hwifi
 
 	config MTK_HWIFI_MT7992_OPTION_TYPE
 		int "HWIFI MT7992 Option Type"
-		default 1
+		default 0
 		depends on PACKAGE_kmod-mt_hwifi
 
 	config MTK_HWIFI_MT7992_INTR_OPTION_SET
 		int "HWIFI MT7992 Interrupt Option Set"
-		default 4
+		default 0
 		depends on PACKAGE_kmod-mt_hwifi
 
 	endif #PACKAGE_kmod-mt7992#
@@ -194,16 +285,15 @@ endef
 define KernelPackage/mt7992_dbg
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI MT7992 Debug driver
-	DEPENDS:=kmod-mt7992 kmod-mtk_pci @MTK_HWIFI_MT7992
+	DEPENDS:=kmod-mt7992 kmod-mtk_pci
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt7992_dbg.ko
 	SUBMENU:=Drivers
-	DEFAULT:=PACKAGE_kmod-mt7992
 endef
 
 define KernelPackage/mt799a
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI MT799A driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_MT799A
+	DEPENDS:=kmod-mt_hwifi
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt799a.ko
 	AUTOLOAD:=$(call AutoLoad,66,mt799a)
 	SUBMENU:=Drivers
@@ -248,7 +338,6 @@ define KernelPackage/mt7993_dbg
 	DEPENDS:=kmod-mt7993 kmod-mtk_pci @MTK_HWIFI_MT7993
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mt7993_dbg.ko
 	SUBMENU:=Drivers
-	DEFAULT:=PACKAGE_kmod-mt7993
 endef
 
 define KernelPackage/mt799b
@@ -299,7 +388,6 @@ define KernelPackage/blackhawk_a0_dbg
 	DEPENDS:=kmod-blackhawk_a0 kmod-mtk_pci @MTK_HWIFI_BLACKHAWK_A0
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/blackhawk_a0_dbg.ko
 	SUBMENU:=Drivers
-	DEFAULT:=PACKAGE_kmod-blackhawk_a0
 endef
 
 define KernelPackage/blackhawk_a0_pcie1
@@ -312,18 +400,41 @@ define KernelPackage/blackhawk_a0_pcie1
 endef
 
 
-MTK_HWIFI_C_FLAGS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)=$(CONFIG_MTK_WIFI7_$(c))))
+HWIFI_MT7992_ENABLE := $(or $(CONFIG_PACKAGE_kmod-mt7992),$(filter y,$(CONFIG_MTK_HWIFI_MT7992) $(CONFIG_MTK_WIFI7_CHIP_MT7992)))
+HWIFI_MT7992_SKU := $(if $(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be5040),BE5040,$(if $(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be7200),BE7200,$(if $(CONFIG_MTK_WIFI7_SKU_TYPE),$(subst ",,$(strip $(CONFIG_MTK_WIFI7_SKU_TYPE))),$(if $(CONFIG_TARGET_mediatek_filogic_hwifi),BE5040,$(if $(CONFIG_TARGET_mediatek_filogic_hwifi_a73),BE7200,)))))
+ifneq ($(and $(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be5040),$(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be7200)),)
+  $(error mt_hwifi cannot build MT7992 BE5040 and BE7200 simultaneously in a single target build; select one MT7992 SKU per build)
+endif
+HWIFI_MT7992_IDX_LOG := $(or $(filter "idx_log",$(CONFIG_MTK_WIFI7_FW_LOG_TYPE)),$(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be5040),$(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be7200))
 
-ifeq ($(CONFIG_MTK_HWIFI_WED_SUPPORT),y)
+HWIFI_MT7990_ENABLE := $(or $(CONFIG_PACKAGE_kmod-mt7990),$(filter y,$(CONFIG_MTK_HWIFI_MT7990)))
+HWIFI_MT7990_2ADIE_TRIBAND := $(or $(filter y,$(CONFIG_MTK_WIFI7_2ADIE_TRIBAND)),$(CONFIG_PACKAGE_kmod-mt_wifi7-mt7990-be19000))
+
+MTK_HWIFI_C_FLAGS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)=$(CONFIG_MTK_WIFI7_$(c))))
+ifeq ($(CONFIG_MTK_WIFI7_SUPPORT_OPENWRT),)
+ifneq ($(filter y m,$(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be5040) $(CONFIG_PACKAGE_kmod-mt_wifi7-mt7992-be7200) $(CONFIG_PACKAGE_kmod-mt_wifi7-mt7990-be19000)),)
+	MTK_HWIFI_C_FLAGS+=CONFIG_SUPPORT_OPENWRT=y
+endif
+endif
+
+ifneq ($(or $(filter y,$(CONFIG_MTK_HWIFI_WED_SUPPORT)),$(CONFIG_PACKAGE_kmod-mtk_wed)),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_HIF_WED=m
 else
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_HIF_WED=n
 endif
 
-ifeq ($(CONFIG_EN_HWIFI_NPU_SUPPORT),y)
+ifneq ($(or $(filter y,$(CONFIG_EN_HWIFI_NPU_SUPPORT)),$(CONFIG_PACKAGE_kmod-en_npu)),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_HIF_NPU=m
 else
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_HIF_NPU=n
+endif
+
+ifeq ($(CONFIG_PACKAGE_kmod-mtk_pci),)
+	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_HIF_PCI=n
+endif
+
+ifeq ($(CONFIG_PACKAGE_kmod-connac_if),)
+	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_IF_CONNAC=n
 endif
 
 ifeq ($(CONFIG_MTK_HWIFI_MD_COEX_SUPPORT),y)
@@ -338,7 +449,7 @@ ifeq ($(CONFIG_MTK_HWIFI_FW_HDR_SUPPORT),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_FW_HDR_SUPPORT=y
 endif
 
-ifeq ($(CONFIG_MTK_HWIFI_RX_PROCESS_WORKQUEUE),y)
+ifneq ($(or $(filter y,$(CONFIG_MTK_HWIFI_RX_PROCESS_WORKQUEUE)),$(CONFIG_PACKAGE_kmod-mt7992)),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_RX_PROCESS_WORKQUEUE=y
 endif
 
@@ -346,71 +457,85 @@ ifeq ($(CONFIG_MTK_HWIFI_MEM_SHRINK),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_MEM_SHRINK=y
 endif
 
-ifeq ($(CONFIG_PACKAGE_kmod-mt_wifi_cmn),y)
-KCFLAGS += \
+ifneq ($(CONFIG_PACKAGE_kmod-mt_wifi_cmn),)
+MT_HWIFI_KCFLAGS += \
 	-DMT_WIFI_COMMON_SUPPORT
 endif
 
-KCFLAGS += $(if $(CONFIG_MTK_WIFI7_OSAL_SUPPORT), -DMT_WIFI_COMMON_SUPPORT -I$(STAGING_DIR)/usr/include/mt_wifi)
+MT_HWIFI_KCFLAGS += $(if $(CONFIG_MTK_WIFI7_OSAL_SUPPORT), -DMT_WIFI_COMMON_SUPPORT -I$(STAGING_DIR)/usr/include/mt_wifi)
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt7915_),y)
+MT_HWIFI_KERNEL_KCFLAGS = $(call iremap,$(BUILD_DIR),$(notdir $(BUILD_DIR))) $(filter-out -fno-plt,$(call qstrip,$(CONFIG_EXTRA_OPTIMIZATION))) $(call qstrip,$(CONFIG_KERNEL_CFLAGS)) $(MT_HWIFI_KCFLAGS)
+
+ifeq ($(CONFIG_PACKAGE_kmod-mt7915_),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7915=n
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7915_DBG=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt7916_),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt7916_),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7916=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-bellwether),y)
+ifeq ($(CONFIG_PACKAGE_kmod-bellwether),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_BELLWETHER=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt7990),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt7990),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7990=n
+endif
+
+ifeq ($(CONFIG_PACKAGE_kmod-mt7990_dbg),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7990_DBG=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt7991),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt7991),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7991=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt7992),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt7992),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7992=n
+endif
+
+ifeq ($(CONFIG_PACKAGE_kmod-mt7992_dbg),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7992_DBG=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt799a),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt799a),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT799A=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt7993),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt7993),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7993=n
+endif
+
+ifeq ($(CONFIG_PACKAGE_kmod-mt7993_dbg),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7993_DBG=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-mt799b),y)
+ifeq ($(CONFIG_PACKAGE_kmod-mt799b),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT799B=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-blackhawk_a0),y)
+ifeq ($(CONFIG_PACKAGE_kmod-blackhawk_a0),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_BLACKHAWK_A0=n
+endif
+
+ifeq ($(CONFIG_PACKAGE_kmod-blackhawk_a0_dbg),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_BLACKHAWK_A0_DBG=n
 endif
 
-ifneq ($(CONFIG_PACKAGE_kmod-blackhawk_a0_pcie1),y)
+ifeq ($(CONFIG_PACKAGE_kmod-blackhawk_a0_pcie1),)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_BLACKHAWK_A0_PCIE1=n
 endif
 
 define Build/Compile
 	$(Build/Compile/mt7990)
 	$(Build/Compile/mt7992)
-	$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" V=1 \
+	+$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" V=1 \
 		$(KERNEL_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)/wlan_hwifi" \
 		LINUX_DIR="$(KERNEL_BUILD_DIR)" \
 		$(MTK_HWIFI_C_FLAGS) \
-	 	KCFLAGS="$(KCFLAGS)" \
+		KCFLAGS="$(MT_HWIFI_KERNEL_KCFLAGS)" \
 		modules
 endef
 
@@ -443,12 +568,35 @@ ifeq ($(CONFIG_MTK_WIFI7_DUAL_ADIE_MT7977),y)
 endif
 endif
 
-ifeq ($(CONFIG_MTK_HWIFI_MT7990),y)
-ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE19000),)
-	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE19000)/* $(1)/lib/firmware/
-else ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE14000),)
-	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE14000)/* $(1)/lib/firmware/
+ifeq ($(CONFIG_MTK_HWIFI_MT7993),y)
+ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE3600),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE3600)/* $(1)/lib/firmware/
+else
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1_TESTMODE.bin
 endif
+ifneq ($(wildcard $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_idxlog.bin),)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_idxlog.bin $(1)/lib/firmware/WIFI_RAM_CODE_idxlog.bin
+endif
+ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_MT7993_PATCH_MCU_1_1_hdr_casan.bin $(1)/lib/firmware/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_casan.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
+endif
+ifeq ($(CONFIG_MTK_WIFI7_FIPS_140_3_SELF_TEST),y)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_fips.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
+endif
+endif
+
+ifeq ($(CONFIG_MTK_HWIFI_BLACKHAWK_A0),y)
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_BLACKHAWK_A0_PATCH_MCU_hdr.bin $(1)/lib/firmware/WIFI_BLACKHAWK_A0_PATCH_MCU_hdr.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_RAM_CODE_BLACKHAWK_A0.bin $(1)/lib/firmware/WIFI_RAM_CODE_BLACKHAWK_A0.bin
+endif
+
+endef
+
+define KernelPackage/mt7990/install
+	$(INSTALL_DIR) $(1)/lib/firmware
 ifeq ($(CONFIG_MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/ccn34/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/ccn34/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
@@ -456,7 +604,7 @@ ifeq ($(CONFIG_MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
 else
-ifeq ($(CONFIG_MTK_WIFI7_2ADIE_TRIBAND),y)
+ifneq ($(HWIFI_MT7990_2ADIE_TRIBAND),)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/2adie_triband/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/2adie_triband/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/2adie_triband/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin
@@ -488,9 +636,15 @@ else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
 endif
 endif
+ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE19000),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE19000)/* $(1)/lib/firmware/
+else ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE14000),)
+	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE14000)/* $(1)/lib/firmware/
 endif
+endef
 
-ifeq ($(CONFIG_MTK_HWIFI_MT7992),y)
+define KernelPackage/mt7992/install
+	$(INSTALL_DIR) $(1)/lib/firmware
 ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE7200),)
 	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE7200)/* $(1)/lib/firmware/
 else
@@ -499,7 +653,7 @@ else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1_TESTMODE.bin
 
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_idx_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
@@ -513,7 +667,7 @@ ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PATCH_MCU_1_1_hdr_casan.bin $(1)/lib/firmware/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin
 endif
 
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE5040")
+ifeq ($(HWIFI_MT7992_SKU),BE5040)
 ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE5040),)
 	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE5040)/* $(1)/lib/firmware/
 else
@@ -522,7 +676,7 @@ else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PATCH_MCU_2_1_hdr.bin $(1)/lib/firmware/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_2_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1_TESTMODE.bin
 
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_idx_2_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_2_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
@@ -537,13 +691,13 @@ ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
 endif
 
 endif
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE6500")
+ifeq ($(HWIFI_MT7992_SKU),BE6500)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_WACPU_RAM_CODE_3_1.bin $(1)/lib/firmware/WIFI_MT7992_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PHY_RAM_CODE_3_1.bin $(1)/lib/firmware/WIFI_MT7992_PHY_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_MT7992_PATCH_MCU_3_1_hdr.bin $(1)/lib/firmware/WIFI_MT7992_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_3_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1_TESTMODE.bin
 
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_idx_3_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_3_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
@@ -557,7 +711,7 @@ ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
 endif
 
 endif
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE3600SDB")
+ifeq ($(HWIFI_MT7992_SKU),BE3600SDB)
 ifeq ($(CONFIG_MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/ccn34/WIFI_RAM_CODE_MT7992_4_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/ccn34/WIFI_RAM_CODE_MT7992_4_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_4_1.bin
@@ -582,41 +736,14 @@ endif
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_5_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_5_1_TESTMODE.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/WIFI_RAM_CODE_MT7992_6_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7992_6_1_TESTMODE.bin
 endif
-endif
-
-ifeq ($(CONFIG_MTK_HWIFI_MT7993),y)
-ifneq ($(CONFIG_MTK_HWIFI_FW_PATH_BE3600),)
-	$(INSTALL_BIN) ./files/$$(CONFIG_MTK_HWIFI_FW_PATH_BE3600)/* $(1)/lib/firmware/
-else
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1_TESTMODE.bin
-endif
-ifneq ($(wildcard $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_idxlog.bin),)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_idxlog.bin $(1)/lib/firmware/WIFI_RAM_CODE_idxlog.bin
-endif
-ifeq ($(CONFIG_MTK_WIFI7_FW_CASAN_SUPPORT),y)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_MT7993_PATCH_MCU_1_1_hdr_casan.bin $(1)/lib/firmware/WIFI_MT7993_PATCH_MCU_1_1_hdr.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_casan.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
-endif
-ifeq ($(CONFIG_MTK_WIFI7_FIPS_140_3_SELF_TEST),y)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/WIFI_RAM_CODE_MT7993_1_1_fips.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7993_1_1.bin
-endif
-endif
-
-ifeq ($(CONFIG_MTK_HWIFI_BLACKHAWK_A0),y)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_BLACKHAWK_A0_PATCH_MCU_hdr.bin $(1)/lib/firmware/WIFI_BLACKHAWK_A0_PATCH_MCU_hdr.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_RAM_CODE_BLACKHAWK_A0.bin $(1)/lib/firmware/WIFI_RAM_CODE_BLACKHAWK_A0.bin
-endif
-
 endef
 
 define Build/Compile/mt7992
 #Copy Kite FW header for differnet SKUs
-ifeq ($(CONFIG_MTK_WIFI7_CHIP_MT7992),y)
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE7200")
+ifneq ($(HWIFI_MT7992_ENABLE),)
+ifneq ($(filter $(HWIFI_MT7992_SKU),BE7200 AX6000),)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr.h
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_1_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
 else
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
@@ -625,20 +752,9 @@ endif
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1.h
 endif
 
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"AX6000")
-	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr.h
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
-	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_1_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
-else
-	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
-endif
-	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1_TESTMODE_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1_TESTMODE.h
-	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1.h
-endif
-
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE5040")
+ifeq ($(HWIFI_MT7992_SKU),BE5040)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_2_1_hdr_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr.h
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_2_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
 else
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_2_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
@@ -647,9 +763,9 @@ endif
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_2_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1.h
 endif
 
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE6500")
+ifeq ($(HWIFI_MT7992_SKU),BE6500)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_3_1_hdr_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr.h
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_3_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
 else
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_3_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_1_1.h
@@ -658,7 +774,7 @@ endif
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_3_1_.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1.h
 endif
 
-ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE3600SDB")
+ifeq ($(HWIFI_MT7992_SKU),BE3600SDB)
 	cat $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_4_1_TESTMODE_.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_5_1_TESTMODE_.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_6_1_TESTMODE_.h \
@@ -672,7 +788,7 @@ ifeq ($(CONFIG_MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT),y)
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_5_1_ccn34.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_6_1_ccn34.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1_sdb_ccn34.h > $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_WACPU_RAM_CODE_1_1.h
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	cat $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_4_1_ccn34.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_5_1_ccn34.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_6_1_ccn34.h \
@@ -688,7 +804,7 @@ else
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_5_1_hdr_.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_6_1_hdr_.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr_sdb.h > $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7992_PATCH_MCU_1_1_hdr.h
-ifeq ($(CONFIG_MTK_WIFI7_FW_LOG_TYPE),"idx_log")
+ifneq ($(HWIFI_MT7992_IDX_LOG),)
 	cat $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_4_1_.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_5_1_.h \
 		$(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7992_idx_6_1_.h \
@@ -710,8 +826,8 @@ endef
 
 define Build/Compile/mt7990
 #Copy Eagle FW header for differnet SKUs
-ifeq ($(CONFIG_MTK_HWIFI_MT7990),y)
-ifeq ($(CONFIG_MTK_WIFI7_2ADIE_TRIBAND),y)
+ifneq ($(HWIFI_MT7990_ENABLE),)
+ifneq ($(HWIFI_MT7990_2ADIE_TRIBAND),)
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7990_PATCH_MCU_1_1_hdr_2adie.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7990_PATCH_MCU_1_1_hdr.h
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7990_WACPU_RAM_CODE_1_1_2adie.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_MT7990_WACPU_RAM_CODE_1_1.h
 	cp -rf $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7990_1_1_2adie.h $(PKG_BUILD_DIR)/mt_wifi/include/hw_ctrl/mcu_hdr/WIFI_RAM_CODE_MT7990_1_1.h

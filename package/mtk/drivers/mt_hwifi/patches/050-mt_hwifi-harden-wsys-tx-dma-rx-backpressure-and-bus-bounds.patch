@@ -1,0 +1,873 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: harden wsys station rollback, TX DMA mapping, NAPI
+ RX, and bus bounds
+
+Unregister wsys station on mtk_ge_add_sta failure, check dma_mapping_error in mtk_tk_alloc_entry, unwind failed RX queue init, replace NAPI RX busy mdelay with pause/resume, and fix bus_type_str/debugfs bounds.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ wlan_hwifi/bus.c             |  23 +++-
+ wlan_hwifi/bus/en_npu.c      |  13 +-
+ wlan_hwifi/bus/mtk_pci_dma.c | 255 ++++++++++++++++++++++++++++++-----
+ wlan_hwifi/bus/mtk_pci_dma.h |  14 +-
+ wlan_hwifi/bus/mtk_rro.c     |  32 ++++-
+ wlan_hwifi/bus/mtk_rro.h     |   1 +
+ wlan_hwifi/bus/mtk_wed.c     |  15 ++-
+ wlan_hwifi/mac_ops.c         |  10 +-
+ wlan_hwifi/tk_mgmt.c         |   5 +
+ 9 files changed, 316 insertions(+), 52 deletions(-)
+
+diff --git a/wlan_hwifi/bus.c b/wlan_hwifi/bus.c
+index 5852561..b6d3bbd 100644
+--- a/wlan_hwifi/bus.c
++++ b/wlan_hwifi/bus.c
+@@ -33,16 +33,22 @@
+ #include "hw_ops.h"
+ 
+ static const char bus_type_str[][8] = {
++	"wed",
+ 	"pci",
+ 	"axi",
+ 	"usb",
+-	"sdio"
++	"sdio",
++	"npu"
+ };
+ 
+ static int
+ mtk_bus_driver_sanity(struct mtk_bus_driver *bus_drv)
+ {
+-	if (bus_drv->bus_type > MTK_BUS_NUM)
++	BUILD_BUG_ON(ARRAY_SIZE(bus_type_str) != MTK_BUS_NUM);
++
++	if (!bus_drv)
++		goto err;
++	if (bus_drv->bus_type >= MTK_BUS_NUM)
+ 		goto err;
+ 	if (!bus_drv->ops.drv_register)
+ 		goto err;
+@@ -56,10 +62,17 @@ err:
+ static int
+ mtk_bus_debugfs(struct seq_file *s, void *data)
+ {
+-	struct mtk_idr_entry *sys_idx = (struct mtk_idr_entry *)s->private;
+-	struct mtk_bus_driver *bus_drv = (struct mtk_bus_driver *)sys_idx->data;
++	struct mtk_idr_entry *sys_idx = s ? (struct mtk_idr_entry *)s->private : NULL;
++	struct mtk_bus_driver *bus_drv = sys_idx ? (struct mtk_bus_driver *)sys_idx->data : NULL;
++	const char *type_str;
++
++	BUILD_BUG_ON(ARRAY_SIZE(bus_type_str) != MTK_BUS_NUM);
++	if (!bus_drv)
++		return -EINVAL;
+ 
+-	seq_printf(s, "type: %s\n", bus_type_str[bus_drv->bus_type]);
++	type_str = (bus_drv->bus_type < MTK_BUS_NUM) ?
++		bus_type_str[bus_drv->bus_type] : "unknown";
++	seq_printf(s, "type: %s\n", type_str);
+ 	seq_printf(s, "trans size: %zu\n", bus_drv->ctl_size);
+ 	return 0;
+ }
+diff --git a/wlan_hwifi/bus/en_npu.c b/wlan_hwifi/bus/en_npu.c
+index 2cba420..64bae6f 100644
+--- a/wlan_hwifi/bus/en_npu.c
++++ b/wlan_hwifi/bus/en_npu.c
+@@ -345,7 +345,7 @@ void tasklet_schedule_rx_data_done_hostadpt_ring0(void)
+ 		napi_schedule(trans->isr_map[map_idx][cur]);
+ }
+ 
+-static void npu_pci_dma_init_rx_data_queue(
++static int npu_pci_dma_init_rx_data_queue(
+ 	struct pci_trans *trans, struct pci_rx_queue *rq)
+ {
+ 	struct pci_queue *q = &rq->q;
+@@ -358,6 +358,9 @@ static void npu_pci_dma_init_rx_data_queue(
+ 	dma_addr_t npu_alloc_pa;
+ 	unsigned char msdu_offset = 0;
+ 
++	rq->initialized_descs = 0;
++	rq->rx_init_started = true;
++
+ 	if ((q->q_attr == Q_RX_DATA_RRO || q->q_attr == Q_RX_DATA_MSDU_PG)) {
+ 		if (q->q_attr == Q_RX_DATA_MSDU_PG) {
+ 			// This offset value should be carefully sync with NPU code
+@@ -365,7 +368,7 @@ static void npu_pci_dma_init_rx_data_queue(
+ 			if (trans->rro_mode >= HW_RRO_V3_1) {
+ 				dev_info(to_device(trans),
+ 					"%s() RRO mode:%d so return\n", __func__, trans->rro_mode);
+-				return;
++				return 0;
+ 			}
+ 		}
+ 
+@@ -428,9 +431,11 @@ static void npu_pci_dma_init_rx_data_queue(
+ 		q->head = q->q_size - 1;
+ 		q->tail = q->q_size;
+ 	}
++
++	return 0;
+ }
+ 
+-static void npu_rro_init_rxdmad_c_queue(
++static int npu_rro_init_rxdmad_c_queue(
+ 	struct pci_trans *trans,
+ 	struct pci_rx_queue *rq)
+ {
+@@ -446,6 +451,7 @@ static void npu_rro_init_rxdmad_c_queue(
+ 	dma_addr_t npu_alloc_pa;
+ 	void *npu_alloc_va = NULL;
+ 
++	rq->rx_init_started = true;
+ 	pci_pa = pci_resource_start(trans->pdev, 0);
+ 
+ 	isMailBoxSuccess = WIFI_MAIL_API_SET_WAIT_PCIE_ADDR(0 + rxdmad_c_offset,
+@@ -489,6 +495,7 @@ static void npu_rro_init_rxdmad_c_queue(
+ 	if (isMailBoxSuccess != 1)
+ 		dev_info(to_device(trans), "Error: WIFI_MAIL_API_GET_WAIT_RXDESC_BASE fail\n");
+ 
++	return 0;
+ }
+ 
+ void
+diff --git a/wlan_hwifi/bus/mtk_pci_dma.c b/wlan_hwifi/bus/mtk_pci_dma.c
+index 8768900..e576b27 100644
+--- a/wlan_hwifi/bus/mtk_pci_dma.c
++++ b/wlan_hwifi/bus/mtk_pci_dma.c
+@@ -678,7 +678,7 @@ pci_dma_rx_pkt_alloc(struct device *dev,
+ 	return pkt;
+ }
+ 
+-static void
++static int
+ pci_dma_init_rx_event_queue(
+ 	struct pci_trans *trans,
+ 	struct pci_rx_queue *rq)
+@@ -692,6 +692,8 @@ pci_dma_init_rx_event_queue(
+ 	dma_addr_t desc_pa;
+ 	int i;
+ 
++	rq->initialized_descs = 0;
++	rq->rx_init_started = true;
+ 	rq->magic_cnt = 0;
+ 	desc_va = desc->alloc_va;
+ 	desc_pa = desc->alloc_pa;
+@@ -707,15 +709,19 @@ pci_dma_init_rx_event_queue(
+ 		buf = &cb->dma_buf;
+ 		buf->alloc_size = rq->rx_buf_size;
+ 		cb->pkt = pci_dma_rx_pkt_alloc(to_device(trans), rq, buf, true);
++		if (!cb->pkt)
++			return -ENOMEM;
+ 
+ 		/*write rxd*/
+ 		fill_rxd(cb, 0, 0);
++		rq->initialized_descs = i + 1;
+ 
+ 		desc_va = (unsigned char *) desc_va + q->desc_size;
+ 		desc_pa += q->desc_size;
+ 	}
+ 	q->head = q->q_size - 1;
+ 	q->tail = q->q_size;
++	return 0;
+ }
+ 
+ #ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
+@@ -736,6 +742,14 @@ pci_dma_rx_process_work(struct work_struct *w)
+ 		} else
+ 			break;
+ 	}
++
++	smp_mb__before_atomic();
++	if (test_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags) &&
++	    !kfifo_is_full(&rq->bus_rx_process_fifo) &&
++	    !test_bit(RXQ_STOPPING, &rq->runtime_flags)) {
++		clear_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags);
++		napi_schedule(&rq->q.napi);
++	}
+ }
+ 
+ int
+@@ -743,6 +757,8 @@ pci_dma_init_rx_process_work(struct pci_rx_queue *rq)
+ {
+ 	int ret = 0,  rx_data_fifo_size = 0, last_online_cpu = 0;
+ 
++	rq->runtime_flags = 0;
++	rq->rx_process_work_ready = false;
+ 	mt_get_online_cpus();
+ 	last_online_cpu = cpumask_last(cpu_online_mask);
+ 	mt_put_online_cpus();
+@@ -751,22 +767,46 @@ pci_dma_init_rx_process_work(struct pci_rx_queue *rq)
+ 	INIT_DELAYED_WORK(&rq->bus_rx_process_work, pci_dma_rx_process_work);
+ 	rq->bus_rx_process_wq =
+ 		mt_alloc_workqueue("bus_rx_process_wq", WQ_HIGHPRI | __WQ_ORDERED, 0);
++	if (!rq->bus_rx_process_wq)
++		return -ENOMEM;
++
+ 	ret = kfifo_alloc(&rq->bus_rx_process_fifo, rx_data_fifo_size, GFP_KERNEL);
++	if (ret < 0) {
++		mt_destroy_workqueue(rq->bus_rx_process_wq);
++		rq->bus_rx_process_wq = NULL;
++		return ret;
++	}
++
++	rq->rx_process_work_ready = true;
+ 	mtk_dbg(MTK_BUS, "rx fifo size=%d, work_on_cpu=%d\n", rx_data_fifo_size, last_online_cpu);
+-	return ret;
++	return 0;
+ }
+ 
+ void
+ pci_dma_exit_rx_process_work(struct pci_rx_queue *rq)
+ {
++	struct mtk_rx_process rx_process = {0};
++
++	set_bit(RXQ_STOPPING, &rq->runtime_flags);
++	if (!rq->rx_process_work_ready)
++		return;
++
+ 	flush_delayed_work(&rq->bus_rx_process_work);
+ 	cancel_delayed_work_sync(&rq->bus_rx_process_work);
+-	mt_destroy_workqueue(rq->bus_rx_process_wq);
++	while (kfifo_get(&rq->bus_rx_process_fifo, &rx_process)) {
++		if (rx_process.skb)
++			dev_kfree_skb_any(rx_process.skb);
++	}
++	if (rq->bus_rx_process_wq) {
++		mt_destroy_workqueue(rq->bus_rx_process_wq);
++		rq->bus_rx_process_wq = NULL;
++	}
+ 	kfifo_free(&rq->bus_rx_process_fifo);
++	rq->rx_process_work_ready = false;
+ }
+ #endif /* CONFIG_HWIFI_RX_PROCESS_WORKQUEUE */
+ 
+-void
++int
+ pci_dma_init_rx_data_queue(
+ 	struct pci_trans *trans,
+ 	struct pci_rx_queue *rq)
+@@ -779,8 +819,11 @@ pci_dma_init_rx_data_queue(
+ 	u16 q_sz = q->q_size;
+ 	dma_addr_t desc_pa;
+ 	int i;
++	int ret;
+ 	u32 id = 0;
+ 
++	rq->initialized_descs = 0;
++	rq->rx_init_started = true;
+ 	rq->magic_cnt = 0;
+ 	desc_va = desc->alloc_va;
+ 	desc_pa = desc->alloc_pa;
+@@ -800,18 +843,40 @@ pci_dma_init_rx_data_queue(
+ 		buf = &cb->dma_buf;
+ 		buf->alloc_size = rq->rx_buf_size;
+ 		cb->pkt = pci_dma_rx_pkt_alloc(to_device(trans), rq, buf, true);
++		if (!cb->pkt)
++			return -ENOMEM;
+ 
+ 		if (rq->q.q_attr == Q_RX_DATA_MSDU_PG) {
+-			rro_msdu_page_hash_init(trans, cb->pkt, buf->alloc_va,
+-				buf->alloc_pa);
++			ret = rro_msdu_page_hash_init(trans, cb->pkt, buf->alloc_va,
++						      buf->alloc_pa);
++			if (ret) {
++				dma_unmap_single(to_device(trans), buf->alloc_pa,
++						 buf->alloc_size, DMA_FROM_DEVICE);
++				put_page(virt_to_head_page(cb->pkt));
++				cb->pkt = NULL;
++				buf->alloc_va = NULL;
++				buf->alloc_pa = 0;
++				return ret;
++			}
+ 		} else if (test_bit(RQ_FLAG_RX_DATA_TKID, &rq->rq_flags)) {
+-			id = mtk_rx_tk_request_entry(to_rx_tk_mgmt(trans),
+-				cb->pkt, buf->alloc_size, buf->alloc_va,
+-				buf->alloc_pa);
++			ret = mtk_rx_tk_request_entry(to_rx_tk_mgmt(trans),
++						      cb->pkt, buf->alloc_size,
++						      buf->alloc_va, buf->alloc_pa);
++			if (ret < 0) {
++				dma_unmap_single(to_device(trans), buf->alloc_pa,
++						 buf->alloc_size, DMA_FROM_DEVICE);
++				put_page(virt_to_head_page(cb->pkt));
++				cb->pkt = NULL;
++				buf->alloc_va = NULL;
++				buf->alloc_pa = 0;
++				return ret;
++			}
++			id = ret;
+ 		}
+ 
+ 		/*write rxd*/
+ 		fill_rxd(cb, id, rq->magic_cnt);
++		rq->initialized_descs = i + 1;
+ update_desc:
+ 		desc_va = (unsigned char *) desc_va + q->desc_size;
+ 		desc_pa += q->desc_size;
+@@ -822,9 +887,14 @@ update_desc:
+ 	q->tail = q->q_size;
+ 
+ #ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
+-	if (rq->rx_offload.kfifo_enable)
+-		pci_dma_init_rx_process_work(rq);
++	if (rq->rx_offload.kfifo_enable) {
++		ret = pci_dma_init_rx_process_work(rq);
++		if (ret)
++			return ret;
++	}
+ #endif /* CONFIG_HWIFI_RX_PROCESS_WORKQUEUE */
++
++	return 0;
+ }
+ 
+ #if (KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE)
+@@ -921,6 +991,50 @@ pci_dma_exit_rx_data_queue(
+ 	pci_rx_queue_page_drain(rq);
+ }
+ 
++static void
++pci_dma_rx_init_unwind_queue(struct pci_trans *trans, struct pci_rx_queue *rq)
++{
++	struct pci_queue *q = &rq->q;
++	struct pci_dma_cb *cb;
++	struct pci_dma_buf *buf;
++	unsigned int i;
++
++	if (!rq->rx_init_started)
++		return;
++
++	set_bit(RXQ_STOPPING, &rq->runtime_flags);
++
++#ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
++	if (rq->rx_process_work_ready)
++		pci_dma_exit_rx_process_work(rq);
++#endif
++
++	if (!test_bit(RQ_FLAG_RX_DATA_TKID, &rq->rq_flags)) {
++		for (i = 0; i < rq->initialized_descs; i++) {
++			cb = &q->cb[i];
++			buf = &cb->dma_buf;
++			if (!cb->pkt)
++				continue;
++			if (rq->q.q_attr == Q_RX_DATA_MSDU_PG)
++				rro_msdu_page_hash_deinit_one(trans,
++							      buf->alloc_pa);
++			dma_unmap_single(to_device(trans), buf->alloc_pa,
++					 buf->alloc_size, DMA_FROM_DEVICE);
++			put_page(virt_to_head_page(cb->pkt));
++			cb->pkt = NULL;
++			buf->alloc_va = NULL;
++			buf->alloc_pa = 0;
++		}
++	} else {
++		for (i = 0; i < rq->initialized_descs; i++)
++			q->cb[i].pkt = NULL;
++	}
++
++	pci_rx_queue_page_drain(rq);
++	rq->initialized_descs = 0;
++	rq->rx_init_started = false;
++}
++
+ static void
+ pci_dma_hw_init_tx_queue(struct pci_trans *trans, struct pci_tx_queue *tq)
+ {
+@@ -1641,8 +1755,9 @@ pci_dma_rx_process(struct pci_trans *trans, struct pci_queue *q, int budget)
+ #ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
+ 		if (rq->rx_offload.kfifo_enable && kfifo_is_full(&rq->bus_rx_process_fifo)) {
+ 			dbg_bus_kfifo_full_inc(to_bus_trans(trans));
+-			mdelay(5);
+-			continue;
++			set_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags);
++			pci_dma_kick_queue(trans, q);
++			break;
+ 		}
+ #endif
+ 
+@@ -1711,6 +1826,8 @@ process:
+ 			if (unlikely(!kfifo_put(&rq->bus_rx_process_fifo, rx_process))) {
+ 				dbg_bus_kfifo_full_drop_by_hwifi_inc(to_bus_trans(trans));
+ 				dev_err(dev->dev, "%s(): rx_data fifo full\n\n", __func__);
++				set_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags);
++				pci_dma_kick_queue(trans, q);
+ 				dev_kfree_skb(skb);
+ 				break;
+ 			}
+@@ -1759,11 +1876,27 @@ pci_dma_rx_poll(struct napi_struct *napi, int budget)
+ 	do {
+ 		cur = rq->q_ops->process(trans, q, budget - done);
+ 		done += cur;
++#ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
++		if (test_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags))
++			break;
++#endif
+ 	} while (cur && done < budget);
+ 
+ 	mt_rcu_read_unlock();
+ 
+ 	if (done < budget) {
++#ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
++		if (test_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags)) {
++			napi_complete(napi);
++			smp_mb__after_atomic();
++			if (!kfifo_is_full(&rq->bus_rx_process_fifo) &&
++			    !test_bit(RXQ_STOPPING, &rq->runtime_flags) &&
++			    test_and_clear_bit(RXQ_FIFO_PAUSED, &rq->runtime_flags)) {
++				napi_schedule(&q->napi);
++			}
++			return done;
++		}
++#endif
+ 		/*sync sw idx*/
+ 		q->tail = bus_get_field(to_bus_trans(trans),
+ 				q->hw_didx_addr, q->hw_didx_mask);
+@@ -1811,14 +1944,19 @@ pci_dma_queue_napi_init(struct pci_trans *trans,
+ 	trans->isr_map[q->isr_map_idx][map_id] = &q->napi;
+ 	netif_napi_add_weight(&trans->napi_dev, &q->napi, cb, NAPI_POLL_WEIGHT);
+ 	napi_enable(&q->napi);
++	q->napi_initialized = true;
+ 	return 0;
+ }
+ 
+ static int
+ pci_dma_queue_napi_exit(struct pci_trans *trans, struct pci_queue *q)
+ {
+-	u8 map_id = ffs(q->hw_int_mask)-1;
++	u8 map_id;
+ 
++	if (!q->napi_initialized)
++		return 0;
++
++	map_id = ffs(q->hw_int_mask)-1;
+ 	if (map_id >= 32)
+ 		return -EINVAL;
+ 
+@@ -1827,6 +1965,7 @@ pci_dma_queue_napi_exit(struct pci_trans *trans, struct pci_queue *q)
+ 		napi_disable(&q->napi);
+ 		netif_napi_del(&q->napi);
+ 	}
++	q->napi_initialized = false;
+ 
+ 	return 0;
+ }
+@@ -1860,7 +1999,7 @@ pci_dma_sw_init_tx_queue(struct pci_trans *trans)
+ {
+ 	struct pci_tx_queue *tq;
+ 	u8 tn = trans->txq_num;
+-	int i;
++	int i, j;
+ 	int ret = 0;
+ 
+ 	for (i = 0 ; i < tn; i++) {
+@@ -1872,11 +2011,21 @@ pci_dma_sw_init_tx_queue(struct pci_trans *trans)
+ 		pci_dma_init_tx_data_queue(trans, tq);
+ 		ret = pci_dma_queue_napi_init(trans,
+ 			(struct pci_queue *) tq, i, pci_dma_tx_done_poll);
+-		if (ret)
+-			goto end;
++		if (ret) {
++			pci_dma_exit_tx_queue(trans, tq);
++			for (j = i - 1; j >= 0; j--) {
++				struct pci_tx_queue *prev_tq = &trans->txq[j];
++
++				if (prev_tq->q.disable)
++					continue;
++				pci_dma_queue_napi_exit(trans, (struct pci_queue *)prev_tq);
++				pci_dma_exit_tx_queue(trans, prev_tq);
++			}
++			return ret;
++		}
+ 	}
+-end:
+-	return ret;
++
++	return 0;
+ }
+ 
+ static void
+@@ -1932,11 +2081,12 @@ pci_dma_sw_exit_mcu2host_swi(struct pci_trans *trans)
+ 	return 0;
+ }
+ 
+-static inline void
++static inline int
+ pci_dma_init_rx_queue(struct pci_trans *trans, struct pci_rx_queue *rq)
+ {
+ 	if (rq->q_ops->init)
+-		rq->q_ops->init(trans, rq);
++		return rq->q_ops->init(trans, rq);
++	return 0;
+ }
+ 
+ static int
+@@ -1953,13 +2103,33 @@ pci_dma_sw_init_rx_queue(struct pci_trans *trans)
+ 		if (rq->q.disable)
+ 			continue;
+ 
+-		pci_dma_init_rx_queue(trans, rq);
++		ret = pci_dma_init_rx_queue(trans, rq);
++		if (ret) {
++			pci_dma_rx_init_unwind_queue(trans, rq);
++			goto err_unwind_prev;
++		}
++
+ 		ret = pci_dma_queue_napi_init(trans,
+ 			(struct pci_queue *) rq, i, pci_dma_rx_poll);
+-		if (ret)
+-			goto end;
++		if (ret) {
++			pci_dma_rx_init_unwind_queue(trans, rq);
++			goto err_unwind_prev;
++		}
++	}
++
++	return 0;
++
++err_unwind_prev:
++	while (i-- > 0) {
++		struct pci_rx_queue *prev_rq = &trans->rxq[i];
++
++		if (prev_rq->q.disable)
++			continue;
++
++		set_bit(RXQ_STOPPING, &prev_rq->runtime_flags);
++		pci_dma_queue_napi_exit(trans, (struct pci_queue *)prev_rq);
++		pci_dma_rx_init_unwind_queue(trans, prev_rq);
+ 	}
+-end:
+ 	return ret;
+ }
+ 
+@@ -1983,6 +2153,7 @@ pci_dma_sw_exit_rx_queue(struct pci_trans *trans)
+ 		if (rq->q.disable)
+ 			continue;
+ 
++		set_bit(RXQ_STOPPING, &rq->runtime_flags);
+ 		pci_dma_queue_napi_exit(trans, (struct pci_queue *) rq);
+ 		pci_dma_exit_rx_queue(trans, rq);
+ 	}
+@@ -2140,54 +2311,66 @@ pci_dma_sw_init_device(struct pci_trans *trans)
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): TXQ init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_tx;
+ 	}
+ 
+ 	ret = pci_dma_sw_init_rx_queue(trans);
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): RXQ init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_rx;
+ 	}
+ 
+ 	ret = pci_dma_sw_init_mcu2host_swi(trans);
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): MCU2HOST init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_swi;
+ 	}
+ 
+ 	ret = pci_dma_sw_init_host_int(trans);
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): Host interrupt init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_host_int;
+ 	}
+ 	/*interrupt sw initial*/
+ 	ret = pci_dma_sw_init_irq(trans);
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): IRQ init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_irq;
+ 	}
+ 
+ 	ret = pci_dma_sw_init_dbg(trans);
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): debug init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_dbg;
+ 	}
+ 
+ 	ret = pci_dma_sw_init_dmy(trans);
+ 	if (ret) {
+ 		dev_err(to_device(trans), "%s(): dmy init failed, ret = %d\n",
+ 			__func__, ret);
+-		goto err;
++		goto err_dmy;
+ 	}
+ 
+ 	return 0;
+-err:
+-	return -EINVAL;
++
++err_dmy:
++	pci_dma_sw_exit_dbg(trans);
++err_dbg:
++	pci_dma_sw_exit_irq(trans);
++err_irq:
++err_host_int:
++	pci_dma_sw_exit_mcu2host_swi(trans);
++err_swi:
++	pci_dma_sw_exit_rx_queue(trans);
++err_rx:
++	pci_dma_sw_exit_tx_queue(trans);
++err_tx:
++	return ret;
+ }
+ 
+ static int
+@@ -2208,8 +2391,10 @@ pci_dma_init_device(void *hw)
+ 
+ 	/*init txrx queue*/
+ 	ret = pci_dma_sw_init_device(trans);
+-	if (ret)
++	if (ret) {
++		rro_sw_exit(trans);
+ 		goto err;
++	}
+ 
+ 	ret = pci_dma_hw_init_device(trans);
+ 	if (ret)
+diff --git a/wlan_hwifi/bus/mtk_pci_dma.h b/wlan_hwifi/bus/mtk_pci_dma.h
+index 252c1bb..66fa2b7 100644
+--- a/wlan_hwifi/bus/mtk_pci_dma.h
++++ b/wlan_hwifi/bus/mtk_pci_dma.h
+@@ -355,6 +355,7 @@ struct pci_queue {
+ 	u16 *emi_cidx_addr;
+ 	unsigned long q_flags;
+ 	struct napi_struct napi;
++	bool napi_initialized;
+ 	char *q_info;
+ };
+ 
+@@ -383,6 +384,11 @@ struct mtk_rx_process {
+ };
+ #endif /* CONFIG_HWIFI_RX_PROCESS_WORKQUEUE */
+ 
++enum rxq_runtime_flags {
++	RXQ_FIFO_PAUSED,
++	RXQ_STOPPING,
++};
++
+ struct pci_rx_queue {
+ 	/*inher pci queue, need to the same as.*/
+ 	struct pci_queue q;
+@@ -390,6 +396,7 @@ struct pci_rx_queue {
+ 	/*rxq specific start in here*/
+ 	struct page_frag_cache rx_page;
+ 	unsigned long rq_flags;
++	unsigned long runtime_flags;
+ 	u8 buf_flags;
+ 	u8 get_pkt_method;
+ 	u16 cur_free_buf_len;
+@@ -405,6 +412,9 @@ struct pci_rx_queue {
+ 	u8 need_init_after_fwdl;
+ 	struct pci_rxq_ops *q_ops;
+ 	gfp_t gfp_flags;
++	unsigned int initialized_descs;
++	bool rx_init_started;
++	bool rx_process_work_ready;
+ #ifdef CONFIG_HWIFI_RX_PROCESS_WORKQUEUE
+ 	struct rx_offload_desc rx_offload;
+ 	struct workqueue_struct *bus_rx_process_wq;
+@@ -558,7 +568,7 @@ struct pci_rxq_ops {
+ 	struct pci_queue *q, u32 idx, struct mtk_bus_rx_info *rx_info);
+ 	int (*process)(struct pci_trans *trans,
+ 		struct pci_queue *q, int budget);
+-	void (*init)(struct pci_trans *trans, struct pci_rx_queue *rq);
++	int (*init)(struct pci_trans *trans, struct pci_rx_queue *rq);
+ 	void (*exit)(struct pci_trans *trans, struct pci_rx_queue *rq);
+ };
+ 
+@@ -702,7 +712,7 @@ extern inline void pci_dma_kick_queue(
+ 	struct pci_trans *trans, struct pci_queue *q);
+ extern int pci_dma_rx_process(struct pci_trans *trans,
+ 	struct pci_queue *q, int budget);
+-extern void pci_dma_init_rx_data_queue(
++extern int pci_dma_init_rx_data_queue(
+ 	struct pci_trans *trans, struct pci_rx_queue *rq);
+ extern void pci_dma_exit_rx_data_queue(
+ 	struct pci_trans *trans, struct pci_rx_queue *rq);
+diff --git a/wlan_hwifi/bus/mtk_rro.c b/wlan_hwifi/bus/mtk_rro.c
+index 3346649..c7fb809 100644
+--- a/wlan_hwifi/bus/mtk_rro.c
++++ b/wlan_hwifi/bus/mtk_rro.c
+@@ -35,7 +35,7 @@
+ #include "bus.h"
+ #include "mtk_rro.h"
+ 
+-static void rro_init_rxdmad_c_queue(
++static int rro_init_rxdmad_c_queue(
+ 	struct pci_trans *trans,
+ 	struct pci_rx_queue *rq)
+ {
+@@ -51,6 +51,7 @@ static void rro_init_rxdmad_c_queue(
+ 	int i;
+ 	struct rxdmad_c *dmad;
+ 
++	rq->rx_init_started = true;
+ 	rq->magic_cnt = 0;
+ 
+ 	desc_va = desc->alloc_va;
+@@ -77,6 +78,8 @@ static void rro_init_rxdmad_c_queue(
+ 	if (!test_bit(PCI_FLAG_WHNAT_RX, &trans->flags))
+ 		set_bit(Q_FLAG_WRITE_EMI, &q->q_flags);
+ 	q->emi_cidx_addr = &cidx->ring[q->emi_ring_idx].idx;
++
++	return 0;
+ }
+ 
+ static int rro_refill_data_buf(struct pci_trans *trans,
+@@ -174,7 +177,7 @@ static int rro_refill_data_buf(struct pci_trans *trans,
+ }
+ 
+ 
+-static void rro_init_ind_cmd_queue(
++static int rro_init_ind_cmd_queue(
+ 	struct pci_trans *trans,
+ 	struct pci_rx_queue *rq)
+ {
+@@ -188,6 +191,7 @@ static void rro_init_ind_cmd_queue(
+ 	int i;
+ 	struct ind_cmd *cmd;
+ 
++	rq->rx_init_started = true;
+ 	rq->magic_cnt = 0;
+ 
+ 	desc_va = desc->alloc_va;
+@@ -210,6 +214,8 @@ static void rro_init_ind_cmd_queue(
+ 	}
+ 	q->head = q->q_size - 1;
+ 	q->tail = q->q_size;
++
++	return 0;
+ }
+ 
+ static int
+@@ -1664,6 +1670,28 @@ err:
+ 	return -ENOMEM;
+ }
+ 
++void
++rro_msdu_page_hash_deinit_one(struct pci_trans *trans, dma_addr_t pa)
++{
++	struct hw_rro_cfg *rro_cfg = trans->rro_cfg;
++	struct msdu_page_addr *pg_addr, *tmp;
++	u32 hash_idx;
++
++	if (!rro_cfg)
++		return;
++
++	hash_idx = msdu_page_hash(pa);
++	spin_lock(&rro_cfg->lock);
++	list_for_each_entry_safe(pg_addr, tmp,
++				 &rro_cfg->pg_hash_head[hash_idx], list) {
++		if (pg_addr->pa == pa) {
++			list_del(&pg_addr->list);
++			kfree(pg_addr);
++			break;
++		}
++	}
++	spin_unlock(&rro_cfg->lock);
++}
+ 
+ static int rro_init_msdu_page_list(struct pci_trans *trans)
+ {
+diff --git a/wlan_hwifi/bus/mtk_rro.h b/wlan_hwifi/bus/mtk_rro.h
+index a3cf2fc..0b99c55 100644
+--- a/wlan_hwifi/bus/mtk_rro.h
++++ b/wlan_hwifi/bus/mtk_rro.h
+@@ -309,6 +309,7 @@ int rro_msdu_page_hash_init(
+ 	void *pkt,
+ 	void *va,
+ 	dma_addr_t pa);
++void rro_msdu_page_hash_deinit_one(struct pci_trans *trans, dma_addr_t pa);
+ int rro_sw_init(struct pci_trans *trans);
+ int rro_sw_exit(struct pci_trans *trans);
+ int rro_alloc_resource(struct pci_trans *trans, struct rro_chip_profile *profile);
+diff --git a/wlan_hwifi/bus/mtk_wed.c b/wlan_hwifi/bus/mtk_wed.c
+index a0a2a4d..36f8798 100644
+--- a/wlan_hwifi/bus/mtk_wed.c
++++ b/wlan_hwifi/bus/mtk_wed.c
+@@ -927,6 +927,7 @@ wed_init_device(void *hw)
+ 	struct mtk_chip_hw_cap *hw_cap = dev->chip_drv->hw_caps;
+ 	struct wifi_hw *wed_hw;
+ 	bool is_master = test_bit(BUS_TRANS_FLAG_MASTER, &bus_trans->flag);
++	bool registered_here = false;
+ 	int ret = 0;
+ 
+ 	/*initial as false*/
+@@ -967,15 +968,25 @@ wed_init_device(void *hw)
+ 		wed_hw->src = SLAVE_SRC;
+ 
+ 	wed_pci_cap_get(ptrans, dev, wed_hw);
+-	if (!test_bit(HWIFI_STATE_RESET, &dev->state))
++	if (!test_bit(HWIFI_STATE_RESET, &dev->state)) {
+ 		ret = warp_register_client(wed_hw, &wed_ops);
++		if (!ret)
++			registered_here = true;
++	}
+ 
+ 	trans->enable = (ret == WED_INVAL) ? false : true;
+ 	if (trans->enable)
+ 		wed_set_device(wed_hw, hw);
+ 
+ end:
+-	return trans->dma_ops->init_device(hw);
++	ret = trans->dma_ops->init_device(hw);
++	if (ret && registered_here) {
++		warp_client_remove(hw);
++		trans->enable = false;
++		trans->wifi_hw = NULL;
++	}
++
++	return ret;
+ }
+ 
+ static void
+diff --git a/wlan_hwifi/mac_ops.c b/wlan_hwifi/mac_ops.c
+index a9499e7..308acd5 100644
+--- a/wlan_hwifi/mac_ops.c
++++ b/wlan_hwifi/mac_ops.c
+@@ -81,15 +81,19 @@ mtk_ge_add_sta(struct mtk_hw_dev *dev, struct mtk_hw_bss *hw_bss,
+ 	hw_sta->bss = hw_bss;
+ 	ret = mtk_wsys_register_sta(hw_sta);
+ 	if (ret)
+-		goto err;
++		goto err_unregister;
+ 
+ 	hw_sta->sta_type = sta_type;
+ 	hw_sta->mld_sta_idx = mld_sta_idx;
+ 	ret = mtk_hwctrl_sta_alloc(dev, hw_sta, sta_type);
+-	if (ret)
+-		goto err;
++	if (ret) {
++		dev_err(dev->dev, "%s(): Alloc sta fail\n", __func__);
++		goto err_unregister;
++	}
+ 
+ 	return 0;
++err_unregister:
++	mtk_wsys_unregister_sta(hw_sta);
+ err:
+ 	dev_err(dev->dev, "%s(): hw_bss=%p, hw_sta=%p\n",
+ 		__func__, hw_bss, hw_sta);
+diff --git a/wlan_hwifi/tk_mgmt.c b/wlan_hwifi/tk_mgmt.c
+index fa12c0a..15bf2e0 100644
+--- a/wlan_hwifi/tk_mgmt.c
++++ b/wlan_hwifi/tk_mgmt.c
+@@ -286,6 +286,11 @@ mtk_tk_alloc_entry(struct mtk_hw_dev *dev, struct mtk_tk_mgmt *tk_mgmt)
+ 
+ 	/*map a physical address*/
+ 	addr = dma_map_single(tk_mgmt->pdev, txd_ptr, fbuf_size, DMA_TO_DEVICE);
++	if (dma_mapping_error(tk_mgmt->pdev, addr)) {
++		kfree(txd_ptr);
++		return NULL;
++	}
++
+ 	tk_entry = (struct mtk_tk_entry *) (txd_ptr + fbuf_size);
+ 	tk_entry->dma_addr = addr;
+ 

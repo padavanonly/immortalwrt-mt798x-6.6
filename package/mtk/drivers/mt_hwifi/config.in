@@ -3,25 +3,25 @@ if PACKAGE_kmod-mt_hwifi
 config MTK_HWIFI_PCI_SUPPORT
 	bool "HWIFI PCIE/AXI Support"
 	default y
-	select PACKAGE_kmod-mtk_pci
+	select PACKAGE_kmod-mtk_pci if PACKAGE_kmod-mt_hwifi=y
 	depends on PACKAGE_kmod-mt_hwifi
 
 config MTK_HWIFI_CONNAC_IF_SUPPORT
 	bool "HWIFI abstraction layer for CONNAC3/5 interface"
 	default y
-	select PACKAGE_kmod-connac_if
+	select PACKAGE_kmod-connac_if if PACKAGE_kmod-mt_hwifi=y
 	depends on PACKAGE_kmod-mt_hwifi
 
 config MTK_HWIFI_WED_SUPPORT
 	bool "HWIFI WED Support"
-	select PACKAGE_kmod-mtk_wed
-	depends on PACKAGE_kmod-warp && PACKAGE_kmod-mtk_pci
+	select PACKAGE_kmod-mtk_wed if PACKAGE_kmod-mt_hwifi=y
+	depends on (PACKAGE_kmod-warp || PACKAGE_kmod-warp-mt7987 || PACKAGE_kmod-warp-mt7988) && PACKAGE_kmod-mtk_pci
 	default n
 
 config EN_HWIFI_NPU_SUPPORT
 	bool "HWIFI NPU Support"
-	select PACKAGE_kmod-en_npu
-	depends on PACKAGE_kmod-warp && PACKAGE_kmod-mtk_pci && PACKAGE_kmod-mtk_wed
+	select PACKAGE_kmod-en_npu if PACKAGE_kmod-mt_hwifi=y
+	depends on (PACKAGE_kmod-warp || PACKAGE_kmod-warp-mt7987 || PACKAGE_kmod-warp-mt7988) && PACKAGE_kmod-mtk_pci && PACKAGE_kmod-mtk_wed
 	default n
 
 config MTK_HWIFI_MD_COEX_SUPPORT
@@ -37,6 +37,7 @@ config MTK_HWIFI_SW_AMSDU
 config MTK_HWIFI_RX_PROCESS_WORKQUEUE
 	bool "HWIFI Rx Process WQ Support"
 	depends on PACKAGE_kmod-mt_hwifi
+	default y if (PACKAGE_kmod-mt7992 != n)
 	default n
 
 config MTK_HWIFI_MEM_SHRINK
@@ -103,10 +104,19 @@ choice
 endchoice
 endif
 
-config MTK_HWIFI_FW_BE14000
-	bool "BE14000 custom firmware support"
-	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
-	default n
+choice
+	prompt "MT7990 custom firmware profile"
+	optional
+	depends on MTK_HWIFI_MT7990
+
+	config MTK_HWIFI_FW_BE19000
+		bool "BE19000 custom firmware support"
+		depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+
+	config MTK_HWIFI_FW_BE14000
+		bool "BE14000 custom firmware support"
+		depends on ! MTK_HWIFI_FW_HDR_SUPPORT
+endchoice
 
 if MTK_HWIFI_FW_BE14000
 choice
@@ -120,11 +130,6 @@ choice
 	bool "BE14000-20260311"
 endchoice
 endif
-
-config MTK_HWIFI_FW_BE19000
-	bool "BE19000 custom firmware support"
-	depends on ! MTK_HWIFI_FW_HDR_SUPPORT
-	default n
 
 if MTK_HWIFI_FW_BE19000
 choice
@@ -181,19 +186,19 @@ menu "HWIFI Chips Support"
 
 	config MTK_HWIFI_MT7990
 		bool "mt7990"
-		select PACKAGE_kmod-mt7990
+		select PACKAGE_kmod-mt7990 if PACKAGE_kmod-mt_hwifi=y
 		depends on PACKAGE_kmod-mt_hwifi
 	config MTK_HWIFI_MT7991
 		bool "mt7991"
-		select PACKAGE_kmod-mt7991
+		select PACKAGE_kmod-mt7991 if PACKAGE_kmod-mt_hwifi=y
 		depends on PACKAGE_kmod-mt_hwifi
 	config MTK_HWIFI_MT7992
 		bool "mt7992"
-		select PACKAGE_kmod-mt7992
+		select PACKAGE_kmod-mt7992 if PACKAGE_kmod-mt_hwifi=y
 		depends on PACKAGE_kmod-mt_hwifi
 	config MTK_HWIFI_MT799A
 		bool "mt799a"
-		select PACKAGE_kmod-mt799a
+		select PACKAGE_kmod-mt799a if PACKAGE_kmod-mt_hwifi=y
 		depends on PACKAGE_kmod-mt_hwifi
 	config MTK_HWIFI_MT7993
 		bool "mt7993"

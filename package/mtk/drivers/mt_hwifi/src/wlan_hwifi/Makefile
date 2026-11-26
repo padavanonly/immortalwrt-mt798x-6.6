@@ -75,11 +75,7 @@ ifeq ($(CONFIG_ARCH_DMA_ADDR_T_64BIT), y)
 	ccflags-y += -DCONFIG_HWIFI_64BIT_SUPPORT
 endif
 
-ifeq ($(CONFIG_HWIFI_FW_HDR_SUPPORT), y)
-	ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
-endif
-
-#ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
+ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
 ccflags-y += -Wno-error=enum-conversion
 ccflags-y += -Wno-error=attribute-warning
 ccflags-y += -Wno-error=enum-int-mismatch

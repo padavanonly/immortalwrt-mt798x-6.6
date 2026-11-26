@@ -1,0 +1,442 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_hwifi: harden WED ring lifecycle and reset unwind
+
+Capture warp_ring_init_checked() reset status in wed_start(), use checked ring exit in wed_stop(), and preserve active bus/DMA resources when SER reset fails.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ warp_driver/warp/warp.h          |  35 ++++++++
+ wlan_hwifi/bus.c                 | 140 +++++++++++++++++++++----------
+ wlan_hwifi/bus.h                 |  11 +++
+ wlan_hwifi/bus/mtk_wed.c         |  27 +++++-
+ wlan_hwifi/interface/connac_if.c |   2 +-
+ wlan_hwifi/mac_ops.c             |   9 ++
+ wlan_hwifi/mac_ops_connac.c      |   9 ++
+ 7 files changed, 182 insertions(+), 51 deletions(-)
+
+diff --git a/warp_driver/warp/warp.h b/warp_driver/warp/warp.h
+index bba36f2..1a90434 100644
+--- a/warp_driver/warp/warp.h
++++ b/warp_driver/warp/warp.h
+@@ -17,6 +17,8 @@
+ #ifndef _WARP_H
+ #define _WARP_H
+ 
++#include <linux/mutex.h>
++#include <linux/interrupt.h>
+ #include "wdma.h"
+ #include "wed.h"
+ #include "warp_wifi.h"
+@@ -51,9 +53,30 @@ struct warp_wifi_cr_map {
+ };
+ 
+ #define MAX_MAP_TABLE_SIZE 32
++enum warp_ring_state {
++	WARP_RING_DOWN = 0,
++	WARP_RING_STARTING,
++	WARP_RING_READY,
++	WARP_RING_STOPPING,
++	WARP_RING_FAILED,
++};
++
++#define WARP_RES_TXBM        BIT(0)
++#define WARP_RES_RXBM        BIT(1)
++#define WARP_RES_RX_PAGE_BM  BIT(2)
++#define WARP_RES_DYBM        BIT(3)
++#define WARP_RES_HW_RING     BIT(4)
++#define WARP_RES_HIF_TXD     BIT(5)
++
+ struct warp_entry {
+ 	u8 idx;
+ 	u8 slot_id;
++	bool ring_ready;
++	bool irq_gated;
++	enum warp_ring_state ring_state;
++	u32 res_mask;
++	spinlock_t ring_lock;
++	struct mutex state_lock;
+ 	struct wifi_entry wifi;
+ 	struct platform_driver pdriver;
+ 	struct wdma_entry wdma;
+@@ -200,12 +223,24 @@ warp_register_client(struct wifi_hw *hw, struct wifi_ops *ops);
+ void
+ warp_client_remove(void *priv_data);
+ 
++/*
++*
++*/
++int
++warp_ring_init_checked(void *priv_data, bool *cleanup_failed);
++
+ /*
+ *
+ */
+ int
+ warp_ring_init(void *priv_data);
+ 
++/*
++*
++*/
++int
++warp_ring_exit_checked(void *priv_data);
++
+ /*
+ *
+ */
+diff --git a/wlan_hwifi/bus.c b/wlan_hwifi/bus.c
+index 0fd5fdb..5852561 100644
+--- a/wlan_hwifi/bus.c
++++ b/wlan_hwifi/bus.c
+@@ -102,9 +102,14 @@ mtk_bus_driver_get(u8 type)
+ int
+ mtk_bus_preinit_device(struct mtk_bus_trans *trans)
+ {
+-	struct mtk_hw_dev *dev = to_hw_dev(trans);
++	struct mtk_hw_dev *dev;
+ 	int ret = -EINVAL;
+ 
++	if (!trans)
++		return -EINVAL;
++
++	dev = to_hw_dev(trans);
++
+ 	while (trans) {
+ 		ret = mtk_bus_dma_preinit_device(trans);
+ 		if (ret) {
+@@ -116,40 +121,75 @@ mtk_bus_preinit_device(struct mtk_bus_trans *trans)
+ 		trans = trans->next;
+ 	}
+ 
+-	if (test_bit(HWIFI_FLAG_MULTI_BUS, &dev->flags)) {
++	if (dev && test_bit(HWIFI_FLAG_MULTI_BUS, &dev->flags)) {
+ 		struct mtk_bus_trans *master, *slave;
+ 
+ 		master = dev->bus_trans;
+-		slave = master->next;
+-		ret = mtk_bus_dma_switch_node(master, slave);
++		slave = master ? master->next : NULL;
++		if (master && slave)
++			ret = mtk_bus_dma_switch_node(master, slave);
++		else
++			ret = -EINVAL;
+ 	}
+ 
+ end:
+ 	return ret;
+ }
+ 
++static void
++mtk_bus_unwind_init_device(struct mtk_bus_trans *head, struct mtk_bus_trans *stop)
++{
++	struct mtk_hw_dev *dev;
++
++	if (!head || head == stop)
++		return;
++
++	mtk_bus_unwind_init_device(head->next, stop);
++
++	dev = to_hw_dev(head);
++	if (mtk_bus_still_owns_started_resources(head) ||
++	    (dev && test_bit(HWIFI_STATE_RESET_FAILED, &dev->state)))
++		return;
++
++	if (test_bit(BUS_TRANS_FLAG_READY, &head->flag)) {
++		clear_bit(BUS_TRANS_FLAG_READY, &head->flag);
++		mtk_bus_dma_exit_device(head);
++		if (test_bit(BUS_TRANS_FLAG_MASTER, &head->flag))
++			mtk_hw_set_driver_own(head->dev, head, false);
++	}
++}
++
+ int
+ mtk_bus_init_device(struct mtk_bus_trans *trans)
+ {
++	struct mtk_bus_trans *head = trans, *curr = trans;
+ 	int ret = -EINVAL;
+ 
+-	while (trans) {
++	if (!trans)
++		return -EINVAL;
++
++	while (curr) {
+ 		/*per bus port need to do driver own before use it!*/
+-		if (test_bit(BUS_TRANS_FLAG_MASTER, &trans->flag))
+-			ret = mtk_hw_set_driver_own(trans->dev, trans, true);
+-		if (ret) {
+-			dev_err(to_device(trans), "%s(): Driver own failed, ret = %d\n",
+-				__func__, ret);
+-			break;
++		if (test_bit(BUS_TRANS_FLAG_MASTER, &curr->flag)) {
++			ret = mtk_hw_set_driver_own(curr->dev, curr, true);
++			if (ret) {
++				dev_err(to_device(curr), "%s(): Driver own failed, ret = %d\n",
++					__func__, ret);
++				mtk_bus_unwind_init_device(head, curr);
++				return ret;
++			}
+ 		}
+-		ret = mtk_bus_dma_init_device(trans);
++		ret = mtk_bus_dma_init_device(curr);
+ 		if (ret) {
+-			dev_err(to_device(trans), "%s(): Init failed, ret = %d\n",
++			dev_err(to_device(curr), "%s(): Init failed, ret = %d\n",
+ 				__func__, ret);
+-			break;
++			if (test_bit(BUS_TRANS_FLAG_MASTER, &curr->flag))
++				mtk_hw_set_driver_own(curr->dev, curr, false);
++			mtk_bus_unwind_init_device(head, curr);
++			return ret;
+ 		}
+-		set_bit(BUS_TRANS_FLAG_READY, &trans->flag);
+-		trans = trans->next;
++		set_bit(BUS_TRANS_FLAG_READY, &curr->flag);
++		curr = curr->next;
+ 	}
+ 	return ret;
+ }
+@@ -248,40 +288,56 @@ mtk_bus_init_after_fwdl(struct mtk_bus_trans *trans)
+ void
+ mtk_bus_exit_device(struct mtk_bus_trans *trans)
+ {
+-	int ret;
++	mtk_bus_unwind_init_device(trans, NULL);
++}
+ 
+-	while (trans) {
+-		if (!test_bit(BUS_TRANS_FLAG_READY, &trans->flag))
+-			goto next;
++static void
++mtk_bus_unwind_start_device(struct mtk_bus_trans *head, struct mtk_bus_trans *stop)
++{
++	struct mtk_hw_dev *dev;
++	bool pre_failed;
+ 
+-		clear_bit(BUS_TRANS_FLAG_READY, &trans->flag);
+-		mtk_bus_dma_exit_device(trans);
++	if (!head || head == stop)
++		return;
+ 
+-		/*per bus port need to do fw own when will not use it*/
+-		if (test_bit(BUS_TRANS_FLAG_MASTER, &trans->flag)) {
+-			ret = mtk_hw_set_driver_own(trans->dev, trans, false);
+-			if (ret)
+-				break;
+-		}
+-next:
+-		trans = trans->next;
++	dev = to_hw_dev(head);
++	pre_failed = dev && test_bit(HWIFI_STATE_RESET_FAILED, &dev->state);
++
++	mtk_bus_unwind_start_device(head->next, stop);
++
++	if (test_bit(BUS_TRANS_FLAG_START, &head->flag)) {
++		bool child_failed = dev && !pre_failed &&
++				    test_bit(HWIFI_STATE_RESET_FAILED, &dev->state);
++
++		if (child_failed)
++			clear_bit(HWIFI_STATE_RESET_FAILED, &dev->state);
++		mtk_bus_dma_stop(head);
++		if (!dev || !test_bit(HWIFI_STATE_RESET_FAILED, &dev->state))
++			clear_bit(BUS_TRANS_FLAG_START, &head->flag);
++		if (child_failed)
++			set_bit(HWIFI_STATE_RESET_FAILED, &dev->state);
+ 	}
+ }
+ 
+ int
+ mtk_bus_start_device(struct mtk_bus_trans *trans)
+ {
+-	int ret;
++	struct mtk_bus_trans *head = trans, *curr = trans;
++	int ret = -EINVAL;
+ 
+-	while (trans) {
+-		ret = mtk_bus_dma_start(trans);
++	if (!trans)
++		return -EINVAL;
++
++	while (curr) {
++		ret = mtk_bus_dma_start(curr);
+ 		if (ret) {
+-			dev_err(to_device(trans), "%s(): Bus start failed, ret = %d\n",
++			dev_err(to_device(curr), "%s(): Bus start failed, ret = %d\n",
+ 				__func__, ret);
+-			break;
++			mtk_bus_unwind_start_device(head, curr);
++			return ret;
+ 		}
+-		set_bit(BUS_TRANS_FLAG_START, &trans->flag);
+-		trans = trans->next;
++		set_bit(BUS_TRANS_FLAG_START, &curr->flag);
++		curr = curr->next;
+ 	}
+ 
+ 	return ret;
+@@ -290,15 +346,7 @@ mtk_bus_start_device(struct mtk_bus_trans *trans)
+ void
+ mtk_bus_stop_device(struct mtk_bus_trans *trans)
+ {
+-	while (trans) {
+-		if (!test_bit(BUS_TRANS_FLAG_START, &trans->flag))
+-			goto next;
+-
+-		clear_bit(BUS_TRANS_FLAG_START, &trans->flag);
+-		mtk_bus_dma_stop(trans);
+-next:
+-		trans = trans->next;
+-	}
++	mtk_bus_unwind_start_device(trans, NULL);
+ }
+ 
+ int
+diff --git a/wlan_hwifi/bus.h b/wlan_hwifi/bus.h
+index 4eec745..aa2e26c 100644
+--- a/wlan_hwifi/bus.h
++++ b/wlan_hwifi/bus.h
+@@ -1034,6 +1034,17 @@ mtk_bus_start_device(struct mtk_bus_trans *trans);
+ void
+ mtk_bus_stop_device(struct mtk_bus_trans *trans);
+ 
++static inline bool
++mtk_bus_still_owns_started_resources(struct mtk_bus_trans *trans)
++{
++	while (trans) {
++		if (test_bit(BUS_TRANS_FLAG_START, &trans->flag))
++			return true;
++		trans = trans->next;
++	}
++	return false;
++}
++
+ int
+ mtk_bus_start_traffic(struct mtk_bus_trans *trans);
+ 
+diff --git a/wlan_hwifi/bus/mtk_wed.c b/wlan_hwifi/bus/mtk_wed.c
+index ec5a49f..a0a2a4d 100644
+--- a/wlan_hwifi/bus/mtk_wed.c
++++ b/wlan_hwifi/bus/mtk_wed.c
+@@ -1161,17 +1161,35 @@ static int
+ wed_start(void *hw)
+ {
+ 	struct wed_trans *trans = to_wed_trans(hw);
++	bool cleanup_failed = false;
++	int ret;
+ 
+ 
+ 	if (trans->enable) {
+ 		if (trans->wed_ver == 1)
+ 			wed_v1_compatible_mode_config(to_bus_trans(hw), trans->wifi_hw);
+-		warp_ring_init(hw);
++		ret = warp_ring_init_checked(hw, &cleanup_failed);
++		if (ret) {
++			if (cleanup_failed)
++				set_bit(HWIFI_STATE_RESET_FAILED, &to_hw_dev(trans)->state);
++			dev_err(to_device(trans), "%s(): warp_ring_init failed: %d\n",
++				__func__, ret);
++			return ret;
++		}
+ 		warp_dma_handler(hw, WARP_DMA_TXRX);
+ 	}
+ 
+-	if (trans->dma_ops->start)
+-		return trans->dma_ops->start(hw);
++	if (trans->dma_ops->start) {
++		ret = trans->dma_ops->start(hw);
++		if (ret) {
++			if (trans->enable) {
++				warp_dma_handler(hw, WARP_DMA_DISABLE);
++				if (warp_ring_exit_checked(hw))
++					set_bit(HWIFI_STATE_RESET_FAILED, &to_hw_dev(trans)->state);
++			}
++			return ret;
++		}
++	}
+ 	return 0;
+ }
+ 
+@@ -1184,7 +1202,8 @@ wed_stop(void *hw)
+ 	if (trans->enable) {
+ 		if (!test_bit(HWIFI_STATE_RESET, &dev->state)) {
+ 			warp_dma_handler(hw, WARP_DMA_DISABLE);
+-			warp_ring_exit(hw);
++			if (warp_ring_exit_checked(hw))
++				set_bit(HWIFI_STATE_RESET_FAILED, &dev->state);
+ 		} else {
+ #if (WARP_VERSION(3, 0) <= WARP_VERSION_CODE)
+ 			if (warp_reset_handler(hw, WIFI_ERR_RECOV_STOP_PDMA0))
+diff --git a/wlan_hwifi/interface/connac_if.c b/wlan_hwifi/interface/connac_if.c
+index c637575..9e61674 100644
+--- a/wlan_hwifi/interface/connac_if.c
++++ b/wlan_hwifi/interface/connac_if.c
+@@ -987,7 +987,7 @@ connac_if_ser_handler(struct mtk_mac_hw *hw, u32 action, u32 status)
+ 		connac_if_md_coex_unregister_info(hw_dev);
+ #endif
+ 		ret = mtk_hdev_set_dma_tk(hw_dev, hw_phy, enable);
+-		if (test_and_clear_bit(HWIFI_STATE_RESET_FAILED, &hw_dev->state))
++		if (test_bit(HWIFI_STATE_RESET_FAILED, &hw_dev->state) || ret)
+ 			ret = -EIO;
+ 
+ 		return ret;
+diff --git a/wlan_hwifi/mac_ops.c b/wlan_hwifi/mac_ops.c
+index 337a4a2..a9499e7 100644
+--- a/wlan_hwifi/mac_ops.c
++++ b/wlan_hwifi/mac_ops.c
+@@ -261,9 +261,15 @@ err_init_after_fwdl:
+ err_mcu_start:
+ 	mtk_bus_stop_device(dev->bus_trans);
+ err_bus_start:
++	if (test_bit(HWIFI_STATE_RESET_FAILED, &dev->state) ||
++	    mtk_bus_still_owns_started_resources(dev->bus_trans))
++		return ret;
+ 	mtk_bus_exit_device(dev->bus_trans);
+ err_bus_init:
+ err_bus_preinit:
++	if (test_bit(HWIFI_STATE_RESET_FAILED, &dev->state) ||
++	    mtk_bus_still_owns_started_resources(dev->bus_trans))
++		return ret;
+ 	mtk_tk_exit(dev);
+ err_tk_init:
+ 	return ret;
+@@ -277,6 +283,9 @@ mtk_ge_stop(struct mtk_hw_dev *dev)
+ 	mutex_unlock(&dev->mutex);
+ 	mtk_mcu_stop_device(dev);
+ 	mtk_bus_stop_device(dev->bus_trans);
++	if (test_bit(HWIFI_STATE_RESET_FAILED, &dev->state) ||
++	    mtk_bus_still_owns_started_resources(dev->bus_trans))
++		return -EIO;
+ 	mtk_bus_exit_device(dev->bus_trans);
+ 	mtk_tk_exit(dev);
+ 	return 0;
+diff --git a/wlan_hwifi/mac_ops_connac.c b/wlan_hwifi/mac_ops_connac.c
+index cfff7e9..d153ea7 100644
+--- a/wlan_hwifi/mac_ops_connac.c
++++ b/wlan_hwifi/mac_ops_connac.c
+@@ -218,6 +218,9 @@ mtk_ge_set_dma_tk(struct mtk_hw_phy *phy, bool enable)
+ 
+ 	if (enable) {
+ 		mtk_bus_stop_device(dev->bus_trans);
++		if (test_bit(HWIFI_STATE_RESET_FAILED, &dev->state) ||
++		    mtk_bus_still_owns_started_resources(dev->bus_trans))
++			return -EIO;
+ 		ret = mtk_tk_init(dev);
+ 		if (ret)
+ 			goto err_tk_init;
+@@ -239,6 +242,9 @@ mtk_ge_set_dma_tk(struct mtk_hw_phy *phy, bool enable)
+ 			goto err_bus_init_after_fwdl;
+ 	} else {
+ 		mtk_bus_stop_device(dev->bus_trans);
++		if (test_bit(HWIFI_STATE_RESET_FAILED, &dev->state) ||
++		    mtk_bus_still_owns_started_resources(dev->bus_trans))
++			return -EIO;
+ 		mtk_bus_exit_device(dev->bus_trans);
+ 		mtk_tk_exit(dev);
+ 	}
+@@ -247,6 +253,9 @@ mtk_ge_set_dma_tk(struct mtk_hw_phy *phy, bool enable)
+ err_bus_init_after_fwdl:
+ 	mtk_bus_stop_device(dev->bus_trans);
+ err_bus_start:
++	if (test_bit(HWIFI_STATE_RESET_FAILED, &dev->state) ||
++	    mtk_bus_still_owns_started_resources(dev->bus_trans))
++		return ret;
+ 	mtk_bus_exit_device(dev->bus_trans);
+ err_bus_init:
+ err_bus_preinit:
