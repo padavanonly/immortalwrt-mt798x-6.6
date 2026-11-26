@@ -1,0 +1,197 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi: fix multicast stats accounting and teardown log guards
+
+Resolve TX MBSS pointers safely when TX_MCAST_FRAME leaves pTxBlk->pMbss
+unset or entry is NULL, bound TXRX_STAT_SUPPORT MBSS lookup by AP func_idx,
+and unify AP/APCLI multicast RX packet accounting in announce_802_3_packet
+without double-counting in MAP/rx_data_frm_announce. Also guard null
+pQloadCtrl/pHObj during QBSS load updates and demote expected teardown
+wdev/adapt_list messages to DBG_LVL_INFO.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -urN a/mt_wifi/embedded/ap/ap_data.c b/mt_wifi/embedded/ap/ap_data.c
+--- a/mt_wifi/embedded/ap/ap_data.c	2026-11-26 17:45:13.388199077 +0800
++++ b/mt_wifi/embedded/ap/ap_data.c	2026-11-26 17:45:13.521301730 +0800
+@@ -53,14 +53,29 @@
+ {
+ #ifdef STATS_COUNT_SUPPORT
+ 	MAC_TABLE_ENTRY *entry = txblk->pMacEntry;
++	BSS_STRUCT *mbss = txblk->pMbss;
+ #ifdef TXRX_STAT_SUPPORT
+ 	struct hdev_obj *hdev = (struct hdev_obj *)(wdev->pHObj);
+ 	UCHAR  pUserPriority, QIdx;
+ #endif
+ 
++	if (!mbss && txblk->wdev && txblk->wdev->wdev_type == WDEV_TYPE_AP &&
++	    (UCHAR)txblk->wdev->func_idx < MAX_MBSSID_NUM(ad))
++		mbss = &ad->ApCfg.MBSSID[(UCHAR)txblk->wdev->func_idx];
++
+ 	if (!entry) {
+ #ifdef TXRX_STAT_SUPPORT
+ 		BSS_STRUCT *txrx_mbss = NULL;
++#endif /* TXRX_STAT_SUPPORT */
++		if (mbss && txblk->TxFrameType == TX_MCAST_FRAME) {
++			mbss->TxCount++;
++			mbss->TransmittedByteCount += txblk->SrcBufLen;
++			if (txblk->pSrcBufHeader &&
++			    is_multicast_ether_addr(txblk->pSrcBufHeader) &&
++			    !is_broadcast_ether_addr(txblk->pSrcBufHeader))
++				mbss->mcPktsTx++;
++		}
++#ifdef TXRX_STAT_SUPPORT
+ 		if (txblk->wdev && txblk->wdev->func_idx < MAX_MBSSID_NUM(ad)) {
+ 			UCHAR band_idx = HcGetBandByWdev(txblk->wdev);
+ 			struct hdev_ctrl *ctrl = (struct hdev_ctrl *)ad->hdev_ctrl;
+@@ -82,7 +97,6 @@
+ /*if WHNAT enable, query from CR4 and then update it, but before returning update uc and mc counts*/
+ 	if (IS_MAP_ENABLE(ad) && IS_MAP_R2_ENABLE(ad)) {
+ 		if ((ad->CommonCfg.whnat_en) && (IS_ASIC_CAP(ad, fASIC_CAP_MCU_OFFLOAD))) {
+-			BSS_STRUCT *mbss = txblk->pMbss;
+ #ifdef TR181_SUPPORT
+ 			UCHAR band_idx = DBDC_BAND0;
+ 
+@@ -124,7 +138,6 @@
+ 
+ 	/* calculate Tx count and ByteCount per BSS */
+ 	{
+-		BSS_STRUCT *mbss = txblk->pMbss;
+ #ifdef TXRX_STAT_SUPPORT
+ 		BSS_STRUCT *txrx_mbss = NULL;
+ #endif
+@@ -181,10 +194,11 @@
+ 			}
+ 		}
+ #ifdef TXRX_STAT_SUPPORT
+-		if ((mbss != NULL) || (mbss == NULL && txblk->wdev)) {
++		if (txblk->wdev && txblk->wdev->wdev_type == WDEV_TYPE_AP &&
++		    (UCHAR)txblk->wdev->func_idx < MAX_MBSSID_NUM(ad)) {
+ 			UCHAR band_idx = HcGetBandByWdev(txblk->wdev);
+ 			struct hdev_ctrl *ctrl = (struct hdev_ctrl *)ad->hdev_ctrl;
+-			txrx_mbss = &ad->ApCfg.MBSSID[txblk->wdev->wdev_idx];
++			txrx_mbss = &ad->ApCfg.MBSSID[(UCHAR)txblk->wdev->func_idx];
+ 			if (IS_MULTICAST_MAC_ADDR(txblk->pSrcBufHeader)) {
+ 				INC_COUNTER64(txrx_mbss->stat_bss.TxMulticastDataPacket);
+ 				INC_COUNTER64(ctrl->rdev[band_idx].pRadioCtrl->TxMulticastDataPacket);
+@@ -4263,7 +4277,6 @@
+ #endif
+ 			} else {
+ 				if(pMbss) {
+-					pMbss->mcPktsRx++;
+ 					pMbss->mcBytesRx += pRxBlk->MPDUtotalByteCnt;
+ 				}
+ #ifdef TR181_SUPPORT
+diff -urN a/mt_wifi/embedded/ap/ap_qload.c b/mt_wifi/embedded/ap/ap_qload.c
+--- a/mt_wifi/embedded/ap/ap_qload.c	2026-11-26 17:45:13.388439748 +0800
++++ b/mt_wifi/embedded/ap/ap_qload.c	2026-11-26 17:45:13.504173166 +0800
+@@ -557,6 +557,8 @@
+ 		QLOAD_CTRL *pQloadCtrl = HcGetQloadCtrl(pAd);
+ 		NdisGetSystemUpTime(&UpTime);
+ 		QBSS_LoadUpdate(pAd, UpTime);
++		if (!pQloadCtrl)
++			return;
+ 		if ((pAd->Mlme.OneSecPeriodicRound % pQloadCtrl->QloadChanUtilBeaconInt) == 0) {
+ 			for (BssIdx = 0; BssIdx < pAd->ApCfg.BssidNum; BssIdx++) {
+ 				wdev = &pAd->ApCfg.MBSSID[BssIdx].wdev;
+@@ -615,13 +617,14 @@
+ 	QLOAD_CTRL *pQloadCtrl = HcGetQloadCtrl(pAd);
+ 	UINT8 UpdateBands, i = 0;
+ #if defined(ACS_CTCC_SUPPORT) || defined(OCE_SUPPORT)
+-	struct wifi_dev *wdev = NULL;
++	struct wifi_dev *wdev = &pAd->ApCfg.MBSSID[MAIN_MBSSID].wdev;
+ 	UCHAR band_idx = 0;
+ 	AUTO_CH_CTRL *auto_ch_ctrl = NULL;
+ 
+-	wdev = &pAd->ApCfg.MBSSID[MAIN_MBSSID].wdev;
+-	band_idx = HcGetBandByWdev(wdev);
+-	auto_ch_ctrl = HcGetAutoChCtrlbyBandIdx(pAd, band_idx);
++	if (wdev->pHObj != NULL) {
++		band_idx = HcGetBandByWdev(wdev);
++		auto_ch_ctrl = HcGetAutoChCtrlbyBandIdx(pAd, band_idx);
++	}
+ #endif /* ACS_CTCC_SUPPORT OCE_SUPPORT*/
+ 
+ 	UpdateBands = (pAd->CommonCfg.dbdc_mode == 0) ? 1 : DBDC_BAND_NUM;
+diff -urN a/mt_wifi/embedded/common/cmm_data.c b/mt_wifi/embedded/common/cmm_data.c
+--- a/mt_wifi/embedded/common/cmm_data.c	2026-11-26 17:45:13.389013100 +0800
++++ b/mt_wifi/embedded/common/cmm_data.c	2026-11-26 17:45:13.504666628 +0800
+@@ -6273,7 +6273,6 @@
+ 					pAd->WlanCounters[bandIdx].bcPktsRx.QuadPart++;
+ #endif
+ 				} else {
+-					pMbss->mcPktsRx++;
+ #ifdef TR181_SUPPORT
+ 					pAd->WlanCounters[bandIdx].mcPktsRx.QuadPart++;
+ #endif
+diff -urN a/mt_wifi/embedded/common/wdev.c b/mt_wifi/embedded/common/wdev.c
+--- a/mt_wifi/embedded/common/wdev.c	2026-11-26 17:45:13.306731487 +0800
++++ b/mt_wifi/embedded/common/wdev.c	2026-11-26 17:45:13.505037310 +0800
+@@ -794,7 +794,11 @@
+ 	}
+ 
+ 	NdisReleaseSpinLock(&pAd->WdevListLock);
+-	MTWF_DBG(pAd, DBG_CAT_TX, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "can not find registered wdev\n");
++	MTWF_DBG(pAd, DBG_CAT_TX, DBG_SUBCAT_ALL,
++		((VIRTUAL_IF_NUM(pAd) == 0) ||
++		 RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS))
++		? DBG_LVL_INFO : DBG_LVL_ERROR,
++		"can not find registered wdev\n");
+ 	return NULL;
+ }
+ 
+diff -urN a/mt_wifi/os/linux/multi_main_dev.c b/mt_wifi/os/linux/multi_main_dev.c
+--- a/mt_wifi/os/linux/multi_main_dev.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/multi_main_dev.c	2026-11-26 17:45:13.505127610 +0800
+@@ -83,7 +83,7 @@
+ 	}
+ 
+ 	if (count == 0)
+-		MTWF_DBG(NULL, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
++		MTWF_DBG(NULL, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+ 			 "failed to find nonempty adapt_list!\n");
+ 	return count;
+ }
+@@ -102,8 +102,8 @@
+ 		}
+ 	}
+ 	if (active_cnt == 0)
+-		MTWF_DBG(NULL, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+-			 "failed to find nonempty adapt_list!\n");
++		MTWF_DBG(NULL, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
++			 "no active adapter remaining\n");
+ 	return active_cnt;
+ }
+ 
+diff -urN a/mt_wifi/os/linux/rt_profile.c b/mt_wifi/os/linux/rt_profile.c
+--- a/mt_wifi/os/linux/rt_profile.c	2026-11-26 17:45:13.393522860 +0800
++++ b/mt_wifi/os/linux/rt_profile.c	2026-11-26 17:45:13.505231910 +0800
+@@ -1442,6 +1442,29 @@
+ 		return;
+ 	MEM_DBG_PKT_FREE_INC(pPacket);
+ 
++#ifdef STATS_COUNT_SUPPORT
++	{
++		struct sk_buff *pOSPkt = RTPKT_TO_OSPKT(pRxPkt);
++		struct wifi_dev *wdev = pOSPkt->dev ?
++			RTMP_OS_NETDEV_GET_WDEV(pOSPkt->dev) : NULL;
++
++		if (wdev && pOSPkt->len >= ETH_HLEN &&
++		    is_multicast_ether_addr(pOSPkt->data) &&
++		    !is_broadcast_ether_addr(pOSPkt->data)) {
++#ifdef CONFIG_AP_SUPPORT
++			if (wdev->wdev_type == WDEV_TYPE_AP &&
++			    (UCHAR)wdev->func_idx < MAX_MBSSID_NUM(pAd))
++				pAd->ApCfg.MBSSID[(UCHAR)wdev->func_idx].mcPktsRx++;
++#endif /* CONFIG_AP_SUPPORT */
++#if defined(CONFIG_STA_SUPPORT) || defined(APCLI_SUPPORT)
++			if (wdev->wdev_type == WDEV_TYPE_STA &&
++			    (UCHAR)wdev->func_idx < MAX_MULTI_STA)
++				pAd->StaCfg[(UCHAR)wdev->func_idx].StaStatistic.mcPktsRx++;
++#endif /* CONFIG_STA_SUPPORT || APCLI_SUPPORT */
++		}
++	}
++#endif /* STATS_COUNT_SUPPORT */
++
+ #ifdef CONFIG_WIFI_PREFETCH_RXDATA
+ 	prefetch(GET_OS_PKT_DATAPTR(pPacket));
+ #endif /* CONFIG_WIFI_PREFETCH_RXDATA */

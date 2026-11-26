@@ -1,0 +1,166 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: fix multi_inf_active_cnt tracking and teardown log guards
+
+Count active MAC adapters from physical_device_list so closing one band
+does not prematurely free shared WPA3/OWE global EC tables, and guard
+transient QBSS_LoadUpdate / wdev_search_by_band_omac_idx teardown windows.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/ap/ap_qload.c                     | 22 +++++++++++++---------
+ mt_wifi/common/wdev.c                     |  6 +++++-
+ mt_wifi/hw_ctrl/physical_device.c         | 25 +++++++++++++++++++++++++
+ mt_wifi/include/hw_ctrl/physical_device.h |  3 +++
+ mt_wifi/os/linux/multi_main_dev.c         | 17 ++++++++++-------
+ 5 files changed, 56 insertions(+), 17 deletions(-)
+
+diff --git a/mt_wifi/ap/ap_qload.c b/mt_wifi/ap/ap_qload.c
+index 2e6a7af..baf50b4 100644
+--- a/mt_wifi/ap/ap_qload.c
++++ b/mt_wifi/ap/ap_qload.c
+@@ -668,6 +668,14 @@ VOID QBSS_LoadUpdate(
+ 	auto_ch_ctrl = HcGetAutoChCtrl(pAd);
+ #endif /* ACS_CTCC_SUPPORT OCE_SUPPORT*/
+ 
++	if (!pQloadCtrl)
++		return;
++
++	/* check whether channel busy time calculation is enabled */
++	if ((pQloadCtrl->FlgQloadEnable == 0) ||
++		(pQloadCtrl->FlgQloadAlarmIsSuspended == TRUE))
++		return;
++
+ 	for (BssIdx = 0; BssIdx < pAd->ApCfg.BssidNum; BssIdx++) {
+ 		wdev = &pAd->ApCfg.MBSSID[BssIdx].wdev;
+ 		if ((wdev != NULL) && (wdev->pHObj != NULL))
+@@ -676,18 +684,14 @@ VOID QBSS_LoadUpdate(
+ 	}
+ 
+ 	if ((wdev == NULL) || (wdev->pHObj == NULL)) {
+-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_MISC, DBG_LVL_ERROR, "wdev is NULL\n");
++		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_MISC,
++			((VIRTUAL_IF_NUM(pAd) == 0) ||
++			 RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS))
++			? DBG_LVL_INFO : DBG_LVL_ERROR,
++			"wdev is NULL\n");
+ 		return;
+ 	}
+ 
+-	if (!pQloadCtrl)
+-		return;
+-
+-	/* check whether channel busy time calculation is enabled */
+-	if ((pQloadCtrl->FlgQloadEnable == 0) ||
+-		(pQloadCtrl->FlgQloadAlarmIsSuspended == TRUE))
+-		return;
+-
+ 	/* calculate new time period if needed */
+ 	if ((UpTime > 0) &&
+ 		(pQloadCtrl->QloadUpTimeLast > 0) &&
+diff --git a/mt_wifi/common/wdev.c b/mt_wifi/common/wdev.c
+index 1443ad8..75f40bb 100644
+--- a/mt_wifi/common/wdev.c
++++ b/mt_wifi/common/wdev.c
+@@ -710,7 +710,11 @@ struct wifi_dev *wdev_search_by_band_omac_idx(RTMP_ADAPTER *pAd, UINT8 band_idx,
+ 	}
+ 
+ 	NdisReleaseSpinLock(&pAd->WdevListLock);
+-	MTWF_DBG(pAd, DBG_CAT_FW, CATFW_DEVINFO, DBG_LVL_ERROR, "can not find registered wdev\n");
++	MTWF_DBG(pAd, DBG_CAT_FW, CATFW_DEVINFO,
++		((VIRTUAL_IF_NUM(pAd) == 0) ||
++		 RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS))
++		? DBG_LVL_INFO : DBG_LVL_ERROR,
++		"can not find registered wdev\n");
+ 	return NULL;
+ }
+ 
+diff --git a/mt_wifi/hw_ctrl/physical_device.c b/mt_wifi/hw_ctrl/physical_device.c
+index c00eee6..90937b2 100644
+--- a/mt_wifi/hw_ctrl/physical_device.c
++++ b/mt_wifi/hw_ctrl/physical_device.c
+@@ -418,6 +418,31 @@ physical_device_get_first_up_mac_adapter(VOID *physical_dev)
+ 	return pAd;
+ }
+ 
++int
++physical_device_get_active_mac_adapter_cnt(void)
++{
++	struct physical_device_node *device_node;
++	struct physical_device *device;
++	struct mac_ad_node *mac_ad_node;
++	int active_cnt = 0;
++
++	OS_SEM_LOCK(&physical_device_list_lock);
++	for (device_node = (struct physical_device_node *)physical_device_list.pHead;
++		device_node;
++		device_node = (struct physical_device_node *)device_node->pNext) {
++		device = &device_node->device_entry;
++		for (mac_ad_node = (struct mac_ad_node *)device->mac_ad_list.pHead;
++			mac_ad_node;
++			mac_ad_node = (struct mac_ad_node *)mac_ad_node->pNext) {
++			if (mac_ad_node->ad && VIRTUAL_IF_NUM(mac_ad_node->ad) != 0)
++				active_cnt++;
++		}
++	}
++	OS_SEM_UNLOCK(&physical_device_list_lock);
++
++	return active_cnt;
++}
++
+ /**
+  * @brief Get the list of MAC adapters associated with a specific chip ID and hardware ID.
+  *
+diff --git a/mt_wifi/include/hw_ctrl/physical_device.h b/mt_wifi/include/hw_ctrl/physical_device.h
+index 1303142..7d57c95 100644
+--- a/mt_wifi/include/hw_ctrl/physical_device.h
++++ b/mt_wifi/include/hw_ctrl/physical_device.h
+@@ -71,6 +71,9 @@ physical_device_get_first_mac_adapter(void *physical_dev);
+ struct _RTMP_ADAPTER *
+ physical_device_get_first_up_mac_adapter(void *physical_dev);
+ 
++int
++physical_device_get_active_mac_adapter_cnt(void);
++
+ void
+ physical_device_timer_list_add(
+ 	void *ph_dev_obj, void *pRsc, char *timer_name);
+diff --git a/mt_wifi/os/linux/multi_main_dev.c b/mt_wifi/os/linux/multi_main_dev.c
+index 1445aa3..b1074ee 100644
+--- a/mt_wifi/os/linux/multi_main_dev.c
++++ b/mt_wifi/os/linux/multi_main_dev.c
+@@ -30,6 +30,7 @@
+ #include "rt_os_util.h"
+ #include "rt_os_net.h"
+ #include <linux/pci.h>
++#include "hw_ctrl/physical_device.h"
+ 
+ /* Index 0 for Card_1, Index 1 for Card_2 */
+ VOID *adapt_list[MAX_NUM_OF_INF] = {NULL, NULL, NULL};
+@@ -53,18 +54,20 @@ VOID *multi_inf_get_pAd_by_Band(VOID *pAd, UINT BandIdx)
+ 
+ int multi_inf_active_cnt(void)
+ {
+-	int active_cnt = 0; /* use number 0 as default */
++	int active_cnt = physical_device_get_active_mac_adapter_cnt();
+ 	int idx;
+ 
+-	for (idx = 0; idx < MAX_NUM_OF_INF; idx++) {
+-		if (adapt_list[idx] != NULL) {
+-			if (VIRTUAL_IF_NUM(adapt_list[idx]) != 0)
+-				active_cnt++;
++	if (active_cnt == 0) {
++		for (idx = 0; idx < MAX_NUM_OF_INF; idx++) {
++			if (adapt_list[idx] != NULL) {
++				if (VIRTUAL_IF_NUM(adapt_list[idx]) != 0)
++					active_cnt++;
++			}
+ 		}
+ 	}
+ 	if (active_cnt == 0)
+-		MTWF_DBG(NULL, DBG_CAT_INIT, CATCFG_DBGLOG, DBG_LVL_ERROR,
+-			 "failed to find nonempty adapt_list!\n");
++		MTWF_DBG(NULL, DBG_CAT_INIT, CATCFG_DBGLOG, DBG_LVL_INFO,
++			 "no active adapter remaining\n");
+ 	return active_cnt;
+ }
+ 

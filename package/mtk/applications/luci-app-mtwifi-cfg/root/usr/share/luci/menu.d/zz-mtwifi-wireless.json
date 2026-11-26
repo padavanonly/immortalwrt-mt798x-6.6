@@ -1,0 +1,27 @@
+{
+	"admin/network/wireless": {
+		"title": "Wireless",
+		"order": 15,
+		"action": {
+			"type": "view",
+			"path": "network/mtwifi"
+		},
+		"depends": {
+			"acl": [ "luci-mod-network-config", "luci-app-mtwifi-cfg" ],
+			"uci": { "wireless": { "@wifi-device": true } }
+		}
+	},
+
+	"admin/status/channel_analysis": {
+		"title": "Channel Analysis",
+		"order": 7,
+		"action": {
+			"type": "view",
+			"path": "status/mtwifi_channel_analysis"
+		},
+		"depends": {
+			"acl": [ "luci-mod-status-channel_analysis" ],
+			"uci": { "wireless": { "@wifi-device": true } }
+		}
+	}
+}

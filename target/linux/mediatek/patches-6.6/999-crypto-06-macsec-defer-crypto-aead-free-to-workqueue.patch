@@ -1,0 +1,163 @@
+---
+[v1] macsec: defer crypto_aead release to process context to fix panic on interface delete
+
+Deleting a MACsec interface (e.g. `ip link delete macsec`) can trigger a
+kernel panic when the underlying crypto is offloaded to a HW-offload
+driver such as inside-secure/safexcel. The RCU callbacks free_rxsa() and
+free_txsa() call crypto_free_aead(), whose cra_exit() path in safexcel
+issues an invalidation request and blocks on wait_for_completion(). This
+sleeps in softirq/RCU-callback context, producing "BUG: scheduling while
+atomic", which in turn corrupts the safexcel ring queue list and ends in
+a fatal kernel Oops.
+
+Use the standard RCU-to-workqueue helper (struct rcu_work /
+INIT_RCU_WORK() / queue_rcu_work()) so that after the RCU grace period,
+the tfm release runs on a workqueue worker in process context where
+sleeping is allowed. A dedicated workqueue "macsec_free" is used instead
+of the system workqueue so that macsec_exit() can drain pending work via
+destroy_workqueue() without triggering the flush_scheduled_work() warning
+and without risking use-after-free on module unload.
+
+---
+v1: Fix macsec interface delete panic caused by sleeping in RCU callback
+---
+--- a/drivers/net/macsec.c
++++ b/drivers/net/macsec.c
+@@ -141,6 +141,11 @@ struct macsec_cb {
+ 	bool has_sci;
+ };
+ 
++/* Dedicated workqueue used to release crypto_aead tfms in process context
++ * from RCU callbacks (some HW-offload crypto drivers may sleep on tfm exit).
++ */
++static struct workqueue_struct *macsec_free_wq;
++
+ static struct macsec_rx_sa *macsec_rxsa_get(struct macsec_rx_sa __rcu *ptr)
+ {
+ 	struct macsec_rx_sa *sa = rcu_dereference_bh(ptr);
+@@ -173,9 +178,10 @@ static void macsec_rxsc_put(struct macse
+ 		call_rcu(&sc->rcu_head, free_rx_sc_rcu);
+ }
+ 
+-static void free_rxsa(struct rcu_head *head)
++static void free_rxsa(struct work_struct *work)
+ {
+-	struct macsec_rx_sa *sa = container_of(head, struct macsec_rx_sa, rcu);
++	struct macsec_rx_sa *sa = container_of(to_rcu_work(work),
++					       struct macsec_rx_sa, rwork);
+ 
+ 	crypto_free_aead(sa->key.tfm);
+ 	free_percpu(sa->stats);
+@@ -184,8 +190,10 @@ static void free_rxsa(struct rcu_head *h
+ 
+ static void macsec_rxsa_put(struct macsec_rx_sa *sa)
+ {
+-	if (refcount_dec_and_test(&sa->refcnt))
+-		call_rcu(&sa->rcu, free_rxsa);
++	if (refcount_dec_and_test(&sa->refcnt)) {
++		INIT_RCU_WORK(&sa->rwork, free_rxsa);
++		queue_rcu_work(macsec_free_wq, &sa->rwork);
++	}
+ }
+ 
+ static struct macsec_tx_sa *macsec_txsa_get(struct macsec_tx_sa __rcu *ptr)
+@@ -201,9 +209,10 @@ static struct macsec_tx_sa *macsec_txsa_
+ 	return sa;
+ }
+ 
+-static void free_txsa(struct rcu_head *head)
++static void free_txsa(struct work_struct *work)
+ {
+-	struct macsec_tx_sa *sa = container_of(head, struct macsec_tx_sa, rcu);
++	struct macsec_tx_sa *sa = container_of(to_rcu_work(work),
++					       struct macsec_tx_sa, rwork);
+ 
+ 	crypto_free_aead(sa->key.tfm);
+ 	free_percpu(sa->stats);
+@@ -212,8 +221,10 @@ static void free_txsa(struct rcu_head *h
+ 
+ static void macsec_txsa_put(struct macsec_tx_sa *sa)
+ {
+-	if (refcount_dec_and_test(&sa->refcnt))
+-		call_rcu(&sa->rcu, free_txsa);
++	if (refcount_dec_and_test(&sa->refcnt)) {
++		INIT_RCU_WORK(&sa->rwork, free_txsa);
++		queue_rcu_work(macsec_free_wq, &sa->rwork);
++	}
+ }
+ 
+ static struct macsec_cb *macsec_skb_cb(struct sk_buff *skb)
+@@ -4523,9 +4534,14 @@ static int __init macsec_init(void)
+ 	int err;
+ 
+ 	pr_info("MACsec IEEE 802.1AE\n");
++
++	macsec_free_wq = alloc_workqueue("macsec_free", WQ_MEM_RECLAIM, 0);
++	if (!macsec_free_wq)
++		return -ENOMEM;
++
+ 	err = register_netdevice_notifier(&macsec_notifier);
+ 	if (err)
+-		return err;
++		goto free_wq;
+ 
+ 	err = rtnl_link_register(&macsec_link_ops);
+ 	if (err)
+@@ -4541,6 +4557,8 @@ rtnl:
+ 	rtnl_link_unregister(&macsec_link_ops);
+ notifier:
+ 	unregister_netdevice_notifier(&macsec_notifier);
++free_wq:
++	destroy_workqueue(macsec_free_wq);
+ 	return err;
+ }
+ 
+@@ -4549,7 +4567,12 @@ static void __exit macsec_exit(void)
+ 	genl_unregister_family(&macsec_fam);
+ 	rtnl_link_unregister(&macsec_link_ops);
+ 	unregister_netdevice_notifier(&macsec_notifier);
++	/* queue_rcu_work() defers work via call_rcu(); rcu_barrier() ensures
++	 * those RCU callbacks have queued their work items onto macsec_free_wq
++	 * before we drain and destroy it.
++	 */
+ 	rcu_barrier();
++	destroy_workqueue(macsec_free_wq);
+ }
+ 
+ module_init(macsec_init);
+--- a/include/net/macsec.h
++++ b/include/net/macsec.h
+@@ -9,6 +9,7 @@
+ 
+ #include <linux/u64_stats_sync.h>
+ #include <linux/if_vlan.h>
++#include <linux/workqueue.h>
+ #include <uapi/linux/if_link.h>
+ #include <uapi/linux/if_macsec.h>
+ 
+@@ -136,7 +137,11 @@ struct macsec_rx_sa {
+ 	bool active;
+ 	struct macsec_rx_sa_stats __percpu *stats;
+ 	struct macsec_rx_sc *sc;
+-	struct rcu_head rcu;
++	/* Free via queue_rcu_work(): wait for RCU grace period, then run
++	 * the work handler in process context because crypto_free_aead()
++	 * may sleep in some HW-offload crypto drivers.
++	 */
++	struct rcu_work rwork;
+ };
+ 
+ struct pcpu_rx_sc_stats {
+@@ -186,7 +191,11 @@ struct macsec_tx_sa {
+ 	refcount_t refcnt;
+ 	bool active;
+ 	struct macsec_tx_sa_stats __percpu *stats;
+-	struct rcu_head rcu;
++	/* Free via queue_rcu_work(): wait for RCU grace period, then run
++	 * the work handler in process context because crypto_free_aead()
++	 * may sleep in some HW-offload crypto drivers.
++	 */
++	struct rcu_work rwork;
+ };
+ 
+ /**

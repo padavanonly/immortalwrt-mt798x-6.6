@@ -1,0 +1,35 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: tun: allow build_skb fast path for IFF_TUN without XDP
+
+Allow tun_build_skb() zero-copy receive allocation on non-XDP IFF_TUN
+devices (VPN tunnels) to eliminate extra SKB copies.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/tun.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/tun.c b/drivers/net/tun.c
+index 98711c4e1..508271ff8 100644
+--- a/drivers/net/tun.c
++++ b/drivers/net/tun.c
+@@ -1590,7 +1590,8 @@ static void tun_rx_batched(struct tun_struct *tun, struct tun_file *tfile,
+ static bool tun_can_build_skb(struct tun_struct *tun, struct tun_file *tfile,
+ 			      int len, int noblock, bool zerocopy)
+ {
+-	if ((tun->flags & TUN_TYPE_MASK) != IFF_TAP)
++	if ((tun->flags & TUN_TYPE_MASK) != IFF_TAP &&
++	    rcu_access_pointer(tun->xdp_prog))
+ 		return false;
+ 
+ 	if (tfile->socket.sk->sk_sndbuf != INT_MAX)
+@@ -1702,7 +1703,8 @@ static struct sk_buff *tun_build_skb(struct tun_struct *tun,
+ 	 * of xdp_prog above, this should be rare and for simplicity
+ 	 * we do XDP on skb in case the headroom is not enough.
+ 	 */
+-	if (hdr->gso_type || !xdp_prog) {
++	if (hdr->gso_type || !xdp_prog ||
++	    (tun->flags & TUN_TYPE_MASK) != IFF_TAP) {
+ 		*skb_xdp = 1;
+ 		return __tun_build_skb(tfile, alloc_frag, buf, buflen, len,
+ 				       pad);

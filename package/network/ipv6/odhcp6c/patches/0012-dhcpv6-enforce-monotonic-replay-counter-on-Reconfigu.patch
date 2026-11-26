@@ -1,0 +1,88 @@
+From 80c68194417ab73490fb99a8589d9c02d7fc5ede Mon Sep 17 00:00:00 2001
+From: Hauke Mehrtens <hauke@hauke-m.de>
+Date: Sat, 11 Jul 2026 23:38:11 +0200
+Subject: dhcpv6: enforce monotonic replay counter on Reconfigure RKAP
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RFC 8415 §20.4.3 requires the client to track the replay-detection
+field of an authenticated Reconfigure message and to reject any
+incoming Reconfigure whose replay value does not exceed the highest
+one already accepted. Without this check, a captured Reconfigure can
+be replayed at will: the HMAC is still valid because the message
+itself has not changed, and the client will happily re-trigger
+Renew / Rebind / Information-Request cycles on demand.
+
+Add a per-binding (reconf_replay, reconf_replay_seen) tuple,
+initialised in dhcpv6_promote_server_cand() alongside reconf_key so a
+fresh binding starts with a fresh window. Compare the wire replay
+field (network byte order, decoded with be64toh()) against the stored
+value before running the HMAC verification; only commit the value on
+a verified HMAC so a forged message cannot move the counter forward.
+
+Link: https://github.com/openwrt/odhcp6c/pull/160
+Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
+
+(cherry picked from commit df27a49c98d89cb945767763a47bfafe196165c8)
+[24.10 has no per-candidate reconf_key and no auth_protocol selector: the replay
+ state is global alongside the existing global reconf_key, and is reset in
+ dhcpv6_promote_server_cand() when a new server binding is established]
+[adjusted context for 2026-01-25 snapshot]
+---
+--- a/src/dhcpv6.c
++++ b/src/dhcpv6.c
+@@ -15,6 +15,7 @@
+ 
+ #include <arpa/inet.h>
+ #include <ctype.h>
++#include <endian.h>
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <inttypes.h>
+@@ -251,6 +252,8 @@
+ // Authentication options
+ static enum odhcp6c_auth_protocol auth_protocol = AUTH_PROT_RKAP;
+ static uint8_t reconf_key[16];
++static uint64_t reconf_replay;
++static bool reconf_replay_seen;
+ 
+ // client options
+ static unsigned int client_options = 0;
+@@ -1136,6 +1139,16 @@
+ 				if (r->protocol != AUTH_PROT_RKAP || r->algorithm != AUTH_ALG_HMACMD5 || r->len != 28 || rkap->reconf_type != RKAP_TYPE_HMACMD5)
+ 					continue;
+ 
++				/* RFC 8415 §20.4.3: the replay-detection field must be
++				 * monotonically increasing per (client, server-id) pair.
++				 * Drop any Reconfigure whose replay value does not exceed
++				 * the highest one we have already accepted. */
++				uint64_t replay;
++				memcpy(&replay, &r->replay, sizeof(replay));
++				replay = be64toh(replay);
++				if (reconf_replay_seen && replay <= reconf_replay)
++					continue;
++
+ 				md5_ctx_t md5;
+ 				uint8_t serverhash[16], secretbytes[64];
+ 				uint32_t hash[4];
+@@ -1164,6 +1177,10 @@
+ 				md5_end(hash, &md5);
+ 
+ 				rcauth_ok = !memcmp(hash, serverhash, sizeof(hash));
++				if (rcauth_ok) {
++					reconf_replay = replay;
++					reconf_replay_seen = true;
++				}
+ 			} else if (auth_protocol == AUTH_PROT_TOKEN) {
+ 				if (r->protocol != AUTH_PROT_TOKEN || r->algorithm != AUTH_ALG_TOKEN || r->len < 12)
+ 					continue;
+@@ -2196,6 +2213,8 @@
+ 	odhcp6c_add_state(STATE_SERVER_ID, cand->duid, cand->duid_len);
+ 	accept_reconfig = cand->wants_reconfigure;
+ 	memset(reconf_key, 0, sizeof(reconf_key));
++	reconf_replay = 0;
++	reconf_replay_seen = false;
+ 
+ 	if (cand->ia_na_len) {
+ 		odhcp6c_add_state(STATE_IA_NA, cand->ia_na, cand->ia_na_len);

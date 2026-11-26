@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+#include "mt7987a.dtsi"
+#include <dt-bindings/input/input.h>
+#include "mt7987-emmc.dtsi"
+
+/* MT7987A RFB DTS for DT overlay-based device tree */
+/ {
+	model = "Hiveton H5000M";
+	compatible = "hiveton,h5000m", "mediatek,mt7987";
+
+	chosen {
+		bootargs = "console=ttyS0,115200n1 loglevel=8  \
+                            earlycon=uart8250,mmio32,0x11000000 \
+                            pci=pcie_bus_perf \
+			    root=PARTLABEL=rootfs rootwait \
+			    rootfstype=squashfs,f2fs";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
+			debounce-interval = <10>;
+		};
+
+		wps {
+			label = "wps";
+			linux,code = <KEY_WPS_BUTTON>;
+			gpios = <&pio 0 GPIO_ACTIVE_LOW>;
+			debounce-interval = <10>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-sys1 {
+			gpios = <&pio 4 GPIO_ACTIVE_LOW>;
+			color = <LED_COLOR_ID_WHITE>;
+			function = LED_FUNCTION_WLAN;
+			function-enumerator = <1>;
+		};
+
+		led-sys2 {
+			gpios = <&pio 3 GPIO_ACTIVE_LOW>;
+			color = <LED_COLOR_ID_WHITE>;
+			function = LED_FUNCTION_WLAN;
+			function-enumerator = <0>;
+		};
+	};
+};
+
+&fan {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm_fan_pins>;
+	compatible = "pwm-fan";
+	#cooling-cells = <2>;
+	cooling-levels = <0 10 20 30 40 50 60 70 80 90 100 110 120 130 140 150 160 170 180 190 200 210 220 240 255>;
+	pwms = <&pwm 1 50000>;
+	status = "okay";
+};
+
+&cpu_thermal {
+	trips {
+		cpu_trip_active_high: active-high {
+			temperature = <62000>;
+			hysteresis = <3000>;
+			type = "active";
+		};
+
+		cpu_trip_active_med: active-med {
+			temperature = <50000>;
+			hysteresis = <3000>;
+			type = "active";
+		};
+
+		cpu_trip_active_low: active-low {
+			temperature = <35000>;
+			hysteresis = <3000>;
+			type = "active";
+		};
+	};
+
+	cooling-maps {
+		cpu-active-high {
+			cooling-device = <&fan 20 24>;
+			trip = <&cpu_trip_active_high>;
+		};
+
+		cpu-active-low {
+			cooling-device = <&fan 14 19>;
+			trip = <&cpu_trip_active_med>;
+		};
+
+		cpu-passive {
+			cooling-device = <&fan 10 13>;
+			trip = <&cpu_trip_active_low>;
+		};
+	};
+};
+
+&phy15 {
+	leds {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		i2p5gbe_led0: i2p5gbe-led0@0 {
+			reg = <0>;
+			color = <LED_COLOR_ID_WHITE>;
+			function = LED_FUNCTION_WAN;
+		};
+	};
+};

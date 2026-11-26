@@ -1,0 +1,11 @@
+{
+	"luci-app-mtk-ntp-redirect": {
+		"description": "Grant firewall UCI access for LAN NTP request redirection in System settings",
+		"read": {
+			"uci": [ "firewall" ]
+		},
+		"write": {
+			"uci": [ "firewall" ]
+		}
+	}
+}

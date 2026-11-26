@@ -243,7 +243,7 @@ define KernelPackage/sound-soc-mt7986
 	$(LINUX_DIR)/sound/soc/mediatek/common/snd-soc-mtk-common.ko \
 	$(LINUX_DIR)/sound/soc/mediatek/mt7986/snd-soc-mt7986-afe.ko
   AUTOLOAD:=$(call AutoLoad,56,snd-soc-mtk-common snd-soc-mt7986-afe)
-  DEPENDS:=@TARGET_mediatek_filogic +kmod-sound-soc-core
+  DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73||TARGET_mediatek_filogic_a73) +kmod-sound-soc-core
   $(call AddDepends/sound)
 endef
 
@@ -259,7 +259,7 @@ define KernelPackage/sound-soc-mt7986-wm8960
   KCONFIG:=CONFIG_SND_SOC_MT7986_WM8960
   FILES:=$(LINUX_DIR)/sound/soc/mediatek/mt7986/mt7986-wm8960.ko
   AUTOLOAD:=$(call AutoLoad,57,mt7986-wm8960)
-  DEPENDS:=@TARGET_mediatek_filogic +kmod-sound-soc-wm8960 +kmod-sound-soc-mt7986
+  DEPENDS:=@(TARGET_mediatek_filogic||TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73||TARGET_mediatek_filogic_a73) +kmod-sound-soc-wm8960 +kmod-sound-soc-mt7986
   $(call AddDepends/sound)
 endef
 

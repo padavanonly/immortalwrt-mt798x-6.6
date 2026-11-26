@@ -12,7 +12,7 @@ INITRAMFS_EXTRA_FILES ?= $(GENERIC_PLATFORM_DIR)/image/initramfs-base-files.txt
 export HOST_EXTRACFLAGS=-I$(STAGING_DIR_HOST)/include
 
 # defined in quilt.mk
-Kernel/Patch:=$(Kernel/Patch/Default)
+Kernel/Patch=$(Kernel/Patch/Default)
 
 ifneq (,$(findstring .xz,$(LINUX_SOURCE)))
   LINUX_CAT:=xzcat

@@ -1,0 +1,46 @@
+--- a/iwinfo_utils.c
++++ b/iwinfo_utils.c
+@@ -341,10 +341,11 @@
+ 	FILE *mtd;
+ 	uint16_t *bc;
+ 	uint16_t ident;
+ 
+ 	int fd, off;
++	ssize_t ident_len;
+ 	unsigned int len;
+ 	char buf[128];
+ 
+ 	if (!(mtd = fopen("/proc/mtd", "r")))
+ 		return -1;
+@@ -370,11 +371,12 @@
+ 	snprintf(buf, sizeof(buf), "/dev/mtdblock%d", off);
+ 
+ 	if ((fd = open(buf, O_RDONLY)) < 0)
+ 		return -1;
+ 
+-	if (read(fd, &ident, sizeof(ident)) != -1)
++	ident_len = read(fd, &ident, sizeof(ident));
++	if (ident_len == (ssize_t)sizeof(ident))
+ 	{
+ 		if (ident == 0x9279 || ident == 0x9079
+ 			|| ident == 0x8179 || ident == 0x8679)
+ 		{
+ 			if ((ident & 0xff) == 0x79)
+@@ -386,12 +388,15 @@
+ 			id->subsystem_device_id = id->device_id;
+ 			close(fd);
+ 			return 0;
+ 		}
+ 	}
+-	lseek(fd, 0, SEEK_SET);
+-	close(fd); return 0;
++	if (lseek(fd, 0, SEEK_SET) < 0)
++	{
++		close(fd);
++		return -1;
++	}
+ 	bc = mmap(NULL, len, PROT_READ, MAP_PRIVATE|MAP_LOCKED, fd, 0);
+ 
+ 	if ((void *)bc != MAP_FAILED)
+ 	{
+ 		id->vendor_id = 0;

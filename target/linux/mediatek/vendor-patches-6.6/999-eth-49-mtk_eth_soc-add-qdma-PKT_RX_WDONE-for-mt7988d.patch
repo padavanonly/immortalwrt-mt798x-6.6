@@ -1,0 +1,50 @@
+---
+[v1] net: ethernet: mtk_eth_soc: add qdma PKT_RX_WDONE for mt7988d
+
+Enable the QDMA MTK_PKT_RX_WDONE bit when the device tree exposes
+the "mediatek,qdma-pkt-rx-wdone" property. Without this bit, the
+QDMA may encounter a data coherence issue on the MT7988D.
+---
+v1: Add qdma PKT_RX_WDONE for mt7988d.
+---
+
+From 87c2438f01c7f93662e95adecb0cbb5fe670ceff Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Tue, 19 May 2026 14:39:52 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: add qdma PKT_RX_WDONE for mt7988d
+
+Without this patch, the QDMA may encounter a data coherence issue on the MT7988D.
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 3 +++
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index c13fd2d..33e2410 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -4445,6 +4445,9 @@ static int mtk_start_dma(struct mtk_eth *eth)
+ 			val |= MTK_MUTLI_CNT | MTK_RESV_BUF |
+ 			       MTK_WCOMP_EN | MTK_DMAD_WR_WDONE |
+ 			       MTK_CHK_DDONE_EN;
++			if (of_property_read_bool(eth->dev->of_node,
++						  "mediatek,qdma-pkt-rx-wdone"))
++				val |= MTK_PKT_RX_WDONE;
+ 		} else {
+ 			val |= MTK_RX_BT_32DWORDS;
+ 		}
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 0bb984a..f337da7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -406,6 +406,7 @@
+ 
+ /* QDMA V2 Global Configuration Register */
+ #define MTK_CHK_DDONE_EN	BIT(28)
++#define MTK_PKT_RX_WDONE	BIT(27)
+ #define MTK_DMAD_WR_WDONE	BIT(26)
+ #define MTK_WCOMP_EN		BIT(24)
+ #define MTK_RESV_BUF		(0x80 << 16)
+-- 
+2.45.2
+

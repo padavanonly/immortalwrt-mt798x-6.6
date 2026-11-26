@@ -1,0 +1,14 @@
+{
+	"admin/services/openfi": {
+		"title": "OpenFi Settings",
+		"order": 85,
+		"action": {
+			"type": "view",
+			"path": "openfi/settings"
+		},
+		"depends": {
+			"acl": [ "luci-app-openfi" ],
+			"uci": { "openfi": true }
+		}
+	}
+}

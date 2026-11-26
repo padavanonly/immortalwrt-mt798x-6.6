@@ -3,7 +3,6 @@
 CFG=/etc/board.json
 
 . /usr/share/libubox/jshn.sh
-. /lib/functions/system.sh
 
 [ -s $CFG ] || /bin/board_detect || exit 1
 [ -s /etc/config/network -a -s /etc/config/system ] && exit 0
@@ -91,10 +90,6 @@ generate_static_network() {
 }
 
 addr_offset=2
-get_board_name() {
-	[ -f /tmp/sysinfo/board_name ] && cat /tmp/sysinfo/board_name
-}
-
 generate_network() {
 	local ports device macaddr protocol type ipaddr netmask vlan
 	local bridge=$2
@@ -166,20 +161,8 @@ generate_network() {
 	case "$protocol" in
 		static)
 			local ipad
-			local board
-			board="$(get_board_name)"
 			case "$1" in
-				lan)
-					case "$board" in
-						ruijie,ew-6000gx-pro*|\
-						ruijie,rg-x60*)
-							ipad=${ipaddr:-"192.168.110.1"}
-						;;
-						*) 
-							ipad=${ipaddr:-"192.168.6.1"} 
-						;;
-					esac
-				;;
+				lan) ipad=${ipaddr:-"192.168.6.1"} ;;
 				*) ipad=${ipaddr:-"192.168.$((addr_offset++)).1"} ;;
 			esac
 
@@ -338,7 +321,7 @@ generate_static_system() {
 		set system.ntp='timeserver'
 		set system.ntp.enabled='1'
 		set system.ntp.enable_server='0'
-		add_list system.ntp.server='time1.apple.com'
+		add_list system.ntp.server='time.apple.com'
 		add_list system.ntp.server='time1.google.com'
 		add_list system.ntp.server='time.cloudflare.com'
 		add_list system.ntp.server='pool.ntp.org'

@@ -1,0 +1,122 @@
+#!/bin/sh /etc/rc.common
+
+START=45
+USE_PROCD=1
+
+find_rtl837x_switch() {
+	local dev
+	for dev in $(swconfig list 2>/dev/null | awk -F'[: -]+' '{print $2}'); do
+		if [ -n "$dev" ] && swconfig dev "$dev" help 2>&1 | grep -qi "RTL837"; then
+			echo "$dev"
+			return 0
+		fi
+	done
+	for dev in switch0 RTL8372n switch1; do
+		if swconfig dev "$dev" help 2>&1 | grep -qi "RTL837"; then
+			echo "$dev"
+			return 0
+		fi
+	done
+	return 1
+}
+
+apply_port_config() {
+	local cfg="$1"
+	local dev="$2"
+	local port eee max_frame_size isolation stp_state flowcontrol storm_bcast
+
+	config_get port "$cfg" port
+	[ -z "$port" ] && return 0
+
+	config_get eee "$cfg" eee
+	if [ -n "$eee" ]; then
+		swconfig dev "$dev" port "$port" set eee "$eee" 2>/dev/null || err=1
+	fi
+
+	config_get max_frame_size "$cfg" max_frame_size
+	if [ -n "$max_frame_size" ]; then
+		swconfig dev "$dev" port "$port" set max_frame_size "$max_frame_size" 2>/dev/null || err=1
+	fi
+
+	config_get isolation "$cfg" isolation
+	if [ -n "$isolation" ]; then
+		swconfig dev "$dev" port "$port" set isolation "$isolation" 2>/dev/null || err=1
+	fi
+
+	config_get stp_state "$cfg" stp_state
+	if [ -n "$stp_state" ]; then
+		swconfig dev "$dev" port "$port" set stp_state "$stp_state" 2>/dev/null || err=1
+	fi
+
+	config_get flowcontrol "$cfg" flowcontrol
+	if [ -n "$flowcontrol" ]; then
+		swconfig dev "$dev" port "$port" set flowcontrol "$flowcontrol" 2>/dev/null || err=1
+	fi
+
+	config_get storm_bcast "$cfg" storm_bcast
+	if [ -n "$storm_bcast" ]; then
+		swconfig dev "$dev" port "$port" set storm_bcast "$storm_bcast" 2>/dev/null || err=1
+	fi
+}
+
+start_service() {
+	local dev
+	local err=0
+	dev=$(find_rtl837x_switch)
+	if [ -z "$dev" ]; then
+		logger -t rtl837x-tune "No RTL837x switch device found in swconfig"
+		return 1
+	fi
+
+	if [ ! -f /etc/config/rtl837x ]; then
+		logger -t rtl837x-tune "/etc/config/rtl837x not found, skipping hardware tuning"
+		return 0
+	fi
+
+	config_load rtl837x
+
+	# Global switch attributes
+	local igmp_snooping igmp_fast_leave trunk_hash_mode trunk0_ports trunk1_ports
+	config_get igmp_snooping global igmp_snooping
+	if [ -n "$igmp_snooping" ]; then
+		swconfig dev "$dev" set igmp_snooping "$igmp_snooping" 2>/dev/null || err=1
+	fi
+
+	config_get igmp_fast_leave global igmp_fast_leave
+	if [ -n "$igmp_fast_leave" ]; then
+		swconfig dev "$dev" set igmp_fast_leave "$igmp_fast_leave" 2>/dev/null || err=1
+	fi
+
+	config_get trunk_hash_mode global trunk_hash_mode
+	if [ -n "$trunk_hash_mode" ]; then
+		swconfig dev "$dev" set trunk_hash_mode "$trunk_hash_mode" 2>/dev/null || err=1
+	fi
+
+	config_get trunk0_ports global trunk0_ports ""
+	swconfig dev "$dev" set trunk0_ports "$trunk0_ports" 2>/dev/null || err=1
+
+	config_get trunk1_ports global trunk1_ports ""
+	swconfig dev "$dev" set trunk1_ports "$trunk1_ports" 2>/dev/null || err=1
+
+	# Apply global changes in switch driver before per-port overrides
+	swconfig dev "$dev" set apply 2>/dev/null || err=1
+
+	# Port specific configurations
+	config_foreach apply_port_config port "$dev"
+
+	if [ "$err" -ne 0 ]; then
+		logger -t rtl837x-tune "ERROR: failed to apply one or more RTL837x switch settings on $dev"
+		return 1
+	fi
+
+	logger -t rtl837x-tune "RTL837x switch ($dev) hardware tuning configuration applied successfully"
+	return 0
+}
+
+service_triggers() {
+	procd_add_reload_trigger "rtl837x"
+}
+
+reload_service() {
+	start_service
+}

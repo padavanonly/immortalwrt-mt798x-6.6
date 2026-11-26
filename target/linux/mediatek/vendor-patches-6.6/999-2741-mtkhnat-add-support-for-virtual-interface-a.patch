@@ -1,0 +1,138 @@
+From f7d3fa336cf6f03303b8f7183989933c27a1a681 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Thu, 14 Sep 2023 15:05:04 +0800
+Subject: [PATCH 7/9] mtkhnat-add-support-for-virtual-interface-acceleration.patch
+
+---
+ include/linux/netdevice.h             |  2 ++
+ include/net/netfilter/nf_flow_table.h |  1 +
+ net/8021q/vlan_dev.c                  |  1 +
+ net/ipv6/ip6_tunnel.c                 | 24 ++++++++++++++++++++++++
+ net/ipv6/sit.c                        | 24 ++++++++++++++++++++++++
+ 5 files changed, 52 insertions(+)
+
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -910,6 +910,8 @@ enum net_device_path_type {
+ 	DEV_PATH_PPPOE,
+ 	DEV_PATH_DSA,
+ 	DEV_PATH_MTK_WDMA,
++	DEV_PATH_DSLITE,
++	DEV_PATH_6RD,
+ };
+ 
+ struct net_device_path {
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -187,6 +187,7 @@ struct flow_offload {
+ 
+ struct flow_offload_hw_path {
+ 	struct net_device *dev;
++	struct net_device *virt_dev;
+ 	u32 flags;
+ 
+ 	u8 eth_src[ETH_ALEN];
+--- a/net/8021q/vlan_dev.c
++++ b/net/8021q/vlan_dev.c
+@@ -796,6 +796,7 @@ static int vlan_dev_flow_offload_check(s
+ 	path->flags |= BIT(DEV_PATH_VLAN);
+ 	path->vlan_proto = vlan->vlan_proto;
+ 	path->vlan_id = vlan->vlan_id;
++	path->virt_dev = dev;
+ 	path->dev = vlan->real_dev;
+ 
+ 	if (vlan->real_dev->netdev_ops->ndo_flow_offload_check)
+--- a/net/ipv6/ip6_tunnel.c
++++ b/net/ipv6/ip6_tunnel.c
+@@ -57,6 +57,11 @@
+ #include <net/netns/generic.h>
+ #include <net/dst_metadata.h>
+ 
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++#include <linux/netfilter.h>
++#include <net/netfilter/nf_flow_table.h>
++#endif
++
+ MODULE_AUTHOR("Ville Nuorvala");
+ MODULE_DESCRIPTION("IPv6 tunneling device");
+ MODULE_LICENSE("GPL");
+@@ -1933,6 +1938,22 @@ int ip6_tnl_get_iflink(const struct net_
+ }
+ EXPORT_SYMBOL(ip6_tnl_get_iflink);
+ 
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++static int ipip6_dev_flow_offload_check(struct flow_offload_hw_path *path)
++{
++	struct net_device *dev = path->dev;
++	struct ip6_tnl *tnl = netdev_priv(dev);
++
++	if (path->flags & BIT(DEV_PATH_DSLITE))
++		return -EEXIST;
++
++	path->flags |= BIT(DEV_PATH_DSLITE);
++	path->dev = tnl->dev;
++
++	return 0;
++}
++#endif /* CONFIG_NF_FLOW_TABLE */
++
+ int ip6_tnl_encap_add_ops(const struct ip6_tnl_encap_ops *ops,
+ 			  unsigned int num)
+ {
+@@ -1994,6 +2015,9 @@ static const struct net_device_ops ip6_t
+ 	.ndo_change_mtu = ip6_tnl_change_mtu,
+ 	.ndo_get_stats64 = dev_get_tstats64,
+ 	.ndo_get_iflink = ip6_tnl_get_iflink,
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++	.ndo_flow_offload_check = ipip6_dev_flow_offload_check,
++#endif
+ };
+ 
+ #define IPXIPX_FEATURES (NETIF_F_SG |		\
+--- a/net/ipv6/sit.c
++++ b/net/ipv6/sit.c
+@@ -52,6 +52,11 @@
+ #include <net/net_namespace.h>
+ #include <net/netns/generic.h>
+ 
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++#include <linux/netfilter.h>
++#include <net/netfilter/nf_flow_table.h>
++#endif
++
+ /*
+    This version of net/ipv6/sit.c is cloned of net/ipv4/ip_gre.c
+ 
+@@ -1393,6 +1398,22 @@ ipip6_tunnel_siocdevprivate(struct net_d
+ 	}
+ }
+ 
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++static int ipip6_dev_flow_offload_check(struct flow_offload_hw_path *path)
++{
++	struct net_device *dev = path->dev;
++	struct ip_tunnel *tnl = netdev_priv(dev);
++
++	if (path->flags & BIT(DEV_PATH_6RD))
++		return -EEXIST;
++
++	path->flags |= BIT(DEV_PATH_6RD);
++	path->dev = tnl->dev;
++
++	return 0;
++}
++#endif /* CONFIG_NF_FLOW_TABLE */
++
+ static const struct net_device_ops ipip6_netdev_ops = {
+ 	.ndo_init	= ipip6_tunnel_init,
+ 	.ndo_uninit	= ipip6_tunnel_uninit,
+@@ -1401,6 +1422,9 @@ static const struct net_device_ops ipip6
+ 	.ndo_get_stats64 = dev_get_tstats64,
+ 	.ndo_get_iflink = ip_tunnel_get_iflink,
+ 	.ndo_tunnel_ctl = ipip6_tunnel_ctl,
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++	.ndo_flow_offload_check = ipip6_dev_flow_offload_check,
++#endif
+ };
+ 
+ static void ipip6_dev_free(struct net_device *dev)

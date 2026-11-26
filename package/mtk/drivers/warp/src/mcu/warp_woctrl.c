@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -20,7 +20,6 @@
 #include <linux/device.h>
 #include <linux/reset.h>
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 #define WOCPU_DLM_DEV_NODE "mediatek,wocpu_dlm"
 
 static char *warp_woctrl_state_to_string(u8 state)
@@ -39,7 +38,7 @@ static char *warp_woctrl_state_to_string(u8 state)
 		return "HALT";
 
 	case WO_STATE_SER_RESET:
-		return "RESET";
+		return "PAUSE";
 
 	case WO_STATE_UNDEFINED:
 		return "UNDEFINED";
@@ -206,13 +205,13 @@ static void warp_woctrl_send_msg_and_wait_rsp(struct warp_entry *warp, u8 state)
 	cmd.param.cmd_id = WO_CMD_CHANGE_STATE;
 	cmd.param.to_id = MODULE_ID_WO;
 	cmd.param.wait_type = WARP_MSG_WAIT_TYPE_RSP_STATUS;
-	cmd.param.timeout = WARP_MSG_TIMEOUT_DEFAULT;
+	cmd.param.timeout = 3000;
 	cmd.msg = &wo_state;
 	cmd.msg_len = sizeof(u8);
 
 	warp_msg_send_cmd(warp->idx, &cmd);
 
-	warp_dbg(WARP_DBG_OFF, "%s(): got wocpu msg response\n", __func__);
+	warp_dbg(WARP_DBG_INF, "%s(): got wocpu msg response\n", __func__);
 }
 
 static void warp_woctrl_wakeup_wo(struct warp_entry *warp, u8 state)
@@ -316,7 +315,7 @@ static int warp_woctrl_enter_enable_state(struct warp_entry *warp)
 static int warp_woctrl_enter_halt_state(struct warp_entry *warp)
 {
 	struct warp_wo_ctrl *wo_ctrl = &warp->woif.wo_ctrl;
-	int ret = WARP_OK_STATUS;
+	int ret;
 
 	if (wo_ctrl->cur_state == WO_STATE_DISABLE)
 		warp_woctrl_wakeup_wo(warp, WO_STATE_HALT);
@@ -336,9 +335,8 @@ static int warp_woctrl_enter_halt_state(struct warp_entry *warp)
 		return WARP_FAIL_STATUS;
 	}
 
-/*kernel reset
 	ret = warp_woctrl_reset_wocpu(warp);
-*/
+
 	return ret;
 }
 
@@ -431,7 +429,7 @@ void warp_woctrl_enter_state(struct warp_entry *warp, u8 state)
 		break;
 
 	default:
-		warp_dbg(WARP_DBG_OFF, "%s(), wrong state:%s\n", __func__,
+		warp_dbg(WARP_DBG_ERR, "%s(), wrong state:%s\n", __func__,
 			warp_woctrl_state_to_string(wo_ctrl->cur_state));
 		ret = WARP_FAIL_STATUS;
 		break;
@@ -480,4 +478,3 @@ void warp_woctrl_exit_state(struct warp_entry *warp, u8 state)
 		warp_woctrl_enter_state(warp, wo_ctrl->prev_state);
 }
 
-#endif

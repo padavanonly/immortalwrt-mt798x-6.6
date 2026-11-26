@@ -16,14 +16,16 @@
 
 typedef union _HTTRANSMIT_SETTING_FIX {
 	struct {
-		USHORT MCS:6;
-		USHORT ldpc:1;
-		USHORT BW:2;
-		USHORT ShortGI:2;
-		USHORT STBC:1;
-		USHORT eTxBF:1;
-		USHORT iTxBF:1;
-		USHORT MODE:4;
+		UINT32 MCS:6;
+		UINT32 ldpc:1;
+		UINT32 BW:4;
+		UINT32 ShortGI:2;
+		UINT32 STBC:1;
+		UINT32 eTxBF:1;
+		UINT32 iTxBF:1;
+		UINT32 MODE:4;
+		UINT32 Nss:4;
+		UINT32 padding:8;
 	} field;
 	UINT32 word;
 } HTTRANSMIT_SETTING_FIX, *PHTTRANSMIT_SETTING_FIX;
@@ -38,13 +40,19 @@ typedef struct _RT_802_11_MAC_ENTRY_FIX {
 	signed char             AvgRssi1;
 	signed char             AvgRssi2;
 	signed char             AvgRssi3;
+	unsigned char           AvgSnr;
 	unsigned int            ConnectedTime;
 	HTTRANSMIT_SETTING_FIX      TxRate;
 	HTTRANSMIT_SETTING_FIX      LastRxRate;
 	short                   StreamSnr[3];
 	short                   SoundingRespSnr[3];
+	UINT32                  InactiveTime;
 	UINT32					EncryMode;
 	UINT32					AuthMode;
+	UINT32                  TxPackets;
+	UINT32                  RxPackets;
+	unsigned long long      TxBytes;
+	unsigned long long      RxBytes;
 } RT_802_11_MAC_ENTRY_FIX;
 
 #define MAX_NUMBER_OF_MAC               544
@@ -53,6 +61,11 @@ typedef struct _RT_802_11_MAC_TABLE {
 	unsigned long            Num;
 	RT_802_11_MAC_ENTRY_FIX      Entry[MAX_NUMBER_OF_MAC];
 } RT_802_11_MAC_TABLE_FIX;
+
+typedef char RT_802_11_MAC_ENTRY_FIX_AArch64_size_check[
+	(sizeof(RT_802_11_MAC_ENTRY_FIX) == 80) ? 1 : -1];
+typedef char RT_802_11_MAC_TABLE_FIX_AArch64_size_check[
+	(sizeof(RT_802_11_MAC_TABLE_FIX) == 43528) ? 1 : -1];
 
 #define IF_NAMESIZE			16
 #define SIOCIWFIRSTPRIV			0x8BE0

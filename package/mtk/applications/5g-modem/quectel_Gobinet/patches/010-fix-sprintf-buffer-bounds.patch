@@ -1,0 +1,12 @@
+diff -Naur a/GobiUSBNet.c b/GobiUSBNet.c
+--- a/GobiUSBNet.c
++++ b/GobiUSBNet.c
+@@ -936,7 +936,7 @@
+ 	spin_lock_init(&priv->agg_lock);
+ #endif
+ 
+-    sprintf(qmap_net->name, "%s.%d", real_dev->name, offset_id + 1);
++    snprintf(qmap_net->name, sizeof(qmap_net->name), "%.11s.%u", real_dev->name, (unsigned int)(offset_id + 1));
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION( 2,6,29 ))
+     qmap_net->open = qmap_open;
+     qmap_net->stop = qmap_stop;

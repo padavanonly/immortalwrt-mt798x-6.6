@@ -6,8 +6,6 @@ Subject: [PATCH] 999-2758-net-dsa-add-mxl862xx-special-tag-support
  net/dsa/Makefile  |  2 ++
  3 files changed, 20 insertions(+)
 
-diff --git a/include/net/dsa.h b/include/net/dsa.h
-index dfc0fa9..7d6d437 100644
 --- a/include/net/dsa.h
 +++ b/include/net/dsa.h
 @@ -56,6 +56,8 @@ struct phylink_link_state;
@@ -28,8 +26,6 @@ index dfc0fa9..7d6d437 100644
  };
  
  struct dsa_switch;
-diff --git a/net/dsa/Kconfig b/net/dsa/Kconfig
-index 8e698be..2b38977 100644
 --- a/net/dsa/Kconfig
 +++ b/net/dsa/Kconfig
 @@ -172,4 +172,18 @@ config NET_DSA_TAG_XRS700X
@@ -51,11 +47,9 @@ index 8e698be..2b38977 100644
 +
  endif
 +
-diff --git a/net/dsa/Makefile b/net/dsa/Makefile
-index 12e3058..eb781ca 100644
 --- a/net/dsa/Makefile
 +++ b/net/dsa/Makefile
-@@ -38,6 +38,8 @@ obj-$(CONFIG_NET_DSA_TAG_RZN1_A5PSW) += tag_rzn1_a5psw.o
+@@ -38,6 +38,8 @@ obj-$(CONFIG_NET_DSA_TAG_RZN1_A5PSW) +=
  obj-$(CONFIG_NET_DSA_TAG_SJA1105) += tag_sja1105.o
  obj-$(CONFIG_NET_DSA_TAG_TRAILER) += tag_trailer.o
  obj-$(CONFIG_NET_DSA_TAG_XRS700X) += tag_xrs700x.o
@@ -64,6 +58,3 @@ index 12e3058..eb781ca 100644
  
  # for tracing framework to find trace.h
  CFLAGS_trace.o := -I$(src)
--- 
-2.45.2
-

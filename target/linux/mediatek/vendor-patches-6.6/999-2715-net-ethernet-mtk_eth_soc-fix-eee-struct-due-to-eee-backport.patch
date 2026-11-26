@@ -1,0 +1,20 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -5433,7 +5433,7 @@ static int mtk_set_rxfh(struct net_devic
+ 	return 0;
+ }
+ 
+-static int mtk_get_eee(struct net_device *dev, struct ethtool_eee *eee)
++static int mtk_get_eee(struct net_device *dev, struct ethtool_keee *eee)
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	u32 reg;
+@@ -5453,7 +5453,7 @@ static int mtk_get_eee(struct net_device
+ 	return 0;
+ }
+ 
+-static int mtk_set_eee(struct net_device *dev, struct ethtool_eee *eee)
++static int mtk_set_eee(struct net_device *dev, struct ethtool_keee *eee)
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	int ret;

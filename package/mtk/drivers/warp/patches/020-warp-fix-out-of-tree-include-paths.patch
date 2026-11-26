@@ -1,0 +1,19 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] warp: fix out-of-tree include paths in Makefile
+
+Use relative package include paths so warp builds cleanly against an external kernel tree.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index b3be8d8..7b360f5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,4 +1,4 @@
+-ccflags-y += $(MODULE_FLAGS) -Inet/nat -I$(PKG_BUILD_DIR)../warp -I$(PKG_BUILD_DIR)../warp/mcu -DCONFIG_WARP_VERSION=$(CONFIG_WARP_VERSION)
++ccflags-y += $(MODULE_FLAGS) -Inet/nat -I$(src) -I$(src)/mcu -DCONFIG_WARP_VERSION=$(CONFIG_WARP_VERSION)
+ 
+ ifeq ($(CONFIG_WARP_DBG_SUPPORT), y)
+ ccflags-y += -DCONFIG_WARP_DBG_SUPPORT

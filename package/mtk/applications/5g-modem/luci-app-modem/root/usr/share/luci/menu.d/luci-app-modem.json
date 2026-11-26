@@ -1,0 +1,86 @@
+{
+	"admin/modem": {
+		"title": "Modem",
+		"order": 100,
+		"action": {
+			"type": "firstchild"
+		},
+		"acl": [
+			"luci-app-modem"
+		],
+		"depends": {
+			"acl": [
+				"luci-app-modem"
+			],
+			"uci": {
+				"modem": true
+			}
+		}
+	},
+	"admin/modem/modem_info": {
+		"title": "Modem Information",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "modem/modem_info"
+		},
+		"acl": [
+			"luci-app-modem"
+		]
+	},
+	"admin/modem/dial_overview": {
+		"title": "Dial Overview",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "modem/dial_overview"
+		},
+		"acl": [
+			"luci-app-modem"
+		]
+	},
+	"admin/modem/modem_debug": {
+		"title": "Modem Debug",
+		"order": 3,
+		"action": {
+			"type": "view",
+			"path": "modem/modem_debug"
+		},
+		"acl": [
+			"luci-app-modem"
+		]
+	},
+	"admin/modem/quick_commands": {
+		"title": "Quick Commands",
+		"order": 4,
+		"action": {
+			"type": "view",
+			"path": "modem/quick_commands"
+		},
+		"acl": [
+			"luci-app-modem"
+		]
+	},
+	"admin/modem/plugin_config": {
+		"title": "Plugin Config",
+		"order": 5,
+		"action": {
+			"type": "view",
+			"path": "modem/plugin_config"
+		},
+		"acl": [
+			"luci-app-modem"
+		]
+	},
+	"admin/modem/plugin_info": {
+		"title": "Plugin Info",
+		"order": 6,
+		"action": {
+			"type": "view",
+			"path": "modem/plugin_info"
+		},
+		"acl": [
+			"luci-app-modem"
+		]
+	}
+}

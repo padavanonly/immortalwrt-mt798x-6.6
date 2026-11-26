@@ -1,0 +1,236 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-cpe\n"
+
+msgid "-- Please choose --"
+msgstr ""
+
+msgid "APN"
+msgstr ""
+
+msgid "AT Command Terminal"
+msgstr ""
+
+msgid "AT Command Tool"
+msgstr ""
+
+msgid "AT Command: "
+msgstr ""
+
+msgid "AT Tool"
+msgstr ""
+
+msgid "AT command error"
+msgstr ""
+
+msgid "Abnormal number"
+msgstr ""
+
+msgid "Advanced Settings"
+msgstr ""
+
+msgid "Authentication Type"
+msgstr ""
+
+msgid "Automatic operation upon startup ooo"
+msgstr ""
+
+msgid "Band: "
+msgstr ""
+
+msgid "CSQ: "
+msgstr ""
+
+msgid "Carrier: "
+msgstr ""
+
+msgid "Cell ID: "
+msgstr ""
+
+msgid "Cell Station Information"
+msgstr ""
+
+msgid "Cellular Module / SIM Card Information"
+msgstr ""
+
+msgid "Cellular Network Type: "
+msgstr ""
+
+msgid "Channel: "
+msgstr ""
+
+msgid "Clear"
+msgstr ""
+
+msgid "Connection Status Monitor: "
+msgstr ""
+
+msgid "Disable"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "FMFM650-CN Settings"
+msgstr ""
+
+msgid "GPS Location"
+msgstr ""
+
+msgid "General Information"
+msgstr ""
+
+msgid "General Setup"
+msgstr ""
+
+msgid "ICCID: "
+msgstr ""
+
+msgid "IMEI: "
+msgstr ""
+
+msgid "IMSI: "
+msgstr ""
+
+msgid "Incorrect PIN to unlock SIM card"
+msgstr ""
+
+msgid "Invalid SIM card"
+msgstr ""
+
+msgid "Latitude: "
+msgstr ""
+
+msgid "Lock Band List"
+msgstr ""
+
+msgid "Longitude: "
+msgstr ""
+
+msgid "MCC / MNC: "
+msgstr ""
+
+msgid "Manufacturer: "
+msgstr ""
+
+msgid "Maximum QoS Level: "
+msgstr ""
+
+msgid "Mobile Data"
+msgstr ""
+
+msgid "Mobile Network"
+msgstr ""
+
+msgid "Modem Port: "
+msgstr ""
+
+msgid "Modem Server For OpenWrt"
+msgstr ""
+
+msgid "Modem Settings"
+msgstr ""
+
+msgid "Modem device"
+msgstr ""
+
+msgid "Modem: "
+msgstr ""
+
+msgid "Network Diagnostics"
+msgstr ""
+
+msgid "Network exception handling: check the network connection in a loop for 5 seconds. If the Ping IP address is not successful, After the network exceeds the abnormal number, restart and search the registered network again."
+msgstr ""
+
+msgid "PAP/CHAP Password"
+msgstr ""
+
+msgid "PAP/CHAP Username"
+msgstr ""
+
+msgid "PIN Code"
+msgstr ""
+
+msgid "PdpType"
+msgstr ""
+
+msgid "Physical Cell ID (PCI): "
+msgstr ""
+
+msgid "Ping IP address"
+msgstr ""
+
+msgid "Please enter an AT command!"
+msgstr ""
+
+msgid "Please note that not all 5G modems are supported by this plugin."
+msgstr ""
+
+msgid "Received Signal Strength Indicator (RSSI): "
+msgstr ""
+
+msgid "Reference Signal Received Power (RSRP): "
+msgstr ""
+
+msgid "Reference Signal Received Quality (RSRQ): "
+msgstr ""
+
+msgid "SIM Card Number: "
+msgstr ""
+
+msgid "SIM Settings"
+msgstr ""
+
+msgid "SIM Warning"
+msgstr ""
+
+msgid "SIM card is locked and no SIM PIN is configured in profile!"
+msgstr ""
+
+msgid "SIM card is not locked. Invalid SIM card"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Server Type"
+msgstr ""
+
+msgid "Set tyyUSB port"
+msgstr ""
+
+msgid "Signal Status"
+msgstr ""
+
+msgid "Signal Status / Modem Information"
+msgstr ""
+
+msgid "Signal Strength: "
+msgstr ""
+
+msgid "Signal-to-Noise Ratio (SINR): "
+msgstr ""
+
+msgid "TAC: "
+msgstr ""
+
+msgid "Temperature: "
+msgstr ""
+
+msgid "Tools"
+msgstr ""
+
+msgid "Update Time: "
+msgstr ""
+
+msgid "[1]Automatic start upon startup: Check</br>[2] FMFMFM650-CN module default ECM (36) mode. If not, please modify it, otherwise dialing cannot proceed normally</br>"
+msgstr ""
+
+msgid "eNB ID: "
+msgstr ""
+
+msgid "tyyUSB port"
+msgstr ""
+

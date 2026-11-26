@@ -1,19 +1,19 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 
-#运行目录
+# Runtime directory
 MODEM_RUNDIR="/var/run/modem"
 
-#导入组件工具
+# Source utility helpers
 source "${SCRIPT_DIR}/modem_debug.sh"
 
-#重设网络接口
-# $1:AT串口
-# $4:连接定义
-# $5:模组序号
+# Reset network interface
+# $1: AT serial port
+# $4: Connection definition
+# $5: Modem index
 reset_network_interface()
 {
     local at_port="$1"
@@ -23,30 +23,30 @@ reset_network_interface()
     local interface_name="wwan_5g_${modem_no}"
     local interface_name_ipv6="wwan6_5g_${modem_no}"
 
-    #获取IPv4地址
+    # Get IPv4 address
     local at_command="AT+CGPADDR=${define_connect}"
     local ipv4=$(at ${at_port} ${at_command} | grep "+CGPADDR: " | sed -n '1p' | awk -F',' '{print $2}' | sed 's/"//g')
-    #输出日志
+    # Output log
     # echo "[$(date +"%Y-%m-%d %H:%M:%S")] Get Modem new IPv4 address : ${ipv4}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
-    #获取DNS地址
+    # Get DNS address
     local dns=$(fibocom_get_dns ${at_port} ${define_connect})
     local ipv4_dns1=$(echo "${dns}" | jq -r '.dns.ipv4_dns1')
     local ipv4_dns2=$(echo "${dns}" | jq -r '.dns.ipv4_dns2')
-    #输出日志
+    # Output log
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] Get Modem IPv4 DNS1: ${ipv4_dns1}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] Get Modem IPv4 DNS2: ${ipv4_dns2}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
     
-    #比较的网络接口中的IPv4地址
+    # Compare IPv4 address in network interface
     local ipv4_config=$(uci -q get network.${interface_name}.ipaddr)
     if [ "$ipv4_config" == "$ipv4" ]; then
-        #输出日志
+        # Output log
         echo "[$(date +"%Y-%m-%d %H:%M:%S")] IPv4 address is the same as in the network interface, skip" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
     else
-        #输出日志
+        # Output log
         echo "[$(date +"%Y-%m-%d %H:%M:%S")] Reset network interface ${interface_name}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
-        #设置静态地址
+        # Set static address
 	uci set network.wan.metric='2'
 	uci set network.wan6.metric='2'
         uci set network.${interface_name}.proto='static'
@@ -62,32 +62,32 @@ reset_network_interface()
         uci commit network
         service network reload
 
-        #输出日志
+        # Output log
         echo "[$(date +"%Y-%m-%d %H:%M:%S")] Reset network interface successful" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
     fi
 }
 
-#GobiNet拨号
-# $1:AT串口
-# $2:制造商
-# $3:连接定义
+# GobiNet dialing
+# $1: AT serial port
+# $2: Manufacturer
+# $3: Connection definition
 gobinet_dial()
 {
     local at_port="$1"
     local manufacturer="$2"
     local define_connect="$3"
 
-    #激活
+    # Activate
     local at_command="AT+CGACT=1,${define_connect}"
-    #打印日志
+    # Print log
     dial_log "${at_command}" "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
     at "${at_port}" "${at_command}"
 
-    #拨号
+    # Dial
     local at_command
     if [ "$manufacturer" = "quectel" ]; then
-        #移远不走该分支
+        # Quectel does not use this branch
         at_command='ATI'
     elif [ "$manufacturer" = "fibocom" ]; then
         at_command='AT$QCRMCALL=1,3'
@@ -97,30 +97,30 @@ gobinet_dial()
         at_command='ATI'
     fi
 
-    #打印日志
+    # Print log
     dial_log "${at_command}" "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
     at "${at_port}" "${at_command}"
 }
 
-#ECM拨号
-# $1:AT串口
-# $2:制造商
-# $3:连接定义
+# ECM dialing
+# $1: AT serial port
+# $2: Manufacturer
+# $3: Connection definition
 ecm_dial()
 {
     local at_port="$1"
     local manufacturer="$2"
     local define_connect="$3"
 
-    #激活
+    # Activate
     # local at_command="AT+CGACT=1,${define_connect}"
-    # #打印日志
+    # # Print log
     # dial_log "${at_command}" "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
     # at "${at_port}" "${at_command}"
 
-    #拨号
+    # Dial
     local at_command
     if [ "$manufacturer" = "quectel" ]; then
         at_command="AT+QNETDEVCTL=${define_connect},3,1"
@@ -136,7 +136,7 @@ ecm_dial()
         at_command='ATI'
     fi
 
-    #打印日志
+    # Print log
     dial_log "${at_command}" "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
     at "${at_port}" "${at_command}"
@@ -144,12 +144,12 @@ ecm_dial()
     sleep 2s
 }
 
-#RNDIS拨号
-# $1:AT串口
-# $2:制造商
-# $3:平台
-# $4:连接定义
-# $5:模组序号
+# RNDIS dialing
+# $1: AT serial port
+# $2: Manufacturer
+# $3: Platform
+# $4: Connection definition
+# $5: Modem index
 rndis_dial()
 {
     local at_port="$1"
@@ -158,7 +158,7 @@ rndis_dial()
     local define_connect="$4"
     local modem_no="$5"
 
-    #手动拨号（广和通FM350-GL）
+    # Manual dialing (Fibocom FM350-GL)
     if [ "$manufacturer" = "fibocom" ] && [ "$platform" = "mediatek" ]; then
         sleep 3s
 	local at_command="AT+COPS?"
@@ -167,7 +167,7 @@ rndis_dial()
         isp="CHN-UNICOM"
         fi
 
-	if [[ "$isp" == "CHN-CMCC" || "$isp" == "CMCC" || "$isp" == "46000" || "$isp" == "CHINA MOBILE"]]; then
+	if [[ "$isp" == "CHN-CMCC" || "$isp" == "CMCC" || "$isp" == "46000" || "$isp" == "CHINA MOBILE" ]]; then
     	at_command="AT+CGDCONT=${define_connect},\"IPV4V6\",\"cbnet\""
     	at "$at_port" "$at_command"
 	echo "matching ISP: [$isp]" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
@@ -175,7 +175,7 @@ rndis_dial()
     	at_command="AT+CGDCONT=${define_connect},\"IPV4V6\",\"3gnet\""
     	at "$at_port" "$at_command"
 	echo "matching ISP: [$isp]" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
-	elif [[ "$isp" == "CHN-CT" || "$isp" == "CT" || "$isp" == "46011"  || "$isp" == "CHINA TELECOM"]]; then
+	elif [[ "$isp" == "CHN-CT" || "$isp" == "CT" || "$isp" == "46011"  || "$isp" == "CHINA TELECOM" ]]; then
     	at_command="AT+CGDCONT=${define_connect},\"IPV4V6\",\"ctnet\""
     	at "$at_port" "$at_command"
 	echo "matching ISP: [$isp]" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
@@ -186,46 +186,46 @@ rndis_dial()
         echo "matching ISP: [$isp]" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 	fi
 	local at_command="AT+CGACT=1,${define_connect}"
-        #打印日志
+        # Print log
         dial_log "${at_command}" "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
-        #激活并拨号
+        # Activate and dial
 	sleep 3s
         at "${at_port}" "${at_command}"
     else
-        #拨号
+        # Dial
         ecm_dial "${at_port}" "${manufacturer}" "${define_connect}"
     fi
 }
 
-#Modem Manager拨号
-# $1:接口名称
-# $2:连接定义
+# Modem Manager dialing
+# $1: Interface name
+# $2: Connection definition
 modemmanager_dial()
 {
     local interface_name="$1"
     local define_connect="$2"
 
-    # #激活
+    # # Activate
     # local at_command="AT+CGACT=1,${define_connect}"
-    # #打印日志
+    # # Print log
     # dial_log "${at_command}" "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
     # at "${at_port}" "${at_command}"
 
-    #启动网络接口
+    # Bring up network interface
     ifup "${interface_name}";
 }
 
-#检查模组网络连接
-# $1:配置ID
-# $2:模组序号
-# $3:拨号模式
+# Check modem network connection
+# $1: Config ID
+# $2: Modem index
+# $3: Dial mode
 modem_network_task()
 {
     local config_id="$1"
     local modem_no="$2"
     local mode="$3"
 
-    #获取AT串口，制造商，平台，连接定义，接口名称
+    # Get AT port, manufacturer, platform, connection definition, interface name
     local at_port=$(uci -q get modem.modem${modem_no}.at_port)
     local manufacturer=$(uci -q get modem.modem${modem_no}.manufacturer)
     local platform=$(uci -q get modem.modem${modem_no}.platform)
@@ -233,7 +233,7 @@ modem_network_task()
     local interface_name="wwan_5g_${modem_no}"
     local interface_name_ipv6="wwan6_5g_${modem_no}"
     local interface_network=$(uci -q get modem.modem${modem_no}.network_interface)
-    #AT串口未获取到重新获取（解决模组还在识别中，就已经开始拨号的问题）
+    # Re-fetch AT port if not acquired (avoid dialing during recognition)
     while [ -z "$manufacturer" ] || [ "$manufacturer" = "unknown" ]; do
         at_port=$(uci -q get modem.modem${modem_no}.at_port)
         manufacturer=$(uci -q get modem.modem${modem_no}.manufacturer)
@@ -242,31 +242,31 @@ modem_network_task()
         sleep 1s
     done
 
-    #重载配置（解决AT命令发不出去的问题）
+    # Reload configuration (ensure AT command delivery)
     # service modem reload
 
-    #IPv4地址缓存
+    # IPv4 address cache
     local ipv4_cache
 
-    #输出日志
+    # Output log
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] Start network task" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
     while true; do
-        #全局
+        # Global
         local enable_dial=$(uci -q get modem.@global[0].enable_dial)
         if [ "$enable_dial" != "1" ]; then
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] The dialing configuration has been disabled, this network task quit" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
             break
         fi
-        #单个模组
+        # Per-modem
         enable=$(uci -q get modem.${config_id}.enable)
         if [ "$enable" != "1" ]; then
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] The modem has disabled dialing, this network task quit" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
             break
         fi
 
-        #网络连接检查
+        # Network connection check
 	if ! ping -c 2 -w 5 -I "$interface_network" 223.5.5.5 > /dev/null 2>&1; then
         echo "[$(date +"%Y-%m-%d %H:%M:%S")] ping failed" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 	local at_command="AT+CGPADDR=${define_connect}"
@@ -274,17 +274,17 @@ modem_network_task()
 
         if [ -z "$ipv4" ]; then
             [ "$mode" = "modemmanager" ] && {
-                #拨号工具为modemmanager时，不需要重新设置连接定义
+                # When dial tool is modemmanager, no need to reconfigure connection definition
                 continue
             }
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] Unable to get IPv4 address" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] Redefine connect to ${define_connect}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
             service modem reload
 
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] Modem dial" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
-            #拨号（针对获取IPv4返回为空的模组）
+            # Dial (for modems returning empty IPv4)
             case "$mode" in
                 "gobinet") gobinet_dial "${at_port}" "${manufacturer}" "${define_connect}" ;;
                 "ecm") ecm_dial "${at_port}" "${manufacturer}" "${define_connect}" ;;
@@ -294,12 +294,12 @@ modem_network_task()
             esac
         elif [[ "$ipv4" = *"0.0.0.0"* ]]; then
 
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] Modem${modem_no} current IPv4 address : ${ipv4}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] Modem dial" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
-            #拨号
+            # Dial
             case "$mode" in
                 "gobinet") gobinet_dial "${at_port}" "${manufacturer}" "${define_connect}" ;;
                 "ecm") ecm_dial "${at_port}" "${manufacturer}" "${define_connect}" ;;
@@ -310,26 +310,26 @@ modem_network_task()
             
         elif [ "$ipv4" != "$ipv4_cache" ]; then
 
-            #第一次缓存IP为空时不输出日志
+            # Suppress log when initial cached IP is empty
             [ -n "$ipv4_cache" ] && {
-                #输出日志
+                # Output log
                 echo "[$(date +"%Y-%m-%d %H:%M:%S")] Modem${modem_no} IPv4 address has changed" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
             }
 
-            #输出日志
+            # Output log
             echo "[$(date +"%Y-%m-%d %H:%M:%S")] Modem${modem_no} current IPv4 address : ${ipv4}" >> "${MODEM_RUNDIR}/modem${modem_no}_dial.cache"
 
-            #缓存当前IP
+            # Cache current IP
             ipv4_cache="${ipv4}"
 
-            #重新设置网络接口（广和通FM350-GL）
+            # Reconfigure network interface (Fibocom FM350-GL)
             if [ "$manufacturer" = "fibocom" ] && [ "$platform" = "mediatek" ]; then
                 reset_network_interface "${at_port}" "${define_connect}" "${modem_no}"
                 sleep 3s
             fi
 
             [ "$mode" != "modemmanager" ] && {
-                #重新启动网络接口
+                # Restart network interface
                 ifup "${interface_name}"
                 ifup "${interface_name_ipv6}"
             }

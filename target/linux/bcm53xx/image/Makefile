@@ -141,7 +141,7 @@ BRCMFMAC_43602A1 := $(IEEE8021X) kmod-brcmfmac brcmfmac-firmware-43602a1-pcie
 BRCMFMAC_4366B1 := $(IEEE8021X) kmod-brcmfmac brcmfmac-firmware-4366b1-pcie
 BRCMFMAC_4366C0 := $(IEEE8021X) kmod-brcmfmac brcmfmac-firmware-4366c0-pcie
 USB2_PACKAGES := kmod-usb-ohci kmod-usb2 kmod-phy-bcm-ns-usb2
-USB2_PACKAGES += kmod-usb-ledtrig-usbport
+USB2_PACKAGES += kmod-usb-ledtrig-usbport automount
 USB3_PACKAGES := $(USB2_PACKAGES) kmod-usb3 kmod-phy-bcm-ns-usb3
 
 define Device/Default
@@ -345,39 +345,41 @@ define Device/luxul
   IMAGE/lxl := append-ubi | trx-nand | luxul-lxl
 endef
 
-define Device/luxul_abr-4500
+define Device/luxul_abr-4500-v1
   $(Device/luxul)
   DEVICE_MODEL := ABR-4500
   DEVICE_PACKAGES := $(USB3_PACKAGES)
+  DEVICE_DTS := bcm47094-luxul-abr-4500
   LUXUL_BOARD := ABR-4500
 endef
-TARGET_DEVICES += luxul_abr-4500
+TARGET_DEVICES += luxul_abr-4500-v1
 
-define Device/luxul_xap-1610
+define Device/luxul_xap-1610-v1
   $(Device/luxul)
   DEVICE_MODEL := XAP-1610
   DEVICE_PACKAGES := $(BRCMFMAC_4366C0)
+  DEVICE_DTS := bcm47094-luxul-xap-1610
   IMAGE/lxl := append-rootfs | trx-serial | luxul-lxl
   LUXUL_BOARD := XAP-1610
 endef
-TARGET_DEVICES += luxul_xap-1610
+TARGET_DEVICES += luxul_xap-1610-v1
 
-define Device/luxul_xbr-4500
+define Device/luxul_xbr-4500-v1
   $(Device/luxul)
   DEVICE_MODEL := XBR-4500
   DEVICE_PACKAGES := $(USB3_PACKAGES)
+  DEVICE_DTS := bcm47094-luxul-xbr-4500
   LUXUL_BOARD := XBR-4500
 endef
-TARGET_DEVICES += luxul_xbr-4500
+TARGET_DEVICES += luxul_xbr-4500-v1
 
-define Device/luxul_xwr-3150
+define Device/luxul_xwr-3150-v1
   $(Device/luxul)
   DEVICE_MODEL := XWR-3150
   DEVICE_PACKAGES := $(BRCMFMAC_4366C0) $(USB3_PACKAGES)
-  DEVICE_DTS := bcm47094-luxul-xwr-3150-v1
   LUXUL_BOARD := XWR-3150
 endef
-TARGET_DEVICES += luxul_xwr-3150
+TARGET_DEVICES += luxul_xwr-3150-v1
 
 define Device/meraki_mr26
   DEVICE_VENDOR := Meraki
@@ -464,13 +466,14 @@ define Device/netgear
   NETGEAR_REGION := 1
 endef
 
-define Device/netgear_r6250
+define Device/netgear_r6250-v1
   DEVICE_MODEL := R6250
   DEVICE_PACKAGES := $(B43) $(USB3_PACKAGES)
+  DEVICE_DTS := bcm4708-netgear-r6250
   $(Device/netgear)
   NETGEAR_BOARD_ID := U12H245T00_NETGEAR
 endef
-TARGET_DEVICES += netgear_r6250
+TARGET_DEVICES += netgear_r6250-v1
 
 define Device/netgear_r6300-v2
   DEVICE_MODEL := R6300

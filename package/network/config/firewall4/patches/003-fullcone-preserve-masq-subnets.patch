@@ -1,0 +1,67 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] firewall4: preserve masq_src and masq_dest subnet filters in fullcone srcnat
+
+Loop over zone.masq*_src_subnets and zone.masq*_dest_subnets when rendering
+srcnat fullcone rules so zone masquerade subnet inclusions/exclusions continue
+to apply with fullcone enabled, while keeping dstnat unbound of src subnets.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -uNrp a/root/usr/share/firewall4/templates/ruleset.uc b/root/usr/share/firewall4/templates/ruleset.uc
+--- a/root/usr/share/firewall4/templates/ruleset.uc	2026-11-23 10:09:15.531561308 +0800
++++ b/root/usr/share/firewall4/templates/ruleset.uc	2026-11-23 10:09:15.554031583 +0800
+@@ -325,10 +325,10 @@ table inet fw4 {
+ 		{%+ include("redirect.uc", { fw4, zone, redirect }) %}
+ {%   endfor %}
+ {%   if (zone.masq && fw4.default_option("fullcone")): %}
+-		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "dstnat" }) %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "dstnat", saddrs: null, daddrs: null }) %}
+ {%   endif %}
+ {%   if (zone.masq6 && fw4.default_option("fullcone6")): %}
+-		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "dstnat" }) %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "dstnat", saddrs: null, daddrs: null }) %}
+ {%   endif %}
+ {%   fw4.includes('chain-append', `dstnat_${zone.name}`) %}
+ 	}
+@@ -355,10 +355,18 @@ table inet fw4 {
+ {%    endfor %}
+ {%   endif %}
+ {%   if (zone.masq && fw4.default_option("fullcone")): %}
+-		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "srcnat" }) %}
++{%    for (let saddrs in zone.masq4_src_subnets): %}
++{%     for (let daddrs in zone.masq4_dest_subnets): %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "srcnat", saddrs, daddrs }) %}
++{%     endfor %}
++{%    endfor %}
+ {%   endif %}
+ {%   if (zone.masq6 && fw4.default_option("fullcone6")): %}
+-		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "srcnat" }) %}
++{%    for (let saddrs in zone.masq6_src_subnets): %}
++{%     for (let daddrs in zone.masq6_dest_subnets): %}
++		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "srcnat", saddrs, daddrs }) %}
++{%     endfor %}
++{%    endfor %}
+ {%   endif %}
+ {%   fw4.includes('chain-append', `srcnat_${zone.name}`) %}
+ 	}
+diff -uNrp a/root/usr/share/firewall4/templates/zone-fullcone.uc b/root/usr/share/firewall4/templates/zone-fullcone.uc
+--- a/root/usr/share/firewall4/templates/zone-fullcone.uc	2026-11-23 10:09:15.529204940 +0800
++++ b/root/usr/share/firewall4/templates/zone-fullcone.uc	2026-11-23 10:09:15.554093233 +0800
+@@ -1,4 +1,16 @@
+ {# /usr/share/firewall4/templates/zone-fullcone.uc #}
+-		meta nfproto {{ fw4.nfproto(family) }} fullcone comment "!fw4: Handle {{
++		meta nfproto {{ fw4.nfproto(family) }} {%+ if (direction == "srcnat" && saddrs && saddrs[0]): -%}
++	{{ fw4.ipproto(family) }} saddr {{ fw4.set(map(saddrs[0], fw4.cidr)) }} {%+ endif -%}
++{%+ if (direction == "srcnat" && saddrs && saddrs[1]): -%}
++	{{ fw4.ipproto(family) }} saddr != {{ fw4.set(map(saddrs[1], fw4.cidr)) }} {%+ endif -%}
++{%+ for (let a in (direction == "srcnat" && saddrs ? saddrs[2] : [])): -%}
++	{{ fw4.ipproto(family) }} saddr & {{ a.mask }} {{ a.invert ? '!=' : '==' }} {{ a.addr }} {%+ endfor -%}
++{%+ if (direction == "srcnat" && daddrs && daddrs[0]): -%}
++	{{ fw4.ipproto(family) }} daddr {{ fw4.set(map(daddrs[0], fw4.cidr)) }} {%+ endif -%}
++{%+ if (direction == "srcnat" && daddrs && daddrs[1]): -%}
++	{{ fw4.ipproto(family) }} daddr != {{ fw4.set(map(daddrs[1], fw4.cidr)) }} {%+ endif -%}
++{%+ for (let a in (direction == "srcnat" && daddrs ? daddrs[2] : [])): -%}
++	{{ fw4.ipproto(family) }} daddr & {{ a.mask }} {{ a.invert ? '!=' : '==' }} {{ a.addr }} {%+ endfor -%}
++fullcone comment "!fw4: Handle {{
+ 		zone.name
+ }} {{ fw4.nfproto(family, true) }} fullcone NAT {{ direction }} traffic"

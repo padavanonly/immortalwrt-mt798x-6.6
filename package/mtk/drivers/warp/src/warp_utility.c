@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -50,6 +50,18 @@ warp_dma_buf_free(struct platform_device *dev, struct warp_dma_buf *dma_buf)
 {
 	if (!dev || !dma_buf->alloc_va)
 		return;
+#ifdef WED_MEM_LEAK_DBG
+{
+		MEM_INFO_LIST_ENTRY *delEntry;
+
+		delEntry = MIListRemove(&MemInfoList, dma_buf->alloc_va);
+		if (delEntry == 0) {
+			warp_dbg(WARP_DBG_ERR, "the memory has not been allocated\n");
+			warp_dbg(WARP_DBG_ERR, "mem addr = %p, caller is %pS\n",
+					dma_buf->alloc_va, __builtin_return_address(0));
+		}
+}
+#endif	/* WED_MEM_LEAK_DBG */
 
 	memset(dma_buf->alloc_va, 0, dma_buf->alloc_size);
 	dma_free_coherent(&dev->dev, dma_buf->alloc_size, dma_buf->alloc_va,
@@ -74,6 +86,10 @@ warp_dma_buf_alloc(struct platform_device *dev,
 		warp_dbg(WARP_DBG_ERR, "Failed to allocate a big buffer,size=%d\n", size);
 		return -1;
 	}
+#ifdef WED_MEM_LEAK_DBG
+		MIListAddHead(&MemInfoList, size, vaddr, __builtin_return_address(0));
+#endif	/* WED_MEM_LEAK_DBG */
+
 
 	dma_buf->alloc_pa = paddr;
 	dma_buf->alloc_va = vaddr;
@@ -91,8 +107,17 @@ warp_dump_dmabuf(struct warp_dma_buf *buf)
 	warp_dbg(WARP_DBG_OFF, "AllocPA\t: %pad\n", &buf->alloc_pa);
 	warp_dbg(WARP_DBG_OFF, "AllocVa\t: 0x%p\n", buf->alloc_va);
 	warp_dbg(WARP_DBG_OFF, "Size\t: %lu\n", buf->alloc_size);
+
 }
 
+void
+warp_dump_mem()
+{
+	u32 memalctotal = ShowMemAllocInfo();
+	u32 pktalctotal = ShowPktAllocInfo();
+
+	warp_dbg(WARP_DBG_OFF, "memalctotal:%d pktalctotal:%d\n", memalctotal, pktalctotal);
+}
 
 /*
 *
@@ -123,13 +148,13 @@ warp_dump_raw(char *str, unsigned char *va, unsigned int size)
 
 	for (x = 0; x < size; x++) {
 		if (x % 16 == 0) {
-			ret = sprintf(buf + len, "\n0x%04x : ", x);
+			ret = snprintf(buf + len, sizeof(buf) - len, "\n0x%04x : ", x);
 			if (ret < 0)
 				return;
 			len = strlen(buf);
 		}
 
-		ret = sprintf(buf + len, "%02x ", ((unsigned char)pt[x]));
+		ret = snprintf(buf + len, sizeof(buf) - len, "%02x ", ((unsigned char)pt[x]));
 		if (ret < 0)
 			return;
 		len = strlen(buf);
@@ -219,7 +244,7 @@ void MemInfoListInital(void)
 
 u32 ShowMemAllocInfo(void)
 {
-#ifdef MEM_LEAK_DBG
+#ifdef WED_MEM_LEAK_DBG
 	warp_dbg(WARP_DBG_OFF,
 			 "Show General Allocated Memory Info:\n");
 	ShowMIList(&MemInfoList);
@@ -227,17 +252,17 @@ u32 ShowMemAllocInfo(void)
 			 "Maximum Allocated Memory Size: %u\n", MemInfoList.MaxAlcSize);
 	warp_dbg(WARP_DBG_OFF,
 			 "Current Allocated Memory Size: %u\n", MemInfoList.CurAlcSize);
-#endif	/* MEM_LEAK_DBG */
+#endif	/* WED_MEM_LEAK_DBG */
 	return MemInfoList.EntryNumber;
 }
 
 u32 ShowPktAllocInfo(void)
 {
-#ifdef MEM_LEAK_DBG
+#ifdef WED_MEM_LEAK_DBG
 	warp_dbg(WARP_DBG_OFF,
 			 "Show Packet Allocated Memory Info:\n");
 	ShowMIList(&PktInfoList);
-#endif	/* MEM_LEAK_DBG */
+#endif	/* WED_MEM_LEAK_DBG */
 	return PktInfoList.EntryNumber;
 }
 
@@ -262,27 +287,40 @@ int warp_os_alloc_mem(
 	unsigned long size,
 	u32 gfp)
 {
-	*mem = (unsigned char *) kmalloc(size, gfp);
+	*mem = kmalloc(size, gfp);
 	if (*mem) {
-#ifdef MEM_LEAK_DBG
+#ifdef WED_MEM_LEAK_DBG
 		MIListAddHead(&MemInfoList, size, *mem, __builtin_return_address(0));
-#endif	/* MEM_LEAK_DBG */
+#endif	/* WED_MEM_LEAK_DBG */
 		return 0;
 	} else
 		return 1;
 }
 
+
+void pkt_alloc_mem(
+	unsigned long size, unsigned char *mem,
+	void *pCaller)
+{
+	MIListAddHead(&MemInfoList, size, mem, pCaller);
+}
+
 void warp_os_free_mem(void *mem)
 {
-#ifdef MEM_LEAK_DBG
+#ifdef WED_MEM_LEAK_DBG
 	MEM_INFO_LIST_ENTRY *delEntry;
 	delEntry = MIListRemove(&MemInfoList, mem);
 	if (delEntry == 0) {
 		warp_dbg(WARP_DBG_ERR, "the memory has not been allocated\n");
 		warp_dbg(WARP_DBG_ERR, "mem addr = %p, caller is %pS\n", mem, __builtin_return_address(0));
 	}
-#endif	/* MEM_LEAK_DBG */
+#endif	/* WED_MEM_LEAK_DBG */
 	//assert(mem);
 	kfree(mem);
+}
+
+void pkt_free_mem(void *mem)
+{
+	MIListRemove(&MemInfoList, mem);
 }
 

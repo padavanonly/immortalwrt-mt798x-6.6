@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=7z
-PKG_VERSION:=24.05
+PKG_VERSION:=26.03
 
 PKG_SOURCE:=$(PKG_NAME)$(subst .,,$(PKG_VERSION))-src.tar.xz
 PKG_SOURCE_URL:=https://7-zip.org/a/
-PKG_HASH:=63f341cf80b8d287c6e945519b3da0fa75553c85572a471b7fa6e68f9a90b790
+PKG_HASH:=9cbde5099c6deb73691b0579063da5827522ccbbcba3f0020fd04e8c8c16c0d4
 
 PKG_CPE_ID:=cpe:/a:7-zip:7-zip
 

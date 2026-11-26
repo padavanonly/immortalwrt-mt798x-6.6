@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -66,9 +66,7 @@ struct woif_bus {
 struct woif_entry {
 	u8 idx;
 	u32 prev_heartbeat;
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 	struct warp_fwdl_ctrl fwdl_ctrl;
-#endif
 	struct woif_bus bus;
 	struct wo_entry *wo;
 	struct warp_wo_ctrl wo_ctrl;
@@ -79,7 +77,7 @@ struct woif_entry {
 #define bus_to_rx_ring(_bus) (&(_bus->rx_ring.ring))
 #define bus_to_tx_ring_len(_bus) (_bus->tx_ring.ring_len)
 #define bus_to_rx_ring_len(_bus) (_bus->rx_ring.ring_len)
-
+#define bus_to_hw(_bus) (_bus->hw)
 
 /*export function*/
 int32_t woif_init(struct warp_entry *warp, struct warp_bus *bus);

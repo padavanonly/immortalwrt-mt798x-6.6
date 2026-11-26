@@ -1,0 +1,23 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2660,6 +2660,7 @@ static int mtk_poll_rx(struct napi_struc
+ 		if (sent_ppd && ppd_dev){
+ 			skb->protocol = eth_hdr(skb)->h_proto;
+ 			skb->dev = ppd_dev;
++			skb->mark = 0x78681415;
+ 		}
+ 		skb_record_rx_queue(skb, 0);
+ 		napi_gro_receive(napi, skb);
+--- a/net/bridge/br_input.c
++++ b/net/bridge/br_input.c
+@@ -137,7 +137,9 @@ int br_handle_frame_finish(struct net *n
+ 	nbp_switchdev_frame_mark(p, skb);
+ 
+ 	/* insert into forwarding database after filtering to avoid spoofing */
+-	if (p->flags & BR_LEARNING)
++	if (unlikely(skb->mark == 0x78681415))
++		skb->mark = 0;
++	else if (p->flags & BR_LEARNING)
+ 		br_fdb_update(br, p, eth_hdr(skb)->h_source, vid, 0);
+ 
+ 	promisc = !!(br->dev->flags & IFF_PROMISC);

@@ -17,6 +17,7 @@ define Package/mtkhqos_util
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
   TITLE:=mtk hqos utility
+  DEPENDS:=@!TARGET_mediatek_filogic
   VERSION:=$(PKG_RELEASE)-$(REVISION)
   SUBMENU:=Applications
 endef

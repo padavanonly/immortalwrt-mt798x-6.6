@@ -1,0 +1,14 @@
+{
+	"luci-app-mwan3helper-chinaroute": {
+		"description": "Grant UCI and RPC access for luci-app-mwan3helper-chinaroute",
+		"read": {
+			"ubus": {
+				"luci.mwan3helper": [ "getStatus" ]
+			},
+			"uci": [ "mwan3helper" ]
+		},
+		"write": {
+			"uci": [ "mwan3helper" ]
+		}
+	}
+}

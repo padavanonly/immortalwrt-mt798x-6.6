@@ -15,8 +15,6 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
  drivers/pci/controller/pcie-mediatek-gen3.c | 36 +++++++++++++++++++++
  1 file changed, 36 insertions(+)
 
-diff --git a/drivers/pci/controller/pcie-mediatek-gen3.c b/drivers/pci/controller/pcie-mediatek-gen3.c
-index 826d7ea..1cac215 100644
 --- a/drivers/pci/controller/pcie-mediatek-gen3.c
 +++ b/drivers/pci/controller/pcie-mediatek-gen3.c
 @@ -122,6 +122,7 @@ struct mtk_msi_set {
@@ -62,7 +60,7 @@ index 826d7ea..1cac215 100644
  static int mtk_pcie_set_trans_table(struct mtk_gen3_pcie *pcie,
  				    resource_size_t cpu_addr,
  				    resource_size_t pci_addr,
-@@ -345,6 +367,16 @@ static int mtk_pcie_startup_port(struct mtk_gen3_pcie *pcie)
+@@ -345,6 +367,16 @@ static int mtk_pcie_startup_port(struct
  	val |= PCIE_RC_MODE;
  	writel_relaxed(val, pcie->base + PCIE_SETTING_REG);
  
@@ -79,7 +77,7 @@ index 826d7ea..1cac215 100644
  	/* Set class code */
  	val = readl_relaxed(pcie->base + PCIE_PCI_IDS_1);
  	val &= ~GENMASK(31, 8);
-@@ -830,6 +862,10 @@ static int mtk_pcie_parse_port(struct mtk_gen3_pcie *pcie)
+@@ -830,6 +862,10 @@ static int mtk_pcie_parse_port(struct mt
  		return pcie->num_clks;
  	}
  
@@ -90,6 +88,3 @@ index 826d7ea..1cac215 100644
  	return 0;
  }
  
--- 
-2.46.0
-

@@ -1,0 +1,23 @@
+{
+	"luci-mod-status-rtl837x": {
+		"description": "Grant access to RTL837x switch status and SFP DDM for status overview",
+		"read": {
+			"ubus": {
+				"rtl837x": [ "get_status", "get_sfp_info", "cable_diag" ]
+			},
+			"uci": [ "rtl837x" ]
+		}
+	},
+	"luci-app-rtl837x": {
+		"description": "Grant access for RTL837x switch management and diagnostics",
+		"read": {
+			"ubus": {
+				"rtl837x": [ "get_status", "get_sfp_info", "cable_diag" ]
+			},
+			"uci": [ "rtl837x" ]
+		},
+		"write": {
+			"uci": [ "rtl837x" ]
+		}
+	}
+}

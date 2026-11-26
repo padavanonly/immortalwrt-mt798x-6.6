@@ -1,0 +1,376 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mediatek: optimize TX/RX ring, prefetch, and HNAT struct pass
+
+Eliminate per-descriptor UDIV and per-packet LL/SC atomic_inc inside
+mtk_poll_tx_qdma/mtk_poll_tx_pdma via shift fast-path and loop-batched
+atomic_add, add single-page fast-path + single_skb cached desc count in
+mtk_start_xmit, add next-descriptor/data prefetch in mtk_poll_rx, pass
+struct foe_entry by pointer in mtk_hnat helpers, and build hnat_debugfs.o
+with -Os.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -7,6 +7,7 @@
+  */
+ 
+ #include <linux/of.h>
++#include <linux/prefetch.h>
+ #include <linux/of_mdio.h>
+ #include <linux/of_net.h>
+ #include <linux/of_address.h>
+@@ -1742,10 +1743,23 @@
+ 	return ring->dma + (desc - ring->phys);
+ }
+ 
++static inline int mtk_tx_desc_idx(const struct mtk_tx_ring *ring,
++				  const void *txd, u32 txd_size)
++{
++	ptrdiff_t diff = txd - ring->dma;
++
++	if (likely(txd_size == 32))
++		return diff >> 5;
++	if (likely(txd_size == 16))
++		return diff >> 4;
++
++	return diff / txd_size;
++}
++
+ static struct mtk_tx_buf *mtk_desc_to_tx_buf(struct mtk_tx_ring *ring,
+ 					     void *txd, u32 txd_size)
+ {
+-	int idx = (txd - ring->dma) / txd_size;
++	int idx = mtk_tx_desc_idx(ring, txd, txd_size);
+ 
+ 	return &ring->buf[idx];
+ }
+@@ -1758,7 +1772,7 @@
+ 
+ static int txd_to_idx(struct mtk_tx_ring *ring, void *dma, u32 txd_size)
+ {
+-	return (dma - ring->dma) / txd_size;
++	return mtk_tx_desc_idx(ring, dma, txd_size);
+ }
+ 
+ static void mtk_tx_unmap(struct mtk_eth *eth, struct mtk_tx_buf *tx_buf,
+@@ -2148,13 +2162,18 @@
+ static unsigned int
+ mtk_qdma_desc_need(struct mtk_eth *eth, struct sk_buff *skb)
+ {
++	unsigned int max_len = eth->soc->tx.dma_max_len;
+ 	unsigned int need = 1;
+ 	int i;
+ 
+-	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
+-		need += DIV_ROUND_UP(
+-			skb_frag_size(&skb_shinfo(skb)->frags[i]),
+-			eth->soc->tx.dma_max_len);
++	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
++		unsigned int frag_len = skb_frag_size(&skb_shinfo(skb)->frags[i]);
++
++		if (likely(frag_len <= max_len))
++			need++;
++		else
++			need += DIV_ROUND_UP(frag_len, max_len);
++	}
+ 
+ 	return need;
+ }
+@@ -2296,42 +2315,49 @@
+ 		netif_tx_wake_all_queues(dev);
+ 	}
+ 
+-	if (tx_list != orig_skb) {
+-		consume_skb(orig_skb);
+-		orig_skb = NULL;
+-	}
++	{
++		bool single_skb = (tx_list == orig_skb && !orig_skb->next);
+ 
+-	skb_list_walk_safe(tx_list, seg, next) {
+-		int seg_tx_num;
++		if (tx_list != orig_skb) {
++			consume_skb(orig_skb);
++			orig_skb = NULL;
++		}
+ 
+-		skb_mark_not_on_list(seg);
+-		gso = false;
++		skb_list_walk_safe(tx_list, seg, next) {
++			int seg_tx_num;
+ 
+-		/* TSO: fill MSS info in tcp checksum field */
+-		if (skb_is_gso(seg)) {
+-			if (skb_cow_head(seg, 0)) {
+-				netif_warn(eth, tx_err, dev,
+-					   "GSO expand head fail.\n");
+-				stats->tx_dropped++;
+-				dev_kfree_skb_any(seg);
+-				continue;
+-			}
++			skb_mark_not_on_list(seg);
++			gso = false;
++
++			/* TSO: fill MSS info in tcp checksum field */
++			if (skb_is_gso(seg)) {
++				if (skb_cow_head(seg, 0)) {
++					netif_warn(eth, tx_err, dev,
++						   "GSO expand head fail.\n");
++					stats->tx_dropped++;
++					dev_kfree_skb_any(seg);
++					continue;
++				}
+ 
+-			if (skb_shinfo(seg)->gso_type &
+-			    (SKB_GSO_TCPV4 | SKB_GSO_TCPV6)) {
+-				gso = true;
+-				tcp_hdr(seg)->check =
+-					htons(skb_shinfo(seg)->gso_size);
++				if (skb_shinfo(seg)->gso_type &
++				    (SKB_GSO_TCPV4 | SKB_GSO_TCPV6)) {
++					gso = true;
++					tcp_hdr(seg)->check =
++						htons(skb_shinfo(seg)->gso_size);
++				}
+ 			}
+-		}
+ 
+-		seg_tx_num = MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA) ?
+-			     mtk_qdma_desc_need(eth, seg) :
+-			     mtk_cal_txd_req(eth, seg);
++			if (likely(single_skb))
++				seg_tx_num = need;
++			else
++				seg_tx_num = MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA) ?
++					     mtk_qdma_desc_need(eth, seg) :
++					     mtk_cal_txd_req(eth, seg);
+ 
+-		if (mtk_tx_map(seg, dev, seg_tx_num, ring, gso) < 0) {
+-			stats->tx_dropped++;
+-			dev_kfree_skb_any(seg);
++			if (mtk_tx_map(seg, dev, seg_tx_num, ring, gso) < 0) {
++				stats->tx_dropped++;
++				dev_kfree_skb_any(seg);
++			}
+ 		}
+ 	}
+ 
+@@ -2707,6 +2733,8 @@
+ 		int orig_mac;
+ #endif
+ 
++		u32 next_idx;
++
+ 		idx = NEXT_DESP_IDX(ring->calc_idx, ring->dma_size);
+ 		rxd = ring->dma + idx * eth->soc->rx.desc_size;
+ 		data = ring->data[idx];
+@@ -2714,6 +2742,11 @@
+ 		if (!mtk_rx_get_desc(eth, &trxd, rxd))
+ 			break;
+ 
++		next_idx = NEXT_DESP_IDX(idx, ring->dma_size);
++		prefetch(ring->dma + next_idx * eth->soc->rx.desc_size);
++		if (likely(ring->data[next_idx]))
++			prefetch(ring->data[next_idx]);
++
+ 		sent_ppd = 0;
+ 
+ 		/* find out which mac the packet come from. values start at 1 */
+@@ -3085,6 +3118,7 @@
+ 	struct xdp_frame_bulk bq;
+ 	struct mtk_tx_dma *desc;
+ 	u32 cpu, dma;
++	int freed = 0;
+ 
+ 	cpu = ring->last_free_ptr;
+ 	dma = mtk_r32(eth, reg_map->qdma.drx_ptr);
+@@ -3114,10 +3148,12 @@
+ 		mtk_tx_unmap(eth, tx_buf, &bq, true);
+ 
+ 		ring->last_free = desc;
+-		atomic_inc(&ring->free_count);
++		freed++;
+ 
+ 		cpu = next_cpu;
+ 	}
++	if (likely(freed))
++		atomic_add(freed, &ring->free_count);
+ 	xdp_flush_frame_bulk(&bq);
+ 
+ 	ring->last_free_ptr = cpu;
+@@ -3134,6 +3170,7 @@
+ 	struct xdp_frame_bulk bq;
+ 	struct mtk_tx_dma *desc;
+ 	u32 cpu, dma;
++	int freed = 0;
+ 
+ 	cpu = ring->cpu_idx;
+ 	dma = mtk_r32(eth, MT7628_TX_DTX_IDX0);
+@@ -3153,10 +3190,12 @@
+ 
+ 		desc = ring->dma + cpu * eth->soc->tx.desc_size;
+ 		ring->last_free = desc;
+-		atomic_inc(&ring->free_count);
++		freed++;
+ 
+ 		cpu = NEXT_DESP_IDX(cpu, ring->dma_size);
+ 	}
++	if (likely(freed))
++		atomic_add(freed, &ring->free_count);
+ 	xdp_flush_frame_bulk(&bq);
+ 
+ 	ring->cpu_idx = cpu;
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -3064,17 +3064,17 @@
+ 	return chksum_base;
+ }
+ 
+-struct foe_entry ppe_fill_L2_info(struct ethhdr *eth, struct foe_entry entry,
+-				  struct flow_offload_hw_path *hw_path)
++static void ppe_fill_L2_info(struct ethhdr *eth, struct foe_entry *entry,
++			     struct flow_offload_hw_path *hw_path)
+ {
+-	switch ((int)entry.bfib1.pkt_type) {
++	switch ((int)entry->bfib1.pkt_type) {
+ 	case IPV4_HNAPT:
+ 	case IPV4_HNAT:
+-		entry.ipv4_hnapt.dmac_hi = swab32(*((u32 *)eth->h_dest));
+-		entry.ipv4_hnapt.dmac_lo = swab16(*((u16 *)&eth->h_dest[4]));
+-		entry.ipv4_hnapt.smac_hi = swab32(*((u32 *)eth->h_source));
+-		entry.ipv4_hnapt.smac_lo = swab16(*((u16 *)&eth->h_source[4]));
+-		entry.ipv4_hnapt.pppoe_id = hw_path->pppoe_sid;
++		entry->ipv4_hnapt.dmac_hi = swab32(*((u32 *)eth->h_dest));
++		entry->ipv4_hnapt.dmac_lo = swab16(*((u16 *)&eth->h_dest[4]));
++		entry->ipv4_hnapt.smac_hi = swab32(*((u32 *)eth->h_source));
++		entry->ipv4_hnapt.smac_lo = swab16(*((u16 *)&eth->h_source[4]));
++		entry->ipv4_hnapt.pppoe_id = hw_path->pppoe_sid;
+ 		break;
+ 	case IPV4_DSLITE:
+ 	case IPV4_MAP_E:
+@@ -3083,44 +3083,43 @@
+ 	case IPV6_3T_ROUTE:
+ 	case IPV6_HNAPT:
+ 	case IPV6_HNAT:
+-		entry.ipv6_5t_route.dmac_hi = swab32(*((u32 *)eth->h_dest));
+-		entry.ipv6_5t_route.dmac_lo = swab16(*((u16 *)&eth->h_dest[4]));
+-		entry.ipv6_5t_route.smac_hi = swab32(*((u32 *)eth->h_source));
+-		entry.ipv6_5t_route.smac_lo =
++		entry->ipv6_5t_route.dmac_hi = swab32(*((u32 *)eth->h_dest));
++		entry->ipv6_5t_route.dmac_lo = swab16(*((u16 *)&eth->h_dest[4]));
++		entry->ipv6_5t_route.smac_hi = swab32(*((u32 *)eth->h_source));
++		entry->ipv6_5t_route.smac_lo =
+ 			swab16(*((u16 *)&eth->h_source[4]));
+-		entry.ipv6_5t_route.pppoe_id = hw_path->pppoe_sid;
++		entry->ipv6_5t_route.pppoe_id = hw_path->pppoe_sid;
+ 		break;
+ 	}
+-	return entry;
+ }
+ 
+-struct foe_entry ppe_fill_info_blk(struct ethhdr *eth, struct foe_entry entry,
+-				   struct flow_offload_hw_path *hw_path)
++static void ppe_fill_info_blk(struct ethhdr *eth, struct foe_entry *entry,
++			      struct flow_offload_hw_path *hw_path)
+ {
+-	entry.bfib1.psn = (hw_path->flags & BIT(DEV_PATH_PPPOE)) ? 1 : 0;
+-	entry.bfib1.vlan_layer += (hw_path->flags & BIT(DEV_PATH_VLAN)) ? 1 : 0;
+-	entry.bfib1.vpm = (entry.bfib1.vlan_layer) ? 1 : 0;
+-	entry.bfib1.cah = 1;
+-	entry.bfib1.time_stamp = (hnat_priv->data->version == MTK_HNAT_V2 ||
+-				  hnat_priv->data->version == MTK_HNAT_V3) ?
++	entry->bfib1.psn = (hw_path->flags & BIT(DEV_PATH_PPPOE)) ? 1 : 0;
++	entry->bfib1.vlan_layer += (hw_path->flags & BIT(DEV_PATH_VLAN)) ? 1 : 0;
++	entry->bfib1.vpm = (entry->bfib1.vlan_layer) ? 1 : 0;
++	entry->bfib1.cah = 1;
++	entry->bfib1.time_stamp = (hnat_priv->data->version == MTK_HNAT_V2 ||
++				   hnat_priv->data->version == MTK_HNAT_V3) ?
+ 		readl(hnat_priv->fe_base + 0x0010) & (0xFF) :
+ 		readl(hnat_priv->fe_base + 0x0010) & (0x7FFF);
+ 
+-	switch ((int)entry.bfib1.pkt_type) {
++	switch ((int)entry->bfib1.pkt_type) {
+ 	case IPV4_HNAPT:
+ 	case IPV4_HNAT:
+ 		if (hnat_priv->data->mcast &&
+ 		    is_multicast_ether_addr(&eth->h_dest[0])) {
+-			entry.ipv4_hnapt.iblk2.mcast = 1;
++			entry->ipv4_hnapt.iblk2.mcast = 1;
+ 			if (hnat_priv->data->version == MTK_HNAT_V1_3) {
+-				entry.bfib1.sta = 1;
+-				entry.ipv4_hnapt.m_timestamp = foe_timestamp(hnat_priv);
++				entry->bfib1.sta = 1;
++				entry->ipv4_hnapt.m_timestamp = foe_timestamp(hnat_priv);
+ 			}
+ 		} else {
+-			entry.ipv4_hnapt.iblk2.mcast = 0;
++			entry->ipv4_hnapt.iblk2.mcast = 0;
+ 		}
+ 
+-		entry.ipv4_hnapt.iblk2.port_ag =
++		entry->ipv4_hnapt.iblk2.port_ag =
+ 			(hnat_priv->data->version == MTK_HNAT_V2 ||
+ 			 hnat_priv->data->version == MTK_HNAT_V3) ? 0xf : 0x3f;
+ 		break;
+@@ -3133,21 +3132,20 @@
+ 	case IPV6_HNAT:
+ 		if (hnat_priv->data->mcast &&
+ 		    is_multicast_ether_addr(&eth->h_dest[0])) {
+-			entry.ipv6_5t_route.iblk2.mcast = 1;
++			entry->ipv6_5t_route.iblk2.mcast = 1;
+ 			if (hnat_priv->data->version == MTK_HNAT_V1_3) {
+-				entry.bfib1.sta = 1;
+-				entry.ipv4_hnapt.m_timestamp = foe_timestamp(hnat_priv);
++				entry->bfib1.sta = 1;
++				entry->ipv4_hnapt.m_timestamp = foe_timestamp(hnat_priv);
+ 			}
+ 		} else {
+-			entry.ipv6_5t_route.iblk2.mcast = 0;
++			entry->ipv6_5t_route.iblk2.mcast = 0;
+ 		}
+ 
+-		entry.ipv6_5t_route.iblk2.port_ag =
++		entry->ipv6_5t_route.iblk2.port_ag =
+ 			(hnat_priv->data->version == MTK_HNAT_V2 ||
+ 			 hnat_priv->data->version == MTK_HNAT_V3) ? 0xf : 0x3f;
+ 		break;
+ 	}
+-	return entry;
+ }
+ 
+ static struct ethhdr *get_ipv6_ipip_ethhdr(struct sk_buff *skb,
+@@ -3552,7 +3550,7 @@
+ 	}
+ 
+ hnat_skip_fill_inner:
+-	entry = ppe_fill_info_blk(eth_hdr_ptr, entry, &hw_path);
++	ppe_fill_info_blk(eth_hdr_ptr, &entry, &hw_path);
+ 
+ 	if (!IS_EXT(dev) && (IS_LAN_GRP(dev) || IS_WAN(dev))) {
+ 		port_id = hnat_dsa_get_port(&master_dev);
+@@ -4169,7 +4167,7 @@
+ 	}
+ 
+ 	/* Fill Layer2 Info.*/
+-	entry = ppe_fill_L2_info(eth, entry, hw_path);
++	ppe_fill_L2_info(eth, &entry, hw_path);
+ 
+ 	if ((skb_hnat_tops(skb) && (hw_path->flags & BIT(DEV_PATH_TNL))) ||
+ 	    (!skb_hnat_cdrt(skb) && skb_hnat_is_encrypt(skb) &&
+@@ -4182,7 +4180,7 @@
+ 	}
+ 
+ 	/* Fill Info Blk*/
+-	entry = ppe_fill_info_blk(eth, entry, hw_path);
++	ppe_fill_info_blk(eth, &entry, hw_path);
+ 
+ 	if (IS_LAN_GRP(dev) || IS_WAN(dev)) { /* Forward to GMAC Ports */
+ 		port_id = hnat_dsa_get_port(&master_dev);
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/Makefile
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/Makefile
+@@ -2,3 +2,4 @@
+ obj-$(CONFIG_NET_MEDIATEK_HNAT)         += mtkhnat.o
+ mtkhnat-objs := hnat.o hnat_nf_hook.o hnat_debugfs.o hnat_mcast.o
+ mtkhnat-$(CONFIG_NET_DSA_MT7530)	+= hnat_stag.o
++CFLAGS_hnat_debugfs.o += -Os

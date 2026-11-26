@@ -62,6 +62,7 @@ define Device/asus_rt-ax89x
 		append-kernel | asus-fake-ramdisk |\
 		multiImage gzip $$(KDIR)/tmp/fakerd $$(KDIR)/image-$$(DEVICE_DTS).dtb |\
 		sysupgrade-tar kernel=$$$$@ | append-metadata
+ifeq ($(IB),)
 ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 	ARTIFACTS := initramfs-factory.trx initramfs-uImage.itb
 	ARTIFACT/initramfs-uImage.itb := \
@@ -71,6 +72,7 @@ ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 		asus-fake-rootfs xz /lib/firmware/IPQ8074A/fw_version.txt "fake" -no-compression |\
 		multiImage gzip $$(KDIR)/tmp/fakehsqs $$(KDIR)/image-$$(DEVICE_DTS).dtb |\
 		asus-trx -v 2 -n RT-AX89U -b 388 -e 49000
+endif
 endif
 endef
 TARGET_DEVICES += asus_rt-ax89x
@@ -156,6 +158,21 @@ define Device/edimax_cax1800
 endef
 TARGET_DEVICES += edimax_cax1800
 
+define Device/linksys_homewrk
+	$(call Device/FitImage)
+	$(call Device/UbiFit)
+	DEVICE_VENDOR := Linksys
+	DEVICE_MODEL := HomeWRK
+	DEVICE_DTS_CONFIG := config@oak03
+	BLOCKSIZE := 256k
+	PAGESIZE := 4096
+	IMAGE_SIZE := 475m
+	NAND_SIZE := 1024m
+	SOC := ipq8174
+	DEVICE_PACKAGES += kmod-leds-pca963x ipq-wifi-linksys_homewrk
+endef
+TARGET_DEVICES += linksys_homewrk
+
 define Device/linksys_mx
 	$(call Device/FitImage)
 	DEVICE_VENDOR := Linksys
@@ -231,11 +248,13 @@ define Device/netgear_rax120v2
 	NETGEAR_HW_ID := 29765589+0+512+1024+4x4+8x8
 	DEVICE_PACKAGES := ipq-wifi-netgear_rax120v2 kmod-spi-gpio \
 		kmod-spi-bitbang kmod-gpio-nxp-74hc164 kmod-hwmon-g762
+ifeq ($(IB),)
 ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 	IMAGES += web-ui-factory.img
 	IMAGE/web-ui-factory.img := append-image initramfs-uImage.itb | \
 		pad-offset $$$$(BLOCKSIZE) 64 | append-uImage-fakehdr filesystem | \
 		netgear-dni
+endif
 endif
 	IMAGE/sysupgrade.bin := append-kernel | pad-offset $$$$(BLOCKSIZE) 64 | \
 		append-uImage-fakehdr filesystem | sysupgrade-tar kernel=$$$$@ | \
@@ -279,10 +298,12 @@ define Device/netgear_wax218
 	BLOCKSIZE := 128k
 	PAGESIZE := 2048
 	SOC := ipq8072
+ifeq ($(IB),)
 ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 	ARTIFACTS := web-ui-factory.fit
 	ARTIFACT/web-ui-factory.fit := append-image initramfs-uImage.itb | \
 		ubinize-kernel | qsdk-ipq-factory-nand
+endif
 endif
 	DEVICE_PACKAGES := kmod-spi-gpio kmod-spi-bitbang kmod-gpio-nxp-74hc164 \
 		ipq-wifi-netgear_wax218
@@ -400,9 +421,11 @@ define Device/xiaomi_ax3600
 	KERNEL_SIZE := 36608k
 	DEVICE_PACKAGES := ipq-wifi-xiaomi_ax3600 kmod-ath10k-ct-smallbuffers ath10k-firmware-qca9887-ct \
 		-kmod-usb3 -kmod-usb-dwc3 -kmod-usb-dwc3-qcom -automount
+ifeq ($(IB),)
 ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 	ARTIFACTS := initramfs-factory.ubi
 	ARTIFACT/initramfs-factory.ubi := append-image-stage initramfs-uImage.itb | ubinize-kernel
+endif
 endif
 endef
 TARGET_DEVICES += xiaomi_ax3600
@@ -431,12 +454,25 @@ define Device/xiaomi_ax9000
 	KERNEL_SIZE := 57344k
 	DEVICE_PACKAGES := ipq-wifi-xiaomi_ax9000 kmod-ath11k-pci ath11k-firmware-qcn9074 \
 		kmod-ath10k-ct ath10k-firmware-qca9887-ct
+ifeq ($(IB),)
 ifneq ($(CONFIG_TARGET_ROOTFS_INITRAMFS),)
 	ARTIFACTS := initramfs-factory.ubi
 	ARTIFACT/initramfs-factory.ubi := append-image-stage initramfs-uImage.itb | ubinize-kernel
 endif
+endif
 endef
 TARGET_DEVICES += xiaomi_ax9000
+
+define Device/xiaomi_ax9000-stock
+	$(call Device/xiaomi_ax9000)
+	DEVICE_VARIANT := (stock layout)
+	DEVICE_ALT0_VENDOR := Xiaomi
+	DEVICE_ALT0_MODEL := AX9000
+	DEVICE_ALT0_VARIANT := (custom U-Boot layout)
+	KERNEL_SIZE :=
+	ARTIFACTS :=
+endef
+TARGET_DEVICES += xiaomi_ax9000-stock
 
 define Device/yuncore_ax880
 	$(call Device/FitImage)

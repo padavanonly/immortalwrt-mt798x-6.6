@@ -1,0 +1,194 @@
+---
+[v1] phy: mediatek: add mt7987 pcie lane mux support
+
+Add PCIe PHY lane mux driver support for MT7987 to enable flexible lane
+allocation. Supports mediatek,1port-2lane and mediatek,2port-1lane properties
+for runtime PCIe topology configuration.
+---
+v1: Initial PCIe PHY lane mux driver support for flexible 1x2 or 2x1 lane
+    configuration on MT7987.
+---
+
+--- a/drivers/phy/mediatek/phy-mtk-pcie.c
++++ b/drivers/phy/mediatek/phy-mtk-pcie.c
+@@ -11,6 +11,8 @@
+ #include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
+ #include <linux/slab.h>
++#include <linux/regmap.h>
++#include <linux/mfd/syscon.h>
+ 
+ #include "phy-mtk-io.h"
+ 
+@@ -32,6 +34,16 @@
+ 
+ #define PEXTP_ANA_LANE_OFFSET		0x100
+ 
++/* PCIE phy lane switch control */
++#define MT7987_PHY_LANE_MODE_MASK      BIT(5)
++#define MT7987_RG_XTP_LN_SYNC_CK_SEL0  0x088    /* Offset from PEXTP base */
++#define MT7987_RG_XTP_LN_SYNC_CK_SEL1  0x188    /* Offset from PEXTP base */
++#define MT7987_XTP_SYNC_MASK           GENMASK(3, 2)
++#define MT7987_XTP_SYNC_1PORT_2LANE    FIELD_PREP(MT7987_XTP_SYNC_MASK, 1)
++#define MT7987_XTP_SYNC_2PORT_1LANE    FIELD_PREP(MT7987_XTP_SYNC_MASK, 0)
++#define MT7987_LANE_1PORT_2LANE        0
++#define MT7987_LANE_2PORT_1LANE        BIT(5)
++
+ /**
+  * struct mtk_pcie_lane_efuse - eFuse data for each lane
+  * @tx_pmos: TX PMOS impedance selection data
+@@ -50,10 +62,37 @@ struct mtk_pcie_lane_efuse {
+  * struct mtk_pcie_phy_data - phy data for each SoC
+  * @num_lanes: supported lane numbers
+  * @sw_efuse_supported: support software to load eFuse data
++ * @lane_switch_supported: support switching between 2-lane and 1-lane
+  */
+ struct mtk_pcie_phy_data {
+ 	int num_lanes;
+ 	bool sw_efuse_supported;
++	bool lane_switch_supported;
++};
++
++/**
++ * enum mtk_pcie_lane_mode - PCIe lane switch mode enumeration
++ * @MTK_PCIE_LANE_DEFAULT: Default lane mode (bootloader/hw default)
++ * @MTK_PCIE_LANE_1PORT_2LANE: 1-port, 2-lane mode
++ * @MTK_PCIE_LANE_2PORT_1LANE: 2-port, 1-lane mode
++ */
++enum mtk_pcie_lane_mode {
++	MTK_PCIE_LANE_DEFAULT = 0,
++	MTK_PCIE_LANE_1PORT_2LANE,
++	MTK_PCIE_LANE_2PORT_1LANE,
++};
++
++/**
++ * struct mtk_pcie_lane_switch - PCIe lane switch configuration
++ * @mode: Lane switch mode (see mtk_pcie_lane_mode)
++ * @topmisc: Regmap for TOP_MISC register access
++ * @topmisc_offset: Offset for lane mode register in TOP_MISC
++ */
++struct mtk_pcie_lane_switch {
++	/* Default initialization in probe */
++	int mode;
++	struct regmap *topmisc;
++	u32 topmisc_offset;
+ };
+ 
+ /**
+@@ -75,6 +114,7 @@ struct mtk_pcie_phy {
+ 	bool sw_efuse_en;
+ 	u32 efuse_glb_intr;
+ 	struct mtk_pcie_lane_efuse *efuse;
++	struct mtk_pcie_lane_switch lane_switch;
+ };
+ 
+ static void mtk_pcie_efuse_set_lane(struct mtk_pcie_phy *pcie_phy,
+@@ -110,17 +150,38 @@ static void mtk_pcie_efuse_set_lane(stru
+ static int mtk_pcie_phy_init(struct phy *phy)
+ {
+ 	struct mtk_pcie_phy *pcie_phy = phy_get_drvdata(phy);
+-	int i;
++	int i, ret;
++	u32 val;
+ 
+-	if (!pcie_phy->sw_efuse_en)
+-		return 0;
++	if (pcie_phy->data->lane_switch_supported &&
++	    pcie_phy->lane_switch.mode != MTK_PCIE_LANE_DEFAULT) {
++		/* Configure lane mode in TOP_MISC */
++		if (!pcie_phy->lane_switch.topmisc)
++			return -EINVAL;
++		val = (pcie_phy->lane_switch.mode == MTK_PCIE_LANE_2PORT_1LANE) ?
++			MT7987_LANE_2PORT_1LANE : MT7987_LANE_1PORT_2LANE;
++		ret = regmap_update_bits(pcie_phy->lane_switch.topmisc,
++					pcie_phy->lane_switch.topmisc_offset,
++					MT7987_PHY_LANE_MODE_MASK, val);
++		if (ret)
++			return ret;
++		/* Configure PEXTP sync clock selection */
++		val = (pcie_phy->lane_switch.mode == MTK_PCIE_LANE_2PORT_1LANE) ?
++			MT7987_XTP_SYNC_2PORT_1LANE : MT7987_XTP_SYNC_1PORT_2LANE;
++		mtk_phy_update_bits(pcie_phy->sif_base + MT7987_RG_XTP_LN_SYNC_CK_SEL0,
++				   MT7987_XTP_SYNC_MASK, val);
++		mtk_phy_update_bits(pcie_phy->sif_base + MT7987_RG_XTP_LN_SYNC_CK_SEL1,
++				   MT7987_XTP_SYNC_MASK, val);
++	}
+ 
+-	/* Set global data */
+-	mtk_phy_update_field(pcie_phy->sif_base + PEXTP_ANA_GLB_00_REG,
+-			     EFUSE_GLB_INTR_SEL, pcie_phy->efuse_glb_intr);
++	if (pcie_phy->sw_efuse_en) {
++		/* Set global data */
++		mtk_phy_update_field(pcie_phy->sif_base + PEXTP_ANA_GLB_00_REG,
++				EFUSE_GLB_INTR_SEL, pcie_phy->efuse_glb_intr);
+ 
+-	for (i = 0; i < pcie_phy->data->num_lanes; i++)
+-		mtk_pcie_efuse_set_lane(pcie_phy, i);
++		for (i = 0; i < pcie_phy->data->num_lanes; i++)
++			mtk_pcie_efuse_set_lane(pcie_phy, i);
++	}
+ 
+ 	return 0;
+ }
+@@ -200,17 +261,45 @@ static int mtk_pcie_phy_probe(struct pla
+ 	struct device *dev = &pdev->dev;
+ 	struct phy_provider *provider;
+ 	struct mtk_pcie_phy *pcie_phy;
++	struct of_phandle_args args;
+ 	int ret;
+ 
+ 	pcie_phy = devm_kzalloc(dev, sizeof(*pcie_phy), GFP_KERNEL);
+ 	if (!pcie_phy)
+ 		return -ENOMEM;
+-
+ 	pcie_phy->sif_base = devm_platform_ioremap_resource_byname(pdev, "sif");
+ 	if (IS_ERR(pcie_phy->sif_base))
+ 		return dev_err_probe(dev, PTR_ERR(pcie_phy->sif_base),
+ 				     "Failed to map phy-sif base\n");
+ 
++	pcie_phy->dev = dev;
++	pcie_phy->data = of_device_get_match_data(dev);
++	if (!pcie_phy->data)
++		return dev_err_probe(dev, -EINVAL, "Failed to get phy data\n");
++
++	if (pcie_phy->data->lane_switch_supported) {
++		/* Get syscon regmap for TOP_MISC */
++		ret = of_parse_phandle_with_fixed_args(dev->of_node,
++						     "mediatek,syscon-type",
++						     1, 0, &args);
++		if (!ret) {
++			pcie_phy->lane_switch.topmisc = syscon_node_to_regmap(args.np);
++			of_node_put(args.np);
++			if (IS_ERR(pcie_phy->lane_switch.topmisc))
++				return PTR_ERR(pcie_phy->lane_switch.topmisc);
++
++			pcie_phy->lane_switch.topmisc_offset = args.args[0];
++		}
++
++		/* Get lane mode configuration from device tree */
++		if (of_property_read_bool(dev->of_node, "mediatek,2port-1lane"))
++			pcie_phy->lane_switch.mode = MTK_PCIE_LANE_2PORT_1LANE;
++		else if (of_property_read_bool(dev->of_node, "mediatek,1port-2lane"))
++			pcie_phy->lane_switch.mode = MTK_PCIE_LANE_1PORT_2LANE;
++		else
++			pcie_phy->lane_switch.mode = MTK_PCIE_LANE_DEFAULT;
++	}
++
+ 	pcie_phy->phy = devm_phy_create(dev, dev->of_node, &mtk_pcie_phy_ops);
+ 	if (IS_ERR(pcie_phy->phy))
+ 		return dev_err_probe(dev, PTR_ERR(pcie_phy->phy),
+@@ -246,8 +335,14 @@ static const struct mtk_pcie_phy_data mt
+ 	.sw_efuse_supported = true,
+ };
+ 
++static const struct mtk_pcie_phy_data mt7987_data = {
++	.num_lanes = 2,
++	.lane_switch_supported = true,
++};
++
+ static const struct of_device_id mtk_pcie_phy_of_match[] = {
+ 	{ .compatible = "mediatek,mt8195-pcie-phy", .data = &mt8195_data },
++	{ .compatible = "mediatek,mt7987-pcie-phy", .data = &mt7987_data },
+ 	{ },
+ };
+ MODULE_DEVICE_TABLE(of, mtk_pcie_phy_of_match);

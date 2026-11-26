@@ -1,44 +1,44 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 source "${SCRIPT_DIR}/modem_debug.sh"
 
-#初值化数据结构
+# Initialize data structure
 init_modem_info()
 {
-	#基本信息
-	name='unknown' 			#名称
-	manufacturer='unknown'	#制造商
-	revision='-'			#固件版本
-	at_port='-'				#AT串口
-	mode='unknown'			#拨号模式
-	temperature="NaN $(printf "\xc2\xb0")C"	#温度
-	update_time='-'			#更新时间
+	# Basic information
+	name='unknown' 			# Name
+	manufacturer='unknown'	# Manufacturer
+	revision='-'			# Firmware version
+	at_port='-'				# AT serial port
+	mode='unknown'			# Dial mode
+	temperature="NaN $(printf "\xc2\xb0")C"	# Temperature
+	update_time='-'			# Update time
 
-	#SIM卡信息
-	sim_status="unknown"	#SIM卡状态
-	sim_slot="-"			#SIM卡卡槽
-	isp="-"					#运营商（互联网服务提供商）
-	sim_number='-'			#SIM卡号码（手机号）
+	# SIM card info
+	sim_status="unknown"	# SIM card status
+	sim_slot="-"			# SIM slot
+	isp="-"					#Carrier (ISP)
+	sim_number='-'			#SIM card number (phone number)
 	imei='-'				#IMEI
 	imsi='-'				#IMSI
 	iccid='-'				#ICCID
 
-	#网络信息
-	connect_status="disconnect"	#SIM卡状态
-	network_type="-"			#蜂窝网络类型
-	cqi_ul="-"					#上行信道质量指示
-	cqi_dl="-"					#下行信道质量指示
-	ambr_ul="-"					#上行签约速率
-	ambr_dl="-"					#下行签约速率
-	tx_rate="-"					#上传速率
-	rx_rate="-"					#下载速率
+	# Network information
+	connect_status="disconnect"	# SIM card status
+	network_type="-"			# Cellular network type
+	cqi_ul="-"					# CQI UL
+	cqi_dl="-"					# CQI DL
+	ambr_ul="-"					# Uplink AMBR
+	ambr_dl="-"					# Downlink AMBR
+	tx_rate="-"					# Upload rate
+	rx_rate="-"					# Download rate
 
-	#小区信息
-	network_mode="-" #网络模式
-	#NR5G-SA模式
+	# Cell information
+	network_mode="-" # Network mode
+	# NR5G-SA mode
 	nr_mcc=''
 	nr_mnc=''
 	nr_duplex_mode=''
@@ -54,7 +54,7 @@ init_modem_info()
 	nr_rxlev=''
 	nr_scs=''
 	nr_srxlev=''
-	#EN-DC模式（LTE）
+	# EN-DC mode (LTE)
 	endc_lte_mcc=''
 	endc_lte_mnc=''
 	endc_lte_duplex_mode=''
@@ -73,7 +73,7 @@ init_modem_info()
 	endc_lte_cql=''
 	endc_lte_tx_power=''
 	endc_lte_srxlev=''
-	#EN-DC模式（NR5G-NSA）
+	# EN-DC mode (NR5G-NSA)
 	endc_nr_mcc=''
 	endc_nr_mnc=''
 	endc_nr_physical_cell_id=''
@@ -84,7 +84,7 @@ init_modem_info()
 	endc_nr_rsrq=''
 	endc_nr_sinr=''
 	endc_nr_scs=''
-	#LTE模式
+	# LTE mode
 	lte_mcc=''
 	lte_mnc=''
 	lte_duplex_mode=''
@@ -103,7 +103,7 @@ init_modem_info()
 	lte_cql=''
 	lte_tx_power=''
 	lte_srxlev=''
-	#WCDMA模式
+	# WCDMA mode
 	wcdma_mcc=''
 	wcdma_mnc=''
 	wcdma_lac=''
@@ -120,7 +120,7 @@ init_modem_info()
 	wcdma_com_mod=''
 }
 
-#设置基本信息
+# Set basic information
 set_base_info()
 {
 	base_info="\"base_info\":{
@@ -133,7 +133,7 @@ set_base_info()
 	},"
 }
 
-#设置SIM卡信息
+# Set SIM card info
 set_sim_info()
 {
 	if [ "$sim_status" = "ready" ]; then
@@ -166,7 +166,7 @@ set_sim_info()
 	fi
 }
 
-#设置网络信息
+# Set network information
 set_network_info()
 {
 	network_info="\"network_info\":[
@@ -180,7 +180,7 @@ set_network_info()
 	],"
 }
 
-#设置信号信息
+# Set signal information
 set_cell_info()
 {
 	if [ "$network_mode" = "NR5G-SA Mode" ]; then
@@ -295,7 +295,7 @@ set_cell_info()
 	fi
 }
 
-#以Json格式保存模组信息
+# Save modem info in JSON format
 info_to_json()
 {
 	base_info="\"base_info\":{},"
@@ -303,33 +303,33 @@ info_to_json()
 	network_info="\"network_info\":{},"
 	cell_info="\"cell_info\":{}"
 	
-	#设置基本信息
+	# Set basic information
 	set_base_info
 
-	#判断是否适配
+	# Check if supported
 	if [ "$manufacturer" != "unknown" ]; then
-		#设置SIM卡信息
+		# Set SIM card info
 		set_sim_info
 	fi
 
-	#判断插卡和连接状态
+	# Check SIM and connection status
 	if [ "$sim_status" = "ready" ] && [ "$connect_status" = "connect" ]; then
-		#设置网络信息
+		# Set network information
 		set_network_info
-		#设置小区信息
+		# Set cell information
 		set_cell_info
     fi
 
-	#拼接所有信息（不要漏掉最后一个}）
+	# Join all info (do not miss the final })
 	modem_info="{$base_info$modem_info$sim_info$network_info$cell_info}"
 }
-        # echo $ECIO #参考信号接收质量 RSRQ ecio
-        # echo $ECIO1 #参考信号接收质量 RSRQ ecio1
-        # echo $RSCP #参考信号接收功率 RSRP rscp0
-        # echo $RSCP1 #参考信号接收功率 RSRP rscp1
-        # echo $SINR #信噪比 SINR  rv["sinr"]
+        # echo $ECIO # RSRQ ecio
+        # echo $ECIO1 # RSRQ ecio1
+        # echo $RSCP # RSRP rscp0
+        # echo $RSCP1 # RSRP rscp1
+        # echo $SINR # SINR  rv["sinr"]
 
-		# #基站信息
+		# Cell info
         # echo $COPS_MCC #MCC
         # echo $$COPS_MNC #MNC
         # echo $LAC  #eNB ID
@@ -344,26 +344,26 @@ info_to_json()
         # echo $MODTYPE
         # echo $QTEMP
 
-#获取模组信息
+# Get modem info
 get_modem_info()
 {
 	update_time=$(date +"%Y-%m-%d %H:%M:%S") 
-	debug "检查模组的AT串口"
-	#获取模块AT串口
+	debug "Checking modem AT serial port"
+	# Get modem AT serial port
 	if [ -z "$at_port" ]; then
-		debug "模组没有AT串口"
+		debug "Modem has no AT serial port"
 		return
 	fi
-	#检查模块状态（是否处于重启，重置，串口异常状态）
+	# Check modem status (rebooting, resetting, or serial port abnormal)
     local at_command="ATI"
 	local response=$(timeout 10 at ${at_port} ${at_command})
 	if [[ $? -ne 0 ]] || [[ "$response" = *"failed"* ]] || [[ "$response" = *"$at_port"* ]]; then
-		debug "模组AT串口未就绪"
+		debug "Modem AT serial port not ready"
 		return
 	fi
 
-    debug "根据模组的制造商获取信息"
-	#更多信息获取
+    debug "Getting information based on modem manufacturer"
+	# Fetch additional information
 	case $manufacturer in
 		"quectel") get_quectel_info "${at_port}" "${platform}" "${define_connect}" ;;
 		"fibocom") get_fibocom_info "${at_port}" "${platform}" "${define_connect}" ;;
@@ -371,35 +371,35 @@ get_modem_info()
 		"simcom") get_simcom_info "${at_port}" "${platform}" "${define_connect}" ;;
 		"huawei") get_huawei_info "${at_port}" "${platform}" "${define_connect}" ;;
 		"tdtech") get_tdtech_info "${at_port}" "${platform}" "${define_connect}" ;;
-		*) debug "未适配该模组" ;;
+		*) debug "Modem not supported" ;;
 	esac
 
-	#获取更新时间
+	# Get update time
 	update_time=$(date +"%Y-%m-%d %H:%M:%S")
 }
 
-#获取模组数据信息
-# $1:AT串口
-# $2:制造商
-# $3:平台
-# $4:连接定义
+# Get modem data info
+# $1: AT serial port
+# $2: Manufacturer
+# $3: Platform
+# $4: Connection definition
 modem_info()
 {
-    #初值化模组信息
-    debug "初值化模组信息"
+    # Initialize modem info
+    debug "Initializing modem info"
     init_modem_info
-    debug "初值化模组信息完成"
+    debug "Modem info initialization completed"
 
-    #获取模组信息
+    # Get modem info
 	at_port="$1"
 	manufacturer="$2"
 	platform="$3"
 	define_connect="$4"
 	
-	debug "获取模组信息"
+	debug "Getting modem information"
 	get_modem_info
 	
-    #整合模块信息
+    # Aggregate modem information
     info_to_json
 	echo $modem_info
 }

@@ -22,9 +22,11 @@ endef
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./src/* $(PKG_BUILD_DIR)/
+	$(Build/Patch)
 endef
 
 MAKE_OPTS:= \
+	$(KERNEL_MAKE_FLAGS) \
 	ARCH="$(LINUX_KARCH)" \
 	CROSS_COMPILE="$(TARGET_CROSS)" \
 	KDIR="$(LINUX_DIR)"

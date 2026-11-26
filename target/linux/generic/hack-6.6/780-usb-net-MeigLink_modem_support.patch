@@ -1,0 +1,35 @@
+From f81700b6bb2eda3756247bce472d8eaf6f466f61 Mon Sep 17 00:00:00 2001
+From: OpenWrt community <openwrt-devel@lists.openwrt.org>
+Date: Wed, 13 Jul 2022 13:49:26 +0200
+Subject: [PATCH] usb/serial/option: add MeigLink modem support
+
+---
+ drivers/usb/serial/option.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -248,6 +248,11 @@ static void option_instat_callback(struc
+ #define UBLOX_PRODUCT_R410M			0x90b2
+ /* These Yuga products use Qualcomm's vendor ID */
+ #define YUGA_PRODUCT_CLM920_NC5			0x9625
++/* These MeigLink products use Qualcomm's vendor ID */
++#define MEIGLINK_PRODUCT_SLM750			0xf601
++
++#define MEIGLINK_VENDOR_ID			0x2dee
++#define MEIGLINK_PRODUCT_SLM828			0x4d49
+ 
+ #define QUECTEL_VENDOR_ID			0x2c7c
+ /* These Quectel products use Quectel's vendor ID */
+@@ -1159,6 +1164,11 @@ static const struct usb_device_id option
+ 	{ USB_DEVICE(QUALCOMM_VENDOR_ID, 0x0023)}, /* ONYX 3G device */
+ 	{ USB_DEVICE(QUALCOMM_VENDOR_ID, 0x9000), /* SIMCom SIM5218 */
+ 	  .driver_info = NCTRL(0) | NCTRL(1) | NCTRL(2) | NCTRL(3) | RSVD(4) },
++	/* MeiG */
++	{ USB_DEVICE_AND_INTERFACE_INFO(MEIGLINK_VENDOR_ID, MEIGLINK_PRODUCT_SLM828, USB_CLASS_VENDOR_SPEC, 0x10, 0x01) },
++	{ USB_DEVICE_AND_INTERFACE_INFO(MEIGLINK_VENDOR_ID, MEIGLINK_PRODUCT_SLM828, USB_CLASS_VENDOR_SPEC, 0x10, 0x02) },
++	{ USB_DEVICE_AND_INTERFACE_INFO(MEIGLINK_VENDOR_ID, MEIGLINK_PRODUCT_SLM828, USB_CLASS_VENDOR_SPEC, 0x10, 0x03) },
++	{ USB_DEVICE_AND_INTERFACE_INFO(MEIGLINK_VENDOR_ID, MEIGLINK_PRODUCT_SLM828, USB_CLASS_VENDOR_SPEC, 0x10, 0x04) },
+ 	/* Quectel products using Qualcomm vendor ID */
+ 	{ USB_DEVICE(QUALCOMM_VENDOR_ID, QUECTEL_PRODUCT_UC15)},
+ 	{ USB_DEVICE(QUALCOMM_VENDOR_ID, QUECTEL_PRODUCT_UC20),

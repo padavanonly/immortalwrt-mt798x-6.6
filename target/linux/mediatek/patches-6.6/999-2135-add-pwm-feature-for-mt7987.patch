@@ -9,7 +9,7 @@ Subject: [PATCH] add pwm reg-v3 support for mt7987
 
 --- a/drivers/pwm/pwm-mediatek.c
 +++ b/drivers/pwm/pwm-mediatek.c
-@@ -67,6 +67,10 @@
+@@ -67,6 +67,10 @@ static const unsigned int mtk_pwm_reg_of
  	0x0080, 0x00c0, 0x0100, 0x0140, 0x0180, 0x01c0, 0x0200, 0x0240
  };
  
@@ -20,7 +20,7 @@ Subject: [PATCH] add pwm reg-v3 support for mt7987
  static inline struct pwm_mediatek_chip *
  to_pwm_mediatek_chip(struct pwm_chip *chip)
  {
-@@ -351,6 +355,13 @@
+@@ -371,6 +375,13 @@ static const struct pwm_mediatek_of_data
  	.reg_offset = mtk_pwm_reg_offset_v1,
  };
  
@@ -34,7 +34,7 @@ Subject: [PATCH] add pwm reg-v3 support for mt7987
  static const struct pwm_mediatek_of_data mt7988_pwm_data = {
  	.num_pwms = 8,
  	.pwm45_fixup = false,
-@@ -388,6 +399,7 @@
+@@ -408,6 +419,7 @@ static const struct of_device_id pwm_med
  	{ .compatible = "mediatek,mt7629-pwm", .data = &mt7629_pwm_data },
  	{ .compatible = "mediatek,mt7981-pwm", .data = &mt7981_pwm_data },
  	{ .compatible = "mediatek,mt7986-pwm", .data = &mt7986_pwm_data },

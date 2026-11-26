@@ -1,0 +1,66 @@
+From: Qendrim Maxhuni <qendrim.maxhuni@garderos.com>
+Date: Wed, 29 Oct 2025 08:57:44 +0100
+Subject: [PATCH] net: usb: qmi_wwan: initialize MAC header offset in
+ qmimux_rx_fixup
+
+Raw IP packets have no MAC header, leaving skb->mac_header uninitialized.
+This can trigger kernel panics on ARM64 when xfrm or other subsystems
+access the offset due to strict alignment checks.
+
+Initialize the MAC header to prevent such crashes.
+
+This can trigger kernel panics on ARM when running IPsec over the
+qmimux0 interface.
+
+Example trace:
+
+    Internal error: Oops: 000000009600004f [#1] SMP
+    CPU: 0 UID: 0 PID: 0 Comm: swapper/0 Not tainted 6.12.34-gbe78e49cb433 #1
+    Hardware name: LS1028A RDB Board (DT)
+    pstate: 60000005 (nZCv daif -PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+    pc : xfrm_input+0xde8/0x1318
+    lr : xfrm_input+0x61c/0x1318
+    sp : ffff800080003b20
+    Call trace:
+     xfrm_input+0xde8/0x1318
+     xfrm6_rcv+0x38/0x44
+     xfrm6_esp_rcv+0x48/0xa8
+     ip6_protocol_deliver_rcu+0x94/0x4b0
+     ip6_input_finish+0x44/0x70
+     ip6_input+0x44/0xc0
+     ipv6_rcv+0x6c/0x114
+     __netif_receive_skb_one_core+0x5c/0x8c
+     __netif_receive_skb+0x18/0x60
+     process_backlog+0x78/0x17c
+     __napi_poll+0x38/0x180
+     net_rx_action+0x168/0x2f0
+
+Fixes: c6adf77953bc ("net: usb: qmi_wwan: add qmap mux protocol support")
+Signed-off-by: Qendrim Maxhuni <qendrim.maxhuni@garderos.com>
+Link: https://patch.msgid.link/20251029075744.105113-1-qendrim.maxhuni@garderos.com
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+
+(cherry picked from commit e120f46768d98151ece8756ebd688b0e43dc8b29)
+[sKyissKy: backport to MediaTek files-6.6 qmi_wwan overlay]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/usb/qmi_wwan.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/net/usb/qmi_wwan.c b/drivers/net/usb/qmi_wwan.c
+index fece1f5..c00becc 100644
+--- a/drivers/net/usb/qmi_wwan.c
++++ b/drivers/net/usb/qmi_wwan.c
+@@ -192,6 +192,12 @@ static int qmimux_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
+ 		if (!skbn)
+ 			return 0;
+ 
++		/* Raw IP packets don't have a MAC header, but other subsystems
++		 * (like xfrm) may still access MAC header offsets, so they must
++		 * be initialized.
++		 */
++		skb_reset_mac_header(skbn);
++
+ 		switch (skb->data[offset + qmimux_hdr_sz] & 0xf0) {
+ 		case 0x40:
+ 			skbn->protocol = htons(ETH_P_IP);

@@ -1,0 +1,58 @@
+diff -Naur a/regs.c b/regs.c
+--- a/regs.c
++++ b/regs.c
+@@ -46,7 +46,6 @@
+ 
+ void dump_page(uint32_t *vaddr, uint32_t *vbase, uint32_t *pbase)
+ {
+-	int i =0;
+ 	uint32_t *end = vaddr + (MAP_SIZE >> 6);
+ 	uint32_t *start = vaddr;
+ 
+@@ -59,8 +58,8 @@
+ 
+ void reg_mod_bits(uint32_t *virt_addr, int data, int  start_bit, int data_len)
+ {
+-    int mask=0;
+-    int value;
++    uint32_t mask = 0;
++    uint32_t value;
+     int i;
+ 
+ 	if ((start_bit < 0) || (start_bit > 31) ||
+@@ -74,14 +73,14 @@
+ 		if (start_bit + i > 31)
+ 			break;
+ 
+-		mask |= 1 << (start_bit + i);
++		mask |= 1U << (start_bit + i);
+ 	}
+ 
+ 	value = *((volatile uint32_t *) virt_addr);
+ 	value &= ~mask;
+-	value |= (data << start_bit) & mask;;
++	value |= ((uint32_t)data << start_bit) & mask;
+ 
+-	*((uint32_t *) virt_addr) = value;
++	*((volatile uint32_t *) virt_addr) = value;
+ 
+ 	printf("Modify 0x%X[%d:%d]; ", data, start_bit + data_len - 1, start_bit);
+ }
+@@ -147,7 +146,7 @@
+ 			break;
+ 		case 'w':
+ 			writeval = strtoul(argv[3], 0, 16);
+-			*((uint32_t *) virt_addr) = writeval;
++			*((volatile uint32_t *) virt_addr) = writeval;
+ 			printf("Written 0x%X; ", writeval);
+ 			break;
+ 		case 'd':
+@@ -162,7 +161,7 @@
+ 	printf("Readback 0x%X\n", read_result);
+ 
+ out:
+-	if(munmap(map_base, MAP_SIZE) == -1)
++	if(munmap(map_base, 2 * MAP_SIZE) == -1)
+ 		PRINT_ERROR;
+ 
+ 	close(fd);

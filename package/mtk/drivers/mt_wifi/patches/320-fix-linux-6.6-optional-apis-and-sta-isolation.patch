@@ -1,0 +1,430 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi: fix Linux 6.6 optional APIs, broken RRM MIN macros, and STA isolation
+
+- Fix intra-BSS STA isolation bypass in ap_data.c when IsolateInterStaTraffic == 1.
+- Guard cmm_info.c MIN() macro and fix inverted > MIN() macros in rrm.c / rrm_tlv.c via min_t().
+- Update proc_ops (>= 5.6), ktime_get_real_ts64/rtc_time64_to_tm (>= 5.0), netif_rx (>= 5.18),
+  and dma_set_mask/dma_set_coherent_mask (>= 5.18), plus stray parenthesis in rt_proc.c.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/mt_wifi/embedded/ap/ap_data.c
++++ b/mt_wifi/embedded/ap/ap_data.c
+@@ -3970,8 +3970,10 @@
+ 				to_os = TRUE;
+ 				to_air = FALSE;
+ 
+-				if (pMbss->IsolateInterStaTraffic == 1)
++				if (pMbss->IsolateInterStaTraffic == 1) {
++					to_os = FALSE;
+ 					to_air = FALSE;
++				}
+ 			} else {
+ 				/*
+ 					STAs in different SSID, default send to os and not to air
+--- a/mt_wifi/embedded/common/cmm_info.c
++++ b/mt_wifi/embedded/common/cmm_info.c
+@@ -36,7 +36,9 @@
+ #endif
+ 
+ #define MCAST_WCID_TO_REMOVE 0 /* Pat: TODO */
++#ifndef MIN
+ #define MIN(a, b)					((a) < (b) ? (a) : (b))
++#endif
+ INT UNII4BandSupportRegions[] = {25, 26};
+ INT MCSMappingRateTable[] = {
+ 	2,  4, 11, 22, 12,  18,  24,  36, 48,  72,  96, 108, 109, 110, 111, 112,/* CCK and OFDM */
+--- a/mt_wifi/embedded/common/rrm.c
++++ b/mt_wifi/embedded/common/rrm.c
+@@ -2554,7 +2554,6 @@
+ 		IN PRTMP_ADAPTER pAd,
+ 		IN MLME_QUEUE_ELEM *Elem)
+ {
+-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+ 	MEASURE_REQ_INFO MeasureReqInfo;
+ 	RRM_BEACON_REQ_INFO BcnReq;
+ 	PFRAME_802_11 pFr = (PFRAME_802_11)Elem->Msg;
+@@ -2604,7 +2603,7 @@
+ 			if (isWildcardBssid == TRUE) {
+ 				if (SsidLen != 0) {
+ 					BssMatch = RTMPEqualMemory(pBssEntry->Ssid, pSsid,
+-							MIN(SsidLen, pBssEntry->SsidLen));
++							min_t(UINT8, SsidLen, pBssEntry->SsidLen));
+ 					if (BssMatch)
+ 						RRM_EnqueuePeerBeaconRep(pAd, pFr->Hdr.Addr2, pFr->Hdr.Addr1, DialogToken, MeasureReqInfo,
+ 						BcnReq, pBssEntry);
+--- a/mt_wifi/embedded/common/rrm_tlv.c
++++ b/mt_wifi/embedded/common/rrm_tlv.c
+@@ -847,7 +847,6 @@
+ 	IN PCHAR pSsid,
+ 	IN UINT8 SsidLen)
+ {
+-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+ 	UINT loop;
+ 	HEADER_802_11 ActHdr;
+ 	PUCHAR pOutBuffer = NULL;
+@@ -905,7 +904,7 @@
+ 
+ 		if (SsidLen != 0)
+ 			BssMatch = RTMPEqualMemory(pBssEntry->Ssid, pSsid,
+-									   MIN(SsidLen, pBssEntry->SsidLen));
++									   min_t(UINT8, SsidLen, pBssEntry->SsidLen));
+ 		else
+ 			BssMatch = TRUE;
+ 
+--- a/mt_wifi/os/linux/rt_proc.c
++++ b/mt_wifi/os/linux/rt_proc.c
+@@ -76,6 +76,13 @@
+ static int procCSIDataOpen(struct inode *n, struct file *f);
+ static int procCSIDataRelease(struct inode *n, struct file *f);
+ 
++#if KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE
++static const struct proc_ops csidata_ops = {
++	.proc_read = procCSIDataRead,
++	.proc_open = procCSIDataOpen,
++	.proc_release = procCSIDataRelease,
++};
++#else
+ static const struct file_operations csidata_ops = {
+ 	.owner = THIS_MODULE,
+ 	.read = procCSIDataRead,
+@@ -83,6 +90,7 @@
+ 	.release = procCSIDataRelease,
+ };
+ #endif
++#endif
+ 
+ #if defined(CONFIG_PROC_FS) && defined(VIDEO_TURBINE_SUPPORT)
+ extern struct proc_dir_entry *procRegDir;
+@@ -847,7 +855,7 @@
+ 	temp = prCSIInfo->byte_stream;
+ 
+ 	if (!temp) {
+-		MTWF_DBG(pAd, (DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
++		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+ 		"temp NULL pointer!!!\n");
+ 		return -1;
+ 	}
+--- a/mt_wifi/os/linux/mt_fwdump.c
++++ b/mt_wifi/os/linux/mt_fwdump.c
+@@ -64,12 +64,20 @@
+ 	return 0;
+ }
+ 
++#if KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE
++static const struct proc_ops fops_dump = {
++	.proc_open = fwdumpopen,
++	.proc_read = fwdumpread,
++	.proc_write = fwdumpwrite,
++};
++#else
+ static const struct file_operations fops_dump = {
+ 	.owner = THIS_MODULE,
+ 	.open = fwdumpopen,
+ 	.read = fwdumpread,
+ 	.write = fwdumpwrite,
+ };
++#endif
+ 
+ BOOLEAN FWDumpProcInit(VOID *ptr)
+ {
+--- a/mt_wifi/os/linux/diag.c
++++ b/mt_wifi/os/linux/diag.c
+@@ -310,7 +310,9 @@
+ 	DIAG_LOG_ENTRY *entry;
+ 	UCHAR *p_frame_type = NULL;
+ 	UCHAR *p_sta_addr = NULL;
++#if KERNEL_VERSION(5, 0, 0) > LINUX_VERSION_CODE
+ 	struct timex  txc;
++#endif
+ 	ULONG flags;
+ 	ULONG now;
+ 
+@@ -334,9 +336,19 @@
+ 		entry = &pCtrl->diag_log_entry[pCtrl->diag_log_write_idx];
+ 		memset(entry, 0, sizeof(*entry));
+ 
++#if KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE
++		{
++			struct timespec64 ts;
++
++			ktime_get_real_ts64(&ts);
++			ts.tv_sec -= sys_tz.tz_minuteswest * 60;
++			rtc_time64_to_tm(ts.tv_sec, &entry->tm);
++		}
++#else
+ 		do_gettimeofday(&(txc.time));
+ 		txc.time.tv_sec -= sys_tz.tz_minuteswest * 60;
+ 		rtc_time_to_tm(txc.time.tv_sec, &entry->tm);
++#endif
+ 
+ 		entry->isTX = info->isTX;
+ 
+@@ -681,6 +693,44 @@
+ 	return single_open(file, diag_sta_proc_show, GET_PRIV_DATA_FROM_INODE(inode));
+ }
+ 
++#if KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE
++static const struct proc_ops diag_statistic_proc_fops = {
++	.proc_open	= diag_statistic_proc_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++};
++
++static const struct proc_ops diag_duration_proc_fops = {
++	.proc_open	= diag_duration_proc_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++	.proc_write	= diag_duration_proc_write,
++};
++
++static const struct proc_ops diag_enable_proc_fops = {
++	.proc_open	= diag_enable_proc_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++	.proc_write	= diag_enable_proc_write,
++};
++
++static const struct proc_ops diag_ch_occ_proc_fops = {
++	.proc_open	= diag_ch_occ_proc_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++};
++
++static const struct proc_ops diag_sta_proc_fops = {
++	.proc_open	= diag_sta_proc_open,
++	.proc_read	= seq_read,
++	.proc_lseek	= seq_lseek,
++	.proc_release	= single_release,
++};
++#else
+ static const struct file_operations diag_statistic_proc_fops = {
+ 	.owner		= THIS_MODULE,
+ 	.open		= diag_statistic_proc_open,
+@@ -722,6 +772,7 @@
+ 	.llseek		= seq_lseek,
+ 	.release	= single_release,
+ };
++#endif
+ 
+ #if defined(MT7663) || defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7981)
+ void diag_get_snr(RTMP_ADAPTER *pAd, UINT16 wcid, UCHAR *pData)
+@@ -910,7 +961,11 @@
+ 
+ void diag_proc_entry_init(ENUM_DIAG_BAND diag_band, DIAG_CTRL *pCtrl)
+ {
++#if KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE
++	const struct proc_ops *DIAG_PROC_FOPS[5] = {
++#else
+ 	const struct file_operations *DIAG_PROC_FOPS[5] = {
++#endif
+ 		&diag_statistic_proc_fops,
+ 		&diag_duration_proc_fops,
+ 		&diag_enable_proc_fops,
+@@ -1101,7 +1156,9 @@
+ void diag_conn_error(PRTMP_ADAPTER pAd, UCHAR apidx, UCHAR *addr,
+ 	ENUM_DIAG_CONN_ERROR_CODE Code, UINT32 Reason)
+ {
++#if KERNEL_VERSION(5, 0, 0) > LINUX_VERSION_CODE
+ 	struct timex  txc;
++#endif
+ 	DIAG_ASSOC_ERROR_ENTRY *entry;
+ 	ULONG flags;
+ 	ENUM_DIAG_CONN_ERROR_CODE DiagCode = 0;
+@@ -1134,9 +1191,19 @@
+ 		entry = &pCtrl->assoc_error_entry[pCtrl->assoc_error_write_idx];
+ 		memset(entry, 0, sizeof(*entry));
+ 
++#if KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE
++		{
++			struct timespec64 ts;
++
++			ktime_get_real_ts64(&ts);
++			ts.tv_sec -= sys_tz.tz_minuteswest * 60;
++			rtc_time64_to_tm(ts.tv_sec, &entry->tm);
++		}
++#else
+ 		do_gettimeofday(&(txc.time));
+ 		txc.time.tv_sec -= sys_tz.tz_minuteswest * 60;
+ 		rtc_time_to_tm(txc.time.tv_sec, &entry->tm);
++#endif
+ 
+ 		memcpy(entry->StaAddr, addr, 6);
+ 		if (pAd->ApCfg.MBSSID[apidx].SsidLen > 0 && pAd->ApCfg.MBSSID[apidx].SsidLen <= 32)
+--- a/mt_wifi/embedded/plug_in/whnat/woe_proc.c
++++ b/mt_wifi/embedded/plug_in/whnat/woe_proc.c
+@@ -22,6 +22,7 @@
+ #include <linux/ctype.h>
+ #include <linux/uaccess.h>
+ #include <linux/proc_fs.h>
++#include <linux/version.h>
+ #include "woe.h"
+ 
+ /*define proc*/
+@@ -478,6 +479,76 @@
+ /*
+  * global file operation
+ */
++#if KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE
++static const struct proc_ops proc_whnat_trace_fops = {
++	.proc_open = whnat_proc_trace_open,
++	.proc_write = whnat_proc_trace_write,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_whnat_cr_fops = {
++	.proc_open = whnat_proc_cr_open,
++	.proc_write = whnat_proc_cr_write,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_whnat_stat_fops = {
++	.proc_open = whnat_proc_state_open,
++	.proc_write = whnat_proc_state_write,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_whnat_cfg_fops = {
++	.proc_open = whnat_proc_cfg_open,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_whnat_tx_fops = {
++	.proc_open = whnat_proc_tx_open,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_whnat_rx_fops = {
++	.proc_open = whnat_proc_rx_open,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_wed_fops = {
++	.proc_open = wed_proc_open,
++	.proc_write = wed_proc_write,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_wdma_fops = {
++	.proc_open = wdma_proc_open,
++	.proc_write = wdma_proc_write,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++
++static const struct proc_ops proc_ctrl_fops = {
++	.proc_open = whnat_proc_ctrl_open,
++	.proc_write = whnat_proc_ctrl_write,
++	.proc_read = seq_read,
++	.proc_lseek = seq_lseek,
++	.proc_release = single_release,
++};
++#else
+ static const struct file_operations proc_whnat_trace_fops = {
+ 	.owner = THIS_MODULE,
+ 	.open = whnat_proc_trace_open,
+@@ -555,6 +626,7 @@
+ 	.llseek = seq_lseek,
+ 	.release = single_release,
+ };
++#endif
+ 
+ /*
+  *  proc register/unregister
+--- a/mt_wifi/embedded/common/sniffer_radiotap.c
++++ b/mt_wifi/embedded/common/sniffer_radiotap.c
+@@ -575,7 +575,11 @@
+ 	memcpy((pOSPkt->data + mtk_rt_hdr->rt_hdr.it_len - MT7615_RMAC_LENGTH), rmac_info_buffer, MT7615_RMAC_LENGTH);
+ #endif
+ #endif
++#if KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE
++	netif_rx(pOSPkt);
++#else
+ 	netif_rx_ni(pOSPkt);
++#endif
+ #ifdef SNIFFER_MT7615_RMAC_INC
+ 	os_free_mem(rmac_info_buffer);
+ #endif
+@@ -1127,7 +1131,11 @@
+ 	pOSPkt->pkt_type = PACKET_OTHERHOST;
+ 	pOSPkt->protocol = __constant_htons(ETH_P_80211_RAW);
+ 	pOSPkt->ip_summed = CHECKSUM_NONE;
++#if KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE
++	netif_rx(pOSPkt);
++#else
+ 	netif_rx_ni(pOSPkt);
++#endif
+ 	return;
+ err_free_sk_buff:
+ 	RELEASE_NDIS_PACKET(NULL, pRxPacket, NDIS_STATUS_FAILURE);
+--- a/mt_wifi/os/linux/rt_profile.c
++++ b/mt_wifi/os/linux/rt_profile.c
+@@ -1411,7 +1411,11 @@
+ 	if (pOSPkt->dev == NULL)
+ 		RELEASE_NDIS_PACKET(pAd, pPacket, NDIS_STATUS_FAILURE);
+ 	else
++#if KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE
++		netif_rx(pOSPkt);
++#else
+ 		netif_rx_ni(pOSPkt);
++#endif
+ 
+ }
+ #endif
+--- a/mt_wifi/os/linux/pci_main_dev.c
++++ b/mt_wifi/os/linux/pci_main_dev.c
+@@ -265,6 +265,27 @@
+ 	print_name = pdev->slot_name;
+ #endif /* LINUX_VERSION_CODE */
+ 
++#if KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE
++#if defined(PLATFORM_M_STB)
++	if (IS_ENABLED(CONFIG_ARM64) && (!IS_ENABLED(CONFIG_ZONE_DMA))) {
++		if ((rv = dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) != 0) {
++			MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
++					 "set DMA mask failed!errno=%d\n", rv);
++			return rv;
++		}
++
++		if ((rv = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64))) != 0) {
++			MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
++					 "set DMA consistent mask failed!errno=%d\n", rv);
++			return rv;
++		}
++	}
++	else
++#endif
++	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
++		dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
++	} else {
++#else
+ #if defined(PLATFORM_M_STB)
+ 	if (IS_ENABLED(CONFIG_ARM64) && (!IS_ENABLED(CONFIG_ZONE_DMA))) {
+ 		if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(64))) != 0) {
+@@ -288,6 +309,7 @@
+ 		 */
+ 		pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
+ 	} else {
++#endif
+ 		MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
+ 				 "set DMA mask failed!errno=%d\n", rv);
+ 		goto err_out;

@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -78,11 +78,11 @@ warp_wo_set_apsrc_idle(u8 wed_idx)
 
 	warp_dbg(WARP_DBG_OFF, "%s: --->\n", __func__);
 
-	addr = (wed_idx == WARP_WED1)
+	addr = (wed_idx == WARP_WED0)
 		? (unsigned long)ioremap(WOCPU0_MCUSYS_APSRC_ADDR, 4)
 		: (unsigned long)ioremap(WOCPU1_MCUSYS_APSRC_ADDR, 4);
 	value = readl((void *)addr);
-	if (wed_idx == WARP_WED1) {
+	if (wed_idx == WARP_WED0) {
 		value |= WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_DDREN_MASK;
 		value |= WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_REQ_MASK;
 		value |= WOX_MCU_CFG_HS_WO0_APSRC_WO0_APSRC_IDLE_MASK;
@@ -164,7 +164,7 @@ err0:
 }
 #endif /* WED_RX_D_SUPPORT */
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 #ifdef CONFIG_WARP_WO_EMBEDDED_LOAD
 /*
 *
@@ -172,7 +172,7 @@ err0:
 u8 *
 warp_get_wo_bin_ptr(u8 wed_idx)
 {
-	if (wed_idx == WARP_WED2)
+	if (wed_idx == WARP_WED1)
 		return WO1_FirmwareImage;
 	else
 		return WO0_FirmwareImage;
@@ -184,7 +184,7 @@ warp_get_wo_bin_ptr(u8 wed_idx)
 u32
 warp_get_wo_bin_size(u8 wed_idx)
 {
-	if (wed_idx == WARP_WED2)
+	if (wed_idx == WARP_WED1)
 		return sizeof(WO1_FirmwareImage);
 	else
 		return sizeof(WO0_FirmwareImage);
@@ -197,7 +197,7 @@ warp_get_wo_bin_size(u8 wed_idx)
 void
 warp_get_dts_idx(u8 *dts_idx)
 {
-	*dts_idx = WARP_WED1;
+	*dts_idx = WARP_WED0;
 }
 
 /*
@@ -215,7 +215,7 @@ warp_wo_pc_lr_cr_dump(u8 wed_idx)
 char *
 warp_get_wo_emi_node(u8 wed_idx)
 {
-	return (wed_idx == WARP_WED1 ? WOCPU0_EMI_DEV_NODE : WOCPU1_EMI_DEV_NODE);
+	return (wed_idx == WARP_WED0 ? WOCPU0_EMI_DEV_NODE : WOCPU1_EMI_DEV_NODE);
 }
 
 /*
@@ -234,7 +234,7 @@ void
 warp_fwdl_reset(struct warp_fwdl_ctrl *ctrl, bool en, u8 wed_idx)
 {
 	u32 value = 0;
-	u32 mask = (wed_idx == WARP_WED1) ?
+	u32 mask = (wed_idx == WARP_WED0) ?
 		WOX_MCU_CFG_LS_WF_MCU_CFG_WM_WA_WM_CPU_RSTB_MASK : WOX_MCU_CFG_LS_WF_MCU_CFG_WM_WA_WA_CPU_RSTB_MASK;
 
 	/* clear UART_DBG_STOP before WOCPU software reset release */
@@ -254,7 +254,7 @@ warp_fwdl_reset(struct warp_fwdl_ctrl *ctrl, bool en, u8 wed_idx)
 void
 warp_fwdl_write_start_address(struct warp_fwdl_ctrl *ctrl, u32 addr, u8 wed_idx)
 {
-	u32 boot_cr = (wed_idx == WARP_WED1) ?
+	u32 boot_cr = (wed_idx == WARP_WED0) ?
 		WOX_MCU_CFG_LS_WM_BOOT_ADDR_ADDR : WOX_MCU_CFG_LS_WA_BOOT_ADDR_ADDR;
 	fwdl_io_write32(ctrl, boot_cr, addr >> 16);
 }
@@ -265,11 +265,11 @@ warp_fwdl_write_start_address(struct warp_fwdl_ctrl *ctrl, u32 addr, u8 wed_idx)
 void
 warp_fwdl_get_wo_heartbeat(struct warp_fwdl_ctrl *ctrl, u32 *hb_val, u8 wed_idx)
 {
-	u32 addr = (wed_idx == WARP_WED1) ?
+	u32 addr = (wed_idx == WARP_WED0) ?
 		WOX_MCU_CFG_LS_WF_COM_REG0_ADDR : WOX_MCU_CFG_LS_WF_COM_REG1_ADDR;
 	fwdl_io_read32(ctrl, addr, hb_val);
 }
-#endif /* CONFIG_WED_HW_RRO_SUPPORT */
+#endif /* WED_RX_HW_RRO_2_0 */
 
 /*
 *
@@ -283,10 +283,10 @@ warp_get_pcie_slot(struct pci_dev *pdev)
 /*
 *  set MSI group# to WED
 */
-void
-warp_bus_msi_set(u8 idx, u8 *enable)
+int
+warp_bus_msi_set(struct warp_entry *warp, struct warp_bus *bus, u8 enable)
 {
-	return;
+	return 0;
 }
 
 /*
@@ -348,11 +348,11 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 }
 
 /*
-* Reset PCIE reg in relative to warp_bus_set_hw()
-*/
+ * Reset PCIE reg in relative to warp_bus_set_hw()
+ */
 void
 warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,
-                        int idx)
+			int idx)
 {
 }
 
@@ -410,4 +410,27 @@ warp_eint_ctrl_hw(struct wed_entry *wed, u8 enable)
 		warp_io_write32(wed, WED_EX_INT_MSK2, 0);
 	}
 #endif
+}
+
+int
+warp_get_wdma_port(struct wdma_entry *wdma, u8 idx)
+{
+	switch (idx) {
+	case WARP_WED0:
+		wdma->wdma_tx_port = WDMA_PORT3;
+		wdma->wdma_rx_port = WDMA_PORT8;
+		break;
+	case WARP_WED1:
+		wdma->wdma_tx_port = WDMA_PORT4;
+		wdma->wdma_rx_port = WDMA_PORT9;
+		break;
+	case WARP_WED2:
+		wdma->wdma_tx_port = WDMA_PORT3;
+		wdma->wdma_rx_port = WDMA_PORT13;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
 }

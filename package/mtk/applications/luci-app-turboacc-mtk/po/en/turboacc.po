@@ -1,0 +1,292 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-turboacc-mtk\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Acceleration Status"
+msgstr "Acceleration Status"
+
+msgid "Bind Entrys"
+msgstr "Bind Entrys"
+
+msgid "Boardcom_FULLCONE_NAT"
+msgstr "Boardcom_FULLCONE_NAT"
+
+msgid "Bridge Acceleration"
+msgstr "Bridge Acceleration"
+
+msgid "Collecting data..."
+msgstr "Collecting data..."
+
+msgid "Disable"
+msgstr "Disable"
+
+msgid "Disabled"
+msgstr "Disabled"
+
+msgid "Enable IPv6 Acceleration."
+msgstr "Enable IPv6 Acceleration."
+
+msgid ""
+"Enable bridge acceleration (may be functional conflict with bridge-mode VPN "
+"server)."
+msgstr ""
+"Enable bridge acceleration (may be functional conflict with bridge-mode VPN "
+"server)."
+
+msgid "Enable ethernet HNAT"
+msgstr "Enable ethernet HNAT"
+
+msgid "Enable ethernet IPv6 HNAT"
+msgstr "Enable ethernet IPv6 HNAT"
+
+msgid "Enable hardware offloading for wired IPv6 connections."
+msgstr "Enable hardware offloading for wired IPv6 connections."
+
+msgid "Enable hardware offloading for wired connections."
+msgstr "Enable hardware offloading for wired connections."
+
+msgid "Ethernet HNAT disabled"
+msgstr "Ethernet HNAT disabled"
+
+msgid "Fast classifier"
+msgstr "Fast classifier"
+
+msgid "Fast classifier connection manager for the shortcut forwarding engine."
+msgstr "Fast classifier connection manager for the shortcut forwarding engine."
+
+msgid "FastPath Engine"
+msgstr "FastPath Engine"
+
+msgid "Fastpath engine"
+msgstr "Fastpath engine"
+
+msgid "Flow offloading"
+msgstr "Flow offloading"
+
+msgid "Flow offloading (unsupported legacy)"
+msgstr "Flow offloading (unsupported legacy)"
+
+msgid "Full Cone NAT"
+msgstr "Full Cone NAT"
+
+msgid "Full cone NAT"
+msgstr "Full cone NAT"
+
+msgid "Full cone NAT (NAT1) can improve gaming performance effectively."
+msgstr "Full cone NAT (NAT1) can improve gaming performance effectively."
+
+msgid "Grant UCI access for luci-app-turboacc"
+msgstr "Grant UCI access for luci-app-turboacc"
+
+msgid "HNAT Partially Enabled"
+msgstr "HNAT Partially Enabled"
+
+msgid "HNAT bind rate threshold (pps)"
+msgstr "HNAT bind rate threshold (pps)"
+
+msgid "Hardware flow offloading"
+msgstr "Hardware flow offloading"
+
+msgid "IPv6 acceleration"
+msgstr "IPv6 acceleration"
+
+msgid "MediaTek HNAT"
+msgstr "MediaTek HNAT"
+
+msgid "MediaTek's open source hardware offloading engine."
+msgstr "MediaTek's open source hardware offloading engine."
+
+msgid "Open source flow offloading engine (fast path or hardware NAT)."
+msgstr "Open source flow offloading engine (fast path or hardware NAT)."
+
+msgid "Requires hardware NAT support. Implemented at least for mt7621."
+msgstr "Requires hardware NAT support. Implemented at least for mt7621."
+
+msgid "SFE connection manager"
+msgstr "SFE connection manager"
+
+msgid "Simple connection manager for the shortcut forwarding engine."
+msgstr "Simple connection manager for the shortcut forwarding engine."
+
+msgid "Software based offloading for routing/NAT."
+msgstr "Software based offloading for routing/NAT."
+
+msgid "TCP CCA"
+msgstr "TCP CCA"
+
+msgid "TCP congestion control algorithm."
+msgstr "TCP congestion control algorithm."
+
+msgid "The offloading engine for routing/NAT."
+msgstr "The offloading engine for routing/NAT."
+
+msgid "The smaller the threshold, the easier it is for the connection to be accelerated."
+msgstr "The smaller the threshold, the easier it is for the connection to be accelerated."
+
+msgid "TurboACC"
+msgstr "TurboACC"
+
+msgid "TurboACC settings"
+msgstr "TurboACC settings"
+
+msgid "XT_FULLCONE_NAT"
+msgstr "XT_FULLCONE_NAT"
+
+msgid "Enable global HNAT (wired & wireless WHNAT)"
+msgstr "Enable global HNAT (wired & wireless WHNAT)"
+
+msgid "Enable shared hardware offloading hooks for both wired Ethernet and wireless WHNAT connections."
+msgstr "Enable shared hardware offloading hooks for both wired Ethernet and wireless WHNAT connections."
+
+msgid "Enable IPv6 HNAT"
+msgstr "Enable IPv6 HNAT"
+
+msgid "Enable hardware offloading for IPv6 connections when global HNAT is enabled."
+msgstr "Enable hardware offloading for IPv6 connections when global HNAT is enabled."
+
+msgid "Global HNAT (wired & wireless WHNAT) disabled"
+msgstr "Global HNAT (wired & wireless WHNAT) disabled"
+
+msgid "Tier-1 PPE Occupancy"
+msgstr "Tier-1 PPE Occupancy"
+
+msgid "Tier-2 SW Fallback"
+msgstr "Tier-2 SW Fallback"
+
+msgid "Multi-Tier Events"
+msgstr "Multi-Tier Events"
+
+msgid "flows"
+msgstr "flows"
+
+msgid "packets"
+msgstr "packets"
+
+msgid "Defers"
+msgstr "Defers"
+
+msgid "Backoffs"
+msgstr "Backoffs"
+
+msgid "Roam Flushes"
+msgstr "Roam Flushes"
+
+msgid "SER Epoch"
+msgstr "SER Epoch"
+
+msgid "Enable software flowtable fallback"
+msgstr "Enable software flowtable fallback"
+
+msgid "Keep flows in software fastpath via firewall4 flowtable when PPE occupancy reaches the 80% watermark or hardware offload defers."
+msgstr "Keep flows in software fastpath via firewall4 flowtable when PPE occupancy reaches the 80% watermark or hardware offload defers."
+
+msgid "Status unavailable"
+msgstr "Status unavailable"
+
+msgid "TurboACC service apply is in progress"
+msgstr "TurboACC service apply is in progress"
+
+msgid "TurboACC service apply succeeded"
+msgstr "TurboACC service apply succeeded"
+
+msgid "TurboACC service is stopped"
+msgstr "TurboACC service is stopped"
+
+msgid "TurboACC service apply failed: %s"
+msgstr "TurboACC service apply failed: %s"
+
+msgid "See the system log"
+msgstr "See the system log"
+
+msgid "No service result is available"
+msgstr "No service result is available"
+
+msgid "Telemetry unavailable"
+msgstr "Telemetry unavailable"
+
+msgid "PPE occupancy unavailable"
+msgstr "PPE occupancy unavailable"
+
+msgid "Detailed PPE statistics are not loaded."
+msgstr "Detailed PPE statistics are not loaded."
+
+msgid "Reading detailed PPE statistics..."
+msgstr "Reading detailed PPE statistics..."
+
+msgid "Detailed PPE statistics are unavailable."
+msgstr "Detailed PPE statistics are unavailable."
+
+msgid "Detailed PPE statistics updated."
+msgstr "Detailed PPE statistics updated."
+
+msgid "No per-PPE counters were returned."
+msgstr "No per-PPE counters were returned."
+
+msgid "Refresh per-PPE details"
+msgstr "Refresh per-PPE details"
+
+msgid "Per-PPE diagnostics scan the full table on request and count the selected debug entry state; cached Tier-1 occupancy is the BIND count."
+msgstr "Per-PPE diagnostics scan the full table on request and count the selected debug entry state; cached Tier-1 occupancy is the BIND count."
+
+msgid "Last TurboACC service run"
+msgstr "Last TurboACC service run"
+
+msgid "Diagnostic state entries"
+msgstr "Diagnostic state entries"
+
+msgid "NFT_FULLCONE_NAT"
+msgstr "NFT_FULLCONE_NAT"
+
+msgid "NFT_FULLCONE_NAT (Recommended / HNAT compatible)"
+msgstr "NFT_FULLCONE_NAT (Recommended / HNAT compatible)"
+
+msgid "Boardcom_FULLCONE_NAT (Kernel expectation / v4+v6 HNAT compatible)"
+msgstr "Boardcom_FULLCONE_NAT (Kernel expectation / v4+v6 HNAT compatible)"
+
+msgid "Enable IPv6 Full Cone NAT"
+msgstr "Enable IPv6 Full Cone NAT"
+
+msgid "Enable nftables Full Cone NAT for IPv6 masqueraded zones (usually unnecessary for IPv6)."
+msgstr "Enable nftables Full Cone NAT for IPv6 masqueraded zones (usually unnecessary for IPv6)."
+
+msgid "Routing/NAT Offloading & Full Cone NAT"
+msgstr "Routing/NAT Offloading & Full Cone NAT"
+
+msgid "Routing/NAT flow offloading and Full Cone NAT options are centrally managed by TurboACC to avoid conflicting firewall rules and NAT modes."
+msgstr "Routing/NAT flow offloading and Full Cone NAT options are centrally managed by TurboACC to avoid conflicting firewall rules and NAT modes."
+
+msgid "Current offloading mode"
+msgstr "Current offloading mode"
+
+msgid "Current Full Cone NAT mode"
+msgstr "Current Full Cone NAT mode"
+
+msgid "Configuration"
+msgstr "Configuration"
+
+msgid "Open TurboACC Settings"
+msgstr "Open TurboACC Settings"
+
+msgid "MediaTek HNAT (disabled)"
+msgstr "MediaTek HNAT (disabled)"
+
+msgid "MediaTek HNAT (hardware only)"
+msgstr "MediaTek HNAT (hardware only)"
+
+msgid "MediaTek HNAT + software flowtable fallback"
+msgstr "MediaTek HNAT + software flowtable fallback"
+
+msgid "NFT_FULLCONE_NAT (IPv4 + IPv6)"
+msgstr "NFT_FULLCONE_NAT (IPv4 + IPv6)"
+
+msgid "NFT_FULLCONE_NAT (IPv4 only)"
+msgstr "NFT_FULLCONE_NAT (IPv4 only)"
+
+msgid "Boardcom_FULLCONE_NAT (v4 + v6 kernel expectation)"
+msgstr "Boardcom_FULLCONE_NAT (v4 + v6 kernel expectation)"

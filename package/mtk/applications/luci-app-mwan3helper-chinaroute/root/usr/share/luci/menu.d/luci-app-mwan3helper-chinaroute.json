@@ -1,0 +1,29 @@
+{
+	"admin/services/mwan3helper": {
+		"title": "MWAN3 Helper",
+		"order": 300,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-mwan3helper-chinaroute" ],
+			"uci": { "mwan3helper": true }
+		}
+	},
+	"admin/services/mwan3helper/client": {
+		"title": "Settings",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "mwan3helper/client"
+		}
+	},
+	"admin/services/mwan3helper/lists": {
+		"title": "IPSet Lists",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "mwan3helper/list"
+		}
+	}
+}

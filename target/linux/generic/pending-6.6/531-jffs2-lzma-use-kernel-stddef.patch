@@ -1,0 +1,21 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] jffs2: use <linux/stddef.h> for in-kernel LZMA SDK builds
+
+Select kernel stddef header under __KERNEL__ to prevent host stddef collisions.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/include/linux/lzma/Types.h
++++ b/include/linux/lzma/Types.h
+@@ -4,7 +4,11 @@
+ #ifndef __7Z_TYPES_H
+ #define __7Z_TYPES_H
+ 
++#ifdef __KERNEL__
++#include <linux/stddef.h>
++#else
+ #include <stddef.h>
++#endif
+ 
+ #ifdef _WIN32
+ #include <windows.h>

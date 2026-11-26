@@ -1,0 +1,14 @@
+{
+	"admin/network/usbmodem": {
+		"title": "USB Modem Server",
+		"order": 80,
+		"action": {
+			"type": "view",
+			"path": "usbmodem"
+		},
+		"depends": {
+			"acl": [ "luci-app-usbmodem" ],
+			"uci": { "usbmodem": true }
+		}
+	}
+}

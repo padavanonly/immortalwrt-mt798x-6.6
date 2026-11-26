@@ -1,0 +1,49 @@
+--- a/drivers/crypto/inside-secure/safexcel.c
++++ b/drivers/crypto/inside-secure/safexcel.c
+@@ -1038,7 +1038,6 @@ static inline void safexcel_handle_resul
+ 	int ret, i, nreq, ndesc, tot_descs, handled = 0;
+ 	bool should_complete;
+ 
+-handle_results:
+ 	tot_descs = 0;
+ 
+ 	nreq = readl(EIP197_HIA_RDR(priv, ring) + EIP197_HIA_xDR_PROC_COUNT);
+@@ -1047,6 +1046,7 @@ handle_results:
+ 	if (!nreq)
+ 		goto requests_left;
+ 
++	local_bh_disable();
+ 	for (i = 0; i < nreq; i++) {
+ 		req = safexcel_rdr_req_get(priv, ring);
+ 
+@@ -1059,15 +1059,13 @@ handle_results:
+ 			goto acknowledge;
+ 		}
+ 
+-		if (should_complete) {
+-			local_bh_disable();
++		if (should_complete)
+ 			crypto_request_complete(req, ret);
+-			local_bh_enable();
+-		}
+ 
+ 		tot_descs += ndesc;
+ 		handled++;
+ 	}
++	local_bh_enable();
+ 
+ acknowledge:
+ 	if (i)
+@@ -1075,12 +1073,6 @@ acknowledge:
+ 		       (tot_descs * priv->config.rd_offset),
+ 		       EIP197_HIA_RDR(priv, ring) + EIP197_HIA_xDR_PROC_COUNT);
+ 
+-	/* If the number of requests overflowed the counter, try to proceed more
+-	 * requests.
+-	 */
+-	if (nreq == EIP197_xDR_PROC_xD_PKT_MASK)
+-		goto handle_results;
+-
+ requests_left:
+ 	spin_lock_bh(&priv->ring[ring].lock);
+ 

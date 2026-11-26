@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -17,7 +17,6 @@
 #ifndef _WARP_FWDL_H_
 #define _WARP_FWDL_H_
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 #include "warp_utility.h"
 
 struct warp_entry;
@@ -25,6 +24,8 @@ struct warp_entry;
 #define IS_WO_HOST_MODE (wo_host_exist != NULL)
 #define UNDEFINE_WED_IDX (0xff)
 #define MAX_REGION_SIZE 3
+#define MAX_FWDL_SIZE 0xfffffff
+
 
 struct fw_info_t {
 	u8 chip_id;
@@ -52,7 +53,6 @@ struct warp_fwdl_ctrl {
 	struct fwdl_region region[MAX_REGION_SIZE];
 	struct fwdl_region boot_setting;
 	struct wo_fwdl_host_mode_ctrl **wo_host_exist;
-	const struct firmware *fw_entry;
 	u8 *bin_ptr;
 	u32 bin_size;
 	u8 bin_mode;
@@ -85,5 +85,4 @@ int warp_fwdl_clear(struct warp_entry *warp);
 void warp_fwdl_reset(struct warp_fwdl_ctrl *ctrl, bool en, u8 wed_idx);
 void warp_fwdl_write_start_address(struct warp_fwdl_ctrl *ctrl, u32 addr, u8 wed_idx);
 void warp_fwdl_get_wo_heartbeat(struct warp_fwdl_ctrl *ctrl, u32 *hb_val, u8 wed_idx);
-#endif
 #endif /*_WARP_FWDL_H_*/

@@ -20,11 +20,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  include/linux/pcs/pcs-mtk-lynxi.h           |  3 ++-
  4 files changed, 25 insertions(+), 9 deletions(-)
 
-diff --git a/drivers/net/dsa/mt7530-mdio.c b/drivers/net/dsa/mt7530-mdio.c
-index 51df42c..6163be7 100644
 --- a/drivers/net/dsa/mt7530-mdio.c
 +++ b/drivers/net/dsa/mt7530-mdio.c
-@@ -114,7 +114,8 @@ mt7531_create_sgmii(struct mt7530_priv *priv)
+@@ -114,7 +114,8 @@ mt7531_create_sgmii(struct mt7530_priv *
  			break;
  		}
  		pcs = mtk_pcs_lynxi_create(priv->dev, regmap,
@@ -34,11 +32,9 @@ index 51df42c..6163be7 100644
  		if (!pcs) {
  			ret = -ENXIO;
  			break;
-diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-index e556e65..f4b16d2 100644
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -5028,7 +5028,11 @@ static int mtk_sgmii_init(struct mtk_eth *eth)
+@@ -5032,7 +5032,11 @@ static int mtk_sgmii_init(struct mtk_eth
  		regmap = syscon_node_to_regmap(np);
  		flags = 0;
  		if (of_property_read_bool(np, "mediatek,pnswap"))
@@ -51,11 +47,9 @@ index e556e65..f4b16d2 100644
  
  		of_node_put(np);
  
-diff --git a/drivers/net/pcs/pcs-mtk-lynxi.c b/drivers/net/pcs/pcs-mtk-lynxi.c
-index 13c35de..6ebca36 100644
 --- a/drivers/net/pcs/pcs-mtk-lynxi.c
 +++ b/drivers/net/pcs/pcs-mtk-lynxi.c
-@@ -74,7 +74,8 @@
+@@ -71,7 +71,8 @@
  /* Register to QPHY wrapper control */
  #define SGMSYS_QPHY_WRAP_CTRL		0xec
  #define SGMII_PN_SWAP_MASK		GENMASK(1, 0)
@@ -65,7 +59,7 @@ index 13c35de..6ebca36 100644
  
  #define MTK_NETSYS_V3_AMA_RGC3		0x128
  
-@@ -205,6 +206,7 @@ static int mtk_pcs_lynxi_config(struct phylink_pcs *pcs, unsigned int neg_mode,
+@@ -202,6 +203,7 @@ static int mtk_pcs_lynxi_config(struct p
  	struct mtk_pcs_lynxi *mpcs = pcs_to_mtk_pcs_lynxi(pcs);
  	bool mode_changed = false, changed;
  	unsigned int rgc3, sgm_mode, bmcr = 0;
@@ -73,7 +67,7 @@ index 13c35de..6ebca36 100644
  	int advertise, link_timer;
  
  	advertise = phylink_mii_c22_pcs_encode_advertisement(interface,
-@@ -254,10 +256,14 @@ static int mtk_pcs_lynxi_config(struct phylink_pcs *pcs, unsigned int neg_mode,
+@@ -245,10 +247,14 @@ static int mtk_pcs_lynxi_config(struct p
  		regmap_set_bits(mpcs->regmap, SGMSYS_RESERVED_0,
  				SGMII_SW_RESET);
  
@@ -92,7 +86,7 @@ index 13c35de..6ebca36 100644
  
  		if (interface == PHY_INTERFACE_MODE_2500BASEX)
  			rgc3 = SGMII_PHY_SPEED_3_125G;
-@@ -473,7 +479,11 @@ static int mtk_pcs_lynxi_probe(struct platform_device *pdev)
+@@ -462,7 +468,11 @@ static int mtk_pcs_lynxi_probe(struct pl
  		return PTR_ERR(regmap);
  
  	if (of_property_read_bool(np->parent, "mediatek,pnswap"))
@@ -103,10 +97,8 @@ index 13c35de..6ebca36 100644
 +	else if (of_property_read_bool(np->parent, "mediatek,pnswap-rx"))
 +		flags |= MTK_SGMII_FLAG_PN_SWAP_RX;
  
- 	mpcs->rstc = of_reset_control_get_shared(np->parent, NULL);
- 	if (IS_ERR(mpcs->rstc))
-diff --git a/include/linux/pcs/pcs-mtk-lynxi.h b/include/linux/pcs/pcs-mtk-lynxi.h
-index 2d44e95..656a3e5 100644
+ 	if (of_parse_phandle(np->parent, "resets", 0)) {
+ 		mpcs->rstc = of_reset_control_get_shared(np->parent, NULL);
 --- a/include/linux/pcs/pcs-mtk-lynxi.h
 +++ b/include/linux/pcs/pcs-mtk-lynxi.h
 @@ -5,7 +5,8 @@
@@ -119,6 +111,3 @@ index 2d44e95..656a3e5 100644
  struct phylink_pcs *mtk_pcs_lynxi_create(struct device *dev,
  					 struct regmap *regmap,
  					 u32 ana_rgc3, u32 flags);
--- 
-2.45.2
-

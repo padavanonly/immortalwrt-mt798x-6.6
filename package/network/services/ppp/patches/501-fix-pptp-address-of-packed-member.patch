@@ -1,0 +1,111 @@
+diff -u -N -r a/pppd/plugins/pppoe/plugin.c b/pppd/plugins/pppoe/plugin.c
+--- a/pppd/plugins/pppoe/plugin.c	2026-09-21 22:04:31.784441741 +0800
++++ b/pppd/plugins/pppoe/plugin.c	2026-09-21 22:04:31.818893486 +0800
+@@ -137,7 +137,11 @@
+ static int
+ PPPOEConnectDevice(void)
+ {
+-    struct sockaddr_pppox sp;
++    union {
++	struct sockaddr_pppox sp;
++	struct sockaddr sa;
++    } pppox_addr;
++#define sp pppox_addr.sp
+     struct ifreq ifr;
+     int s;
+     char remote_number[MAXNAMELEN];
+@@ -251,9 +255,10 @@
+     if (conn->actualACname)
+ 	ppp_script_setenv("ACNAME", conn->actualACname, 0);
+ 
+-    if (connect(conn->sessionSocket, (struct sockaddr *) &sp,
++    if (connect(conn->sessionSocket, &pppox_addr.sa,
+ 		sizeof(struct sockaddr_pppox)) < 0) {
+ 	error("Failed to connect PPPoE socket: %d %m", errno);
++#undef sp
+ 	goto errout;
+     }
+ 
+@@ -293,16 +298,21 @@
+ static void
+ PPPOEDisconnectDevice(void)
+ {
+-    struct sockaddr_pppox sp;
++    union {
++	struct sockaddr_pppox sp;
++	struct sockaddr sa;
++    } pppox_addr;
++#define sp pppox_addr.sp
+ 
+     sp.sa_family = AF_PPPOX;
+     sp.sa_protocol = PX_PROTO_OE;
+     sp.sa_addr.pppoe.sid = 0;
+     memcpy(sp.sa_addr.pppoe.dev, conn->ifName, IFNAMSIZ);
+     memcpy(sp.sa_addr.pppoe.remote, conn->peerEth, ETH_ALEN);
+-    if (connect(conn->sessionSocket, (struct sockaddr *) &sp,
++    if (connect(conn->sessionSocket, &pppox_addr.sa,
+ 		sizeof(struct sockaddr_pppox)) < 0 && errno != EALREADY)
+ 	error("Failed to disconnect PPPoE socket: %d %m", errno);
++#undef sp
+     close(conn->sessionSocket);
+     if (conn->discoverySocket < 0)
+ 	conn->discoverySocket =
+diff -u -N -r a/pppd/plugins/pptp/pptp.c b/pppd/plugins/pptp/pptp.c
+--- a/pppd/plugins/pptp/pptp.c	2026-09-21 22:04:31.792154911 +0800
++++ b/pppd/plugins/pptp/pptp.c	2026-09-21 22:04:31.818756951 +0800
+@@ -118,8 +118,14 @@
+ static int pptp_start_client(void)
+ {
+ 	socklen_t len;
+-	struct sockaddr_pppox src_addr,dst_addr;
++	union {
++		struct sockaddr_pppox sp;
++		struct sockaddr sa;
++	} src_addr_u, dst_addr_u;
++#define src_addr src_addr_u.sp
++#define dst_addr dst_addr_u.sp
+ 	struct hostent *hostinfo;
++	u_int16_t peer_call_id = 0;
+ 
+ 	hostinfo=gethostbyname(pptp_server);
+   if (!hostinfo)
+@@ -161,14 +167,14 @@
+ 		error("PPTP: failed to create PPTP socket (%s)\n",strerror(errno));
+ 		return -1;
+ 	}
+-	if (bind(pptp_fd,(struct sockaddr*)&src_addr,sizeof(src_addr)))
++	if (bind(pptp_fd,&src_addr_u.sa,sizeof(src_addr_u.sp)))
+ 	{
+ 		close(pptp_fd);
+ 		error("PPTP: failed to bind PPTP socket (%s)\n",strerror(errno));
+ 		return -1;
+ 	}
+-	len=sizeof(src_addr);
+-	getsockname(pptp_fd,(struct sockaddr*)&src_addr,&len);
++	len=sizeof(src_addr_u.sp);
++	getsockname(pptp_fd,&src_addr_u.sa,&len);
+ 	call_ID=src_addr.sa_addr.pptp.call_id;
+ 
+   do {
+@@ -182,9 +188,10 @@
+ 		return -1;
+         }
+         /* Exchange PIDs, get call ID */
+-    } while (get_call_id(callmgr_sock, getpid(), getpid(), &dst_addr.sa_addr.pptp.call_id) < 0);
++    } while (get_call_id(callmgr_sock, getpid(), getpid(), &peer_call_id) < 0);
++    dst_addr.sa_addr.pptp.call_id = peer_call_id;
+ 
+-	if (connect(pptp_fd,(struct sockaddr*)&dst_addr,sizeof(dst_addr)))
++	if (connect(pptp_fd,&dst_addr_u.sa,sizeof(dst_addr_u.sp)))
+ 	{
+ 		close(callmgr_sock);
+ 		close(pptp_fd);
+@@ -194,6 +201,8 @@
+ 
+ 	sprintf(ppp_devname,"pptp (%s)",pptp_server);
+ 
++#undef src_addr
++#undef dst_addr
+ 	return pptp_fd;
+ }
+ static int pptp_connect(void)

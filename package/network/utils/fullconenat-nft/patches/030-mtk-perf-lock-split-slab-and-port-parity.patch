@@ -1,0 +1,600 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] fullconenat-nft: split dying-list lock, add slab caches, and preserve port parity
+
+Splice dying_tuple_list into a local list before releasing dying_tuple_list_lock
+so v4/v6 cleanup acquires only one table lock at a time without blocking
+ct_event_cb. Back nat_mapping, nat_mapping6, nat_mapping_original_tuple, and
+tuple_list allocations with dedicated kmem_cache slab pools initialized and
+torn down cleanly around module expr lifetime. Preserve RFC 4787 port parity
+before opposite-parity fallback when scanning from clamped original_port.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -uNrp a/src/nf_nat_fullcone.c b/src/nf_nat_fullcone.c
+--- a/src/nf_nat_fullcone.c	2026-11-23 11:33:55.197194889 +0800
++++ b/src/nf_nat_fullcone.c	2026-11-23 11:33:55.218278187 +0800
+@@ -21,6 +21,7 @@
+ #include <linux/atomic.h>
+ #include <linux/kernel.h>
+ #include <linux/jhash.h>
++#include <linux/slab.h>
+ 
+ #ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
+ #include <linux/notifier.h>
+@@ -74,6 +75,13 @@ static DEFINE_SPINLOCK(fullconenat6_lock
+ static LIST_HEAD(dying_tuple_list);
+ static DEFINE_SPINLOCK(dying_tuple_list_lock);
+ 
++static struct kmem_cache *original_tuple_cachep __read_mostly;
++static struct kmem_cache *dying_tuple_cachep __read_mostly;
++static struct kmem_cache *mapping_cachep __read_mostly;
++#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
++static struct kmem_cache *mapping6_cachep __read_mostly;
++#endif
++
+ /* static variables end */
+ 
+ /* forward declaration */
+@@ -291,6 +299,74 @@ static char *nf_ct_stringify_tuple(const
+ 
+ /* non-atomic part end */
+ 
++int nf_nat_fullcone_init(void)
++{
++	original_tuple_cachep = kmem_cache_create("nf_fullcone_tuple",
++						  sizeof(struct nat_mapping_original_tuple),
++						  0, 0, NULL);
++	if (!original_tuple_cachep)
++		return -ENOMEM;
++
++	dying_tuple_cachep = kmem_cache_create("nf_fullcone_dying",
++					       sizeof(struct tuple_list),
++					       0, 0, NULL);
++	if (!dying_tuple_cachep)
++		goto err_original;
++
++	mapping_cachep = kmem_cache_create("nf_fullcone_map",
++					   sizeof(struct nat_mapping),
++					   0, 0, NULL);
++	if (!mapping_cachep)
++		goto err_dying;
++
++#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
++	mapping6_cachep = kmem_cache_create("nf_fullcone_map6",
++					    sizeof(struct nat_mapping6),
++					    0, 0, NULL);
++	if (!mapping6_cachep)
++		goto err_mapping;
++#endif
++
++	return 0;
++
++#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
++err_mapping:
++	kmem_cache_destroy(mapping_cachep);
++	mapping_cachep = NULL;
++#endif
++err_dying:
++	kmem_cache_destroy(dying_tuple_cachep);
++	dying_tuple_cachep = NULL;
++err_original:
++	kmem_cache_destroy(original_tuple_cachep);
++	original_tuple_cachep = NULL;
++	return -ENOMEM;
++}
++
++void nf_nat_fullcone_exit(void)
++{
++#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
++	kmem_cache_destroy(mapping6_cachep);
++	mapping6_cachep = NULL;
++#endif
++	kmem_cache_destroy(mapping_cachep);
++	mapping_cachep = NULL;
++	kmem_cache_destroy(dying_tuple_cachep);
++	dying_tuple_cachep = NULL;
++	kmem_cache_destroy(original_tuple_cachep);
++	original_tuple_cachep = NULL;
++}
++
++struct tuple_list *nf_nat_fullcone_dying_tuple_alloc(void)
++{
++	return kmem_cache_alloc(dying_tuple_cachep, GFP_ATOMIC);
++}
++
++static inline void nf_nat_fullcone_dying_tuple_free(struct tuple_list *item)
++{
++	kmem_cache_free(dying_tuple_cachep, item);
++}
++
+ void nf_nat_fullcone_dying_tuple_list_add(struct list_head *new_dying)
+ {
+ 	spin_lock_bh(&dying_tuple_list_lock);
+@@ -302,6 +378,13 @@ EXPORT_SYMBOL_GPL(nf_nat_fullcone_dying_
+ 
+ void nf_nat_fullcone_handle_dying_tuples(void)
+ {
++	LIST_HEAD(local_list);
++	LIST_HEAD(v4_list);
++#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
++	LIST_HEAD(v6_list);
++	struct nat_mapping6 *mapping6;
++	union nf_inet_addr *ip6, *ext_ip6;
++#endif
+ 	struct list_head *iter, *tmp, *iter_2, *tmp_2;
+ 	struct tuple_list *item;
+ 	struct nf_conntrack_tuple *ct_tuple;
+@@ -309,22 +392,35 @@ void nf_nat_fullcone_handle_dying_tuples
+ 	__be32 ip, ext_ip;
+ 	uint16_t port, ext_port;
+ 	struct nat_mapping_original_tuple *original_tuple_item;
+-#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
+-	struct nat_mapping6 *mapping6;
+-	union nf_inet_addr *ip6, *ext_ip6;
+-	spin_lock_bh(&fullconenat6_lock);
+-#endif
+ 
+-	spin_lock_bh(&fullconenat_lock);
++	/* Splice under dying_tuple_list_lock first to avoid 3-lock nesting. */
+ 	spin_lock_bh(&dying_tuple_list_lock);
++	list_splice_init(&dying_tuple_list, &local_list);
++	spin_unlock_bh(&dying_tuple_list_lock);
+ 
+-	list_for_each_safe(iter, tmp, &dying_tuple_list) {
++	if (list_empty(&local_list))
++		return;
++
++	list_for_each_safe(iter, tmp, &local_list) {
+ 		item = list_entry(iter, struct tuple_list, list);
++		list_del(&item->list);
++		if (item->tuple_original.src.l3num == PF_INET) {
++			list_add_tail(&item->list, &v4_list);
++#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
++		} else if (item->tuple_original.src.l3num == PF_INET6) {
++			list_add_tail(&item->list, &v6_list);
++#endif
++		} else {
++			nf_nat_fullcone_dying_tuple_free(item);
++		}
++	}
+ 
+-		/* we dont know the conntrack direction for now so we try in both ways. */
+-		ct_tuple = &(item->tuple_original);
+ #if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
+-		if (ct_tuple->src.l3num == PF_INET6) {
++	if (!list_empty(&v6_list)) {
++		spin_lock_bh(&fullconenat6_lock);
++		list_for_each_safe(iter, tmp, &v6_list) {
++			item = list_entry(iter, struct tuple_list, list);
++			ct_tuple = &(item->tuple_original);
+ 			ip6 = &(ct_tuple->src).u3;
+ 			port = be16_to_cpu((ct_tuple->src).u.udp.port);
+ 			ext_ip6 = &item->tuple_reply.dst.u3;
+@@ -348,11 +444,9 @@ void nf_nat_fullcone_handle_dying_tuples
+ 				     mapping6->port);
+ 			}
+ 
+-			if (mapping6 == NULL) {
+-				goto next;
+-			}
++			if (mapping6 == NULL)
++				goto next_v6;
+ 
+-			/* look for the corresponding out-dated tuple and free it */
+ 			list_for_each_safe(iter_2, tmp_2, &mapping6->original_tuple_list) {
+ 				original_tuple_item = list_entry(iter_2, struct
+ 								 nat_mapping_original_tuple, node);
+@@ -362,12 +456,11 @@ void nf_nat_fullcone_handle_dying_tuples
+ 					    ("nf_nat_fullcone_handle_dying_tuples(): tuple %s expired. free this tuple.\n",
+ 					     fullcone_nf_ct_stringify_tuple6(&original_tuple_item->tuple));
+ 					list_del(&original_tuple_item->node);
+-					kfree(original_tuple_item);
++					kmem_cache_free(original_tuple_cachep, original_tuple_item);
+ 					(mapping6->refer_count)--;
+ 				}
+ 			}
+ 
+-			/* then kill the mapping if needed */
+ 			pr_debug
+ 			    ("nf_nat_fullcone_handle_dying_tuples(): refer_count for mapping at ext_port %d is now %d\n",
+ 			     mapping6->port, mapping6->refer_count);
+@@ -377,76 +470,73 @@ void nf_nat_fullcone_handle_dying_tuples
+ 				     mapping6->port);
+ 				kill_mapping6(mapping6);
+ 			}
+-			goto next;
++next_v6:
++			list_del(&item->list);
++			nf_nat_fullcone_dying_tuple_free(item);
+ 		}
+-		if (unlikely(ct_tuple->src.l3num != PF_INET))
+-#else
+-		if (ct_tuple->src.l3num != PF_INET)
++		spin_unlock_bh(&fullconenat6_lock);
++	}
+ #endif
+-			goto next;
+ 
+-		ip = (ct_tuple->src).u3.ip;
+-		port = be16_to_cpu((ct_tuple->src).u.udp.port);
+-		ext_ip = item->tuple_reply.dst.u3.ip;
+-		ext_port = be16_to_cpu(item->tuple_reply.dst.u.udp.port);
+-		mapping = get_mapping_by_int_src(ip, port, ext_ip, ext_port, ext_port);
+-		if (mapping == NULL) {
+-			ext_ip = (ct_tuple->dst).u3.ip;
+-			ext_port = be16_to_cpu((ct_tuple->dst).u.udp.port);
+-			ct_tuple = &(item->tuple_reply);
++	if (!list_empty(&v4_list)) {
++		spin_lock_bh(&fullconenat_lock);
++		list_for_each_safe(iter, tmp, &v4_list) {
++			item = list_entry(iter, struct tuple_list, list);
++			ct_tuple = &(item->tuple_original);
+ 			ip = (ct_tuple->src).u3.ip;
+ 			port = be16_to_cpu((ct_tuple->src).u.udp.port);
++			ext_ip = item->tuple_reply.dst.u3.ip;
++			ext_port = be16_to_cpu(item->tuple_reply.dst.u.udp.port);
+ 			mapping = get_mapping_by_int_src(ip, port, ext_ip, ext_port, ext_port);
+-			if (mapping != NULL) {
++			if (mapping == NULL) {
++				ext_ip = (ct_tuple->dst).u3.ip;
++				ext_port = be16_to_cpu((ct_tuple->dst).u.udp.port);
++				ct_tuple = &(item->tuple_reply);
++				ip = (ct_tuple->src).u3.ip;
++				port = be16_to_cpu((ct_tuple->src).u.udp.port);
++				mapping = get_mapping_by_int_src(ip, port, ext_ip, ext_port, ext_port);
++				if (mapping != NULL) {
++					pr_debug
++					    ("nf_nat_fullcone_handle_dying_tuples(): INBOUND dying conntrack at ext port %d\n",
++					     mapping->port);
++				}
++			} else {
+ 				pr_debug
+-				    ("nf_nat_fullcone_handle_dying_tuples(): INBOUND dying conntrack at ext port %d\n",
++				    ("nf_nat_fullcone_handle_dying_tuples(): OUTBOUND dying conntrack at ext port %d\n",
+ 				     mapping->port);
+ 			}
+-		} else {
+-			pr_debug
+-			    ("nf_nat_fullcone_handle_dying_tuples(): OUTBOUND dying conntrack at ext port %d\n",
+-			     mapping->port);
+-		}
+ 
+-		if (mapping == NULL) {
+-			goto next;
+-		}
++			if (mapping == NULL)
++				goto next_v4;
+ 
+-		/* look for the corresponding out-dated tuple and free it */
+-		list_for_each_safe(iter_2, tmp_2, &mapping->original_tuple_list) {
+-			original_tuple_item = list_entry(iter_2, struct nat_mapping_original_tuple, node);
++			list_for_each_safe(iter_2, tmp_2, &mapping->original_tuple_list) {
++				original_tuple_item = list_entry(iter_2, struct nat_mapping_original_tuple, node);
+ 
+-			if (nf_ct_tuple_equal(&original_tuple_item->tuple, &(item->tuple_original))) {
+-				pr_debug
+-				    ("nf_nat_fullcone_handle_dying_tuples(): tuple %s expired. free this tuple.\n",
+-				     nf_ct_stringify_tuple(&original_tuple_item->tuple));
+-				list_del(&original_tuple_item->node);
+-				kfree(original_tuple_item);
+-				(mapping->refer_count)--;
++				if (nf_ct_tuple_equal(&original_tuple_item->tuple, &(item->tuple_original))) {
++					pr_debug
++					    ("nf_nat_fullcone_handle_dying_tuples(): tuple %s expired. free this tuple.\n",
++					     nf_ct_stringify_tuple(&original_tuple_item->tuple));
++					list_del(&original_tuple_item->node);
++					kmem_cache_free(original_tuple_cachep, original_tuple_item);
++					(mapping->refer_count)--;
++				}
+ 			}
+-		}
+ 
+-		/* then kill the mapping if needed */
+-		pr_debug
+-		    ("nf_nat_fullcone_handle_dying_tuples(): refer_count for mapping at ext_port %d is now %d\n",
+-		     mapping->port, mapping->refer_count);
+-		if (mapping->refer_count <= 0) {
+ 			pr_debug
+-			    ("nf_nat_fullcone_handle_dying_tuples(): kill expired mapping at ext port %d\n",
+-			     mapping->port);
+-			kill_mapping(mapping);
++			    ("nf_nat_fullcone_handle_dying_tuples(): refer_count for mapping at ext_port %d is now %d\n",
++			     mapping->port, mapping->refer_count);
++			if (mapping->refer_count <= 0) {
++				pr_debug
++				    ("nf_nat_fullcone_handle_dying_tuples(): kill expired mapping at ext port %d\n",
++				     mapping->port);
++				kill_mapping(mapping);
++			}
++next_v4:
++			list_del(&item->list);
++			nf_nat_fullcone_dying_tuple_free(item);
+ 		}
+-
+-next:
+-		list_del(&item->list);
+-		kfree(item);
++		spin_unlock_bh(&fullconenat_lock);
+ 	}
+-
+-	spin_unlock_bh(&dying_tuple_list_lock);
+-	spin_unlock_bh(&fullconenat_lock);
+-#if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
+-	spin_unlock_bh(&fullconenat6_lock);
+-#endif
+ }
+ 
+ EXPORT_SYMBOL_GPL(nf_nat_fullcone_handle_dying_tuples);
+@@ -460,9 +550,9 @@ static struct nat_mapping6 *allocate_map
+ 	struct nat_mapping6 *p_new;
+ 	u32 hash_src;
+ 
+-	p_new = kmalloc(sizeof(struct nat_mapping6), GFP_ATOMIC);
++	p_new = kmem_cache_alloc(mapping6_cachep, GFP_ATOMIC);
+ 	if (p_new == NULL) {
+-		pr_err("kmalloc() for allocate_mapping6 failed.\n");
++		pr_err("kmem_cache_alloc() for allocate_mapping6 failed.\n");
+ 		return NULL;
+ 	}
+ 	p_new->addr = *addr;
+@@ -491,9 +581,9 @@ static struct nat_mapping *allocate_mapp
+ 	struct nat_mapping *p_new;
+ 	u32 hash_src;
+ 
+-	p_new = kmalloc(sizeof(struct nat_mapping), GFP_ATOMIC);
++	p_new = kmem_cache_alloc(mapping_cachep, GFP_ATOMIC);
+ 	if (p_new == NULL) {
+-		pr_err("kmalloc() for allocate_mapping failed.\n");
++		pr_err("kmem_cache_alloc() for allocate_mapping failed.\n");
+ 		return NULL;
+ 	}
+ 	p_new->addr = addr;
+@@ -520,9 +610,9 @@ static struct nat_mapping *allocate_mapp
+ static void add_original_tuple_to_mapping6(struct nat_mapping6 *mapping, const struct nf_conntrack_tuple
+ 					   *original_tuple)
+ {
+-	struct nat_mapping_original_tuple *item = kmalloc(sizeof(struct nat_mapping_original_tuple), GFP_ATOMIC);
++	struct nat_mapping_original_tuple *item = kmem_cache_alloc(original_tuple_cachep, GFP_ATOMIC);
+ 	if (item == NULL) {
+-		pr_err("kmalloc() for add_original_tuple_to_mapping6 failed.\n");
++		pr_err("kmem_cache_alloc() for add_original_tuple_to_mapping6 failed.\n");
+ 		return;
+ 	}
+ 	memcpy(&item->tuple, original_tuple, sizeof(struct nf_conntrack_tuple));
+@@ -533,9 +623,9 @@ static void add_original_tuple_to_mappin
+ static void add_original_tuple_to_mapping(struct nat_mapping *mapping, const struct nf_conntrack_tuple
+ 					  *original_tuple)
+ {
+-	struct nat_mapping_original_tuple *item = kmalloc(sizeof(struct nat_mapping_original_tuple), GFP_ATOMIC);
++	struct nat_mapping_original_tuple *item = kmem_cache_alloc(original_tuple_cachep, GFP_ATOMIC);
+ 	if (item == NULL) {
+-		pr_err("kmalloc() for add_original_tuple_to_mapping failed.\n");
++		pr_err("kmem_cache_alloc() for add_original_tuple_to_mapping failed.\n");
+ 		return;
+ 	}
+ 	memcpy(&item->tuple, original_tuple, sizeof(struct nf_conntrack_tuple));
+@@ -644,12 +734,12 @@ static void kill_mapping6(struct nat_map
+ 	list_for_each_safe(iter, tmp, &mapping->original_tuple_list) {
+ 		original_tuple_item = list_entry(iter, struct nat_mapping_original_tuple, node);
+ 		list_del(&original_tuple_item->node);
+-		kfree(original_tuple_item);
++		kmem_cache_free(original_tuple_cachep, original_tuple_item);
+ 	}
+ 
+ 	hash_del(&mapping->node_by_ext_port);
+ 	hash_del(&mapping->node_by_int_src);
+-	kfree(mapping);
++	kmem_cache_free(mapping6_cachep, mapping);
+ }
+ #endif
+ static void kill_mapping(struct nat_mapping *mapping)
+@@ -664,12 +754,12 @@ static void kill_mapping(struct nat_mapp
+ 	list_for_each_safe(iter, tmp, &mapping->original_tuple_list) {
+ 		original_tuple_item = list_entry(iter, struct nat_mapping_original_tuple, node);
+ 		list_del(&original_tuple_item->node);
+-		kfree(original_tuple_item);
++		kmem_cache_free(original_tuple_cachep, original_tuple_item);
+ 	}
+ 
+ 	hash_del(&mapping->node_by_ext_port);
+ 	hash_del(&mapping->node_by_int_src);
+-	kfree(mapping);
++	kmem_cache_free(mapping_cachep, mapping);
+ }
+ 
+ #if IS_ENABLED(CONFIG_NF_NAT_IPV6) || (IS_ENABLED(CONFIG_IPV6) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0))
+@@ -712,7 +802,7 @@ static int check_mapping6(struct nat_map
+ 			     fullcone_nf_ct_stringify_tuple6(&original_tuple_item->tuple));
+ 
+ 			list_del(&original_tuple_item->node);
+-			kfree(original_tuple_item);
++			kmem_cache_free(original_tuple_cachep, original_tuple_item);
+ 			(mapping->refer_count)--;
+ 		} else {
+ 			ct = nf_ct_tuplehash_to_ctrack(tuple_hash);
+@@ -781,7 +871,7 @@ static int check_mapping(struct nat_mapp
+ 			     nf_ct_stringify_tuple(&original_tuple_item->tuple));
+ 
+ 			list_del(&original_tuple_item->node);
+-			kfree(original_tuple_item);
++			kmem_cache_free(original_tuple_cachep, original_tuple_item);
+ 			(mapping->refer_count)--;
+ 		} else {
+ 			ct = nf_ct_tuplehash_to_ctrack(tuple_hash);
+@@ -879,6 +969,7 @@ static uint16_t find_appropriate_port6(s
+ 	/* 32 bits: the range can hold all 65536 ports */
+ 	u32 min, max, start, range_size, i;
+ 	uint16_t selected;
++	bool is_random;
+ 	struct nat_mapping6 *mapping = NULL;
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+ 	// nf_nat_range2 specific
+@@ -895,9 +986,10 @@ static uint16_t find_appropriate_port6(s
+ 		max = 65535;
+ 	}
+ 	range_size = max - min + 1;
++	is_random = (range->flags & NF_NAT_RANGE_PROTO_RANDOM)
++	    || (range->flags & NF_NAT_RANGE_PROTO_RANDOM_FULLY);
+ 
+-	if ((range->flags & NF_NAT_RANGE_PROTO_RANDOM)
+-	    || (range->flags & NF_NAT_RANGE_PROTO_RANDOM_FULLY)) {
++	if (is_random) {
+ 		/* for now we do the same thing for both --random and --random-fully */
+ 
+ 		/* select a random starting point */
+@@ -917,13 +1009,22 @@ static uint16_t find_appropriate_port6(s
+ 			}
+ 		}
+ 
+-		/* otherwise, we start from zero */
+-		start = 0;
++		/* Preserve RFC 4787 parity first from clamped original_port. */
++		start = clamp_t(u32, original_port, min, max) - min;
++		for (i = 0; i < range_size; i++) {
++			selected = min + ((start + i) % range_size);
++			if (((selected ^ original_port) & 1) == 0 &&
++			    !get_mapping6_by_ext_port(selected, ext_ip, net, zone)) {
++				return selected;
++			}
++		}
+ 	}
+ 
+ 	for (i = 0; i < range_size; i++) {
+-		/* 2. try to find an available port */
++		/* 2. fallback / random scan across the range */
+ 		selected = min + ((start + i) % range_size);
++		if (!is_random && ((selected ^ original_port) & 1) == 0)
++			continue;
+ 		mapping = get_mapping6_by_ext_port(selected, ext_ip, net, zone);
+ 		if (mapping == NULL) {
+ 			return selected;
+@@ -961,6 +1062,7 @@ static uint16_t find_appropriate_port(st
+ 	/* 32 bits: the range can hold all 65536 ports */
+ 	u32 min, max, start, range_size, i;
+ 	uint16_t selected;
++	bool is_random;
+ 	struct nat_mapping *mapping = NULL;
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+ 	// nf_nat_range2 specific
+@@ -977,9 +1079,10 @@ static uint16_t find_appropriate_port(st
+ 		max = 65535;
+ 	}
+ 	range_size = max - min + 1;
++	is_random = (range->flags & NF_NAT_RANGE_PROTO_RANDOM)
++	    || (range->flags & NF_NAT_RANGE_PROTO_RANDOM_FULLY);
+ 
+-	if ((range->flags & NF_NAT_RANGE_PROTO_RANDOM)
+-	    || (range->flags & NF_NAT_RANGE_PROTO_RANDOM_FULLY)) {
++	if (is_random) {
+ 		/* for now we do the same thing for both --random and --random-fully */
+ 
+ 		/* select a random starting point */
+@@ -999,13 +1102,22 @@ static uint16_t find_appropriate_port(st
+ 			}
+ 		}
+ 
+-		/* otherwise, we start from zero */
+-		start = 0;
++		/* Preserve RFC 4787 parity first from clamped original_port. */
++		start = clamp_t(u32, original_port, min, max) - min;
++		for (i = 0; i < range_size; i++) {
++			selected = min + ((start + i) % range_size);
++			if (((selected ^ original_port) & 1) == 0 &&
++			    !get_mapping_by_ext_port(selected, ext_ip, net, zone)) {
++				return selected;
++			}
++		}
+ 	}
+ 
+ 	for (i = 0; i < range_size; i++) {
+-		/* 2. try to find an available port */
++		/* 2. fallback / random scan across the range */
+ 		selected = min + ((start + i) % range_size);
++		if (!is_random && ((selected ^ original_port) & 1) == 0)
++			continue;
+ 		mapping = get_mapping_by_ext_port(selected, ext_ip, net, zone);
+ 		if (mapping == NULL) {
+ 			return selected;
+diff -uNrp a/src/nf_nat_fullcone.h b/src/nf_nat_fullcone.h
+--- a/src/nf_nat_fullcone.h	2026-11-23 11:33:55.194987945 +0800
++++ b/src/nf_nat_fullcone.h	2026-11-23 11:33:55.201283603 +0800
+@@ -130,6 +130,9 @@ unsigned int nf_nat_fullcone_ipv6(struct
+ #endif
+ 				  const struct net_device *out);
+ 
++int nf_nat_fullcone_init(void);
++void nf_nat_fullcone_exit(void);
++struct tuple_list *nf_nat_fullcone_dying_tuple_alloc(void);
+ void nf_nat_fullcone_handle_dying_tuples(void);
+ void nf_nat_fullcone_destroy_mappings(void);
+ void nf_nat_fullcone_dying_tuple_list_add(struct list_head *new_dying);
+diff -uNrp a/src/nft_ext_fullcone.c b/src/nft_ext_fullcone.c
+--- a/src/nft_ext_fullcone.c	2026-11-23 11:33:55.195139116 +0800
++++ b/src/nft_ext_fullcone.c	2026-11-23 11:33:55.201408104 +0800
+@@ -96,10 +96,10 @@ static int ct_event_cb(unsigned int even
+ 		return 0;
+ 	}
+ 
+-	dying_tuple_item = kmalloc(sizeof(struct tuple_list), GFP_ATOMIC);
++	dying_tuple_item = nf_nat_fullcone_dying_tuple_alloc();
+ 
+ 	if (dying_tuple_item == NULL) {
+-		pr_debug("warning: ct_event_cb(): kmalloc failed.\n");
++		pr_debug("warning: ct_event_cb(): slab alloc failed.\n");
+ 		return 0;
+ 	}
+ 
+@@ -472,28 +472,35 @@ static int __init nft_fullcone_module_in
+ {
+ 	int ret;
+ 
+-	ret = nft_fullcone_module_init_ipv6();
++	ret = nf_nat_fullcone_init();
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = nft_fullcone_module_init_ipv6();
++	if (ret < 0)
++		goto err_fullcone;
++
+ 	ret = nft_fullcone_module_init_inet();
+-	if (ret < 0) {
+-		nft_fullcone_module_exit_ipv6();
+-		return ret;
+-	}
++	if (ret < 0)
++		goto err_ipv6;
+ 
+ 	ret = nft_register_expr(&nft_fullcone_ipv4_type);
+-	if (ret < 0) {
+-		nft_fullcone_module_exit_inet();
+-		nft_fullcone_module_exit_ipv6();
+-		return ret;
+-	}
++	if (ret < 0)
++		goto err_inet;
+ 
+ 	wq = create_singlethread_workqueue(NF_FULLCONE_WORKQUEUE_NAME);
+ 	if (wq == NULL) {
+ 		pr_err("failed to create workqueue %s\n", NF_FULLCONE_WORKQUEUE_NAME);
+ 	}
+ 
++	return 0;
++
++err_inet:
++	nft_fullcone_module_exit_inet();
++err_ipv6:
++	nft_fullcone_module_exit_ipv6();
++err_fullcone:
++	nf_nat_fullcone_exit();
+ 	return ret;
+ }
+ 
+@@ -511,6 +518,7 @@ static void __exit nft_fullcone_module_e
+ 
+ 	nf_nat_fullcone_handle_dying_tuples();
+ 	nf_nat_fullcone_destroy_mappings();
++	nf_nat_fullcone_exit();
+ }
+ 
+ module_init(nft_fullcone_module_init);

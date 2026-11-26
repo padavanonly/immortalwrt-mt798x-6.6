@@ -1,0 +1,63 @@
+#!/bin/sh /etc/rc.common
+
+START=08
+
+tm_path=/tmp/.testmode
+
+
+find_emmc_factory_partition() {
+        for device in /sys/class/block/mmcblk0p*; do
+                if grep -qi 'factory' "$device/uevent"; then
+                        # Extract the partition number
+                        part=$(echo "$device" | grep -o 'mmcblk0p[0-9]*')
+                        echo "$part"
+                        return
+                fi
+        done
+}
+
+check_testmode() {
+
+	local factory_part=$(find_emmc_factory_partition)
+
+        # boot up to check 0x1af[0]
+
+        for idx in 0 1 2; do
+                option="INDEX${idx}_profile_path"
+                profile_path="$(grep -i "$option" /etc/wireless/l1profile.dat | awk -F'=' '{print $2}' | tr -d ' \n')"
+                CardAccessMode=$(grep -i "$option" /etc/wireless/l1profile.dat | cut -d "=" -f 2 | xargs grep -r AccessMode | cut -d "=" -f 2)
+
+                if [ -n "$factory_part" ]; then
+                       CardE2p1AF=$(hexdump -v -n 1 -s 0x1af -e '1/1 "%x" 1/1 "%x"'  /dev/$factory_part 2>/dev/null)
+                else
+                       CardE2p1AF=$(mtk_factory_rw.sh -r 1 0x1af)
+                fi
+
+                echo "idx ${idx} 2:${profile_path} 3:${CardAccessMode}, 4:${CardE2p1AF}"
+                if [ $((CardAccessMode)) -eq 2 ]; then
+                        if [ $((CardE2p1AF & 1)) -eq 1 ]; then
+                                echo "card${idx} e2p_1af: Test mode"
+                                sed -i 's/TestModeEn=0/TestModeEn=1/g' $profile_path
+                                touch ${tm_path} && chmod +x ${tm_path}
+                                IF="$(grep -r INDEX${idx}_main_ifname /etc/wireless/l1profile.dat | cut -d "=" -f 2 | cut -d ";" -f 1)"
+                                echo "mwctl ${IF} set ATE=ATESTART" >> ${tm_path}
+                        else
+                                echo "card${idx} e2p_1af: Normal mode"
+                                sed -i 's/TestModeEn=1/TestModeEn=0/g' $profile_path
+                        fi
+                else
+                        CardTestModeEn=$(grep -r "$option" /etc/wireless/l1profile.dat | cut -d "=" -f 2 | xargs grep -r TestModeEn | cut -d "=" -f 2)
+                        if [ $((CardTestModeEn & 1)) -eq 1 ]; then
+                                touch ${tm_path} && chmod +x ${tm_path}
+                                IF="$(grep -r INDEX${idx}_main_ifname /etc/wireless/l1profile.dat | cut -d "=" -f 2 | cut -d ";" -f 1)"
+                                echo "mwctl ${IF} set ATE=ATESTART" >> ${tm_path}
+                        fi
+                fi
+        done
+}
+
+
+boot() {
+	rm /tmp/.testmode
+	check_testmode
+}

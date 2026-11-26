@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -101,9 +101,6 @@ static void warp_evt_hdlr_node_deq_and_delete(
 	struct warp_evt_hdlr_queue *hdlr_q, struct warp_evt_hdlr_node *node)
 {
 	struct warp_evt_hdlr_node *cur_node, *prev_node = NULL;
-
-	if (hdlr_q == NULL || node == NULL)
-		return;
 
 	warp_dbg(WARP_DBG_INF, "%s(), evt_id:%d\n", __func__, node->evt_id);
 

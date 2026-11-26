@@ -1,0 +1,21 @@
+#!/bin/sh
+
+if [ -r /lib/functions.sh ]; then
+	. /lib/functions.sh
+fi
+
+BOARD="$FANCTRL_BOARD"
+if [ -z "$BOARD" ] && command -v board_name >/dev/null 2>&1; then
+	BOARD="$(board_name 2>/dev/null || true)"
+fi
+if [ -z "$BOARD" ] && [ -r "${FANCTRL_ROOT}/tmp/sysinfo/board_name" ]; then
+	BOARD="$(tr -d '\r\n' < "${FANCTRL_ROOT}/tmp/sysinfo/board_name" 2>/dev/null || true)"
+fi
+
+SCRIPT="/usr/libexec/rpcd/luci.fancontrol"
+if [ -n "$FANCTRL_ROOT" ] && [ -f "${FANCTRL_ROOT}/usr/libexec/rpcd/luci.fancontrol" ]; then
+	SCRIPT="${FANCTRL_ROOT}/usr/libexec/rpcd/luci.fancontrol"
+fi
+
+ucode "$SCRIPT" ctl migrate "${BOARD:-unknown}" >/dev/null
+exit $?

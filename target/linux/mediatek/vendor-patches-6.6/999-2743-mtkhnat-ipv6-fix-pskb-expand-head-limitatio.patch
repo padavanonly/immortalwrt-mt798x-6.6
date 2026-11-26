@@ -1,0 +1,29 @@
+From b9281faaf0fba4ca1dbaf377b0f09b7b35a77d35 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Fri, 15 Sep 2023 11:39:30 +0800
+Subject: [PATCH 9/9] mtkhnat-ipv6-fix-pskb-expand-head-limitation.patch
+
+---
+ net/core/skbuff.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -76,6 +76,7 @@
+ #include <net/mctp.h>
+ #include <net/page_pool/helpers.h>
+ #include <net/dropreason.h>
++#include <net/ra_nat.h>
+ 
+ #include <linux/uaccess.h>
+ #include <trace/events/skb.h>
+@@ -2127,6 +2128,9 @@ int pskb_expand_head(struct sk_buff *skb
+ 	       skb_shinfo(skb),
+ 	       offsetof(struct skb_shared_info, frags[skb_shinfo(skb)->nr_frags]));
+ 
++	/* Copy FOE_INFO to the headroom start when space is available. */
++	if (skb_headroom(skb) >= FOE_INFO_LEN)
++		memcpy(data, skb->head, FOE_INFO_LEN);
+ 	/*
+ 	 * if shinfo is shared we must drop the old head gracefully, but if it
+ 	 * is not we can just drop the old head and let the existing refcount

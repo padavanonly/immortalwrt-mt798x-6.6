@@ -1,0 +1,47 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] firewall4: run dstnat fullcone after chain-append includes (UPnP priority)
+
+Move dynamic dstnat fullcone rules out of dstnat_<zone> into a dedicated
+dstnat_fullcone_<zone> chain jumped from chain dstnat after
+fw4.includes('chain-append', 'dstnat'). Static redirects and explicit UPnP
+mappings in upnp_prerouting now take precedence over dynamic fullcone NAT.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -uNrp a/root/usr/share/firewall4/templates/ruleset.uc b/root/usr/share/firewall4/templates/ruleset.uc
+--- a/root/usr/share/firewall4/templates/ruleset.uc	2026-11-23 11:33:19.115386581 +0800
++++ b/root/usr/share/firewall4/templates/ruleset.uc	2026-11-23 11:33:19.133375741 +0800
+@@ -299,6 +299,13 @@ table inet fw4 {
+ {%  endif %}
+ {% endfor %}
+ {% fw4.includes('chain-append', 'dstnat') %}
++{% for (let zone in fw4.zones()): %}
++{%  if ((zone.masq && fw4.default_option("fullcone")) || (zone.masq6 && fw4.default_option("fullcone6"))): %}
++{%   for (let rule in zone.match_rules): %}
++		{%+ include("zone-jump.uc", { fw4, zone, rule, direction: "dstnat_fullcone" }) %}
++{%   endfor %}
++{%  endif %}
++{% endfor %}
+ 	}
+ 
+ 	chain srcnat {
+@@ -324,13 +331,18 @@ table inet fw4 {
+ {%   for (let redirect in fw4.redirects(`dstnat_${zone.name}`)): %}
+ 		{%+ include("redirect.uc", { fw4, zone, redirect }) %}
+ {%   endfor %}
++{%   fw4.includes('chain-append', `dstnat_${zone.name}`) %}
++	}
++
++{%  endif %}
++{%  if ((zone.masq && fw4.default_option("fullcone")) || (zone.masq6 && fw4.default_option("fullcone6"))): %}
++	chain dstnat_fullcone_{{ zone.name }} {
+ {%   if (zone.masq && fw4.default_option("fullcone")): %}
+ 		{%+ include("zone-fullcone.uc", { fw4, zone, family: 4, direction: "dstnat", saddrs: null, daddrs: null }) %}
+ {%   endif %}
+ {%   if (zone.masq6 && fw4.default_option("fullcone6")): %}
+ 		{%+ include("zone-fullcone.uc", { fw4, zone, family: 6, direction: "dstnat", saddrs: null, daddrs: null }) %}
+ {%   endif %}
+-{%   fw4.includes('chain-append', `dstnat_${zone.name}`) %}
+ 	}
+ 
+ {%  endif %}

@@ -1,0 +1,179 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: net: cdc_ether: enable TX SG zero-copy and 5G WWAN HNAT naming
+
+Enable scatter-gather TX (NETIF_F_SG and can_dma_sg) for standard
+cdc_ether bindings that have no custom tx_fixup and attach to an
+SG-capable host controller such as xhci-mtk, avoiding linearize copies in
+the network stack.
+
+In addition, bind mainstream 5G/LTE WWAN modem vendors exposing standard
+CDC-ECM (USB_CLASS_COMM / USB_CDC_SUBCLASS_ETHERNET / USB_CDC_PROTO_NONE)
+to wwan_info instead of generic cdc_info so interfaces reliably register
+as wwan%d and attach to MediaTek HNAT ext-devices-prefix across all boards.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/usb/cdc_ether.c | 134 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 134 insertions(+)
+
+diff --git a/drivers/net/usb/cdc_ether.c b/drivers/net/usb/cdc_ether.c
+index 1234567..89abcde 100644
+--- a/drivers/net/usb/cdc_ether.c
++++ b/drivers/net/usb/cdc_ether.c
+@@ -458,6 +458,13 @@ int usbnet_cdc_bind(struct usbnet *dev, struct usb_interface *intf)
+ 		return status;
+ 	}
+ 
++	if (!dev->driver_info->tx_fixup &&
++	    usb_device_no_sg_constraint(dev->udev)) {
++		dev->can_dma_sg = 1;
++		dev->net->features |= NETIF_F_SG;
++		dev->net->hw_features |= NETIF_F_SG;
++	}
++
+ 	return 0;
+ }
+ EXPORT_SYMBOL_GPL(usbnet_cdc_bind);
+@@ -569,6 +576,24 @@ static const struct driver_info wwan_info = {
+ #define TPLINK_VENDOR_ID	0x2357
+ #define AQUANTIA_VENDOR_ID	0x2eca
+ #define ASIX_VENDOR_ID		0x0b95
++#define QUECTEL_VENDOR_ID	0x2c7c
++#define FIBOCOM_VENDOR_ID	0x2cb7
++#define FIBOCOM_UNISOC_VENDOR_ID 0x3763
++#define FIBOCOM_ALT_VENDOR_ID	0x3c93
++#define SIMCOM_VENDOR_ID	0x1e0e
++#define SIERRA_VENDOR_ID	0x1199
++#define MEIG_VENDOR_ID		0x2dee
++#define GOSUNCN_VENDOR_ID	0x305a
++#define TDTECH_VENDOR_ID	0x3466
++#define MEDIATEK_VENDOR_ID	0x0e8d
++#define UNISOC_VENDOR_ID	0x1782
++#define QUALCOMM_VENDOR_ID	0x05c6
++#define NEOWAY_VENDOR_ID	0x2949
++#define LONGSUNG_VENDOR_ID	0x1c9e
++#define ROLLING_VENDOR_ID	0x33f8
++#define FOXCONN_VENDOR_ID	0x0489
++#define CINTERION_VENDOR_ID	0x1e2d
++
+ 
+ static const struct usb_device_id	products[] = {
+ /* BLACKLIST !!
+@@ -940,6 +964,115 @@ static const struct usb_device_id	products[] = {
+ 				      USB_CDC_PROTO_NONE),
+ 	.driver_info = (unsigned long)&wwan_info,
+ }, {
++	/* 5G/LTE WWAN modems exposing standard CDC-ECM Ethernet interfaces */
++	/* Quectel 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(QUECTEL_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Fibocom 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(FIBOCOM_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Fibocom Unisoc 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(FIBOCOM_UNISOC_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Fibocom alternate 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(FIBOCOM_ALT_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* SIMCom 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(SIMCOM_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Sierra Wireless 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(SIERRA_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* MeiG 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(MEIG_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Gosuncn 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(GOSUNCN_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* TD Tech (MT5700/MT5700M) CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Huawei standard CDC-ECM (USB_CDC_PROTO_NONE) */
++	USB_VENDOR_AND_INTERFACE_INFO(HUAWEI_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* MediaTek 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(MEDIATEK_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Unisoc 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(UNISOC_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Qualcomm reference 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(QUALCOMM_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Neoway 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(NEOWAY_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* LongSung 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(LONGSUNG_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Rolling Wireless 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(ROLLING_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Foxconn 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(FOXCONN_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
++	/* Cinterion/Thales 5G/LTE CDC-ECM */
++	USB_VENDOR_AND_INTERFACE_INFO(CINTERION_VENDOR_ID, USB_CLASS_COMM,
++				      USB_CDC_SUBCLASS_ETHERNET,
++				      USB_CDC_PROTO_NONE),
++	.driver_info = (unsigned long)&wwan_info,
++}, {
+ 	USB_INTERFACE_INFO(USB_CLASS_COMM, USB_CDC_SUBCLASS_ETHERNET,
+ 			USB_CDC_PROTO_NONE),
+ 	.driver_info = (unsigned long) &cdc_info,
+-- 
+2.43.0

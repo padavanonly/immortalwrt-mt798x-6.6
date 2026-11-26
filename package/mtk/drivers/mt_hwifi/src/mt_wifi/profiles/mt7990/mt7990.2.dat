@@ -1,0 +1,8 @@
+#The word of "Default" must not be removed
+Default
+BN0_profile_path=/etc/wireless/mediatek/mt7990.11.dat
+BN1_profile_path=/etc/wireless/mediatek/mt7990.12.dat
+BN2_profile_path=/etc/wireless/mediatek/mt7990.13.dat
+E2pAccessMode=2
+TestModeEn=0
+WHNAT=1

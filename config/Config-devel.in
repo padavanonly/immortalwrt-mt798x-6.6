@@ -92,6 +92,8 @@ menuconfig DEVEL
 
 	config KERNEL_CFLAGS
 		string "Kernel extra CFLAGS" if DEVEL
+		default "-mtune=cortex-a73 --param=l1-cache-size=64 --param=l1-cache-line-size=64 --param=l2-cache-size=1024 -fcaller-saves -mno-fix-cortex-a53-835769 -mno-fix-cortex-a53-843419" if TARGET_mediatek_filogic_hwifi_a73
+		default "-mtune=cortex-a53 -fcaller-saves" if TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi
 		default "-falign-functions=32" if TARGET_bcm53xx
 		default ""
 
@@ -153,6 +155,7 @@ menuconfig DEVEL
 
 	config EXTRA_OPTIMIZATION
 		string "Additional compiler options" if DEVEL
+		default "-fno-plt" if !CONFIG_EXTERNAL_TOOLCHAIN && (TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi || TARGET_mediatek_filogic_hwifi_a73)
 		default "-fno-caller-saves -fno-plt" if !CONFIG_EXTERNAL_TOOLCHAIN && !arc
 		default "-fno-caller-saves"
 		help

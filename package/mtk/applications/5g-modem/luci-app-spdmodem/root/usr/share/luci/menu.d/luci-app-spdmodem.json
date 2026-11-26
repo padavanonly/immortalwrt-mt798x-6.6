@@ -1,0 +1,14 @@
+{
+	"admin/network/spdmodem": {
+		"title": "SPD Modem Server",
+		"order": 80,
+		"action": {
+			"type": "view",
+			"path": "spdmodem"
+		},
+		"depends": {
+			"acl": [ "luci-app-spdmodem" ],
+			"uci": { "spdmodem": true }
+		}
+	}
+}

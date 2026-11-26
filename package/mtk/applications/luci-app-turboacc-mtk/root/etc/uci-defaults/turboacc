@@ -3,35 +3,130 @@
 
 kernel_ver="$(uname -r)"
 
-if [ -e "/lib/modules/$kernel_ver/mtkhnat.ko" ]; then
-	uci -q set "turboacc.config.fastpath"="mediatek_hnat"
-	uci -q set "turboacc.config.fastpath_mh_eth_hnat"="1"
-	uci -q set "turboacc.config.fastpath_mh_eth_hnat_v6"="1"
-	uci -q set "turboacc.config.fastpath_mh_eth_hnat_macvlan"="0"
-	uci -q set "turboacc.config.fastpath_mh_eth_hnat_bind_rate"="30"
-	uci -q set "turboacc.config.fastpath_mh_eth_hnat_ppenum"="2"
-elif [ -e "/lib/modules/$kernel_ver/fast-classifier.ko" ]; then
-	uci -q set "turboacc.config.fastpath"="fast_classifier"
-	uci -q set "turboacc.config.fastpath_fc_br"="1"
-	if [ -d "/proc/sys/net/ipv6" ]; then
-		uci -q set "turboacc.config.fastpath_fc_ipv6"="1"
-	else
-		uci -q set "turboacc.config.fastpath_fc_ipv6"="0"
-	fi
-elif [ -e "/lib/modules/$kernel_ver/shortcut-fe-cm.ko" ]; then
-	uci -q set "turboacc.config.fastpath"="shortcut_fe_cm"
-else
-	uci -q set "turboacc.config.fastpath"="none"
+has_module_file() {
+	local module
+
+	for module in "$@"; do
+		set -- "/lib/modules/$kernel_ver/$module.ko"*
+		[ -e "$1" ] && return 0
+	done
+
+	return 1
+}
+
+_uci_is_true() {
+	case "${1:-0}" in
+	1|on|true|yes|enabled) return 0 ;;
+	esac
+	return 1
+}
+
+if [ -z "$(uci -q get turboacc.config)" ]; then
+	uci -q set "turboacc.config=turboacc"
 fi
 
-uci -q set "turboacc.config.fullcone"="2"
+if [ -z "$(uci -q get turboacc.config.fastpath)" ]; then
+	if has_module_file "mtkhnat" "mediatek_hnat" || [ -d "/sys/kernel/debug/hnat" ] || [ -d "/sys/kernel/debug/mtk_ppe" ]; then
+		uci -q set "turboacc.config.fastpath"="mediatek_hnat"
+		uci -q set "turboacc.config.fastpath_mh_eth_hnat"="1"
+		uci -q set "turboacc.config.fastpath_mh_eth_hnat_v6"="1"
+		uci -q set "turboacc.config.fastpath_mh_eth_hnat_bind_rate"="5"
+		uci -q set "turboacc.config.fastpath_mh_sw_fallback"="1"
+	elif has_module_file "fast-classifier" "fast_classifier"; then
+		uci -q set "turboacc.config.fastpath"="fast_classifier"
+		uci -q set "turboacc.config.fastpath_fc_br"="1"
+		if [ -d "/proc/sys/net/ipv6" ]; then
+			uci -q set "turboacc.config.fastpath_fc_ipv6"="1"
+		else
+			uci -q set "turboacc.config.fastpath_fc_ipv6"="0"
+		fi
+	elif has_module_file "shortcut-fe-cm" "shortcut_fe_cm"; then
+		uci -q set "turboacc.config.fastpath"="shortcut_fe_cm"
+	else
+		uci -q set "turboacc.config.fastpath"="none"
+	fi
+fi
+
+# One-time upgrade migration: align legacy default bind rate 30 -> 5 when uci-defaults runs
+if [ "$(uci -q get turboacc.config.fastpath)" = "mediatek_hnat" ]; then
+	cur_bind_rate="$(uci -q get turboacc.config.fastpath_mh_eth_hnat_bind_rate)"
+	if [ -z "$cur_bind_rate" ] || [ "$cur_bind_rate" = "30" ]; then
+		uci -q set "turboacc.config.fastpath_mh_eth_hnat_bind_rate"="5"
+	fi
+fi
+
+if [ -z "$(uci -q get turboacc.config.fullcone)" ]; then
+	if has_module_file "nft_fullcone" || [ -d "/sys/module/nft_fullcone" ]; then
+		uci -q set "turboacc.config.fullcone"="1"
+	elif [ -e "/proc/sys/net/netfilter/nf_conntrack_nat_mode" ]; then
+		uci -q set "turboacc.config.fullcone"="2"
+	elif has_module_file "xt_FULLCONENAT"; then
+		uci -q set "turboacc.config.fullcone"="1"
+	else
+		uci -q set "turboacc.config.fullcone"="0"
+	fi
+fi
+
+uc_fullcone="$(uci -q get turboacc.config.fullcone)"
+if [ "$uc_fullcone" = "1" ] && [ -z "$(uci -q get turboacc.config.fullcone6)" ]; then
+	fw_fc6="$(uci -q get firewall.@defaults[0].fullcone6 2>/dev/null)"
+	if _uci_is_true "$fw_fc6"; then
+		uci -q set "turboacc.config.fullcone6"="1"
+	else
+		uci -q set "turboacc.config.fullcone6"="0"
+	fi
+fi
 
 uci -q commit "turboacc"
 
-uci -q batch <<-EOF >"/dev/null"
+# Pre-align firewall.@defaults[0] before S19firewall runs on first boot / sysupgrade -k
+if uci -q get "firewall.@defaults[0]" >/dev/null 2>&1; then
+	uc_fastpath="$(uci -q get turboacc.config.fastpath)"
+	uc_eth_hnat="$(uci -q get turboacc.config.fastpath_mh_eth_hnat)"
+	[ -n "$uc_eth_hnat" ] || uc_eth_hnat="$(uci -q get turboacc.config.fastpath_mh_hnat)"
+	[ -n "$uc_eth_hnat" ] || uc_eth_hnat="1"
+	uc_sw_fallback="$(uci -q get turboacc.config.fastpath_mh_sw_fallback)"
+	[ -n "$uc_sw_fallback" ] || uc_sw_fallback="1"
+
+	want_sw="0"
+	if [ "$uc_fastpath" = "mediatek_hnat" ] && _uci_is_true "$uc_eth_hnat" && _uci_is_true "$uc_sw_fallback"; then
+		want_sw="1"
+	fi
+
+	want_fc="0"
+	want_fc6="0"
+	if [ "$uc_fullcone" = "1" ] && { has_module_file "nft_fullcone" || [ -d "/sys/module/nft_fullcone" ]; }; then
+		want_fc="1"
+		_uci_is_true "$(uci -q get turboacc.config.fullcone6)" && want_fc6="1"
+	fi
+
+	fw_changed=0
+	for pair in \
+		"flow_offloading:$want_sw" \
+		"flow_offloading_hw:0" \
+		"fullcone:$want_fc" \
+		"fullcone6:$want_fc6"
+	do
+		opt="${pair%%:*}"
+		want_val="${pair#*:}"
+		cur_val="$(uci -q get "firewall.@defaults[0].$opt")"
+		[ -n "$cur_val" ] || cur_val="0"
+		if [ "$cur_val" != "$want_val" ]; then
+			uci -q set "firewall.@defaults[0].$opt=$want_val"
+			fw_changed=1
+		fi
+	done
+	[ "$fw_changed" -eq 0 ] || uci -q commit "firewall"
+fi
+
+uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@turboacc[-1]
 	add ucitrack turboacc
+	set ucitrack.@turboacc[-1].init='turboacc'
+	set ucitrack.@turboacc[-1].config='turboacc'
 EOF
+
+uci -q commit "ucitrack"
 
 rm -f /tmp/luci-indexcache
 exit 0

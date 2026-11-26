@@ -1,0 +1,159 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: xhci-mtk: add shutdown handler and clean port reset on teardown
+
+Add a platform .shutdown callback (`xhci_mtk_shutdown`) and set
+XHCI_RESET_TO_DEFAULT so warm reboots and sysupgrade cleanly halt/reset
+the xHCI controller, disable and power down U2/U3 IPPC ports, power off
+roothub PHYs, and turn off clocks/regulators instead of resetting the SoC
+with active SuperSpeed link state. Also power down/disable IPPC ports
+during .remove and extend CTRL0_IP_SW_RST pulse duration to 50-100 us so
+re-enumeration starts from a clean hardware state.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/usb/host/xhci-mtk.c | 66 +++++++++++++++++++++++++++++++++++--
+ 1 file changed, 63 insertions(+), 3 deletions(-)
+
+--- a/drivers/usb/host/xhci-mtk.c
++++ b/drivers/usb/host/xhci-mtk.c
+@@ -10,6 +10,7 @@
+ #include <linux/bitfield.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/iopoll.h>
++#include <linux/interrupt.h>
+ #include <linux/kernel.h>
+ #include <linux/mfd/syscon.h>
+ #include <linux/module.h>
+@@ -23,6 +24,7 @@
+ 
+ #include "xhci.h"
+ #include "xhci-mtk.h"
++#include "../core/phy.h"
+ 
+ /* ip_pw_ctrl0 register */
+ #define CTRL0_IP_SW_RST	BIT(0)
+@@ -260,7 +262,8 @@ static int xhci_mtk_host_enable(struct xhci_hcd_mtk *mtk)
+ 	return 0;
+ }
+ 
+-static int xhci_mtk_host_disable(struct xhci_hcd_mtk *mtk)
++static int xhci_mtk_host_disable_ports(struct xhci_hcd_mtk *mtk,
++				       bool port_dis)
+ {
+ 	struct mu3c_ippc_regs __iomem *ippc = mtk->ippc_regs;
+ 	u32 value;
+@@ -277,6 +280,8 @@ static int xhci_mtk_host_disable(struct xhci_hcd_mtk *mtk)
+ 
+ 		value = readl(&ippc->u3_ctrl_p[i]);
+ 		value |= CTRL_U3_PORT_PDN;
++		if (port_dis)
++			value |= CTRL_U3_PORT_DIS;
+ 		writel(value, &ippc->u3_ctrl_p[i]);
+ 	}
+ 
+@@ -287,6 +292,8 @@ static int xhci_mtk_host_disable(struct xhci_hcd_mtk *mtk)
+ 
+ 		value = readl(&ippc->u2_ctrl_p[i]);
+ 		value |= CTRL_U2_PORT_PDN;
++		if (port_dis)
++			value |= CTRL_U2_PORT_DIS;
+ 		writel(value, &ippc->u2_ctrl_p[i]);
+ 	}
+ 
+@@ -306,6 +313,11 @@ static int xhci_mtk_host_disable(struct xhci_hcd_mtk *mtk)
+ 	return ret;
+ }
+ 
++static int xhci_mtk_host_disable(struct xhci_hcd_mtk *mtk)
++{
++	return xhci_mtk_host_disable_ports(mtk, false);
++}
++
+ static int xhci_mtk_ssusb_config(struct xhci_hcd_mtk *mtk)
+ {
+ 	struct mu3c_ippc_regs __iomem *ippc = mtk->ippc_regs;
+@@ -318,7 +330,7 @@ static int xhci_mtk_ssusb_config(struct xhci_hcd_mtk *mtk)
+ 	value = readl(&ippc->ip_pw_ctr0);
+ 	value |= CTRL0_IP_SW_RST;
+ 	writel(value, &ippc->ip_pw_ctr0);
+-	udelay(1);
++	usleep_range(50, 100);
+ 	value = readl(&ippc->ip_pw_ctr0);
+ 	value &= ~CTRL0_IP_SW_RST;
+ 	writel(value, &ippc->ip_pw_ctr0);
+@@ -454,6 +466,7 @@ static void xhci_mtk_quirks(struct device *dev, struct xhci_hcd *xhci)
+ 	struct xhci_hcd_mtk *mtk = hcd_to_mtk(hcd);
+ 
+ 	xhci->quirks |= XHCI_MTK_HOST;
++	xhci->quirks |= XHCI_RESET_TO_DEFAULT;
+ 	/*
+ 	 * MTK host controller gives a spurious successful event after a
+ 	 * short transfer. Ignore it.
+@@ -728,6 +741,7 @@ static void xhci_mtk_remove(struct platform_device *pdev)
+ 
+ 	usb_put_hcd(hcd);
+ 	xhci_mtk_sch_exit(mtk);
++	xhci_mtk_host_disable_ports(mtk, true);
+ 	clk_bulk_disable_unprepare(BULK_CLKS_NUM, mtk->clks);
+ 	regulator_bulk_disable(BULK_VREGS_NUM, mtk->supplies);
+ 
+@@ -736,6 +750,51 @@ static void xhci_mtk_remove(struct platform_device *pdev)
+ 	pm_runtime_set_suspended(dev);
+ }
+ 
++static void xhci_mtk_shutdown(struct platform_device *pdev)
++{
++	struct xhci_hcd_mtk *mtk = platform_get_drvdata(pdev);
++	struct device *dev = &pdev->dev;
++	struct usb_hcd *hcd;
++	struct xhci_hcd *xhci;
++	int irq;
++
++	if (!mtk || !mtk->hcd)
++		return;
++
++	hcd = mtk->hcd;
++	xhci = hcd_to_xhci(hcd);
++	irq = hcd->irq;
++
++	pm_runtime_get_sync(dev);
++	xhci->xhc_state |= XHCI_STATE_REMOVING;
++	dev_pm_clear_wake_irq(dev);
++	device_init_wakeup(dev, false);
++
++	xhci_shutdown(hcd);
++	if (irq > 0)
++		synchronize_irq(irq);
++
++	/*
++	 * Power down and disable IPPC USB2/USB3 ports and roothub PHYs so
++	 * warm reboots/sysupgrade do not leave sticky SuperSpeed/U0 link state.
++	 */
++	xhci_mtk_host_disable_ports(mtk, true);
++	if (hcd->phy_roothub)
++		usb_phy_roothub_power_off(hcd->phy_roothub);
++
++	/*
++	 * Free shared/main HCD IRQs held by the halted controller cleanly
++	 * before turning off clocks and regulators.
++	 */
++	if (xhci->shared_hcd && xhci->shared_hcd->irq > 0 &&
++	    xhci->shared_hcd->irq != irq)
++		synchronize_irq(xhci->shared_hcd->irq);
++
++	clk_bulk_disable_unprepare(BULK_CLKS_NUM, mtk->clks);
++	regulator_bulk_disable(BULK_VREGS_NUM, mtk->supplies);
++	pm_runtime_put_noidle(dev);
++}
++
+ static int __maybe_unused xhci_mtk_suspend(struct device *dev)
+ {
+ 	struct xhci_hcd_mtk *mtk = dev_get_drvdata(dev);
+@@ -854,6 +913,7 @@ MODULE_DEVICE_TABLE(of, mtk_xhci_of_match);
+ static struct platform_driver mtk_xhci_driver = {
+ 	.probe	= xhci_mtk_probe,
+ 	.remove_new = xhci_mtk_remove,
++	.shutdown = xhci_mtk_shutdown,
+ 	.driver	= {
+ 		.name = "xhci-mtk",
+ 		.pm = DEV_PM_OPS,

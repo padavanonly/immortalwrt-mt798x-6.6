@@ -1,0 +1,1 @@
+obj-$(CONFIG_RAMBUS_DDK) += build/

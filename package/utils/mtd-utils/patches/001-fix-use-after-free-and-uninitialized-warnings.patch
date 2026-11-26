@@ -1,0 +1,74 @@
+--- a/nand-utils/nandwrite.c
++++ b/nand-utils/nandwrite.c
+@@ -528,7 +528,7 @@ int main(int argc, char * const argv[])
+ 				size_t readlen = mtd.oob_size;
+ 				size_t alreadyread = (filebuf + filebuf_len) - oobbuf;
+ 				size_t tinycnt = alreadyread;
+-				ssize_t cnt;
++				ssize_t cnt = 0;
+ 
+ 				while (tinycnt < readlen) {
+ 					cnt = read(ifd, oobbuf + tinycnt, readlen - tinycnt);
+@@ -614,12 +614,14 @@ closeall:
+ 	if (ifd > 0 && ifd != STDIN_FILENO)
+ 		close(ifd);
+ 	libmtd_close(mtd_desc);
+-	free(filebuf);
+ 	close(fd);
+ 
+ 	if (failed || (ifd != STDIN_FILENO && imglen > 0)
+-		   || (writebuf < filebuf + filebuf_len))
++		   || (writebuf < filebuf + filebuf_len)) {
++		free(filebuf);
+ 		sys_errmsg_die("Data was only partially written due to error");
++	}
++	free(filebuf);
+ 
+ 	if (all_ffs_cnt) {
+ 		fprintf(stderr, "Written %zu blocks containing only 0xff bytes\n", all_ffs_cnt);
+--- a/misc-utils/flashcp.c
++++ b/misc-utils/flashcp.c
+@@ -221,7 +221,7 @@ int main (int argc,char *argv[])
+ 	struct mtd_info_user mtd;
+ 	struct erase_info_user erase;
+ 	struct stat filestat;
+-	unsigned char *src,*dest,*wrlast_buf;
++	unsigned char *src,*dest,*wrlast_buf = NULL;
+ 	unsigned long long wrlast_len = 0;
+ 	int error = 0;
+ 
+--- a/tests/ubi-tests/io_update.c
++++ b/tests/ubi-tests/io_update.c
+@@ -128,7 +128,7 @@ static int test_update1(struct ubi_vol_i
+ 		}
+ 
+ 		for (j = 0; off < test_len; j++) {
+-			int n, rnd_len, l;
++			int n, rnd_len, l = 0;
+ 
+ 			if (!stop) {
+ 				if (sequences[i][j] != 0)
+--- a/nand-utils/nanddump.c
++++ b/nand-utils/nanddump.c
+@@ -85,5 +85,5 @@ static long long		start_addr;		// start
+ static long long		length;			// dump length
+ static const char		*mtddev;		// mtd device name
+-static const char		*dumpfile;		// dump file name
++static char			*dumpfile;		// dump file name
+ static bool			quiet = false;		// suppress diagnostic output
+ static bool			canonical = false;	// print nice + ascii
+--- a/ubifs-utils/mkfs.ubifs/compr.c
++++ b/ubifs-utils/mkfs.ubifs/compr.c
+@@ -266,10 +266,12 @@ int init_compression(void)
+ #endif
+ 
+ 	return 0;
++#if defined(WITH_ZLIB) || defined(WITH_ZSTD)
+ err:
+ 	free(zlib_buf);
+ 	free(lzo_mem);
+ 	return -1;
++#endif
+ }
+ 
+ void destroy_compression(void)

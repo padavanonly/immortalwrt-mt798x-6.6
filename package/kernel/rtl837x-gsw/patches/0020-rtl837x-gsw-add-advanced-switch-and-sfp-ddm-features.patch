@@ -1,0 +1,805 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] rtl837x-gsw: add trunk, EEE, STP, IGMP, jumbo frame, and SFP
+ DDM swconfig controls
+
+Add swconfig port isolation default portmask (0x3FF), trunk/EEE/STP/IGMP handlers, jumbo frame configuration, and integer fixed-point SFP DDM readouts.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ src/rtl837x_common.h   |   8 +
+ src/rtl837x_swconfig.c | 736 ++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 736 insertions(+), 8 deletions(-)
+
+diff --git a/src/rtl837x_common.h b/src/rtl837x_common.h
+index 978b277..a86973a 100644
+--- a/src/rtl837x_common.h
++++ b/src/rtl837x_common.h
+@@ -26,6 +26,14 @@
+ #include "./rtk-api/isolation.h"
+ #include "./rtk-api/igmp.h"
+ #include "./rtk-api/gpio.h"
++#include <linux/sfp.h>
++#include <linux/ethtool.h>
++#include "./rtk-api/trunk.h"
++#include "./rtk-api/dal/rtl8373/dal_rtl8373_trunk.h"
++#include "./rtk-api/dal/rtl8373/dal_rtl8373_stp.h"
++#include "./rtk-api/dal/rtl8373/dal_rtl8373_port.h"
++#include "./rtk-api/dal/rtl8373/dal_rtl8373_switch.h"
++#include "./rtk-api/storm.h"
+ #include "./rtk-api/dal/rtl8373/rtl8373_asicdrv.h"
+ #include "./rtk-api/dal/dal_mapper.h"
+ #include "./rtk-api/dal/rtl8373/dal_rtl8373_mapper.h"
+diff --git a/src/rtl837x_swconfig.c b/src/rtl837x_swconfig.c
+index 0e5c5eb..d23880d 100644
+--- a/src/rtl837x_swconfig.c
++++ b/src/rtl837x_swconfig.c
+@@ -506,7 +506,17 @@ static int rtl837x_sw_reset_hw(struct switch_dev *dev, const struct switch_attr
+ 
+ static int _rtl837x_sw_force_set_serdes_mode(struct rtk_gsw *gsw, uint8_t sds_index, rtk_sds_mode_t mode)
+ {
+-	switch ((int)mode)
++	if ((int)mode == 1)
++	{
++		dev_info(gsw->dev, "Unset Serdes%d, force mode: 0x%x\n", sds_index, gsw->sds0mode);
++		if (sds_index == 0)
++			gsw->force_set_serdes0_mode = false;
++		else
++			gsw->force_set_serdes1_mode = false;
++		return 0;
++	}
++
++	switch(mode)
+ 	{
+ 		case SERDES_10GQXG:
+ 		case SERDES_10GUSXG:
+@@ -531,13 +541,6 @@ static int _rtl837x_sw_force_set_serdes_mode(struct rtk_gsw *gsw, uint8_t sds_in
+ 				gsw->sds1mode = mode;
+ 			}
+ 			break;
+-		case 1:
+-			dev_info(gsw->dev, "Unset Serdes%d, force mode: 0x%x\n", sds_index, gsw->sds0mode);
+-			if (sds_index == 0)
+-				gsw->force_set_serdes0_mode = false;
+-			else
+-				gsw->force_set_serdes1_mode = false;
+-			return 0;
+ 		default:
+ 			return -EINVAL;
+ 	}
+@@ -598,6 +601,635 @@ static int rtl837x_sw_serdes_mode_get_str(struct switch_dev *dev, const struct s
+ 	return 0;
+ }
+ 
++static int rtl837x_sw_set_trunk_ports(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val, rtk_trunk_group_t trk_gid)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_portmask_t portmask;
++	char *buf, *p, *token;
++	int port;
++	rtk_api_ret_t ret;
++
++	memset(&portmask, 0, sizeof(portmask));
++	if (!val->value.s)
++		return -EINVAL;
++
++	buf = kstrdup(val->value.s, GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++
++	p = buf;
++	while ((token = strsep(&p, " ,")) != NULL) {
++		if (!*token || strcmp(token, "none") == 0 || strcmp(token, "clear") == 0)
++			continue;
++		if (kstrtoint(token, 0, &port) != 0 || port < 0 || port >= gsw->num_ports) {
++			kfree(buf);
++			return -EINVAL;
++		}
++		portmask.bits[0] |= (1U << PORT_MAPPED(port));
++	}
++	kfree(buf);
++
++	ret = rtk_trunk_port_set(trk_gid, &portmask);
++	if (ret != RT_ERR_OK) {
++		dev_err(gsw->dev, "rtk_trunk_port_set group %d failed: %d\n", trk_gid, ret);
++		return -EIO;
++	}
++	return 0;
++}
++
++static int rtl837x_sw_get_trunk_ports(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val, rtk_trunk_group_t trk_gid)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_portmask_t portmask;
++	rtk_api_ret_t ret;
++	int len = 0;
++	int port;
++	char *buf = gsw->buf;
++
++	memset(&portmask, 0, sizeof(portmask));
++	ret = rtk_trunk_port_get(trk_gid, &portmask);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	for (port = 0; port < gsw->num_ports; port++) {
++		rtk_uint32 mapped = PORT_MAPPED(port);
++		if (portmask.bits[0] & (1 << mapped)) {
++			len += snprintf(buf + len, sizeof(gsw->buf) - len, "%d ", port);
++		}
++	}
++	if (len > 0 && buf[len - 1] == ' ')
++		buf[len - 1] = '\0';
++	else
++		buf[len] = '\0';
++
++	val->value.s = buf;
++	val->len = len;
++	return 0;
++}
++
++static int rtl837x_sw_set_trunk0_ports(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	return rtl837x_sw_set_trunk_ports(dev, attr, val, 0);
++}
++
++static int rtl837x_sw_get_trunk0_ports(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	return rtl837x_sw_get_trunk_ports(dev, attr, val, 0);
++}
++
++static int rtl837x_sw_set_trunk1_ports(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	return rtl837x_sw_set_trunk_ports(dev, attr, val, 1);
++}
++
++static int rtl837x_sw_get_trunk1_ports(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	return rtl837x_sw_get_trunk_ports(dev, attr, val, 1);
++}
++
++static int rtl837x_sw_set_trunk_hash(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	rtk_api_ret_t ret;
++	if (val->value.i < 0 || val->value.i > 7)
++		return -EINVAL;
++	ret = dal_rtl8373_trunk_distributionAlgorithm_set(0, (rtk_uint32)val->value.i);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_trunk_hash(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	rtk_uint32 algo = 0;
++	rtk_api_ret_t ret = dal_rtl8373_trunk_distributionAlgorithm_get(0, &algo);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++	val->value.i = (int)algo;
++	return 0;
++}
++
++static int rtl837x_sw_set_igmp_snooping(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	rtk_enable_t enable = val->value.i ? ENABLED : DISABLED;
++	rtk_api_ret_t ret = rtk_igmp_state_set(enable);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_igmp_snooping(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	rtk_enable_t enable = DISABLED;
++	rtk_api_ret_t ret = rtk_igmp_state_get(&enable);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++	val->value.i = (enable == ENABLED) ? 1 : 0;
++	return 0;
++}
++
++static int rtl837x_sw_set_igmp_fast_leave(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	rtk_enable_t enable = val->value.i ? ENABLED : DISABLED;
++	rtk_api_ret_t ret = rtk_igmp_fastLeave_set(enable);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_igmp_fast_leave(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	rtk_enable_t enable = DISABLED;
++	rtk_api_ret_t ret = rtk_igmp_fastLeave_get(&enable);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++	val->value.i = (enable == ENABLED) ? 1 : 0;
++	return 0;
++}
++
++static int rtl837x_sw_set_port_eee(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_enable_t enable;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	enable = val->value.i ? ENABLED : DISABLED;
++	ret = rtk_eee_portTxRxEn_set(PORT_MAPPED(val->port_vlan), enable, enable);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_port_eee(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_enable_t rxEn = DISABLED, txEn = DISABLED;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	ret = rtk_eee_portTxRxEn_get(PORT_MAPPED(val->port_vlan), &rxEn, &txEn);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	val->value.i = (rxEn == ENABLED && txEn == ENABLED) ? 1 : 0;
++	return 0;
++}
++
++static int rtl837x_sw_set_port_stp(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++	if (val->value.i < 0 || val->value.i > 3)
++		return -EINVAL;
++
++	ret = dal_rtl8373_asicMstpPortStatus_set(0, PORT_MAPPED(val->port_vlan), (rtk_uint32)val->value.i);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_port_stp(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_uint32 status = 0;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	ret = dal_rtl8373_asicMstpPortStatus_get(0, PORT_MAPPED(val->port_vlan), &status);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	val->value.i = (int)status;
++	return 0;
++}
++
++static int rtl837x_sw_set_port_isolation(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_uint32 mask;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports || val->value.i < 0 || val->value.i > RTL8373_PORTMASK)
++		return -EINVAL;
++
++	mask = (val->value.i == 0) ? RTL8373_PORTMASK : (rtk_uint32)val->value.i;
++	ret = rtk_port_isolation_set(PORT_MAPPED(val->port_vlan), mask);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_port_isolation(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_uint32 mask = 0;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	ret = rtk_port_isolation_get(PORT_MAPPED(val->port_vlan), &mask);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	val->value.i = (mask == RTL8373_PORTMASK) ? 0 : (int)mask;
++	return 0;
++}
++
++static int rtl837x_sw_set_port_max_frame_size(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	int port;
++	ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	if (val->value.i < 1518 || val->value.i > 16000)
++		return -EINVAL;
++
++	port = PORT_MAPPED(val->port_vlan);
++	ret = dal_rtl8373_portMaxLen_set(port, 0, (rtk_uint32)val->value.i);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	ret = dal_rtl8373_portMaxLen_set(port, 1, (rtk_uint32)val->value.i);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	dal_rtl8373_portMaxLenIncTag_set(port, 1);
++	return 0;
++}
++
++static int rtl837x_sw_get_port_max_frame_size(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	int port;
++	rtk_uint32 len = 0;
++	ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	port = PORT_MAPPED(val->port_vlan);
++	ret = dal_rtl8373_portMaxLen_get(port, 1, &len);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	val->value.i = (int)len;
++	return 0;
++}
++
++static int rtl837x_sw_set_port_storm_bcast(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_enable_t enable;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	enable = val->value.i ? ENABLED : DISABLED;
++	ret = rtk_rate_stormControlPortEnable_set(PORT_MAPPED(val->port_vlan), STORM_GROUP_BROADCAST, enable);
++	return (ret == RT_ERR_OK) ? 0 : -EIO;
++}
++
++static int rtl837x_sw_get_port_storm_bcast(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_enable_t enable = DISABLED;
++	rtk_api_ret_t ret;
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	ret = rtk_rate_stormControlPortEnable_get(PORT_MAPPED(val->port_vlan), STORM_GROUP_BROADCAST, &enable);
++	if (ret != RT_ERR_OK)
++		return -EIO;
++
++	val->value.i = (enable == ENABLED) ? 1 : 0;
++	return 0;
++}
++
++static void rtl837x_format_cable_len(char *buf, size_t size, u32 raw_len)
++{
++	u32 cm = (raw_len * 25) / 10;
++	u32 m_int = cm / 100;
++	u32 m_dec = cm % 100;
++
++	snprintf(buf, size, "%u.%02u m", m_int, m_dec);
++}
++
++static const char *rtl837x_rtct_status_str(u32 normal, u32 open, u32 mis_open,
++					  u32 s_short, u32 mis_short, u32 inter_short)
++{
++	if (normal)
++		return "Normal";
++	if (open || mis_open)
++		return "Open";
++	if (s_short || mis_short || inter_short)
++		return "Short";
++	return "Unknown";
++}
++
++static int rtl837x_sw_get_port_cable_diag(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	rtk_port_status_t port_status;
++	rtk_rtct_result_t result;
++	rtk_uint32 phy_port;
++	rtk_api_ret_t ret;
++	int iter;
++	bool done = false;
++	u32 len_a, len_b, len_c, len_d;
++	char str_a[32], str_b[32], str_c[32], str_d[32];
++
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++
++	phy_port = PORT_MAPPED(val->port_vlan);
++
++	/* RTCT is only supported on copper PHY ports 4-7 */
++	if (phy_port < 4 || phy_port > 7) {
++		snprintf(gsw->buf, sizeof(gsw->buf),
++			 "Port %d (phy %u) does not support cable diagnostics (requires copper PHY ports 4-7)\n",
++			 val->port_vlan, phy_port);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	/* RTCT requires port to be Link Down */
++	ret = rtk_port_macStatus_get(phy_port, &port_status);
++	if (ret != RT_ERR_OK) {
++		snprintf(gsw->buf, sizeof(gsw->buf),
++			 "Failed to get port %d MAC status (%d)\n", val->port_vlan, ret);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	if (port_status.link) {
++		snprintf(gsw->buf, sizeof(gsw->buf),
++			 "Port %d is Link Up (cable diagnostics requires Link Down)\n",
++			 val->port_vlan);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	/* Initialize RTCT engine */
++	ret = rtk_port_rtct_init();
++	if (ret != RT_ERR_OK) {
++		snprintf(gsw->buf, sizeof(gsw->buf),
++			 "Failed to initialize RTCT engine (%d)\n", ret);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	/* Start RTCT test on specified port */
++	ret = rtk_port_rtctEnable_set(1 << phy_port);
++	if (ret != RT_ERR_OK && ret != RT_ERR_BUSYWAIT_TIMEOUT) {
++		snprintf(gsw->buf, sizeof(gsw->buf),
++			 "Failed to start RTCT test on port %d (%d)\n", val->port_vlan, ret);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	/* Poll for RTCT test completion (up to ~2.0s with 50ms intervals) */
++	for (iter = 0; iter < 40; iter++) {
++		msleep(50);
++		memset(&result, 0, sizeof(result));
++		ret = rtk_port_rtctResult_get(phy_port, &result);
++		if (ret == RT_ERR_OK) {
++			if (result.channelADone && result.channelBDone &&
++			    result.channelCDone && result.channelDDone) {
++				done = true;
++				break;
++			}
++		}
++	}
++
++	if (!done) {
++		snprintf(gsw->buf, sizeof(gsw->buf),
++			 "Port %d: Cable test in progress or timeout, please try again...\n",
++			 val->port_vlan);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	/* Read channel lengths from PHY SRAM (raw unit = 2.5cm) */
++	len_a = uc1_sram_read_8b(phy_port, 0x8027) | (uc1_sram_read_8b(phy_port, 0x8028) << 8);
++	len_b = uc1_sram_read_8b(phy_port, 0x802B) | (uc1_sram_read_8b(phy_port, 0x802C) << 8);
++	len_c = uc1_sram_read_8b(phy_port, 0x802F) | (uc1_sram_read_8b(phy_port, 0x8030) << 8);
++	len_d = uc1_sram_read_8b(phy_port, 0x8033) | (uc1_sram_read_8b(phy_port, 0x8034) << 8);
++
++	rtl837x_format_cable_len(str_a, sizeof(str_a), len_a);
++	rtl837x_format_cable_len(str_b, sizeof(str_b), len_b);
++	rtl837x_format_cable_len(str_c, sizeof(str_c), len_c);
++	rtl837x_format_cable_len(str_d, sizeof(str_d), len_d);
++
++	scnprintf(gsw->buf, sizeof(gsw->buf),
++		  "Port %d Cable Diagnostics (RTCT):\n"
++		  "  Channel A: %s (Length: %s)\n"
++		  "  Channel B: %s (Length: %s)\n"
++		  "  Channel C: %s (Length: %s)\n"
++		  "  Channel D: %s (Length: %s)\n",
++		  val->port_vlan,
++		  rtl837x_rtct_status_str(result.channelANormal, result.channelAOpen, result.channelAMisOpen,
++					  result.channelAShort, result.channelAMisShort, result.channelAInterShort),
++		  str_a,
++		  rtl837x_rtct_status_str(result.channelBNormal, result.channelBOpen, result.channelBMisOpen,
++					  result.channelBShort, result.channelBMisShort, result.channelBInterShort),
++		  str_b,
++		  rtl837x_rtct_status_str(result.channelCNormal, result.channelCOpen, result.channelCMisOpen,
++					  result.channelCShort, result.channelCMisShort, result.channelCInterShort),
++		  str_c,
++		  rtl837x_rtct_status_str(result.channelDNormal, result.channelDOpen, result.channelDMisOpen,
++					  result.channelDShort, result.channelDMisShort, result.channelDInterShort),
++		  str_d);
++
++	val->value.s = gsw->buf;
++	return 0;
++}
++
++static int rtl837x_sfp_01uw_to_c_dbm(unsigned int raw_01uw)
++{
++	u64 m, log2_q20;
++	u32 int_log2 = 0, frac_log2 = 0;
++	unsigned int tmp = raw_01uw;
++	int i;
++
++	if (raw_01uw == 0)
++		return -4000;
++
++	while (tmp >>= 1)
++		int_log2++;
++
++	m = ((u64)raw_01uw << 30) >> int_log2;
++	for (i = 0; i < 20; i++) {
++		m = (m * m) >> 30;
++		frac_log2 <<= 1;
++		if (m >= (1ULL << 31)) {
++			m >>= 1;
++			frac_log2 |= 1;
++		}
++	}
++
++	log2_q20 = ((u64)int_log2 << 20) | frac_log2;
++	/* round(1000 * log10(2) * 2^20) = 315652829; -4000 for 0.1 uW = 10^-4 mW */
++	return (int)(((log2_q20 * 315652829ULL) + (1ULL << 39)) >> 40) - 4000;
++}
++
++static int rtl837x_sfp_uw_to_c_dbm(unsigned int uw)
++{
++	if (uw == 0)
++		return -4000;
++	return rtl837x_sfp_01uw_to_c_dbm(uw * 10);
++}
++
++static void rtl837x_format_dbm_01uw(char *buf, size_t size, unsigned int raw_01uw)
++{
++	int c_dbm;
++
++	if (raw_01uw == 0) {
++		scnprintf(buf, size, "<-40.0 dBm (0.0 uW)");
++		return;
++	}
++	c_dbm = rtl837x_sfp_01uw_to_c_dbm(raw_01uw);
++	scnprintf(buf, size, "%s%d.%02d dBm (%u.%u uW)",
++		  (c_dbm < 0 ? "-" : ""), abs(c_dbm) / 100, abs(c_dbm) % 100,
++		  raw_01uw / 10, raw_01uw % 10);
++}
++
++static void rtl837x_format_dbm(char *buf, size_t size, unsigned int uw)
++{
++	int c_dbm;
++
++	if (uw == 0) {
++		scnprintf(buf, size, "<-40.0 dBm (0 uW)");
++		return;
++	}
++	c_dbm = rtl837x_sfp_uw_to_c_dbm(uw);
++	scnprintf(buf, size, "%s%d.%02d dBm (%u uW)",
++		  (c_dbm < 0 ? "-" : ""), abs(c_dbm) / 100, abs(c_dbm) % 100, uw);
++}
++
++static int rtl837x_sw_get_sfp_info_common(struct rtk_gsw *gsw, struct switch_val *val)
++{
++	struct ethtool_eeprom ee;
++	u8 *a0, *a2;
++	char vendor[17], part[17], serial[17];
++	char tx_pwr_str[32], rx_pwr_str[32];
++	int i, len = 0;
++	int ret = 0;
++
++	if (!gsw->sfp_bus || !gsw->sfp_present) {
++		snprintf(gsw->buf, sizeof(gsw->buf), "Module: Not present\n");
++		val->value.s = gsw->buf;
++		return 0;
++	}
++
++	a0 = kzalloc(256, GFP_KERNEL);
++	a2 = kzalloc(256, GFP_KERNEL);
++	if (!a0 || !a2) {
++		kfree(a0);
++		kfree(a2);
++		return -ENOMEM;
++	}
++
++	ee.cmd = 0;
++	ee.offset = 0;
++	ee.len = 256;
++	ret = sfp_get_module_eeprom(gsw->sfp_bus, &ee, a0);
++	if (ret < 0) {
++		snprintf(gsw->buf, sizeof(gsw->buf), "Module: Failed to read A0h EEPROM (%d)\n", ret);
++		val->value.s = gsw->buf;
++		kfree(a0);
++		kfree(a2);
++		return 0;
++	}
++
++	memcpy(vendor, &a0[20], 16);
++	vendor[16] = '\0';
++	for (i = 15; i >= 0 && vendor[i] == ' '; i--)
++		vendor[i] = '\0';
++
++	memcpy(part, &a0[40], 16);
++	part[16] = '\0';
++	for (i = 15; i >= 0 && part[i] == ' '; i--)
++		part[i] = '\0';
++
++	memcpy(serial, &a0[68], 16);
++	serial[16] = '\0';
++	for (i = 15; i >= 0 && serial[i] == ' '; i--)
++		serial[i] = '\0';
++
++	len += scnprintf(gsw->buf + len, sizeof(gsw->buf) - len,
++			 "Vendor: %s\nPart: %s\nSerial: %s\n",
++			 vendor[0] ? vendor : "Unknown",
++			 part[0] ? part : "Unknown",
++			 serial[0] ? serial : "Unknown");
++
++	if (a0[92] & 0x40) {
++		ee.offset = 256;
++		ee.len = 256;
++		ret = sfp_get_module_eeprom(gsw->sfp_bus, &ee, a2);
++		if (ret == 0) {
++			s16 raw_t = (s16)((a2[96] << 8) | a2[97]);
++			u16 raw_v = (u16)((a2[98] << 8) | a2[99]);
++			u16 raw_b = (u16)((a2[100] << 8) | a2[101]);
++			u16 raw_tx = (u16)((a2[102] << 8) | a2[103]);
++			u16 raw_rx = (u16)((a2[104] << 8) | a2[105]);
++
++			int t_int = raw_t / 256;
++			int t_dec = (abs(raw_t % 256) * 100) / 256;
++			int v_int = raw_v / 10000;
++			int v_dec = (raw_v % 10000) / 100;
++			int b_int = (raw_b * 2) / 1000;
++			int b_dec = ((raw_b * 2) % 1000) / 10;
++			rtl837x_format_dbm_01uw(tx_pwr_str, sizeof(tx_pwr_str), raw_tx);
++			rtl837x_format_dbm_01uw(rx_pwr_str, sizeof(rx_pwr_str), raw_rx);
++
++			len += scnprintf(gsw->buf + len, sizeof(gsw->buf) - len,
++					 "DDM: Supported\n"
++					 "Temperature: %s%d.%02d C\n"
++					 "Voltage: %d.%02d V\n"
++					 "TX Bias: %d.%02d mA\n"
++					 "TX Power: %s\n"
++					 "RX Power: %s\n",
++					 (raw_t < 0 ? "-" : ""), abs(t_int), t_dec,
++					 v_int, v_dec,
++					 b_int, b_dec,
++					 tx_pwr_str, rx_pwr_str);
++		} else {
++			len += scnprintf(gsw->buf + len, sizeof(gsw->buf) - len,
++					 "DDM: Read failed (%d)\n", ret);
++		}
++	} else {
++		len += scnprintf(gsw->buf + len, sizeof(gsw->buf) - len,
++				 "DDM: Not supported (Passive DAC or non-DDM module)\n");
++	}
++
++	val->value.s = gsw->buf;
++	kfree(a0);
++	kfree(a2);
++	return 0;
++}
++
++static int rtl837x_sw_get_sfp_info_port(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	if (val->port_vlan >= gsw->num_ports)
++		return -EINVAL;
++	if (PORT_MAPPED(val->port_vlan) != UTP_PORT8) {
++		snprintf(gsw->buf, sizeof(gsw->buf), "Port %d is not an SFP slot\n", val->port_vlan);
++		val->value.s = gsw->buf;
++		return 0;
++	}
++	return rtl837x_sw_get_sfp_info_common(gsw, val);
++}
++
++static int rtl837x_sw_get_sfp_info_global(struct switch_dev *dev, const struct switch_attr *attr, struct switch_val *val)
++{
++	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
++	return rtl837x_sw_get_sfp_info_common(gsw, val);
++}
++
+ static struct switch_attr rtl832n_globals[] = {
+ 	{
+ 		.type = SWITCH_TYPE_INT,
+@@ -638,6 +1270,43 @@ static struct switch_attr rtl832n_globals[] = {
+ 		.name = "serdes_mode_get",
+ 		.description = "Show the current serdes mode",
+ 		.get = rtl837x_sw_serdes_mode_get_str,
++	}, {
++		.type = SWITCH_TYPE_STRING,
++		.name = "trunk0_ports",
++		.description = "Set Trunk Group 0 member ports (e.g. '0 1')",
++		.set = rtl837x_sw_set_trunk0_ports,
++		.get = rtl837x_sw_get_trunk0_ports,
++	}, {
++		.type = SWITCH_TYPE_STRING,
++		.name = "trunk1_ports",
++		.description = "Set Trunk Group 1 member ports (e.g. '2 3')",
++		.set = rtl837x_sw_set_trunk1_ports,
++		.get = rtl837x_sw_get_trunk1_ports,
++	}, {
++		.type = SWITCH_TYPE_INT,
++		.name = "trunk_hash_mode",
++		.description = "Trunk Hash algorithm (0-7)",
++		.set = rtl837x_sw_set_trunk_hash,
++		.get = rtl837x_sw_get_trunk_hash,
++	}, {
++		.type = SWITCH_TYPE_INT,
++		.name = "igmp_snooping",
++		.description = "Enable IGMP snooping (1:on, 0:off)",
++		.set = rtl837x_sw_set_igmp_snooping,
++		.get = rtl837x_sw_get_igmp_snooping,
++		.max = 1,
++	}, {
++		.type = SWITCH_TYPE_INT,
++		.name = "igmp_fast_leave",
++		.description = "Enable IGMP fast leave (1:on, 0:off)",
++		.set = rtl837x_sw_set_igmp_fast_leave,
++		.get = rtl837x_sw_get_igmp_fast_leave,
++		.max = 1,
++	}, {
++		.type = SWITCH_TYPE_STRING,
++		.name = "sfp_info",
++		.description = "Show SFP module and DDM sensor status",
++		.get = rtl837x_sw_get_sfp_info_global,
+ 	}
+ };
+ 
+@@ -664,6 +1333,57 @@ static struct switch_attr rtl837x_port[] = {
+ 		.get = rtl837x_sw_get_port_mib,
+ 	},
+ #endif
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "eee",
++		.description = "Enable 802.3az EEE on port (1:on, 0:off)",
++		.set = rtl837x_sw_set_port_eee,
++		.get = rtl837x_sw_get_port_eee,
++		.max = 1,
++	},
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "stp_state",
++		.description = "Port STP state (0:disable, 1:blocking, 2:learning, 3:forwarding)",
++		.set = rtl837x_sw_set_port_stp,
++		.get = rtl837x_sw_get_port_stp,
++		.max = 3,
++	},
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "isolation",
++		.description = "Port isolation mask (permitted portmask)",
++		.set = rtl837x_sw_set_port_isolation,
++		.get = rtl837x_sw_get_port_isolation,
++	},
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "max_frame_size",
++		.description = "Port max frame size / MTU (1518 - 16000 bytes)",
++		.set = rtl837x_sw_set_port_max_frame_size,
++		.get = rtl837x_sw_get_port_max_frame_size,
++		.max = 16000,
++	},
++	{
++		.type = SWITCH_TYPE_STRING,
++		.name = "sfp_info",
++		.description = "Show SFP module info and DDM sensor readings",
++		.get = rtl837x_sw_get_sfp_info_port,
++	},
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "storm_bcast",
++		.description = "Enable broadcast storm control on port (1:on, 0:off)",
++		.set = rtl837x_sw_set_port_storm_bcast,
++		.get = rtl837x_sw_get_port_storm_bcast,
++		.max = 1,
++	},
++	{
++		.type = SWITCH_TYPE_STRING,
++		.name = "cable_diag",
++		.description = "Perform cable diagnostics and show wire status / length (RTCT)",
++		.get = rtl837x_sw_get_port_cable_diag,
++	},
+ };
+ 
+ static const struct switch_dev_ops rtl8372n_sw_ops = {

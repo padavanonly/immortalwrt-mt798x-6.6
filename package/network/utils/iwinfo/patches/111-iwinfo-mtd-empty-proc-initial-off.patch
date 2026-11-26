@@ -1,0 +1,11 @@
+--- a/iwinfo_utils.c
++++ b/iwinfo_utils.c
+@@ -342,7 +342,7 @@
+ 	uint16_t *bc;
+ 	uint16_t ident;
+ 
+-	int fd, off;
++	int fd, off = -1;
+ 	ssize_t ident_len;
+ 	unsigned int len;
+ 	char buf[128];

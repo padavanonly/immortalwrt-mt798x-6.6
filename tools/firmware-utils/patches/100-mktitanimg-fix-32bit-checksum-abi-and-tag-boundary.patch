@@ -1,0 +1,329 @@
+--- a/src/mktitanimg.c
++++ b/src/mktitanimg.c
+@@ -8,8 +8,8 @@
+ 
+ struct checksumrecord
+ {
+-		unsigned int magic;
+-        unsigned int    chksum;     /* The checksum for the complete header.
++	uint32_t magic;
++	uint32_t chksum;     /* The checksum for the complete header.
+  Excepting the
+                                            checksum block */
+ };
+@@ -237,6 +237,7 @@
+ 		int	padding;		/* number of padding bytes to prepend */
+ 		int	align;			/* align factor from command line */
+ 		int	result;			/* intermediate result */
++		uint32_t checksum;
+ 		char * buf;
+ 
+ 		/* Open the specified image for reading */
+@@ -251,7 +252,13 @@
+ 		fseek(filep,0,SEEK_END);
+ 		section->raw_size=ftell(filep);
+ 		fseek(filep,0,SEEK_SET);
+-		cs_calc_sum(filep,(unsigned long *)&section->chksum,0);
++		if (!cs_calc_sum(filep, &checksum, 0)) {
++			fprintf(stderr, "ERROR: can't calculate checksum for %s.\n", file_name);
++			fclose(filep);
++			fclose(nsp_image);
++			return -1;
++		}
++		section->chksum = checksum;
+ 		fseek(filep,0,SEEK_SET);
+ 
+ 		/* Retrieve the alignment constant */
+@@ -419,13 +426,20 @@
+ 
+ 	free(img_hdr_head);
+ 
+-      {
+-	  struct checksumrecord cr;
+-      cr.magic=CKSUM_MAGIC_NUMBER;
+-      cs_calc_sum(nsp_image, (unsigned long *)&cr.chksum, 0);
+-      fseek(nsp_image,0, SEEK_END);
+-      fwrite(&cr, 1, sizeof(cr), nsp_image);
+-	  }
++	{
++		struct checksumrecord cr;
++		uint32_t checksum;
++
++		cr.magic=CKSUM_MAGIC_NUMBER;
++		if (!cs_calc_sum(nsp_image, &checksum, 0)) {
++			fprintf(stderr, "ERROR: can't calculate image checksum.\n");
++			fclose(nsp_image);
++			return -1;
++		}
++		cr.chksum = checksum;
++		fseek(nsp_image,0, SEEK_END);
++		fwrite(&cr, 1, sizeof(cr), nsp_image);
++	}
+ 	  {
+ 		FILE * non_web;
+ 		char fname[256];
+@@ -457,7 +471,7 @@
+ 
+ #define BUFLEN (1 << 16)
+ 
+-static unsigned long crctab[256] =
++static uint32_t crctab[256] =
+ {
+ 	0x0,
+ 	0x04C11DB7, 0x09823B6E, 0x0D4326D9, 0x130476DC, 0x17C56B6B,
+@@ -515,49 +529,65 @@
+ 
+ int cs_is_tagged(FILE *fp)
+ {
+-	char buf[8];
+-
+-	fseek(fp, -8, SEEK_END);
+-	fread(buf, 8, 1, fp);
+-	if(*(unsigned long*)buf == CKSUM_MAGIC_NUMBER)
+-		return 1;
+-	return 0;
+-}
+-
+-unsigned long cs_read_sum(FILE *fp)
+-{
+-	char buf[8];
+-
+-	fseek(fp, -8, SEEK_END);
+-	fread(buf, 8, 1, fp);
+-	return *((unsigned long*)&buf[4]);
+-}
+-
+-int cs_calc_sum(FILE *fp, unsigned long *res, int tagged)
++	uint32_t magic;
++
++	if (fseek(fp, -8, SEEK_END) != 0)
++		return 0;
++	if (fread(&magic, sizeof(magic), 1, fp) != 1)
++		return 0;
++	return magic == CKSUM_MAGIC_NUMBER;
++}
++
++uint32_t cs_read_sum(FILE *fp)
++{
++	uint32_t sum;
++
++	if (fseek(fp, -4, SEEK_END) != 0)
++		return 0;
++	if (fread(&sum, sizeof(sum), 1, fp) != 1)
++		return 0;
++	return sum;
++}
++
++int cs_calc_sum(FILE *fp, uint32_t *res, int tagged)
+ {
+ 	unsigned char buf[BUFLEN];
+-	unsigned long crc = 0;
++	uint32_t crc = 0;
+ 	uintmax_t length = 0;
+-	size_t bytes_read;
+-
+-	fseek(fp, 0, SEEK_SET);
+-
+-	while((bytes_read = fread(buf, 1, BUFLEN, fp)) > 0)
++	size_t bytes_read, tail_size = 0;
++
++	if (fseek(fp, 0, SEEK_SET) != 0)
++		return 0;
++
++	while((bytes_read = fread(buf + tail_size, 1, BUFLEN - tail_size, fp)) > 0)
+ 	{
+ 		unsigned char *cp = buf;
+-
+-		if(length + bytes_read < length)
++		size_t bytes_to_sum = bytes_read;
++		size_t bytes_available = tail_size + bytes_read;
++
++		if (tagged) {
++			if (bytes_available <= 8) {
++				tail_size = bytes_available;
++				continue;
++			}
++
++			bytes_to_sum = bytes_available - 8;
++		}
++
++		if(length + bytes_to_sum < length)
+ 			return 0;
+ 
+-		if(bytes_read != BUFLEN && tagged)
+-			bytes_read -= 8;
+-
+-		length += bytes_read;
+-		while(bytes_read--)
++		length += bytes_to_sum;
++		while(bytes_to_sum--)
+ 			crc =(crc << 8) ^ crctab[((crc >> 24) ^ *cp++) & 0xFF];
+-	}
+-
+-	if(ferror(fp))
++
++		if (tagged) {
++			memmove(buf, buf + bytes_available - 8, 8);
++			tail_size = 8;
++		}
++	}
++
++	if(ferror(fp) || (tagged && tail_size != 8))
+ 		return 0;
+ 
+ 	for(; length; length >>= 8)
+@@ -565,14 +595,17 @@
+ 
+ 	crc = ~crc & 0xFFFFFFFF;
+ 
++	if (fseek(fp, 0, SEEK_END) != 0)
++		return 0;
++
+ 	*res = crc;
+ 
+ 	return 1;
+ }
+ 
+-unsigned long cs_calc_buf_sum(char *buf, int size)
+-{
+-	unsigned long crc = 0;
++uint32_t cs_calc_buf_sum(char *buf, int size)
++{
++	uint32_t crc = 0;
+ 	char *cp = buf;
+ 	unsigned long length = size;
+ 
+@@ -587,9 +620,9 @@
+ 	return crc;
+ }
+ 
+-unsigned long cs_calc_buf_sum_ds(char *buf, int buf_size, char *sign, int sign_len)
+-{
+-	unsigned long crc = 0;
++uint32_t cs_calc_buf_sum_ds(char *buf, int buf_size, char *sign, int sign_len)
++{
++	uint32_t crc = 0;
+ 	char *cp = buf;
+ 	unsigned long length = buf_size+sign_len;
+ 
+@@ -609,39 +642,47 @@
+ 	return crc;
+ }
+ 
+-int cs_set_sum(FILE *fp, unsigned long sum, int tagged)
+-{
+-	unsigned long magic = CKSUM_MAGIC_NUMBER;
+-
+-	if(tagged)
+-		fseek(fp, -8, SEEK_END);
+-	else
+-		fseek(fp, 0, SEEK_END);
+-
+-	if(fwrite(&magic, 1, 4, fp) < 4)
+-		return 0;
+-	if(fwrite(&sum, 1, 4, fp) < 4)
++int cs_set_sum(FILE *fp, uint32_t sum, int tagged)
++{
++	uint32_t magic = CKSUM_MAGIC_NUMBER;
++
++	if (tagged) {
++		if (fseek(fp, -8, SEEK_END) != 0)
++			return 0;
++	} else {
++		if (fseek(fp, 0, SEEK_END) != 0)
++			return 0;
++	}
++
++	if(fwrite(&magic, sizeof(magic), 1, fp) != 1)
++		return 0;
++	if(fwrite(&sum, sizeof(sum), 1, fp) != 1)
+ 		return 0;
+ 
+ 	return 1;
+ }
+ 
+-void cs_get_sum(FILE *fp, unsigned long *sum)
+-{
+-	unsigned long magic = 0;
+-
+-	fseek(fp, -8, SEEK_END);
+-
+-	fread(&magic, 4, 1, fp);
+-	fread(sum, 4, 1, fp);
++int cs_get_sum(FILE *fp, uint32_t *sum)
++{
++	uint32_t magic;
++
++	if (!sum || fseek(fp, -8, SEEK_END) != 0)
++		return 0;
++
++	if (fread(&magic, sizeof(magic), 1, fp) != 1)
++		return 0;
++	if (fread(sum, sizeof(*sum), 1, fp) != 1)
++		return 0;
++
++	return 1;
+ }
+ 
+ int cs_validate_file(char *filename)
+ {
+ 	FILE *pFile = NULL;
+-	unsigned long sum = 0, res = 0;
+-
+-	if((pFile = fopen(filename, "r")) == NULL)
++	uint32_t sum = 0, res = 0;
++
++	if((pFile = fopen(filename, "rb")) == NULL)
+ 		return 0;
+ 
+ 	if(!cs_is_tagged(pFile))
+@@ -654,7 +695,11 @@
+ 		fclose(pFile);
+ 		return 0;
+ 	}
+-	cs_get_sum(pFile, &res);
++	if (!cs_get_sum(pFile, &res))
++	{
++		fclose(pFile);
++		return 0;
++	}
+ 	fclose(pFile);
+ 
+ 	if(sum != res)
+--- a/src/mktitanimg.h
++++ b/src/mktitanimg.h
+@@ -12,11 +12,11 @@
+ #include <errno.h>
+ 
+ int cs_is_tagged(FILE*);
+-unsigned long cs_read_sum(FILE*);
+-int cs_calc_sum(FILE*, unsigned long*, int);
+-int cs_set_sum(FILE*, unsigned long, int);
+-void cs_get_sum(FILE*, unsigned long*);
+-unsigned long cs_calc_buf_sum(char*, int);
++uint32_t cs_read_sum(FILE*);
++int cs_calc_sum(FILE*, uint32_t*, int);
++int cs_set_sum(FILE*, uint32_t, int);
++int cs_get_sum(FILE*, uint32_t*);
++uint32_t cs_calc_buf_sum(char*, int);
+ int cs_validate_file(char*);
+ 
+ #endif
+@@ -139,7 +139,7 @@
+ 	unsigned int	total_size;	/* Size of section (including pad size.) */
+ 	unsigned int	raw_size;	/* Size of section only */
+ 	unsigned int	flags;		/* Section flags */
+-	unsigned int	chksum;		/* Section checksum */
++	uint32_t	chksum;		/* Section checksum */
+ 	unsigned int	type;		/* Section type. What kind of info does this section
+ 					   describe */
+ 	char		name[16];	/* Reference name for this section. */
+@@ -160,7 +160,7 @@
+ 
+ struct nsp_img_hdr_chksum
+ {
+-	unsigned int	hdr_chksum;	/* The checksum for the complete header. Excepting the
++	uint32_t	hdr_chksum;	/* The checksum for the complete header. Excepting the
+ 					   checksum block */
+ };
+ 

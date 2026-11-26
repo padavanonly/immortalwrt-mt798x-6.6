@@ -1,41 +1,40 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 
-source "${SCRIPT_DIR}/quectel.sh"
-source "${SCRIPT_DIR}/fibocom.sh"
-source "${SCRIPT_DIR}/meig.sh"
-source "${SCRIPT_DIR}/huawei.sh"
-source "${SCRIPT_DIR}/tdtech.sh"
-# source "${SCRIPT_DIR}/simcom.sh"
+. "${SCRIPT_DIR}/quectel.sh"
+. "${SCRIPT_DIR}/fibocom.sh"
+. "${SCRIPT_DIR}/meig.sh"
+. "${SCRIPT_DIR}/huawei.sh"
+. "${SCRIPT_DIR}/tdtech.sh"
+# . "${SCRIPT_DIR}/simcom.sh"
 
-#调试开关
-# 0关闭
-# 1打开
-# 2输出到文件
+# Debug switch
+# 0: disabled
+# 1: enabled
+# 2: output to file
 switch=0
-out_file="/tmp/modem.log"	#输出文件
-#日志信息
+out_file="/tmp/modem.log"	# Output file
+# Log info
 debug()
 {
-	time=$(date "+%Y-%m-%d %H:%M:%S")	#获取系统时间
+	time=$(date "+%Y-%m-%d %H:%M:%S")	# Get system time
 	if [ $switch = 1 ]; then
-		echo $time $1					#打印输出
+		echo $time $1					# Print output
 	elif [ $switch = 2 ]; then
-		echo $time $1 >> $outfile		#输出到文件
+		echo $time $1 >> $outfile		# Output to file
 	fi
 }
 
-#发送at命令
-# $1 AT串口
-# $2 AT命令
+# Send AT command
+# $1: AT serial port
+# $2: AT command
 at()
 {
 	local at_port="$1"
-	local new_str="${2/[$]/$}"
-	local at_command="${new_str/\"/\"}"
+	local at_command="$2"
 
 	#echo
 	# echo -e "${at_command}"" > "${at_port}" 2>&1
@@ -44,13 +43,13 @@ at()
 	sms_tool -d "${at_port}" at "${at_command}" 2>&1
 }
 
-#测试时打开
+# Enable during testing
 # debug $1
 # at $1 $2
 
-#获取快捷命令
-# $1:快捷选项
-# $2:制造商
+# Get quick commands
+# $1: Quick option
+# $2: Manufacturer
 get_quick_commands()
 {
 	local quick_option="$1"
@@ -65,15 +64,15 @@ get_quick_commands()
 	echo "$quick_commands"
 }
 
-#拨号日志
-# $1:AT命令
-# $2:日志路径
+# Dial log
+# $1: AT command
+# $2: Log path
 dial_log()
 {
 	local at_command="$1"
 	local path="$2"
 
-	#打印日志
+	# Print log
     local update_time=$(date +"%Y-%m-%d %H:%M:%S")
     echo "[${update_time}] Send AT command ${at_command} to modem" >> "${path}"
 }

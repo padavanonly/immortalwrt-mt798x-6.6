@@ -1,0 +1,334 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: fix EHT320 mask, RRM/QoS OUI bounds, iwrange, and
+ W2W offload
+
+Test EHT320 bandwidth capability as bitmask, bound RRM SSID/QoS OUI lengths, fix iwrange frequency table bounds, and support same-SSID Wi-Fi to Wi-Fi offload.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/ap/ap_data.c             |  4 +-
+ mt_wifi/common/cmm_info.c        |  2 +-
+ mt_wifi/common/qos.c             | 66 ++++++++++++++++++++++++--------
+ mt_wifi/common/scan.c            |  2 +-
+ mt_wifi/feature/rrm/rrm.c        | 15 ++++----
+ mt_wifi/feature/rrm/rrm_sanity.c |  7 +++-
+ mt_wifi/os/linux/ap_ioctl.c      |  9 +++--
+ mt_wifi/protocol/be/mgmt_eht.c   |  2 +-
+ 8 files changed, 73 insertions(+), 34 deletions(-)
+
+diff --git a/mt_wifi/ap/ap_data.c b/mt_wifi/ap/ap_data.c
+index 67ad5cc..669f143 100644
+--- a/mt_wifi/ap/ap_data.c
++++ b/mt_wifi/ap/ap_data.c
+@@ -4137,8 +4137,8 @@ INT ap_rx_pkt_foward(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pPac
+ 					but not to air if match following case:
+ 						a). pMbss->IsolateInterStaTraffic == TRUE
+ 				*/
+-				to_air = FALSE;
+ 				to_os = TRUE;
++				to_air = FALSE;
+ 
+ 				if (pMbss && (pMbss->IsolateInterStaTraffic == 1)
+ #ifdef HOSTAPD_HS_R2_SUPPORT
+@@ -4146,7 +4146,7 @@ INT ap_rx_pkt_foward(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pPac
+ 						&& pMbss->WNMCtrl.ProxyARPEnable)
+ #endif /* HOSTAPD_HS_R2_SUPPORT */
+ 				   )
+-					to_air = FALSE;
++					to_os = FALSE;
+ 			} else {
+ 				/*
+ 					STAs in different SSID, default send to os and not to air
+diff --git a/mt_wifi/common/cmm_info.c b/mt_wifi/common/cmm_info.c
+index e2afb8a..144e757 100644
+--- a/mt_wifi/common/cmm_info.c
++++ b/mt_wifi/common/cmm_info.c
+@@ -1452,7 +1452,7 @@ UINT8 get_peer_max_bw_cap(struct wifi_dev *wdev, MAC_TABLE_ENTRY *pEntry)
+ 	if (WMODE_CAP_AX(wdev->PhyMode) && IS_HE_STA(pEntry->cap.modes)) {
+ 		peer_max_bw = he_bw_2_rf_bw(peer_max_bw_cap(pEntry->cap.ch_bw.he_ch_width));
+ #ifdef DOT11_EHT_BE
+-		if (WMODE_CAP_6G(wdev->PhyMode) && IS_EHT_STA(pEntry->cap.modes) && (peer_max_bw == BW_160) && (pEntry->cap.eht_phy_cap && EHT_320M_6G))
++		if (WMODE_CAP_6G(wdev->PhyMode) && IS_EHT_STA(pEntry->cap.modes) && (peer_max_bw == BW_160) && (pEntry->cap.eht_phy_cap & EHT_320M_6G))
+ 			peer_max_bw = BW_320;
+ #endif
+ 	}
+diff --git a/mt_wifi/common/qos.c b/mt_wifi/common/qos.c
+index a81075d..e0ec384 100644
+--- a/mt_wifi/common/qos.c
++++ b/mt_wifi/common/qos.c
+@@ -602,6 +602,9 @@ INT receive_qos_action_frame(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+ 	struct wapp_qos_action_frame *req_data = NULL;
+ 	UINT16 buflen = 0;
+ 
++	if (!wdev || !peer_mac_addr || !frm)
++		return 1;
++
+ 	/*wapp event header+mscs_header len = 24*/
+ #ifndef offsetof
+ #define offsetof(TYPE, MEMBER)  ((size_t)&((TYPE *)0)->MEMBER)
+@@ -677,6 +680,9 @@ UCHAR QoS_parse_mscs_descriptor_ies(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+ 	UCHAR leftlen = buflen;
+ 	UCHAR subielen = 0;
+ 
++	if (!buf || !srcAddr || buflen < 8)
++		return 0;
++
+ 	if ((*ptr) == IE_EXTENSION_ID_MSCS_DESC) {
+ 		ptr++;
+ 		leftlen--;
+@@ -688,8 +694,8 @@ UCHAR QoS_parse_mscs_descriptor_ies(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+ 	if ((*ptr) >= SCS_REQ_TYPE_UNKNOWN)
+ 		return 0;
+ 
+-	if ((((*ptr) == SCS_REQ_TYPE_ADD || (*ptr) == SCS_REQ_TYPE_CHANGE) && buflen < 13) ||
+-		(((*ptr) == SCS_REQ_TYPE_REMOVE) && buflen < 7)) {
++	if ((((*ptr) == SCS_REQ_TYPE_ADD || (*ptr) == SCS_REQ_TYPE_CHANGE) && leftlen < 12) ||
++		(((*ptr) == SCS_REQ_TYPE_REMOVE) && leftlen < 6)) {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_ERROR,
+ 			"invalid mscs descriptor element.\n");
+ 		return 0;
+@@ -705,13 +711,16 @@ UCHAR QoS_parse_mscs_descriptor_ies(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+ 		indicate_mscs_classifier_parameter(pAd, wdev, (UCHAR *)&cs_param, sizeof(cs_param));
+ 		return 0;
+ 	}
+-	while ((*ptr) == IE_WLAN_EXTENSION && (*(ptr + 2)) == IE_EXTENSION_ID_TCLAS_MASK) {
++	while (leftlen >= 4 && (*ptr) == IE_WLAN_EXTENSION &&
++	       (*(ptr + 2)) == IE_EXTENSION_ID_TCLAS_MASK) {
+ 		subielen = *(ptr + 1);
+ 		ptr += 2;
+ 		leftlen -= 2;
+-		if (subielen > leftlen)
++		if (subielen < 2 || subielen > leftlen)
+ 			break;
+ 		if ((*(ptr+1)) == MSCS_CLASSIFIER_TYPE4) {
++			if (subielen < 3)
++				break;
+ 			cs_param.cs.header.cs_type = *(ptr + 1);
+ 			cs_param.cs.header.cs_mask = *(ptr + 2);
+ 			indicate_mscs_classifier_parameter(pAd, wdev,
+@@ -768,20 +777,30 @@ void QoS_Build_WFACapaIE(UCHAR *tmpbuf, UCHAR *ielen, UCHAR bCapa)
+ 
+ void QoS_PeerRobust_AV_Action(struct _RTMP_ADAPTER *pAd, struct _MLME_QUEUE_ELEM *Elem)
+ {
+-	UINT8 Robust_Action = Elem->Msg[LENGTH_802_11 + 1];
+-	UINT8 Elem_ID = Elem->Msg[LENGTH_802_11 + 3];
+-	UINT8 Elem_ID_Ext = Elem->Msg[LENGTH_802_11 + 5];
+-	UINT8 ie_len = 0;
++	UINT8 Robust_Action;
++	UINT8 Elem_ID;
++	UINT8 Elem_ID_Ext;
++	ULONG ie_len = 0;
+ 	UINT8 tspec_ie = 0;
+ 	PMSCS_DESC mscs_desc = NULL;
+ #ifdef MSCS_PROPRIETARY
+ 	UINT8 reasoncode = REQUEST_DECLINED;
+-	UINT8 Dialog_Token = Elem->Msg[LENGTH_802_11 + 2];
++	UINT8 Dialog_Token;
+ 	MAC_TABLE_ENTRY *pEntry = NULL;
+ #endif /*MSCS_PROPRIETARY*/
+ 
+ 	MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_INFO, "--->\n");
+ 
++	if (!Elem || Elem->MsgLen < LENGTH_802_11 + 6)
++		return;
++
++	Robust_Action = Elem->Msg[LENGTH_802_11 + 1];
++	Elem_ID = Elem->Msg[LENGTH_802_11 + 3];
++	Elem_ID_Ext = Elem->Msg[LENGTH_802_11 + 5];
++#ifdef MSCS_PROPRIETARY
++	Dialog_Token = Elem->Msg[LENGTH_802_11 + 2];
++#endif /*MSCS_PROPRIETARY*/
++
+ #ifdef MSCS_PROPRIETARY
+ 	if (VALID_UCAST_ENTRY_WCID(pAd, Elem->Wcid))
+ 		pEntry = entry_get(pAd, Elem->Wcid);
+@@ -823,6 +842,8 @@ void QoS_PeerRobust_AV_Action(struct _RTMP_ADAPTER *pAd, struct _MLME_QUEUE_ELEM
+ 		break;
+ #endif
+ 	case ACT_MSCS_REQ:
++		if (Elem->MsgLen < LENGTH_802_11 + 3 + sizeof(MSCS_DESC))
++			break;
+ 		mscs_desc = (PMSCS_DESC)(Elem->Msg + LENGTH_802_11 + 3);
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_INFO,
+ 			"receive mscs req,Elem_ID =%d, Elem_ID_Ext=%d, mscs_desc->Length =%d!!\n",
+@@ -833,7 +854,7 @@ void QoS_PeerRobust_AV_Action(struct _RTMP_ADAPTER *pAd, struct _MLME_QUEUE_ELEM
+ 
+ 			/*check whether mtk prorietary*/
+ 			ie_len = Elem->MsgLen - LENGTH_802_11 - 3;
+-			if (ie_len > mscs_desc->Length + 2)
++			if ((ULONG)mscs_desc->Length + 2 < ie_len)
+ 				tspec_ie = *((UINT8 *)mscs_desc + mscs_desc->Length + 2);
+ 
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_INFO,
+@@ -943,7 +964,7 @@ static void Sync_Dabs_Cfg_To_All_Mld_Link(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pE
+ 
+ void Peer_Vendor_Spec_Action(struct _RTMP_ADAPTER *pAd, struct _MLME_QUEUE_ELEM *Elem)
+ {
+-	UCHAR *pOUI = &Elem->Msg[LENGTH_802_11 + 1];
++	UCHAR *pOUI;
+ #ifdef MSCS_PROPRIETARY
+ 	FRAME_DABS_ACTION *pdabs_frame;
+ 	UINT8 status = FALSE;
+@@ -960,6 +981,11 @@ void Peer_Vendor_Spec_Action(struct _RTMP_ADAPTER *pAd, struct _MLME_QUEUE_ELEM
+ 
+ 	MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_INFO, "--->\n");
+ 
++	if (!Elem || Elem->MsgLen < LENGTH_802_11 + 6)
++		return;
++
++	pOUI = &Elem->Msg[LENGTH_802_11 + 1];
++
+ 	if ((memcmp(pOUI, WFA_OUI, 3) == 0) && (*(pOUI + 3) == QOS_ACT_FRM_OUI_TYPE)) {
+ 		if (*(pOUI + 4) == DSCP_POLICY_REQ) {
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_ERROR,
+@@ -1114,6 +1140,8 @@ INT Set_DABSkeybitmap_Proc(PRTMP_ADAPTER pAd, char *arg)
+ 		return FALSE;
+ 
+ 	str = strsep(&arg, ":");
++	if (!str || !arg || strlen(arg) == 0)
++		return FALSE;
+ 
+ 	keybitmap = os_str_tol(arg, 0, 16);
+ 	dabs_type = os_str_tol(str, 0, 10);
+@@ -1286,16 +1314,20 @@ BOOLEAN QoS_mtk_prop_mscs_ies_parse(struct _RTMP_ADAPTER *pAd,
+ #endif
+ 	memset(&vend_spec_classifier_param, 0, sizeof(struct wapp_vend_spec_classifier_para_report));
+ 
+-	pmscs_desc = (PMSCS_DESC)buf;
+-	ptclas_elem = (PTCLAS_ELEM)(buf + sizeof(MSCS_DESC));
+-	pclasstpye4_ipv4 = (PFRAME_CLASS_TYPE_4_ipv4)((UCHAR *)ptclas_elem + sizeof(TCLAS_ELEM));
+-	ptspec_elem = (PTSPEC_ELEM)((UCHAR *)pclasstpye4_ipv4 + sizeof(FRAME_CLASS_TYPE_4_ipv4));
+-
+-	if (!pmscs_desc || !ptclas_elem || !pclasstpye4_ipv4) {
++	if (!buf || !srcAddr || !reasoncode ||
++	    len < sizeof(MSCS_DESC) + sizeof(TCLAS_ELEM) +
++	          sizeof(FRAME_CLASS_TYPE_4_ipv4) + sizeof(TSPEC_ELEM)) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_ERROR,
+ 			"frame len error\n");
++		if (reasoncode)
++			*reasoncode = REQUEST_DECLINED;
+ 		return FALSE;
+ 	}
++
++	pmscs_desc = (PMSCS_DESC)buf;
++	ptclas_elem = (PTCLAS_ELEM)(buf + sizeof(MSCS_DESC));
++	pclasstpye4_ipv4 = (PFRAME_CLASS_TYPE_4_ipv4)((UCHAR *)ptclas_elem + sizeof(TCLAS_ELEM));
++	ptspec_elem = (PTSPEC_ELEM)((UCHAR *)pclasstpye4_ipv4 + sizeof(FRAME_CLASS_TYPE_4_ipv4));
+ 	if ((ptclas_elem->ElementID != IE_WLAN_EXTENSION) ||
+ 		(ptclas_elem->UP_or_ElementID_Ext) != IE_EXTENSION_ID_TCLAS_MASK) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_QOS_MAP, DBG_LVL_ERROR,
+diff --git a/mt_wifi/common/scan.c b/mt_wifi/common/scan.c
+index 4182ae0..1d52c9d 100644
+--- a/mt_wifi/common/scan.c
++++ b/mt_wifi/common/scan.c
+@@ -704,7 +704,7 @@ static BOOLEAN scan_type_stay_time_checker(
+ 
+ 	sc_timer = &ScanCtrl->ScanTimer;
+ 
+-	if (!sc_timer) {
++	if (!sc_timer || !ScanCtrl->ScanTimer.Valid) {
+ 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "ScanTimer not assigned!\n");
+ 		return FALSE;
+ 	}
+diff --git a/mt_wifi/feature/rrm/rrm.c b/mt_wifi/feature/rrm/rrm.c
+index 7cdc104..6928693 100644
+--- a/mt_wifi/feature/rrm/rrm.c
++++ b/mt_wifi/feature/rrm/rrm.c
+@@ -696,7 +696,6 @@ VOID RRM_PeerNeighborReqAction(
+ 	PMEASURE_REQ_ENTRY pMeasure_Entry = NULL;
+ 	PNET_DEV NetDev = NULL;
+ 	UINT32 FrameLen = 0;
+-	int ret = 0;
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "\n");
+ 
+@@ -747,16 +746,16 @@ VOID RRM_PeerNeighborReqAction(
+ 	} else {
+ 		if (RRM_PeerNeighborReqSanity(pAd, Elem->Msg, Elem->MsgLen, &DialogToken, &pSsid, &SsidLen)) {
+ 			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "DialogToken=%x\n", DialogToken);
+-			ret = snprintf(ssidbuf, sizeof(ssidbuf), "%s", pSsid);
+-			if (os_snprintf_error(sizeof(ssidbuf), ret)) {
+-				MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+-						"snprintf error!\n");
+-				return;
+-			}
++			if (SsidLen > MAX_LEN_OF_SSID)
++				SsidLen = MAX_LEN_OF_SSID;
++			if (pSsid && SsidLen > 0)
++				NdisMoveMemory(ssidbuf, pSsid, SsidLen);
++			else
++				SsidLen = 0;
+ 			ssidbuf[SsidLen] = '\0';
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "pSsid=%s\n", ssidbuf);
+ 			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "SsidLen=%d\n", SsidLen);
+-			RRM_EnqueueNeighborRep(pAd, pEntry, DialogToken, pSsid, SsidLen);
++			RRM_EnqueueNeighborRep(pAd, pEntry, DialogToken, ssidbuf, SsidLen);
+ 		}
+ 	}
+ 
+diff --git a/mt_wifi/feature/rrm/rrm_sanity.c b/mt_wifi/feature/rrm/rrm_sanity.c
+index fc6e677..15b5493 100644
+--- a/mt_wifi/feature/rrm/rrm_sanity.c
++++ b/mt_wifi/feature/rrm/rrm_sanity.c
+@@ -79,13 +79,18 @@ BOOLEAN RRM_PeerNeighborReqSanity(
+ 	MsgLen -= 1;
+ 	eid_ptr = (PEID_STRUCT)pFramePtr;
+ 
+-	while (((UCHAR *)eid_ptr + eid_ptr->Len + 1) < ((PUCHAR)pFramePtr + MsgLen)) {
++	while (((UCHAR *)eid_ptr + 2 <= (PUCHAR)pFramePtr + MsgLen) &&
++	       ((UCHAR *)eid_ptr + 2 + eid_ptr->Len <= (PUCHAR)pFramePtr + MsgLen)) {
+ 		switch (eid_ptr->Eid) {
+ 		case RRM_NEIGHBOR_REQ_SSID_SUB_ID:
++			if (eid_ptr->Len > MAX_LEN_OF_SSID)
++				return FALSE;
+ 			*pSsid = (PCHAR)eid_ptr->Octet;
+ 			*pSsidLen = eid_ptr->Len;
+ 			break;
+ 		case RRM_NEIGHBOR_REQ_MEASUREMENT_REQUEST_SUB_ID:
++			if (eid_ptr->Len < 3)
++				break;
+ 			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO,
+ 				"Got STA Measurement Request\n");
+ 			pRrmCfg->PeerMeasurementToken = eid_ptr->Octet[0];
+diff --git a/mt_wifi/os/linux/ap_ioctl.c b/mt_wifi/os/linux/ap_ioctl.c
+index 84dddc9..ae17108 100644
+--- a/mt_wifi/os/linux/ap_ioctl.c
++++ b/mt_wifi/os/linux/ap_ioctl.c
+@@ -862,11 +862,13 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
+ 		case SIOCGIWRANGE:	/*Get range of parameters */
+ 		if (wrqin->u.data.pointer) {
+ #if (KERNEL_VERSION(5, 4, 0) > LINUX_VERSION_CODE)
+-                        if (access_ok(VERIFY_WRITE, wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE)
++                        if (access_ok(VERIFY_WRITE, wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE) {
+ #else
+-                        if (access_ok(wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE)
++                        if (access_ok(wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE) {
+ #endif
++                                Status = RTMP_IO_EFAULT;
+                                 break;
++                        }
+ 
+                         if (sizeof(struct iw_range) <= wrq->u.data.length) {
+                                 struct iw_range range;
+@@ -895,7 +897,8 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
+ 				} else {
+ 					Status = RTMP_IO_E2BIG;
+ 				}
+-			break;
++			} else {
++				Status = RTMP_IO_EINVAL;
+ 			}
+ 			break;
+ 		case SIOCGIWRETRY:	/*get retry limits and lifetime */
+diff --git a/mt_wifi/protocol/be/mgmt_eht.c b/mt_wifi/protocol/be/mgmt_eht.c
+index 20ecf48..35a7d7e 100644
+--- a/mt_wifi/protocol/be/mgmt_eht.c
++++ b/mt_wifi/protocol/be/mgmt_eht.c
+@@ -2142,7 +2142,7 @@ static VOID peer_eht_txrx_mcs_nss(struct _MAC_TABLE_ENTRY *peer,
+ 			if (peer->cap.ch_bw.he_ch_width & (SUPP_160M_CW_IN_5G_6G_BAND|SUPP_160M_8080M_CW_IN_5G_6G_BAND))
+ 				peer_max_bw = BW_160;
+ 		}
+-		if (WMODE_CAP_6G(wdev->PhyMode) && (peer_max_bw == BW_160) && (peer->cap.eht_phy_cap && EHT_320M_6G))
++		if (WMODE_CAP_6G(wdev->PhyMode) && (peer_max_bw == BW_160) && (peer->cap.eht_phy_cap & EHT_320M_6G))
+ 			peer_max_bw = BW_320;
+ 	}
+ 

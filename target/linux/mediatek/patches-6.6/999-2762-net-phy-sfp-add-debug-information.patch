@@ -19,11 +19,9 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  include/linux/mdio/mdio-i2c.h | 16 +++++++++++
  4 files changed, 72 insertions(+), 10 deletions(-)
 
-diff --git a/drivers/net/phy/phylink.c b/drivers/net/phy/phylink.c
-index b4b05bf..6c951af 100644
 --- a/drivers/net/phy/phylink.c
 +++ b/drivers/net/phy/phylink.c
-@@ -1746,6 +1746,15 @@ static void phylink_resolve(struct work_struct *w)
+@@ -1746,6 +1746,15 @@ static void phylink_resolve(struct work_
  								  &link_state);
  			}
  
@@ -39,7 +37,7 @@ index b4b05bf..6c951af 100644
  			/* If we have a phy, the "up" state is the union of
  			 * both the PHY and the MAC
  			 */
-@@ -3424,7 +3433,7 @@ static void phylink_sfp_set_config(struct phylink *pl,
+@@ -3424,7 +3433,7 @@ static void phylink_sfp_set_config(struc
  	u8 mode = MLO_AN_INBAND;
  	bool changed = false;
  
@@ -48,7 +46,7 @@ index b4b05bf..6c951af 100644
  		    phylink_an_mode_str(mode), phy_modes(state->interface),
  		    __ETHTOOL_LINK_MODE_MASK_NBITS, supported);
  
-@@ -3516,7 +3525,7 @@ static int phylink_sfp_config_optical(struct phylink *pl)
+@@ -3516,7 +3525,7 @@ static int phylink_sfp_config_optical(st
  	phy_interface_t interface;
  	int ret;
  
@@ -57,11 +55,9 @@ index b4b05bf..6c951af 100644
  		    (int)PHY_INTERFACE_MODE_MAX,
  		    pl->config->supported_interfaces,
  		    (int)PHY_INTERFACE_MODE_MAX,
-diff --git a/drivers/net/phy/sfp-bus.c b/drivers/net/phy/sfp-bus.c
-index 1727760..26a0d6d 100644
 --- a/drivers/net/phy/sfp-bus.c
 +++ b/drivers/net/phy/sfp-bus.c
-@@ -342,6 +342,9 @@ void sfp_parse_support(struct sfp_bus *bus, const struct sfp_eeprom_id *id,
+@@ -342,6 +342,9 @@ void sfp_parse_support(struct sfp_bus *b
  	if (bus->sfp_quirk && bus->sfp_quirk->modes)
  		bus->sfp_quirk->modes(id, modes, interfaces);
  
@@ -71,11 +67,9 @@ index 1727760..26a0d6d 100644
  	linkmode_or(support, support, modes);
  }
  EXPORT_SYMBOL_GPL(sfp_parse_support);
-diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
-index da1720f..3b9c52b 100644
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
-@@ -558,7 +558,7 @@ static bool sfp_match(const char *qs, const char *str, size_t len)
+@@ -545,7 +545,7 @@ static bool sfp_match(const char *qs, co
  	return !strncmp(qs, str, len);
  }
  
@@ -84,7 +78,7 @@ index da1720f..3b9c52b 100644
  {
  	const struct sfp_quirk *q;
  	unsigned int i;
-@@ -569,8 +569,14 @@ static const struct sfp_quirk *sfp_lookup_quirk(const struct sfp_eeprom_id *id)
+@@ -556,8 +556,14 @@ static const struct sfp_quirk *sfp_looku
  
  	for (i = 0, q = sfp_quirks; i < ARRAY_SIZE(sfp_quirks); i++, q++)
  		if (sfp_match(q->vendor, id->base.vendor_name, vs) &&
@@ -100,7 +94,7 @@ index da1720f..3b9c52b 100644
  
  	return NULL;
  }
-@@ -1690,14 +1696,14 @@ static void sfp_hwmon_exit(struct sfp *sfp)
+@@ -1677,14 +1683,14 @@ static void sfp_hwmon_exit(struct sfp *s
  /* Helpers */
  static void sfp_module_tx_disable(struct sfp *sfp)
  {
@@ -117,7 +111,7 @@ index da1720f..3b9c52b 100644
  		sfp->state & SFP_F_TX_DISABLE ? 1 : 0, 0);
  	sfp_mod_state(sfp, SFP_F_TX_DISABLE, 0);
  }
-@@ -1806,7 +1812,8 @@ static void sfp_sm_phy_detach(struct sfp *sfp)
+@@ -1793,7 +1799,8 @@ static void sfp_sm_phy_detach(struct sfp
  static int sfp_sm_probe_phy(struct sfp *sfp, int addr, bool is_c45)
  {
  	struct phy_device *phy;
@@ -127,7 +121,7 @@ index da1720f..3b9c52b 100644
  
  	phy = get_phy_device(sfp->i2c_mii, addr, is_c45);
  	if (phy == ERR_PTR(-ENODEV))
-@@ -1827,6 +1834,30 @@ static int sfp_sm_probe_phy(struct sfp *sfp, int addr, bool is_c45)
+@@ -1814,6 +1821,30 @@ static int sfp_sm_probe_phy(struct sfp *
  		return err;
  	}
  
@@ -158,7 +152,7 @@ index da1720f..3b9c52b 100644
  	err = sfp_add_phy(sfp->sfp_bus, phy);
  	if (err) {
  		phy_device_remove(phy);
-@@ -1909,6 +1940,9 @@ static void sfp_sm_fault(struct sfp *sfp, unsigned int next_state, bool warn)
+@@ -1896,6 +1927,9 @@ static void sfp_sm_fault(struct sfp *sfp
  
  static int sfp_sm_add_mdio_bus(struct sfp *sfp)
  {
@@ -168,7 +162,7 @@ index da1720f..3b9c52b 100644
  	if (sfp->mdio_protocol != MDIO_I2C_NONE)
  		return sfp_i2c_mdiobus_create(sfp);
  
-@@ -2387,7 +2421,7 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+@@ -2388,7 +2422,7 @@ static int sfp_sm_mod_probe(struct sfp *
  	else
  		sfp->mdio_protocol = MDIO_I2C_NONE;
  
@@ -177,7 +171,7 @@ index da1720f..3b9c52b 100644
  
  	mutex_lock(&sfp->st_mutex);
  	/* Initialise state bits to use from hardware */
-@@ -2739,7 +2773,7 @@ static void sfp_sm_main(struct sfp *sfp, unsigned int event)
+@@ -2740,7 +2774,7 @@ static void sfp_sm_main(struct sfp *sfp,
  
  static void __sfp_sm_event(struct sfp *sfp, unsigned int event)
  {
@@ -186,7 +180,7 @@ index da1720f..3b9c52b 100644
  		mod_state_to_str(sfp->sm_mod_state),
  		dev_state_to_str(sfp->sm_dev_state),
  		sm_state_to_str(sfp->sm_state),
-@@ -2749,7 +2783,7 @@ static void __sfp_sm_event(struct sfp *sfp, unsigned int event)
+@@ -2750,7 +2784,7 @@ static void __sfp_sm_event(struct sfp *s
  	sfp_sm_module(sfp, event);
  	sfp_sm_main(sfp, event);
  
@@ -195,8 +189,6 @@ index da1720f..3b9c52b 100644
  		mod_state_to_str(sfp->sm_mod_state),
  		dev_state_to_str(sfp->sm_dev_state),
  		sm_state_to_str(sfp->sm_state));
-diff --git a/include/linux/mdio/mdio-i2c.h b/include/linux/mdio/mdio-i2c.h
-index 65b550a..c3eaccd 100644
 --- a/include/linux/mdio/mdio-i2c.h
 +++ b/include/linux/mdio/mdio-i2c.h
 @@ -18,6 +18,22 @@ enum mdio_i2c_proto {
@@ -222,6 +214,3 @@ index 65b550a..c3eaccd 100644
  struct mii_bus *mdio_i2c_alloc(struct device *parent, struct i2c_adapter *i2c,
  			       enum mdio_i2c_proto protocol);
  
--- 
-2.45.2
-

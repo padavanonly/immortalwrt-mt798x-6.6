@@ -1,0 +1,1361 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_eth_soc: harden probe unwind, reset
+ remove, bind, and TX GSO bounds
+
+Fix transactional netdev/MAC/ESW probe unwind, EEE and reset producer removal ordering, PPE common-cmd bind guards, and small-frag/GSO TX descriptor checks.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_dbg.c   |  26 +-
+ drivers/net/ethernet/mediatek/mtk_eth_reset.c |  16 +-
+ drivers/net/ethernet/mediatek/mtk_eth_reset.h |   1 +
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c   | 577 +++++++++++++-----
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   |  17 +-
+ drivers/net/ethernet/mediatek/mtk_ppe.c       |  48 +-
+ .../net/ethernet/mediatek/mtk_ppe_offload.c   |   8 +
+ drivers/net/ethernet/mediatek/mtk_wed.c       |   7 +
+ drivers/net/ethernet/mediatek/mtk_wed.h       |   1 +
+ 9 files changed, 527 insertions(+), 174 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+index 42f4ccb..53285f7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+@@ -827,6 +827,7 @@ static ssize_t mtketh_debugfs_reset(struct file *file, const char __user *ptr,
+ {
+ 	struct mtk_eth *eth = file->private_data;
+ 	unsigned long dbg_level = 0;
++	unsigned long flags;
+ 	char buf[8] = "";
+ 	int count = len;
+ 
+@@ -843,23 +844,26 @@ static ssize_t mtketh_debugfs_reset(struct file *file, const char __user *ptr,
+ 		atomic_set(&eth->reset.force, 0);
+ 		break;
+ 	case 1:
+-		if (atomic_read(&eth->reset.force) && !test_bit(MTK_RESETTING, &eth->state))
+-		{
+-			eth->reset.event = MTK_FE_START_RESET;
+-			schedule_work(&eth->pending_work);
+-		}
+-		else
++		if (atomic_read(&eth->reset.force)) {
++			if (!mtk_eth_queue_reset(eth, MTK_FE_START_RESET))
++				pr_info(" stat:disable\n");
++		} else {
+ 			pr_info(" stat:disable\n");
++		}
+ 		break;
+ 	case 2:
+-		atomic_set(&eth->reset.force, 1);
++		spin_lock_irqsave(&eth->reset.lock, flags);
++		if (!test_bit(MTK_REMOVING, &eth->state))
++			atomic_set(&eth->reset.force, 1);
++		spin_unlock_irqrestore(&eth->reset.lock, flags);
+ 		break;
+ 	case 3:
+-		if (atomic_read(&eth->reset.force) && !test_bit(MTK_RESETTING, &eth->state)) {
+-			eth->reset.event = MTK_FE_STOP_TRAFFIC;
+-			schedule_work(&eth->pending_work);
+-		} else
++		if (atomic_read(&eth->reset.force)) {
++			if (!mtk_eth_queue_reset(eth, MTK_FE_STOP_TRAFFIC))
++				pr_info(" stat:disable\n");
++		} else {
+ 			pr_info(" stat:disable\n");
++		}
+ 		break;
+ 	default:
+ 		pr_info("Usage: echo [level] > /sys/kernel/debug/mtketh/reset\n");
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_reset.c b/drivers/net/ethernet/mediatek/mtk_eth_reset.c
+index e4155ff..09ab3c4 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.c
+@@ -74,10 +74,8 @@ int mtk_eth_netdevice_event(struct notifier_block *n, unsigned long event, void
+ 		break;
+ 	case MTK_FE_START_RESET_INIT:
+ 		pr_info("%s rcv fe start reset init event:%lx\n", __func__, event);
+-		if (!test_bit(MTK_RESETTING, &eth->state)) {
++		if (mtk_eth_queue_reset(eth, MTK_FE_START_RESET))
+ 			mtk_reset_flag = MTK_FE_START_RESET;
+-			schedule_work(&eth->pending_work);
+-		}
+ 		break;
+ 	case MTK_WIFI_L1SER_DONE:
+ 		pr_info("%s rcv wifi done ack :%lx\n", __func__, event);
+@@ -92,10 +90,18 @@ int mtk_eth_netdevice_event(struct notifier_block *n, unsigned long event, void
+ 
+ int mtk_eth_netdevice_event_init(struct mtk_eth *eth)
+ {
+-	rcu_assign_pointer(g_eth, eth);
++	int err;
++
++	mtk_stop_fail = false;
++	init_completion(&wait_ser_done);
++	init_completion(&wait_ack_done);
++	init_completion(&wait_tops_done);
+ 
+ 	eth->reset.netdevice_notifier.notifier_call = mtk_eth_netdevice_event;
+-	register_netdevice_notifier(&eth->reset.netdevice_notifier);
++	err = register_netdevice_notifier(&eth->reset.netdevice_notifier);
++	if (err)
++		return err;
+ 
++	rcu_assign_pointer(g_eth, eth);
+ 	return 0;
+ }
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_reset.h b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+index 9d34acc..f541a3b 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+@@ -31,4 +31,5 @@ extern bool mtk_stop_fail;
+ 
+ void mtk_set_pse_drop(u32 config);
+ int mtk_eth_netdevice_event_init(struct mtk_eth *eth);
++bool mtk_eth_queue_reset(struct mtk_eth *eth, u32 event);
+ #endif		/* MTK_ETH_RESET_H */
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index b78991a..16542af 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -54,6 +54,34 @@ MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
+ 				  offsetof(struct mtk_hw_stats, xdp_stats.x) / \
+ 				  sizeof(u64) }
+ 
++bool mtk_eth_queue_reset(struct mtk_eth *eth, u32 event)
++{
++	unsigned long flags;
++
++	if (!eth)
++		return false;
++
++	spin_lock_irqsave(&eth->reset.lock, flags);
++	if (test_bit(MTK_REMOVING, &eth->state) ||
++	    test_bit(MTK_RESETTING, &eth->state)) {
++		spin_unlock_irqrestore(&eth->reset.lock, flags);
++		return false;
++	}
++
++	if (!eth->reset.pending) {
++		eth->reset.pending_event = event;
++		eth->reset.pending = true;
++	} else if (event == MTK_FE_START_RESET) {
++		eth->reset.pending_event = MTK_FE_START_RESET;
++	}
++
++	schedule_work(&eth->pending_work);
++	spin_unlock_irqrestore(&eth->reset.lock, flags);
++
++	return true;
++}
++EXPORT_SYMBOL_GPL(mtk_eth_queue_reset);
++
+ static const struct mtk_reg_map mtk_reg_map = {
+ 	.tx_irq_mask		= 0x1a1c,
+ 	.tx_irq_status		= 0x1a18,
+@@ -863,9 +891,8 @@ static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
+ 			 */
+ 			if ((mtk_interface_mode_is_xgmii(mac->interface) ||
+ 			     mac->interface == PHY_INTERFACE_MODE_NA) &&
+-			    !mtk_check_gmac23_idle(mac) &&
+-			    !test_bit(MTK_RESETTING, &eth->state))
+-				schedule_work(&eth->pending_work);
++			    !mtk_check_gmac23_idle(mac))
++				mtk_eth_queue_reset(eth, MTK_FE_START_RESET);
+ 		}
+ 	}
+ 
+@@ -2043,6 +2070,20 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
+ 	return -ENOMEM;
+ }
+ 
++static unsigned int
++mtk_qdma_desc_need(struct mtk_eth *eth, struct sk_buff *skb)
++{
++	unsigned int need = 1;
++	int i;
++
++	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
++		need += DIV_ROUND_UP(
++			skb_frag_size(&skb_shinfo(skb)->frags[i]),
++			eth->soc->tx.dma_max_len);
++
++	return need;
++}
++
+ static int mtk_cal_txd_req(struct mtk_eth *eth, struct sk_buff *skb)
+ {
+ 	int i, nfrags = 1;
+@@ -2107,9 +2148,10 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	struct mtk_eth *eth = mac->hw;
+ 	struct mtk_tx_ring *ring = &eth->tx_ring;
+ 	struct net_device_stats *stats = &dev->stats;
+-	struct sk_buff *segs, *next;
++	struct sk_buff *orig_skb, *tx_list;
++	struct sk_buff *segs, *seg, *next;
++	unsigned int need;
+ 	bool gso = false;
+-	int tx_num;
+ 
+ 	if (skb_vlan_tag_present(skb) &&
+ 	    !eth_proto_is_802_3(eth_hdr(skb)->h_proto)) {
+@@ -2118,6 +2160,9 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 			goto dropped;
+ 	}
+ 
++	orig_skb = skb;
++	tx_list = skb;
++
+ 	/* normally we can rely on the stack not calling this more than once,
+ 	 * however we have 2 queues running on the same ring so we need to lock
+ 	 * the ring access
+@@ -2125,51 +2170,93 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	spin_lock(&eth->page_lock);
+ 
+ 	if (unlikely(test_bit(MTK_RESETTING, &eth->state)))
+-		goto drop;
++		goto drop_prepared;
+ 
+-	tx_num = mtk_cal_txd_req(eth, skb);
+-	if (unlikely(atomic_read(&ring->free_count) <= tx_num)) {
+-		netif_tx_stop_all_queues(dev);
+-		netif_err(eth, tx_queued, dev,
+-			  "Tx Ring full when queue awake!\n");
+-		atomic_inc(&ring->full_count);
+-		spin_unlock(&eth->page_lock);
+-		return NETDEV_TX_BUSY;
+-	}
+-
+-	if (mtk_is_netsys_v1(eth) &&
+-	    skb_is_gso(skb) && mtk_skb_has_small_frag(skb)) {
+-		segs = skb_gso_segment(skb, dev->features & ~NETIF_F_ALL_TSO);
++	if (skb_is_gso(orig_skb) && mtk_skb_has_small_frag(orig_skb)) {
++		segs = skb_gso_segment(orig_skb,
++				       dev->features & ~NETIF_F_ALL_TSO);
+ 		if (IS_ERR(segs))
+-			goto drop;
++			goto drop_prepared;
+ 
+ 		if (segs) {
+-			consume_skb(skb);
+-			skb = segs;
++			if (mtk_skb_headroom_copy)
++				mtk_skb_headroom_copy(segs, orig_skb);
++			tx_list = segs;
+ 		}
+ 	}
+ 
+-	/* TSO: fill MSS info in tcp checksum field */
+-	if (skb_is_gso(skb)) {
+-		if (skb_cow_head(skb, 0)) {
+-			netif_warn(eth, tx_err, dev,
+-				   "GSO expand head fail.\n");
+-			goto drop;
+-		}
++	need = 0;
++	skb_list_walk_safe(tx_list, seg, next) {
++		if (mtk_skb_has_small_frag(seg) && skb_linearize(seg))
++			goto drop_prepared;
++
++		if (skb_headlen(seg) > eth->soc->tx.dma_max_len)
++			goto drop_prepared;
++
++		if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA))
++			need += mtk_qdma_desc_need(eth, seg);
++		else
++			need += mtk_cal_txd_req(eth, seg);
++	}
+ 
+-		if (skb_shinfo(skb)->gso_type &
+-				(SKB_GSO_TCPV4 | SKB_GSO_TCPV6)) {
+-			gso = true;
+-			tcp_hdr(skb)->check = htons(skb_shinfo(skb)->gso_size);
++	if (unlikely(need >= ring->dma_size - 2))
++		goto drop_prepared;
++
++	if (unlikely(atomic_read(&ring->free_count) <= need)) {
++		netif_tx_stop_all_queues(dev);
++		smp_mb();
++		if (unlikely(atomic_read(&ring->free_count) <= need)) {
++			netif_err(eth, tx_queued, dev,
++				  "Tx Ring full when queue awake!\n");
++			atomic_inc(&ring->full_count);
++			spin_unlock(&eth->page_lock);
++			if (tx_list != orig_skb) {
++				skb_list_walk_safe(tx_list, seg, next) {
++					skb_mark_not_on_list(seg);
++					dev_kfree_skb_any(seg);
++				}
++			}
++			return NETDEV_TX_BUSY;
+ 		}
++		netif_tx_wake_all_queues(dev);
++	}
++
++	if (tx_list != orig_skb) {
++		consume_skb(orig_skb);
++		orig_skb = NULL;
+ 	}
+ 
+-	skb_list_walk_safe(skb, skb, next) {
+-		if ((mtk_is_netsys_v1(eth) &&
+-		     mtk_skb_has_small_frag(skb) && skb_linearize(skb)) ||
+-		    mtk_tx_map(skb, dev, tx_num, ring, gso) < 0) {
++	skb_list_walk_safe(tx_list, seg, next) {
++		int seg_tx_num;
++
++		skb_mark_not_on_list(seg);
++		gso = false;
++
++		/* TSO: fill MSS info in tcp checksum field */
++		if (skb_is_gso(seg)) {
++			if (skb_cow_head(seg, 0)) {
++				netif_warn(eth, tx_err, dev,
++					   "GSO expand head fail.\n");
+ 				stats->tx_dropped++;
+-				dev_kfree_skb_any(skb);
++				dev_kfree_skb_any(seg);
++				continue;
++			}
++
++			if (skb_shinfo(seg)->gso_type &
++			    (SKB_GSO_TCPV4 | SKB_GSO_TCPV6)) {
++				gso = true;
++				tcp_hdr(seg)->check =
++					htons(skb_shinfo(seg)->gso_size);
++			}
++		}
++
++		seg_tx_num = MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA) ?
++			     mtk_qdma_desc_need(eth, seg) :
++			     mtk_cal_txd_req(eth, seg);
++
++		if (mtk_tx_map(seg, dev, seg_tx_num, ring, gso) < 0) {
++			stats->tx_dropped++;
++			dev_kfree_skb_any(seg);
+ 		}
+ 	}
+ 
+@@ -2182,9 +2269,15 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 
+ 	return NETDEV_TX_OK;
+ 
+-drop:
++drop_prepared:
+ 	spin_unlock(&eth->page_lock);
+-	dev_kfree_skb_any(skb);
++	if (tx_list != orig_skb) {
++		skb_list_walk_safe(tx_list, seg, next) {
++			skb_mark_not_on_list(seg);
++			dev_kfree_skb_any(seg);
++		}
++	}
++	dev_kfree_skb_any(orig_skb);
+ dropped:
+ 	stats->tx_dropped++;
+ 	return NETDEV_TX_OK;
+@@ -4121,7 +4214,7 @@ static void mtk_tx_timeout(struct net_device *dev, unsigned int txqueue)
+ 	netif_err(eth, tx_err, dev, "transmit timed out\n");
+ 
+ 	if (atomic_read(&eth->reset.force))
+-		schedule_work(&eth->pending_work);
++		mtk_eth_queue_reset(eth, MTK_FE_START_RESET);
+ }
+ 
+ static irqreturn_t mtk_handle_irq_rx(int irq, void *priv)
+@@ -4979,7 +5072,7 @@ static inline u16 mtk_get_oq_sta(struct mtk_eth *eth, int port)
+ 	return ((mtk_r32(eth, reg_map->pse_oq_sta + offset) >> shift) & mask);
+ }
+ 
+-static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
++static bool mtk_hw_check_dma_hang(struct mtk_eth *eth, u32 *event)
+ {
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+ 	struct mtk_hw_stats *hw_stats;
+@@ -4996,6 +5089,10 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_SOC_MT7628))
+ 		return false;
+ 
++	if (test_bit(MTK_REMOVING, &eth->state) ||
++	    test_bit(MTK_RESETTING, &eth->state))
++		return false;
++
+ 	/* WDMA sanity checks */
+ 	for (i = 0; i < 3; i++) {
+ 		if (!mtk_r32(eth, reg_map->wdma_base[i] + 0xc))
+@@ -5020,7 +5117,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 		    wtx_busy && cdm_busy && oq_free) {
+ 			if (++eth->reset.wdma_hang_count[i] > 2) {
+ 				dev_warn(eth->dev, "detect WDMA%d Tx hang!\n", i);
+-				eth->reset.event = MTK_FE_START_RESET;
++				if (event)
++					*event = MTK_FE_START_RESET;
+ 				eth->reset.wdma_hang_count[i] = 0;
+ 				ret = true;
+ 			}
+@@ -5045,7 +5143,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 	if (!qpse_fc && qfsm_hang && qfwd_hang) {
+ 		if (++eth->reset.qdma_hang_count > 2) {
+ 			dev_warn(eth->dev, "detect QDMA Tx hang !\n");
+-			eth->reset.event = MTK_FE_STOP_TRAFFIC;
++			if (event)
++				*event = MTK_FE_STOP_TRAFFIC;
+ 			eth->reset.qdma_hang_count = 0;
+ 			ret = true;
+ 		}
+@@ -5076,7 +5175,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 		if (oq_hang && gmac_tx && (txgp_cnt == eth->reset.gdm_txgp_cnt[i])) {
+ 			if (++eth->reset.mac_tx_hang_count[i] > 2) {
+ 				dev_warn(eth->dev, "detect GMAC%d Tx hang!\n", i + 1);
+-				eth->reset.event = MTK_FE_STOP_TRAFFIC;
++				if (event)
++					*event = MTK_FE_STOP_TRAFFIC;
+ 				eth->reset.mac_tx_hang_count[i] = 0;
+ 				ret = true;
+ 			}
+@@ -5091,7 +5191,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 		if (gmac_rx && (rxgp_cnt == eth->reset.gdm_rxgp_cnt[i])) {
+ 			if (++eth->reset.mac_rx_hang_count[i] > 2) {
+ 				dev_warn(eth->dev, "detect GMAC%d Rx hang!\n", i + 1);
+-				eth->reset.event = MTK_FE_STOP_TRAFFIC;
++				if (event)
++					*event = MTK_FE_STOP_TRAFFIC;
+ 				eth->reset.mac_rx_hang_count[i] = 0;
+ 				ret = true;
+ 			}
+@@ -5109,7 +5210,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 		    ((gdm_txfsm == eth->reset.gdm_txfsm[i]) && (gdm_txfsm == 0x1033))) {
+ 			if (++eth->reset.gdm_tx_hang_count[i] > 2) {
+ 				dev_warn(eth->dev, "detect GDM%d Tx hang!\n", i + 1);
+-				eth->reset.event = MTK_FE_STOP_TRAFFIC;
++				if (event)
++					*event = MTK_FE_STOP_TRAFFIC;
+ 				eth->reset.gdm_tx_hang_count[i] = 0;
+ 				ret = true;
+ 			}
+@@ -5133,7 +5235,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 		     (gdm_rxfsm == 0x23 || gdm_rxfsm == 0x24))) {
+ 			if (++eth->reset.gdm_rx_hang_count[i] > 2) {
+ 				dev_warn(eth->dev, "detect GDM%d Rx hang!\n", i + 1);
+-				eth->reset.event = MTK_FE_STOP_TRAFFIC;
++				if (event)
++					*event = MTK_FE_STOP_TRAFFIC;
+ 				eth->reset.gdm_rx_hang_count[i] = 0;
+ 				ret = true;
+ 			}
+@@ -5164,7 +5267,8 @@ static bool mtk_hw_check_dma_hang(struct mtk_eth *eth)
+ 	    ((cdma_rxfsm != 0) && (cdma_rxfsm != eth->reset.cdma_rxfsm))) {
+ 		if (++eth->reset.adma_hang_count > 2) {
+ 			dev_warn(eth->dev, "detect ADMA Rx hang!\n");
+-			eth->reset.event = MTK_FE_STOP_TRAFFIC;
++			if (event)
++				*event = MTK_FE_STOP_TRAFFIC;
+ 			eth->reset.adma_hang_count = 0;
+ 			ret = true;
+ 		}
+@@ -5184,17 +5288,20 @@ static void mtk_hw_reset_monitor_work(struct work_struct *work)
+ 	struct delayed_work *del_work = to_delayed_work(work);
+ 	struct mtk_eth *eth = container_of(del_work, struct mtk_eth,
+ 					   reset.monitor_work);
++	u32 event = 0;
+ 
+-	if (test_bit(MTK_RESETTING, &eth->state))
++	if (test_bit(MTK_RESETTING, &eth->state) ||
++	    test_bit(MTK_REMOVING, &eth->state))
+ 		goto out;
+ 
+ 	/* DMA stuck checks */
+-	if (mtk_hw_check_dma_hang(eth) && atomic_read(&eth->reset.force))
+-		schedule_work(&eth->pending_work);
++	if (mtk_hw_check_dma_hang(eth, &event) && atomic_read(&eth->reset.force))
++		mtk_eth_queue_reset(eth, event);
+ 
+ out:
+-	schedule_delayed_work(&eth->reset.monitor_work,
+-			      MTK_DMA_MONITOR_TIMEOUT);
++	if (!test_bit(MTK_REMOVING, &eth->state))
++		schedule_delayed_work(&eth->reset.monitor_work,
++				      MTK_DMA_MONITOR_TIMEOUT);
+ }
+ 
+ static int mtk_napi_init(struct mtk_eth *eth)
+@@ -5450,7 +5557,8 @@ static void mtk_uninit(struct net_device *dev)
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	struct mtk_eth *eth = mac->hw;
+ 
+-	phylink_disconnect_phy(mac->phylink);
++	if (mac->phylink)
++		phylink_disconnect_phy(mac->phylink);
+ 	mtk_tx_irq_disable(eth, ~0);
+ 	mtk_rx_irq_disable(eth, ~0);
+ }
+@@ -5510,17 +5618,17 @@ static int mtk_siocdevprivate(struct net_device *dev, struct ifreq *ifr,
+ static void mt7988_esw_iomap(struct mtk_eth *eth)
+ {
+ 	struct device_node *np;
+-	void __iomem *base;
++	void __iomem *base = NULL;
+ 
+ 	np = of_find_compatible_node(NULL, NULL, "mediatek,mt7988-switch");
+ 	if (!np) {
+ 		/* check the GSW node if the DSA node does not exist */
+-		of_find_compatible_node(NULL, NULL, "mediatek,mt7988-gsw-switch");
++		np = of_find_compatible_node(NULL, NULL, "mediatek,mt7988-gsw-switch");
+ 	}
+ 
+ 	if (np) {
+ 		base = of_iomap(np, 0);
+-		if (IS_ERR(base)) {
++		if (!base) {
+ 			dev_err(eth->dev, "failed to map esw base address\n");
+ 			goto out;
+ 		}
+@@ -5639,10 +5747,26 @@ static void mtk_pending_work(struct work_struct *work)
+ {
+ 	struct mtk_eth *eth = container_of(work, struct mtk_eth, pending_work);
+ 	unsigned long restart = 0;
++	unsigned long flags;
++	u32 cur_event;
+ 	int i;
+ 
++	if (test_bit(MTK_REMOVING, &eth->state))
++		return;
++
+ 	rtnl_lock();
+-	set_bit(MTK_RESETTING, &eth->state);
++	spin_lock_irqsave(&eth->reset.lock, flags);
++	if (test_bit(MTK_REMOVING, &eth->state) ||
++	    test_and_set_bit(MTK_RESETTING, &eth->state)) {
++		spin_unlock_irqrestore(&eth->reset.lock, flags);
++		rtnl_unlock();
++		return;
++	}
++	cur_event = eth->reset.pending ? eth->reset.pending_event :
++		    (eth->reset.event ? eth->reset.event : MTK_FE_START_RESET);
++	eth->reset.pending = false;
++	eth->reset.event = cur_event;
++	spin_unlock_irqrestore(&eth->reset.lock, flags);
+ 
+ 	mtk_hw_dump_all(eth);
+ 
+@@ -5652,8 +5776,8 @@ static void mtk_pending_work(struct work_struct *work)
+ 		if (!eth->netdev[i])
+ 			continue;
+ 
+-		pr_info("send event:%x !\n", eth->reset.event);
+-		if (eth->reset.event == MTK_FE_STOP_TRAFFIC)
++		pr_info("send event:%x !\n", cur_event);
++		if (cur_event == MTK_FE_STOP_TRAFFIC)
+ 			call_netdevice_notifiers(MTK_FE_STOP_TRAFFIC,
+ 						 eth->netdev[i]);
+ 		else
+@@ -5665,18 +5789,34 @@ static void mtk_pending_work(struct work_struct *work)
+ 			pr_info("waiting event from wifi\n");
+ 			wait_for_completion(&wait_ser_done);
+ 			if (mtk_is_netsys_v3_or_greater(eth) && mtk_stop_fail) {
++				mtk_stop_fail = false;
+ 				rtnl_lock();
++				if (test_bit(MTK_REMOVING, &eth->state)) {
++					clear_bit(MTK_RESETTING, &eth->state);
++					rtnl_unlock();
++					return;
++				}
++				spin_lock_irqsave(&eth->reset.lock, flags);
++				cur_event = MTK_FE_START_RESET;
++				eth->reset.event = MTK_FE_START_RESET;
++				spin_unlock_irqrestore(&eth->reset.lock, flags);
+ 				call_netdevice_notifiers(MTK_FE_START_RESET,
+ 							 eth->netdev[i]);
+ 				rtnl_unlock();
+ 				pr_info("waiting event when stop fail\n");
+ 				wait_for_completion(&wait_ser_done);
+-				mtk_stop_fail = 0;
++			} else {
++				mtk_stop_fail = false;
+ 			}
+ 		}
+ 		if (!try_wait_for_completion(&wait_tops_done))
+ 			pr_warn("wait for TOPS response timeout !\n");
+ 		rtnl_lock();
++		if (test_bit(MTK_REMOVING, &eth->state)) {
++			clear_bit(MTK_RESETTING, &eth->state);
++			rtnl_unlock();
++			return;
++		}
+ 		break;
+ 	}
+ 	//mtk_wed_fe_reset();
+@@ -5722,7 +5862,7 @@ static void mtk_pending_work(struct work_struct *work)
+ 		if (!eth->netdev[i])
+ 			continue;
+ 
+-		if (eth->reset.event == MTK_FE_STOP_TRAFFIC) {
++		if (cur_event == MTK_FE_STOP_TRAFFIC) {
+ 			pr_info("send MTK_FE_START_TRAFFIC event !\n");
+ 			call_netdevice_notifiers(MTK_FE_START_TRAFFIC,
+ 						 eth->netdev[i]);
+@@ -5737,6 +5877,11 @@ static void mtk_pending_work(struct work_struct *work)
+ 				rtnl_unlock();
+ 				wait_for_completion(&wait_ack_done);
+ 				rtnl_lock();
++				if (test_bit(MTK_REMOVING, &eth->state)) {
++					clear_bit(MTK_RESETTING, &eth->state);
++					rtnl_unlock();
++					return;
++				}
+ 			}
+ 		}
+ 		call_netdevice_notifiers(MTK_FE_RESET_NAT_DONE,
+@@ -5809,6 +5954,8 @@ static int mtk_unreg_dev(struct mtk_eth *eth)
+ 	return 0;
+ }
+ 
++static void mtk_release_all_muxes(struct mtk_eth *eth);
++
+ static void mtk_sgmii_destroy(struct mtk_eth *eth)
+ {
+ 	int i;
+@@ -5819,10 +5966,39 @@ static void mtk_sgmii_destroy(struct mtk_eth *eth)
+ 
+ static int mtk_cleanup(struct mtk_eth *eth)
+ {
++	struct mtk_mac *mac;
++	int i;
++
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		if (!eth->netdev[i])
++			continue;
++
++		mac = netdev_priv(eth->netdev[i]);
++		if (mac && mac->phylink) {
++			if (!eth->mux[i])
++				phylink_destroy(mac->phylink);
++			mac->phylink = NULL;
++		}
++
++		if (!IS_ERR_OR_NULL(mac->sgmii_pcs)) {
++			mtk_pcs_lynxi_put(mac->sgmii_pcs);
++			mac->sgmii_pcs = NULL;
++		}
++
++		if (!IS_ERR_OR_NULL(mac->usxgmii_pcs)) {
++			mtk_usxgmii_pcs_put(mac->usxgmii_pcs);
++			mac->usxgmii_pcs = NULL;
++		}
++	}
++
++	mtk_free_dev(eth);
+ 	mtk_sgmii_destroy(eth);
+-	mtk_unreg_dev(eth);
+ 	mtk_ppe_deinit(eth);
+-	mtk_free_dev(eth);
++	mtk_release_all_muxes(eth);
++	if (eth->dummy_dev) {
++		free_netdev(eth->dummy_dev);
++		eth->dummy_dev = NULL;
++	}
+ 
+ 	return 0;
+ }
+@@ -6139,7 +6315,7 @@ static int mtk_set_eee(struct net_device *dev, struct ethtool_keee *eee)
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	int ret;
+ 
+-	return phylink_ethtool_set_eee(mac->phylink, eee);
++	ret = phylink_ethtool_set_eee(mac->phylink, eee);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -6368,7 +6544,7 @@ static int mtk_add_mux(struct mtk_eth *eth, struct device_node *np)
+ 		return -EINVAL;
+ 	}
+ 
+-	mux = kmalloc(sizeof(struct mtk_mux), GFP_KERNEL);
++	mux = kzalloc(sizeof(struct mtk_mux), GFP_KERNEL);
+ 	if (unlikely(!mux)) {
+ 		dev_err(eth->dev, "failed to create mux structure\n");
+ 		return -ENOMEM;
+@@ -6377,6 +6553,7 @@ static int mtk_add_mux(struct mtk_eth *eth, struct device_node *np)
+ 	eth->mux[id] = mux;
+ 	mux->mac = eth->mac[id];
+ 	mux->channel = 0;
++	INIT_DELAYED_WORK(&mux->poll, mux_poll);
+ 
+ 	mux->mod_def0_gpio = fwnode_gpiod_get_index(of_fwnode_handle(np),
+ 				"mod-def0", 0, GPIOD_IN |
+@@ -6405,17 +6582,17 @@ static int mtk_add_mux(struct mtk_eth *eth, struct device_node *np)
+ 		if (err) {
+ 			dev_err(eth->dev, "failed to add mtk_mux\n");
+ 			of_node_put(child);
+-			goto err_put_chan_sel;
++			goto err_free_channels;
+ 		}
+ 	}
+ 
+-	INIT_DELAYED_WORK(&mux->poll, mux_poll);
+ 	mod_delayed_work(system_wq, &mux->poll, msecs_to_jiffies(3000));
+ 
+ 	return 0;
+ 
+-err_put_chan_sel:
+-	gpiod_put(mux->chan_sel_gpio);
++err_free_channels:
++	mtk_release_mux(eth, id);
++	return err;
+ err_put_mod_def0:
+ 	gpiod_put(mux->mod_def0_gpio);
+ err_free_mux:
+@@ -6424,6 +6601,38 @@ static int mtk_add_mux(struct mtk_eth *eth, struct device_node *np)
+ 	return err;
+ }
+ 
++static void mtk_free_mac_slot(struct mtk_eth *eth, int id)
++{
++	struct net_device *ndev = eth->netdev[id];
++	struct mtk_mac *mac;
++
++	if (!ndev)
++		return;
++
++	mac = netdev_priv(ndev);
++	if (mac->phylink) {
++		rtnl_lock();
++		phylink_disconnect_phy(mac->phylink);
++		rtnl_unlock();
++		phylink_destroy(mac->phylink);
++		mac->phylink = NULL;
++	}
++
++	if (!IS_ERR_OR_NULL(mac->sgmii_pcs)) {
++		mtk_pcs_lynxi_put(mac->sgmii_pcs);
++		mac->sgmii_pcs = NULL;
++	}
++
++	if (!IS_ERR_OR_NULL(mac->usxgmii_pcs)) {
++		mtk_usxgmii_pcs_put(mac->usxgmii_pcs);
++		mac->usxgmii_pcs = NULL;
++	}
++
++	eth->netdev[id] = NULL;
++	eth->mac[id] = NULL;
++	free_netdev(ndev);
++}
++
+ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+ {
+ 	const __be32 *_id = of_get_property(np, "reg", NULL);
+@@ -6467,26 +6676,30 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+ 	pcs_np = of_parse_phandle(mac->of_node, "pcs-handle", 0);
+ 	if (pcs_np) {
+ 		mac->sgmii_pcs = mtk_pcs_lynxi_get(eth->dev, pcs_np);
++		of_node_put(pcs_np);
+ 		if (IS_ERR(mac->sgmii_pcs)) {
+-			if (PTR_ERR(mac->sgmii_pcs) == -EPROBE_DEFER)
+-				return -EPROBE_DEFER;
++			err = PTR_ERR(mac->sgmii_pcs);
++			mac->sgmii_pcs = NULL;
++			if (err == -EPROBE_DEFER)
++				goto free_netdev;
+ 
+-			dev_err(eth->dev, "cannot select SGMII PCS, error %ld\n",
+-				PTR_ERR(mac->sgmii_pcs));
+-			return PTR_ERR(mac->sgmii_pcs);
++			dev_err(eth->dev, "cannot select SGMII PCS, error %d\n", err);
++			goto free_netdev;
+ 		}
+ 	}
+ 
+ 	pcs_np = of_parse_phandle(mac->of_node, "pcs-handle", 1);
+ 	if (pcs_np) {
+ 		mac->usxgmii_pcs = mtk_usxgmii_pcs_get(eth->dev, pcs_np);
++		of_node_put(pcs_np);
+ 		if (IS_ERR(mac->usxgmii_pcs)) {
+-			if (PTR_ERR(mac->usxgmii_pcs) == -EPROBE_DEFER)
+-				return -EPROBE_DEFER;
++			err = PTR_ERR(mac->usxgmii_pcs);
++			mac->usxgmii_pcs = NULL;
++			if (err == -EPROBE_DEFER)
++				goto free_netdev;
+ 
+-			dev_err(eth->dev, "cannot select USXGMII PCS, error %ld\n",
+-				PTR_ERR(mac->usxgmii_pcs));
+-			return PTR_ERR(mac->usxgmii_pcs);
++			dev_err(eth->dev, "cannot select USXGMII PCS, error %d\n", err);
++			goto free_netdev;
+ 		}
+ 	}
+ 
+@@ -6621,7 +6834,9 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+ 
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA)) {
+ 		mac->device_notifier.notifier_call = mtk_device_event;
+-		register_netdevice_notifier(&mac->device_notifier);
++		err = register_netdevice_notifier(&mac->device_notifier);
++		if (err)
++			goto free_netdev;
+ 	}
+ 
+ 	if (mtk_page_pool_enabled(eth))
+@@ -6633,7 +6848,7 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+ 	return 0;
+ 
+ free_netdev:
+-	free_netdev(eth->netdev[id]);
++	mtk_free_mac_slot(eth, id);
+ 	return err;
+ }
+ 
+@@ -6737,11 +6952,91 @@ static void mtk_unregister_notifier(struct mtk_eth *eth)
+ 	}
+ }
+ 
++static int mtk_register_netdevs(struct mtk_eth *eth)
++{
++	int err, i;
++
++	err = rtnl_lock_killable();
++	if (err)
++		return err;
++
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		if (!eth->netdev[i])
++			continue;
++
++		err = register_netdevice(eth->netdev[i]);
++		if (err) {
++			dev_err(eth->dev, "error bringing up device\n");
++			goto err_unregister;
++		}
++
++		netif_info(eth, probe, eth->netdev[i],
++			   "mediatek frame engine at 0x%08lx, irq %d\n",
++			   eth->netdev[i]->base_addr, eth->irq_fe[0]);
++	}
++
++	rtnl_unlock();
++	return 0;
++
++err_unregister:
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		if (!eth->netdev[i] ||
++		    eth->netdev[i]->reg_state != NETREG_REGISTERED)
++			continue;
++
++		unregister_netdevice(eth->netdev[i]);
++	}
++
++	/* This runs netdev_run_todo() before any private state is released. */
++	rtnl_unlock();
++
++	return err;
++}
++
++static void mtk_probe_cleanup(struct mtk_eth *eth, bool napi_added,
++			      bool ppe_initialized, bool mdio_initialized)
++{
++	int i;
++
++	if (napi_added)
++		mtk_napi_del(eth);
++
++	if (eth->dummy_dev) {
++		free_netdev(eth->dummy_dev);
++		eth->dummy_dev = NULL;
++	}
++
++	if (ppe_initialized)
++		mtk_ppe_deinit(eth);
++
++	/* The poll worker holds pointers into each MAC slot. */
++	mtk_release_all_muxes(eth);
++	mtk_unregister_notifier(eth);
++
++	for (i = 0; i < MTK_MAX_DEVS; i++)
++		mtk_free_mac_slot(eth, i);
++
++	/* Keep mtk_free_dev() for DSA metadata after its netdev loop is empty. */
++	mtk_free_dev(eth);
++
++	if (eth->esw_base) {
++		iounmap(eth->esw_base);
++		eth->esw_base = NULL;
++	}
++
++	/* Phylinks/PCS have been released before their MDIO bus. */
++	if (mdio_initialized)
++		mtk_mdio_cleanup(eth);
++}
++
+ static int mtk_probe(struct platform_device *pdev)
+ {
+ 	struct resource *res = NULL, *res_sram;
+ 	struct device_node *mac_np, *mux_np;;
+ 	struct mtk_eth *eth;
++	bool napi_added = false;
++	bool mdio_initialized = false;
++	unsigned long flags;
+ 	int err, i;
+ 
+ 	eth = devm_kzalloc(&pdev->dev, sizeof(*eth), GFP_KERNEL);
+@@ -6752,6 +7047,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 
+ 	eth->dev = &pdev->dev;
+ 	eth->dma_dev = &pdev->dev;
++	eth->rx_buf_len = MTK_MAX_RX_LENGTH;
+ 	eth->base = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(eth->base))
+ 		return PTR_ERR(eth->base);
+@@ -6796,6 +7092,8 @@ static int mtk_probe(struct platform_device *pdev)
+ 	spin_lock_init(&eth->rx_irq_lock);
+ 	spin_lock_init(&eth->dim_lock);
+ 	spin_lock_init(&eth->qdma_shaper.lock);
++	spin_lock_init(&eth->reset.lock);
++	eth->reset.event = MTK_FE_START_RESET;
+ 
+ 	eth->rx_dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+ 	INIT_WORK(&eth->rx_dim.work, mtk_dim_rx);
+@@ -6949,7 +7247,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 		err = mtk_add_mac(eth, mac_np);
+ 		if (err) {
+ 			of_node_put(mac_np);
+-			goto err_deinit_hw;
++			goto err_free_pre_reg_macs;
+ 		}
+ 	}
+ 
+@@ -6959,7 +7257,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 
+ 		err = mtk_mac_assign_address(eth, i, true);
+ 		if (err)
+-			goto err_deinit_hw;
++			goto err_free_pre_reg_macs;
+ 	}
+ 
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+@@ -6968,7 +7266,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 
+ 		err = mtk_mac_assign_address(eth, i, false);
+ 		if (err)
+-			goto err_deinit_hw;
++			goto err_free_pre_reg_macs;
+ 	}
+ 
+ 	err = mtk_napi_init(eth);
+@@ -7030,6 +7328,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 		err = mtk_mdio_init(eth);
+ 		if (err)
+ 			goto err_free_dev;
++		mdio_initialized = true;
+ 	}
+ 
+ 	mux_np = of_get_child_by_name(eth->dev->of_node, "mux-bus");
+@@ -7048,8 +7347,8 @@ static int mtk_probe(struct platform_device *pdev)
+ 			if (err)
+ 				dev_err(&pdev->dev, "failed to add mux\n");
+ 
+-			of_node_put(mux_np);
+ 		};
++		of_node_put(mux_np);
+ 	}
+ 
+ #if !defined(CONFIG_NET_MEDIATEK_HNAT) && !defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
+@@ -7084,7 +7383,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 	if (!eth->dummy_dev) {
+ 		err = -ENOMEM;
+ 		dev_err(eth->dev, "failed to allocated dummy device\n");
+-		goto err_unreg_netdev;
++		goto err_deinit_ppe;
+ 	}
+ 	netif_napi_add_weight(eth->dummy_dev, &eth->tx_napi, mtk_napi_tx,
+ 			      MTK_NAPI_WEIGHT);
+@@ -7105,49 +7404,49 @@ static int mtk_probe(struct platform_device *pdev)
+ 		}
+ 	}
+ 
+-	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-		if (!eth->netdev[i])
+-			continue;
+-
+-		err = register_netdev(eth->netdev[i]);
+-		if (err) {
+-			dev_err(eth->dev, "error bringing up device\n");
+-			goto err_unreg_netdev;
+-		} else
+-			netif_info(eth, probe, eth->netdev[i],
+-				   "mediatek frame engine at 0x%08lx, irq %d\n",
+-				   eth->netdev[i]->base_addr, eth->irq_fe[0]);
+-	}
++	napi_added = true;
+ 
++	err = mtk_register_netdevs(eth);
++	if (err)
++		goto err_deinit_ppe;
+ 
+-	eth->rx_buf_len = MTK_MAX_RX_LENGTH;
+ 
+ 	mtketh_debugfs_init(eth);
+ 	debug_proc_init(eth);
+ 
+ 	platform_set_drvdata(pdev, eth);
+-	mtk_eth_netdevice_event_init(eth);
++	err = mtk_eth_netdevice_event_init(eth);
++	if (err)
++		goto err_netdevice_event_init;
++
+ 	schedule_delayed_work(&eth->reset.monitor_work,
+ 			      MTK_DMA_MONITOR_TIMEOUT);
+ 
+ 	return 0;
+ 
+-err_unreg_netdev:
+-	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-		if (!eth->netdev[i])
+-			continue;
+-		if (eth->netdev[i]->reg_state != NETREG_REGISTERED)
+-			continue;
+-		unregister_netdev(eth->netdev[i]);
++err_netdevice_event_init:
++	spin_lock_irqsave(&eth->reset.lock, flags);
++	set_bit(MTK_REMOVING, &eth->state);
++	eth->reset.pending = false;
++	atomic_set(&eth->reset.force, 0);
++	spin_unlock_irqrestore(&eth->reset.lock, flags);
++	debug_proc_exit();
++	mtketh_debugfs_exit(eth);
++	cancel_work_sync(&eth->pending_work);
++	if (rcu_access_pointer(g_eth) == eth) {
++		RCU_INIT_POINTER(g_eth, NULL);
++		synchronize_rcu();
+ 	}
++	platform_set_drvdata(pdev, NULL);
++	mtk_unreg_dev(eth);
+ err_deinit_ppe:
+-	mtk_napi_del(eth);
+-	mtk_ppe_deinit(eth);
+-	mtk_release_all_muxes(eth);
+-	mtk_mdio_cleanup(eth);
++	mtk_probe_cleanup(eth, napi_added, true, mdio_initialized);
++	goto err_deinit_hw;
++err_free_pre_reg_macs:
++	mtk_probe_cleanup(eth, false, false, false);
++	goto err_deinit_hw;
+ err_free_dev:
+-	mtk_unregister_notifier(eth);
+-	mtk_free_dev(eth);
++	mtk_probe_cleanup(eth, false, false, mdio_initialized);
+ err_deinit_hw:
+ 	mtk_hw_deinit(eth);
+ err_wed_exit:
+@@ -7161,44 +7460,44 @@ static int mtk_probe(struct platform_device *pdev)
+ static int mtk_remove(struct platform_device *pdev)
+ {
+ 	struct mtk_eth *eth = platform_get_drvdata(pdev);
+-	struct mtk_mac *mac;
++	unsigned long flags;
+ 	int i;
+ 
+-	unregister_netdevice_notifier(&eth->reset.netdevice_notifier);
++	spin_lock_irqsave(&eth->reset.lock, flags);
++	set_bit(MTK_REMOVING, &eth->state);
++	eth->reset.pending = false;
++	atomic_set(&eth->reset.force, 0);
++	spin_unlock_irqrestore(&eth->reset.lock, flags);
++
+ 	mtketh_debugfs_exit(eth);
+ 	debug_proc_exit();
+-	if (rcu_access_pointer(g_eth) == eth) {
+-		RCU_INIT_POINTER(g_eth, NULL);
+-		synchronize_rcu();
+-	}
+ 
+-	if (eth->esw_base)
+-		iounmap(eth->esw_base);
+-
+-	/* stop all devices to make sure that dma is properly shut down */
++	mtk_ppe_roaming_stop(eth);
++	cancel_delayed_work_sync(&eth->reset.monitor_work);
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+-		if (!eth->netdev[i])
+-			continue;
+-		mtk_stop(eth->netdev[i]);
+-		mac = netdev_priv(eth->netdev[i]);
+-		phylink_disconnect_phy(mac->phylink);
+-		if (mac->sgmii_pcs)
+-			mtk_pcs_lynxi_put(mac->sgmii_pcs);
+-
+-		if (mac->usxgmii_pcs)
+-			mtk_usxgmii_pcs_put(mac->usxgmii_pcs);
++		if (eth->mux[i])
++			cancel_delayed_work_sync(&eth->mux[i]->poll);
+ 	}
+ 
+-	cancel_delayed_work_sync(&eth->reset.monitor_work);
+ 	cancel_work_sync(&eth->pending_work);
++
++	unregister_netdevice_notifier(&eth->reset.netdevice_notifier);
++	if (rcu_access_pointer(g_eth) == eth) {
++		RCU_INIT_POINTER(g_eth, NULL);
++		synchronize_rcu();
++	}
++
++	mtk_unreg_dev(eth);
+ 	mtk_wed_exit();
+ 	mtk_hw_deinit(eth);
+ 
+ 	mtk_napi_del(eth);
+ 	mtk_cleanup(eth);
+-	free_netdev(eth->dummy_dev);
++	if (eth->esw_base) {
++		iounmap(eth->esw_base);
++		eth->esw_base = NULL;
++	}
+ 	mtk_mdio_cleanup(eth);
+-	mtk_release_all_muxes(eth);
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index affd747..818c798 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1079,7 +1079,8 @@ enum mtk_clks_map {
+ 
+ enum mtk_dev_state {
+ 	MTK_HW_INIT,
+-	MTK_RESETTING
++	MTK_RESETTING,
++	MTK_REMOVING
+ };
+ 
+ /* PSE Port Definition */
+@@ -1726,6 +1727,9 @@ struct mtk_eth {
+ 	struct bpf_prog			__rcu *prog;
+ 
+ 	struct {
++		spinlock_t lock;
++		u32 pending_event;
++		bool pending;
+ 		struct delayed_work monitor_work;
+ 		struct notifier_block netdevice_notifier;
+ 		atomic_t force;
+@@ -2011,6 +2015,17 @@ int mtk_gmac_gephy_path_setup(struct mtk_eth *eth, int mac_id);
+ int mtk_gmac_rgmii_path_setup(struct mtk_eth *eth, int mac_id);
+ int mtk_gmac_usxgmii_path_setup(struct mtk_eth *eth, int mac_id);
+ 
++static inline bool mtk_native_ppe_ready(struct mtk_eth *eth, int index)
++{
++	if (IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT))
++		return false;
++	if (!eth || !eth->flow_table_initialized)
++		return false;
++	if (index < 0 || index >= ARRAY_SIZE(eth->ppe))
++		return false;
++	return eth->ppe[index] != NULL;
++}
++
+ int mtk_eth_offload_init(struct mtk_eth *eth);
+ int mtk_eth_setup_tc(struct net_device *dev, enum tc_setup_type type,
+ 		     void *type_data);
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe.c b/drivers/net/ethernet/mediatek/mtk_ppe.c
+index a06525b..d84dd61 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -713,20 +713,22 @@ bool mtk_flow_entry_match(struct mtk_eth *eth, struct mtk_flow_entry *entry,
+ 
+ static bool mtk_foe_mac_match(struct mtk_foe_entry *entry, u8 *mac)
+ {
++	u32 mac_hi = get_unaligned_be32(mac);
++	u16 mac_lo = get_unaligned_be16(mac + 4);
+ 	int type;
+ 
+ 	type = FIELD_GET(MTK_FOE_IB1_PACKET_TYPE, entry->ib1);
+ 	if (type > MTK_PPE_PKT_TYPE_IPV4_DSLITE) {
+-		if(((swab32(entry->ipv6.l2.dest_mac_hi) == *(u32 *)mac) &&
+-		    (swab16(entry->ipv6.l2.dest_mac_lo) == *(u16 *)&mac[4])) ||
+-		   ((swab32(entry->ipv6.l2.src_mac_hi) == *(u32 *)mac) &&
+-		    (swab16(entry->ipv6.l2.src_mac_lo) == *(u16 *)&mac[4])))
++		if ((entry->ipv6.l2.dest_mac_hi == mac_hi &&
++		     entry->ipv6.l2.dest_mac_lo == mac_lo) ||
++		    (entry->ipv6.l2.src_mac_hi == mac_hi &&
++		     entry->ipv6.l2.src_mac_lo == mac_lo))
+ 			return true;
+ 	} else {
+-		if(((swab32(entry->ipv4.l2.dest_mac_hi) == *(u32 *)mac) &&
+-		    (swab16(entry->ipv4.l2.dest_mac_lo) == *(u16 *)&mac[4])) ||
+-		   ((swab32(entry->ipv4.l2.src_mac_hi) == *(u32 *)mac) &&
+-		    (swab16(entry->ipv4.l2.src_mac_lo) == *(u16 *)&mac[4])))
++		if ((entry->ipv4.l2.dest_mac_hi == mac_hi &&
++		     entry->ipv4.l2.dest_mac_lo == mac_lo) ||
++		    (entry->ipv4.l2.src_mac_hi == mac_hi &&
++		     entry->ipv4.l2.src_mac_lo == mac_lo))
+ 			return true;
+ 	}
+ 
+@@ -854,7 +856,7 @@ mtk_flow_entry_update_l2(struct mtk_ppe *ppe, struct mtk_flow_entry *entry)
+ 		if (!mtk_flow_entry_update(ppe, cur, packets, bytes)) {
+ 			entry->prev_packets += cur->prev_packets;
+ 			entry->prev_bytes += cur->prev_bytes;
+-			__mtk_foe_entry_clear(ppe, entry, false);
++			__mtk_foe_entry_clear(ppe, cur, false);
+ 			continue;
+ 		}
+ 
+@@ -952,7 +954,8 @@ void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry)
+ {
+ 	spin_lock_bh(&ppe_lock);
+ 	__mtk_foe_entry_clear(ppe, entry, true);
+-	hlist_del_init(&entry->list);
++	if (entry->type != MTK_FLOW_TYPE_L2)
++		hlist_del_init(&entry->list);
+ 	spin_unlock_bh(&ppe_lock);
+ }
+ 
+@@ -1211,6 +1214,8 @@ void mtk_ppe_deinit(struct mtk_eth *eth)
+ {
+ 	int i;
+ 
++	mtk_ppe_roaming_stop(eth);
++
+ 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++) {
+ 		if (!eth->ppe[i])
+ 			continue;
+@@ -1519,7 +1524,9 @@ static void mtk_ppe_roam_handler(struct work_struct *work)
+ 	if (!NLMSG_OK(nlh, len) || nlh->nlmsg_type != RTM_NEWNEIGH)
+ 		goto out;
+ 
+-	len = nlh->nlmsg_len - NLMSG_HDRLEN;
++	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*ndm)))
++		goto out;
++
+ 	ndm = (struct ndmsg *)NLMSG_DATA(nlh);
+ 	if (ndm->ndm_family != PF_BRIDGE)
+ 		goto out;
+@@ -1533,12 +1540,15 @@ static void mtk_ppe_roam_handler(struct work_struct *work)
+ 		goto out;
+ 
+ 	nla = (struct nlattr *)((unsigned char *)ndm + sizeof(struct ndmsg));
+-	len -= NLMSG_LENGTH(sizeof(struct ndmsg));
++	len = nlh->nlmsg_len - NLMSG_LENGTH(sizeof(*ndm));
+ 	while (nla_ok(nla, len)) {
+-		if (nla_type(nla) == NDA_LLADDR) {
++		if (nla_type(nla) == NDA_LLADDR && nla_len(nla) == ETH_ALEN) {
+ 			memcpy(mac, nla_data(nla), ETH_ALEN);
+-			for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
++			for (i = 0; i < ARRAY_SIZE(eth->ppe); i++) {
++				if (!eth->ppe[i])
++					continue;
+ 				mtk_flow_offload_teardown_by_roaming(eth->ppe[i], mac);
++			}
+ 			if (eth->debug_level >= 6)
+ 				pr_info("mtk_ppe: the neighbor (%pM) has been updated\n", mac);
+ 		}
+@@ -1548,7 +1558,7 @@ static void mtk_ppe_roam_handler(struct work_struct *work)
+ out:
+ 	if (dev)
+ 		dev_put(dev);
+-	if (!work_pending(&eth->ppe_roam_work))
++	if (eth->ppe_roam_sock && !work_pending(&eth->ppe_roam_work))
+ 		schedule_work(&eth->ppe_roam_work);
+ }
+ 
+@@ -1594,12 +1604,14 @@ int mtk_ppe_roaming_start(struct mtk_eth *eth)
+ 
+ int mtk_ppe_roaming_stop(struct mtk_eth *eth)
+ {
+-	if (!eth->ppe_roam_sock)
++	struct socket *sock = eth->ppe_roam_sock;
++
++	if (!sock)
+ 		return -ENOENT;
+ 
+-	cancel_work_sync(&eth->ppe_roam_work);
+-	sock_release(eth->ppe_roam_sock);
+ 	eth->ppe_roam_sock = NULL;
++	cancel_work_sync(&eth->ppe_roam_work);
++	sock_release(sock);
+ 
+ 	pr_info("mtk_ppe: roaming work has been deactivated\n");
+ 
+diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+index ddecffb..476e841 100644
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload.c
+@@ -719,6 +719,11 @@ int mtk_flow_offload_cmd(struct mtk_eth *eth, struct flow_cls_offload *cls,
+ 	int err;
+ 
+ 	mutex_lock(&mtk_flow_offload_mutex);
++	if (!mtk_native_ppe_ready(eth, ppe_index)) {
++		mutex_unlock(&mtk_flow_offload_mutex);
++		return -EOPNOTSUPP;
++	}
++
+ 	switch (cls->command) {
+ 	case FLOW_CLS_REPLACE:
+ 		err = mtk_flow_offload_replace(eth, cls, ppe_index);
+@@ -778,6 +783,9 @@ mtk_eth_setup_tc_block(struct net_device *dev, struct flow_block_offload *f)
+ 
+ 	switch (f->command) {
+ 	case FLOW_BLOCK_BIND:
++		if (!mtk_native_ppe_ready(eth, 0))
++			return -EOPNOTSUPP;
++
+ 		block_cb = flow_block_cb_lookup(f->block, cb, dev);
+ 		if (block_cb) {
+ 			flow_block_cb_incref(block_cb);
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index 0d87f87..12719f6 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -71,6 +71,7 @@ static const struct mtk_wed_soc_data mt7622_data = {
+ 	.tx_ring_desc_size = sizeof(struct mtk_wdma_desc),
+ 	.wdma_desc_size = sizeof(struct mtk_wdma_desc),
+ 	.wo_support = 0,
++	.has_ppe = true,
+ };
+ 
+ static const struct mtk_wed_soc_data mt7986_data = {
+@@ -87,6 +88,7 @@ static const struct mtk_wed_soc_data mt7986_data = {
+ 	.tx_ring_desc_size = sizeof(struct mtk_wdma_desc),
+ 	.wdma_desc_size = 2 * sizeof(struct mtk_wdma_desc),
+ 	.wo_support = 1,
++	.has_ppe = true,
+ };
+ 
+ static const struct mtk_wed_soc_data mt7988_data = {
+@@ -104,6 +106,7 @@ static const struct mtk_wed_soc_data mt7988_data = {
+ 	.tx_ring_desc_size = sizeof(struct mtk_wed_bm_desc),
+ 	.wdma_desc_size = 2 * sizeof(struct mtk_wdma_desc),
+ 	.wo_support = 1,
++	.has_ppe = true,
+ };
+ 
+ static const struct mtk_wed_soc_data mt7987_data = {
+@@ -120,6 +123,7 @@ static const struct mtk_wed_soc_data mt7987_data = {
+ 	.tx_ring_desc_size = sizeof(struct mtk_wed_bm_desc),
+ 	.wdma_desc_size = 2 * sizeof(struct mtk_wdma_desc),
+ 	.wo_support = 0,
++	.has_ppe = true,
+ };
+ 
+ static void
+@@ -3167,6 +3171,9 @@ mtk_wed_setup_tc_block(struct mtk_wed_hw *hw, struct net_device *dev,
+ 
+ 	switch (f->command) {
+ 	case FLOW_BLOCK_BIND:
++		if (!hw->soc->has_ppe || !mtk_native_ppe_ready(eth, hw->index))
++			return -EOPNOTSUPP;
++
+ 		block_cb = flow_block_cb_lookup(f->block, cb, dev);
+ 		if (block_cb) {
+ 			flow_block_cb_incref(block_cb);
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.h b/drivers/net/ethernet/mediatek/mtk_wed.h
+index cf88ed0..ccd2f23 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.h
++++ b/drivers/net/ethernet/mediatek/mtk_wed.h
+@@ -26,6 +26,7 @@ struct mtk_wed_soc_data {
+ 	u32 tx_ring_desc_size;
+ 	u32 wdma_desc_size;
+ 	u8 wo_support;
++	bool has_ppe;
+ };
+ 
+ struct mtk_wed_amsdu {

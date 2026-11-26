@@ -1,0 +1,38 @@
+#!/usr/bin/env ucode
+'use strict';
+
+import * as fs from 'fs';
+
+const ROOT = getenv('MWAN3HELPER_ROOT') || '';
+
+function check_running() {
+	return (fs.access(ROOT + '/tmp/dnsmasq.d/dnsmasq-mwan3.conf') ||
+	        system('ip rule show | grep -q "lookup 200" >/dev/null 2>&1') == 0);
+}
+
+const methods = {
+	getStatus: {
+		args: {},
+		call: function() {
+			return { status: check_running() };
+		}
+	}
+};
+
+if (ARGV[0] == 'list') {
+	print('{"getStatus":{}}\n');
+	exit(0);
+}
+else if (ARGV[0] == 'call') {
+	let method_name = ARGV[1];
+	let method = methods[method_name];
+	if (!method) {
+		print('{"error":"Method not found"}\n');
+		exit(1);
+	}
+	let res = method.call({});
+	print(sprintf('{"status":%s}\n', res.status ? 'true' : 'false'));
+	exit(0);
+}
+
+return { 'luci.mwan3helper': methods };

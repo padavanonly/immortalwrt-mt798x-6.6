@@ -1,0 +1,14 @@
+#!/bin/sh
+
+[ "$BUTTON" = "wps" ] || exit 0
+[ "$ACTION" = "pressed" ] || exit 0
+
+logger -t wps "WPS button pressed for fancontrol" 2>/dev/null || true
+
+SCRIPT="/usr/libexec/rpcd/luci.fancontrol"
+if [ -n "$FANCTRL_ROOT" ] && [ -f "${FANCTRL_ROOT}/usr/libexec/rpcd/luci.fancontrol" ]; then
+	SCRIPT="${FANCTRL_ROOT}/usr/libexec/rpcd/luci.fancontrol"
+fi
+
+ucode "$SCRIPT" ctl wps >/dev/null
+exit $?

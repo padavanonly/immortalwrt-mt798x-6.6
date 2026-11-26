@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -23,7 +23,6 @@
 #include "warp_link_list.h"
 #include "warp_utility.h"
 
-
 #define POOL_ENTRY_NUMBER 2000
 #define MEM_HASH_SIZE	1024
 
@@ -37,7 +36,9 @@
 
 typedef struct _MEM_INFO_LIST_ENTRY {
 		DL_LIST mList;
+		DL_LIST cList;
 		u32 MemSize;
+		u32 cnt;
 		void *pMemAddr;
 		void *pCaller;
 } MEM_INFO_LIST_ENTRY;
@@ -64,6 +65,7 @@ typedef struct _FREE_LIST_POOL {
 
 typedef struct _MEM_INFO_LIST {
 	MEM_INFO_LIST_ENTRY pHead[MEM_HASH_SIZE];
+	MEM_INFO_LIST_ENTRY pHeadCal[MEM_HASH_SIZE];
 	spinlock_t Lock;
 	u32 EntryNumber;
 	u32 CurAlcSize;
@@ -92,37 +94,26 @@ static FREE_LIST_POOL FreeEntrylist;
 
 static inline MEM_INFO_LIST_ENTRY *GetEntryFromFreeList(MEM_INFO_LIST *MIList)
 {
-	MEM_INFO_LIST_ENTRY *pEntry = NULL;
-	MEM_INFO_LIST_ENTRY *pheadEntry = NULL;
-	FREE_LIST_POOL *pFreeEntrylist;
+	MEM_INFO_LIST_ENTRY *pEntry = 0;
+	MEM_INFO_LIST_ENTRY *pheadEntry = 0;
+	FREE_LIST_POOL *pFreeEntrylist = MIList->pFreeEntrylist;
 	unsigned long IrqFlags = 0;
 	u32 i;
-
-	if (MIList == NULL)
-		return NULL;
-
-	pFreeEntrylist = MIList->pFreeEntrylist;
-	if (pFreeEntrylist == NULL)
-		return NULL;
 
 	spin_lock_irqsave((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags);
 
 	if (DlListEmpty(&pFreeEntrylist->head.mList)) {
-		MEM_INFO_LIST_POOL *Pool = NULL;
-		MEM_INFO_LIST_POOL *pFreepool = NULL;
+		MEM_INFO_LIST_POOL *Pool = 0;
+		MEM_INFO_LIST_POOL *pFreepool = 0;
 
-		warp_dbg(WARP_DBG_ERR, "%s: allocated new pool\n", __func__);
 		Pool = kmalloc(sizeof(MEM_INFO_LIST_POOL), GFP_ATOMIC);
-		if (Pool == NULL)
-			goto err;
-
-		pFreepool = &pFreeEntrylist->Poolhead;
-		if (pFreepool == NULL)
-			goto err;
-
-		DlListAdd(&pFreepool->List, &Pool->List);
-		pheadEntry = &pFreeEntrylist->head;
-
+		if (Pool == NULL) {
+			warp_dbg(WARP_DBG_ERR, "%s: alloc fail, please check memory\n", __func__);
+		} else {
+			pFreepool = &pFreeEntrylist->Poolhead;
+			DlListAdd(&pFreepool->List, &Pool->List);
+			pheadEntry = &pFreeEntrylist->head;
+		}
 		for (i = 0; i < POOL_ENTRY_NUMBER; i++) {
 			pEntry = &Pool->Entry[i];
 			DlListAdd(&pheadEntry->mList, &pEntry->mList);
@@ -133,21 +124,14 @@ static inline MEM_INFO_LIST_ENTRY *GetEntryFromFreeList(MEM_INFO_LIST *MIList)
 
 	pheadEntry = &pFreeEntrylist->head;
 	pEntry = DlListFirst(&pheadEntry->mList, MEM_INFO_LIST_ENTRY, mList);
-	if (pEntry == NULL)
-		goto err;
-
-	DlListDel(&pEntry->mList);
-
 	if (pEntry != NULL)
+		DlListDel(&pEntry->mList);
+
+	if (pEntry != 0)
 		pFreeEntrylist->EntryNumber -= 1;
 
-	spin_unlock_irqrestore((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags);
+	spin_unlock_irqrestore((spinlock_t *)&pFreeEntrylist->Lock, (unsigned long)IrqFlags);
 	return pEntry;
-
-err:
-	spin_unlock_irqrestore((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags);
-	warp_dbg(WARP_DBG_ERR, "%s: some NULL pointer is happened\n", __func__);
-	return NULL;
 }
 
 static inline u32 HashF(void *pMemAddr)
@@ -171,6 +155,7 @@ static inline void PoolInit(void)
 		spin_lock_init((spinlock_t *)&FreeEntrylist.Lock);
 		DlListInit(&FreeEntrylist.Poolhead.List);
 		DlListInit(&FreeEntrylist.head.mList);
+		DlListInit(&FreeEntrylist.head.cList);
 	}
 
 	FreeEntrylist.MLlistCnt++;
@@ -195,12 +180,11 @@ static inline void MIListInit(MEM_INFO_LIST *MIList)
 {
 	u32 i;
 
-	if (MIList == NULL)
-		goto err;
-
-	for (i = 0; i < MEM_HASH_SIZE; i++)
+	for (i = 0; i < MEM_HASH_SIZE; i++) {
 		DlListInit(&MIList->pHead[i].mList);
-
+		DlListInit(&MIList->pHeadCal[i].cList);
+		MIList->pHeadCal[i].cnt = 0;
+	}
 	spin_lock_init((spinlock_t *)&MIList->Lock);
 	MIList->EntryNumber = 0;
 	MIList->CurAlcSize = 0;
@@ -214,13 +198,13 @@ static inline void MIListInit(MEM_INFO_LIST *MIList)
 		MEM_INFO_LIST_ENTRY *newEntry = 0;
 
 		Pool = kmalloc(sizeof(MEM_INFO_LIST_POOL), 0);
-                if (Pool == NULL)
-                        goto err;
-
-		pFreepool = &FreeEntrylist.Poolhead;
-		DlListAdd(&pFreepool->List, &Pool->List);
-		pEntry = &FreeEntrylist.head;
-
+		if (Pool == NULL) {
+			warp_dbg(WARP_DBG_ERR, "%s: alloc fail, please check memory\n", __func__);
+		} else {
+			pFreepool = &FreeEntrylist.Poolhead;
+			DlListAdd(&pFreepool->List, &Pool->List);
+			pEntry = &FreeEntrylist.head;
+		}
 		for (i = 0; i < POOL_ENTRY_NUMBER; i++) {
 			newEntry = &Pool->Entry[i];
 			DlListAdd(&pEntry->mList, &newEntry->mList);
@@ -230,11 +214,6 @@ static inline void MIListInit(MEM_INFO_LIST *MIList)
 	}
 
 	MIList->pFreeEntrylist = &FreeEntrylist;
-	return;
-
-err:
-	warp_dbg(WARP_DBG_ERR, "%s: some NULL pointer is happened\n", __func__);
-	return;
 }
 static inline void MIListExit(MEM_INFO_LIST *MIList)
 {
@@ -255,9 +234,13 @@ static inline void MIListExit(MEM_INFO_LIST *MIList)
 static inline void MIListAddHead(MEM_INFO_LIST *MIList, u32 Size, void *pMemAddr, void *pCaller)
 {
 	u32 Index = HashF(pMemAddr);
+	u32 CalIndex = HashF(pCaller);
 	unsigned long IrqFlags = 0;
 	MEM_INFO_LIST_ENTRY *pEntry = 0;
+	MEM_INFO_LIST_ENTRY *pCalEntry = 0;
 	MEM_INFO_LIST_ENTRY *pheadEntry = 0;
+	MEM_INFO_LIST_ENTRY *pheadCalEntry = 0;
+	u32 bFind = 0;
 
 	spin_lock_irqsave((spinlock_t *)&MIList->Lock, IrqFlags);
 	pEntry = GetEntryFromFreeList(MIList);
@@ -272,12 +255,30 @@ static inline void MIListAddHead(MEM_INFO_LIST *MIList, u32 Size, void *pMemAddr
 	pEntry->pMemAddr = pMemAddr;
 	pEntry->pCaller = pCaller;
 	pheadEntry = &MIList->pHead[Index];
+	pheadCalEntry = &MIList->pHeadCal[CalIndex];
 	DlListAdd(&pheadEntry->mList, &pEntry->mList);
 	MIList->EntryNumber++;
 	MIList->CurAlcSize += pEntry->MemSize;
+	pEntry->cnt = 0;
 
-		if (MIList->CurAlcSize > MIList->MaxAlcSize)
-			MIList->MaxAlcSize = MIList->CurAlcSize;
+	DlListInit(&pEntry->cList);
+	DlListForEach(pCalEntry, &pheadCalEntry->cList, MEM_INFO_LIST_ENTRY, cList) {
+		if (pCalEntry->pCaller == pCaller) {
+			pCalEntry->cnt++;
+			pCalEntry->MemSize += Size;
+			bFind = 1;
+			DlListAdd(&pCalEntry->cList, &pEntry->cList);
+			break;
+		}
+	}
+
+	if (!bFind) {
+		pEntry->cnt = 1;
+		DlListAdd(&pheadCalEntry->cList, &pEntry->cList);
+	}
+
+	if (MIList->CurAlcSize > MIList->MaxAlcSize)
+		MIList->MaxAlcSize = MIList->CurAlcSize;
 
 	spin_unlock_irqrestore((spinlock_t *)&MIList->Lock, (unsigned long)IrqFlags);
 
@@ -298,11 +299,40 @@ static inline MEM_INFO_LIST_ENTRY *MIListRemove(MEM_INFO_LIST *MIList, void *pMe
 	DlListForEachSafe(pEntry, pTmpEntry, &MIList->pHead[Index].mList,
 						MEM_INFO_LIST_ENTRY, mList) {
 		if (pEntry->pMemAddr == pMemAddr) {
+			u32 CalIndex = HashF(pEntry->pCaller);
+			MEM_INFO_LIST_ENTRY *pheadCalEntry = 0;
+			MEM_INFO_LIST_ENTRY *pCalEntry = 0;
+
 			find = 1;
 			DlListDel(&pEntry->mList);
 			MIList->EntryNumber--;
-			MIList->CurAlcSize -= pEntry->MemSize;
+
 			spin_lock_irqsave((spinlock_t *)&pFreeEntrylist->Lock, IrqFlags2);
+			pheadCalEntry = &MIList->pHeadCal[CalIndex];
+
+			DlListForEach(pCalEntry, &pheadCalEntry->cList,
+				MEM_INFO_LIST_ENTRY, cList) {
+				if (pCalEntry->pCaller == pEntry->pCaller) {
+					MEM_INFO_LIST_ENTRY *pCalEntryNext = 0;
+
+					pCalEntryNext = DlListFirst(&pCalEntry->cList,
+							MEM_INFO_LIST_ENTRY, cList);
+					if (pCalEntry == pEntry &&
+							pEntry->cnt > 1 &&
+							pCalEntryNext) {
+						MIList->CurAlcSize -= pCalEntryNext->MemSize;
+						pCalEntryNext->cnt = pCalEntry->cnt - 1;
+						pCalEntryNext->MemSize =
+							pEntry->MemSize - pCalEntryNext->MemSize;
+					} else {
+						MIList->CurAlcSize -= pEntry->MemSize;
+						pCalEntry->cnt--;
+						pCalEntry->MemSize -= pEntry->MemSize;
+					}
+					DlListDel(&pEntry->cList);
+					break;
+				}
+			}
 			pheadEntry = &pFreeEntrylist->head;
 			DlListAddTail(&pheadEntry->mList, &pEntry->mList);
 			pFreeEntrylist->EntryNumber += 1;
@@ -321,30 +351,27 @@ static inline MEM_INFO_LIST_ENTRY *MIListRemove(MEM_INFO_LIST *MIList, void *pMe
 }
 static inline void ShowMIList(MEM_INFO_LIST *MIList)
 {
-	u32 i, total = 0;
+	u32 i = 0;
 	MEM_INFO_LIST_ENTRY *pEntry = NULL;
 
+	for (i = 0; i < MEM_HASH_SIZE; i++) {
 
-for (i = 0; i < MEM_HASH_SIZE; i++) {
-	DlListForEach(pEntry, &MIList->pHead[i].mList, MEM_INFO_LIST_ENTRY, mList)
-			if (pEntry->MemSize == 0) {
-			warp_dbg(WARP_DBG_OFF, "%u: addr = %p, caller is %pS\n", ++total, pEntry->pMemAddr, pEntry->pCaller);
-				}
-			else {
-			warp_dbg(WARP_DBG_OFF, "%u: addr = %p, size = %u, caller is %pS\n", ++total, pEntry->pMemAddr, pEntry->MemSize, pEntry->pCaller);
-				}
-}
+		DlListForEach(pEntry, &MIList->pHeadCal[i].cList, MEM_INFO_LIST_ENTRY, cList)
+			if (pEntry->cnt)
+				warp_dbg(WARP_DBG_OFF, "cnt=%u  \t,size=%u   \t\t:%pS\n",
+						pEntry->cnt, pEntry->MemSize, pEntry->pCaller);
+	}
 
 	warp_dbg(WARP_DBG_OFF, "the number of allocated memory = %u\n", MIList->EntryNumber);
 	warp_dbg(WARP_DBG_OFF, "the number of free pool entry = %u\n", MIList->pFreeEntrylist->EntryNumber);
-
 }
 void MemInfoListInital(void);
 u32 ShowMemAllocInfo(void);
 u32 ShowPktAllocInfo(void);
 void MemInfoListExit(void);
 int warp_os_alloc_mem(unsigned char **mem, unsigned long size, u32 gfp);
-void warp_os_free_mem(	void *mem);
+void pkt_alloc_mem(unsigned long size, unsigned char *mem, void *pCaller);
+void warp_os_free_mem(void *mem);
 
 
 #endif

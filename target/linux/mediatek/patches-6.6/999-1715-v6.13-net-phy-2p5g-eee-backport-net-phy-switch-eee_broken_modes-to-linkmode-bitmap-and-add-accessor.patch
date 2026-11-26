@@ -92,7 +92,7 @@
  #ifdef CONFIG_LED_TRIGGER_PHY
  	struct phy_led_trigger *phy_led_triggers;
  	unsigned int phy_num_led_triggers;
-@@ -1289,6 +1288,16 @@ void of_set_phy_eee_broken(struct phy_de
+@@ -1286,6 +1285,16 @@ void of_set_phy_eee_broken(struct phy_de
  int phy_speed_down_core(struct phy_device *phydev);
  
  /**
@@ -109,27 +109,3 @@
   * phy_is_started - Convenience function to check whether PHY is started
   * @phydev: The phy_device struct
   */
---- a/drivers/net/ethernet/realtek/r8169_main.c
-+++ b/drivers/net/ethernet/realtek/r8169_main.c
-@@ -5269,8 +5269,8 @@ static int r8169_mdio_register(struct rtl8169_private *tp)
- 
- 	/* mimic behavior of r8125/r8126 vendor drivers */
- 	if (tp->mac_version == RTL_GIGA_MAC_VER_61)
--		tp->phydev->eee_broken_modes |= MDIO_EEE_2_5GT;
--	tp->phydev->eee_broken_modes |= MDIO_EEE_5GT;
-+		linkmode_set_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT, tp->phydev->eee_broken_modes);
-+	linkmode_set_bit(ETHTOOL_LINK_MODE_5000baseT_Full_BIT, tp->phydev->eee_broken_modes);
- 
- 	/* PHY will be woken up in rtl_open() */
- 	phy_suspend(tp->phydev);
---- a/drivers/net/phy/micrel.c
-+++ b/drivers/net/phy/micrel.c
-@@ -1886,7 +1886,7 @@ static int ksz9477_config_init(struct phy_device *phydev)
- 	 * in this switch shall be regarded as broken.
- 	 */
- 	if (phydev->dev_flags & MICREL_NO_EEE)
--		phydev->eee_broken_modes = -1;
-+		bitmap_fill(phydev->eee_broken_modes, __ETHTOOL_LINK_MODE_MASK_NBITS);
- 
- 	return kszphy_config_init(phydev);
- }

@@ -1,0 +1,14 @@
+{
+	"luci-app-mtk-qos": {
+		"description": "Grant UCI and RPC access for MediaTek NETSYS v3 4-Coprocessor Unified QoS",
+		"read": {
+			"ubus": {
+				"luci.mtk_qos": [ "getStatus", "getHints" ]
+			},
+			"uci": [ "mtk_qos" ]
+		},
+		"write": {
+			"uci": [ "mtk_qos" ]
+		}
+	}
+}

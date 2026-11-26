@@ -122,7 +122,7 @@
  
 --- a/drivers/net/phy/phy_device.c
 +++ b/drivers/net/phy/phy_device.c
-@@ -2909,6 +2909,34 @@ void phy_support_sym_pause(struct phy_de
+@@ -2911,6 +2911,34 @@ void phy_support_sym_pause(struct phy_de
  EXPORT_SYMBOL(phy_support_sym_pause);
  
  /**
@@ -194,7 +194,7 @@
  
  #ifdef CONFIG_LED_TRIGGER_PHY
  	struct phy_led_trigger *phy_led_triggers;
-@@ -2006,6 +2011,7 @@ void phy_remove_link_mode(struct phy_dev
+@@ -2003,6 +2008,7 @@ void phy_remove_link_mode(struct phy_dev
  void phy_advertise_supported(struct phy_device *phydev);
  void phy_support_sym_pause(struct phy_device *phydev);
  void phy_support_asym_pause(struct phy_device *phydev);

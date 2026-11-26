@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/phy/phy.h>
+
+/ {
+	fragment@0 {
+		target-path = "/soc/pcie@11280000";
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	/*
+	 * Enable 4 PCIe slots on MT7988a RFB. To enable the PCIe2 slot, use
+	 * only the P0 U2 port, as the P0 U3 port's serdes is shared with PCIe2
+	 */
+	fragment@1 {
+		target-path = "/soc/usb@11190000";
+		__overlay__ {
+			phys = <&xphyu2port0 PHY_TYPE_USB2>;
+			mediatek,u3p-dis-msk = <1>;
+			/*
+			 * The delete-property syntax isn't recognized in DTSO,
+			 * so 'mediatek, p0_speed_fixup' remains in the final DTS.
+			 * This property is specifically for USB U3 and doesn't
+			 * affect USB U2. It is intentionally retained to remind
+			 * users for future development.
+			 */
+			/delete-property/ mediatek,p0_speed_fixup;
+			status = "okay";
+		};
+	};
+};
+

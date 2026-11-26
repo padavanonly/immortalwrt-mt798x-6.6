@@ -499,8 +499,8 @@ define KernelPackage/phy-airoha-en8811h
   DEPENDS:=+airoha-en8811h-firmware +kmod-libphy
   KCONFIG:=CONFIG_AIR_EN8811H_PHY
   FILES:= \
-   $(LINUX_DIR)/drivers/net/phy/air_en8811h.ko
-  AUTOLOAD:=$(call AutoLoad,20,air_en8811h,1)
+   $(LINUX_DIR)/drivers/net/phy/air_en8811.ko
+  AUTOLOAD:=$(call AutoLoad,20,air_en8811,1)
 endef
 
 define KernelPackage/phy-airoha-en8811h/description
@@ -524,6 +524,23 @@ define KernelPackage/phy-aquantia/description
 endef
 
 $(eval $(call KernelPackage,phy-aquantia))
+
+
+define KernelPackage/phy-motorcomm
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Motorcomm Ethernet PHYs
+  DEPENDS:=+kmod-libphy
+  KCONFIG:=CONFIG_MOTORCOMM_PHY
+  FILES:=$(LINUX_DIR)/drivers/net/phy/motorcomm.ko
+  AUTOLOAD:=$(call AutoLoad,18,motorcomm,1)
+endef
+
+define KernelPackage/phy-motorcomm/description
+  Supports the Motorcomm 8511/8521/8531/8531S/8821 Ethernet PHYs
+endef
+
+$(eval $(call KernelPackage,phy-motorcomm))
+
 
 define KernelPackage/dsa
   SUBMENU:=$(NETWORK_DEVICES_MENU)
@@ -1078,7 +1095,7 @@ $(eval $(call KernelPackage,igb))
 define KernelPackage/igbvf
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Intel(R) 82576 Virtual Function Ethernet support
-  DEPENDS:=@PCI_SUPPORT @TARGET_x86 +kmod-i2c-core +kmod-i2c-algo-bit +kmod-ptp
+  DEPENDS:=@PCI_SUPPORT @(TARGET_loongarch64||TARGET_x86) +kmod-i2c-core +kmod-i2c-algo-bit +kmod-ptp
   KCONFIG:=CONFIG_IGBVF \
     CONFIG_IGB_HWMON=y \
     CONFIG_IGB_DCA=n
@@ -1845,7 +1862,7 @@ $(eval $(call KernelPackage,sfp))
 define KernelPackage/pcs-xpcs
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Synopsis DesignWare PCS driver
-  DEPENDS:=@(TARGET_x86_64||TARGET_armsr) +kmod-phylink
+  DEPENDS:=@(TARGET_armsr||TARGET_loongarch64||TARGET_x86_64) +kmod-phylink
   KCONFIG:=CONFIG_PCS_XPCS
   FILES:=$(LINUX_DIR)/drivers/net/pcs/pcs_xpcs.ko
   AUTOLOAD:=$(call AutoLoad,20,pcs_xpcs)
@@ -1857,7 +1874,7 @@ $(eval $(call KernelPackage,pcs-xpcs))
 define KernelPackage/stmmac-core
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Synopsis Ethernet Controller core (NXP,STMMicro,others)
-  DEPENDS:=@TARGET_x86_64||TARGET_armsr +kmod-pcs-xpcs +kmod-ptp
+  DEPENDS:=@(TARGET_armsr||TARGET_loongarch64||TARGET_x86_64) +kmod-pcs-xpcs +kmod-ptp
   KCONFIG:=CONFIG_STMMAC_ETH \
     CONFIG_STMMAC_SELFTESTS=n \
     CONFIG_STMMAC_PLATFORM \
@@ -1891,7 +1908,7 @@ $(eval $(call KernelPackage,igc))
 define KernelPackage/hinic
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Huawei Intelligent PCIE Network Interface Card support
-  DEPENDS:=@PCI_SUPPORT @TARGET_x86||TARGET_armsr_armv8
+  DEPENDS:=@PCI_SUPPORT @(TARGET_armsr_armv8||TARGET_loongarch64||TARGET_x86)
   FILES:=$(LINUX_DIR)/drivers/net/ethernet/huawei/hinic/hinic.ko
   KCONFIG:=CONFIG_HINIC
   AUTOLOAD:=$(call AutoProbe,hinic)
@@ -2092,7 +2109,7 @@ define KernelPackage/mediatek_hnat
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Mediatek HNAT module
   AUTOLOAD:=$(call AutoLoad,20,mtkhnat)
-  DEPENDS:=@TARGET_mediatek +kmod-nf-conntrack +wireless-tools +@KERNEL_WIRELESS_EXT
+  DEPENDS:=@(TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) +kmod-nf-conntrack +wireless-tools +@KERNEL_WIRELESS_EXT
   KCONFIG:= \
 	CONFIG_BRIDGE_NETFILTER=y \
 	CONFIG_NETFILTER_FAMILY_BRIDGE=y \
@@ -2106,3 +2123,20 @@ define KernelPackage/mediatek_hnat/description
 endef
 
 $(eval $(call KernelPackage,mediatek_hnat))
+
+
+define KernelPackage/enc28j60
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Microchip ENC28J60 SPI Ethernet driver
+  KCONFIG:=\
+    CONFIG_ENC28J60 \
+    CONFIG_ENC28J60_WRITEVERIFY=n
+  FILES:=$(LINUX_DIR)/drivers/net/ethernet/microchip/enc28j60.ko
+  AUTOLOAD:=$(call AutoProbe,enc28j60)
+endef
+
+define KernelPackage/enc28j60/description
+  Kernel module for Microchip ENC28J60 SPI Ethernet controller
+endef
+
+$(eval $(call KernelPackage,enc28j60))

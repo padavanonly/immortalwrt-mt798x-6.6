@@ -1,0 +1,56 @@
+diff -Naur a/switch_fun.c b/switch_fun.c
+--- a/switch_fun.c
++++ b/switch_fun.c
+@@ -19,12 +19,12 @@
+ 
+ #define leaky_bucket 0
+ 
+-static int getnext(char *src, int separator, char *dest)
++static int getnext(char *src, int separator, char *dest, size_t dest_size)
+ {
+ 	char *c;
+ 	int len;
+ 
+-	if ((src == NULL) || (dest == NULL))
++	if ((src == NULL) || (dest == NULL) || (dest_size == 0))
+ 		return -1;
+ 
+ 	c = strchr(src, separator);
+@@ -32,7 +32,10 @@
+ 		return -1;
+ 
+ 	len = c - src;
+-	strncpy(dest, src, len);
++	if (len < 0 || (size_t)len >= dest_size)
++		return -1;
++	if (len > 0)
++		memcpy(dest, src, (size_t)len);
+ 	dest[len] = '\0';
+ 	return len + 1;
+ }
+@@ -46,13 +49,13 @@
+ 	unsigned char c[4];
+ 
+ 	for (i = 0; i < 3; ++i) {
+-		if ((len = getnext(ptr, '.', buf)) == -1)
++		if ((len = getnext(ptr, '.', buf, sizeof(buf))) == -1)
+ 			return 1;
+ 		c[i] = atoi(buf);
+ 		ptr += len;
+ 	}
+ 	c[3] = atoi(ptr);
+-	*ip = (c[0] << 24) + (c[1] << 16) + (c[2] << 8) + c[3];
++	*ip = ((unsigned int)c[0] << 24) | ((unsigned int)c[1] << 16) | ((unsigned int)c[2] << 8) | (unsigned int)c[3];
+ 	return 0;
+ }
+ 
+@@ -66,8 +69,7 @@
+ 	c[1] = *(ptr + 1);
+ 	c[2] = *(ptr + 2);
+ 	c[3] = *(ptr + 3);
+-	/*sprintf(str, "%d.%d.%d.%d", c[0], c[1], c[2], c[3]);*/
+-	sprintf(str, "%d.%d.%d.%d", c[3], c[2], c[1], c[0]);
++	snprintf(str, 16, "%u.%u.%u.%u", c[3], c[2], c[1], c[0]);
+ }
+ 
+ int reg_read(unsigned int offset, unsigned int *value)

@@ -8,8 +8,6 @@
 /plugin/;
 
 / {
-	compatible = "mediatek,mt7987a", "mediatek,mt7987";
-
 	fragment@1 {
 		target = <&spi1>;
 		__overlay__ {

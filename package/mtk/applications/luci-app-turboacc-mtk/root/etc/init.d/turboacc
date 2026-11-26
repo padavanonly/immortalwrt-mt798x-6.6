@@ -1,133 +1,721 @@
 #!/bin/sh /etc/rc.common
 # Copyright (C) 2018 Lean <coolsnowwolf@gmail.com>
 # Copyright (C) 2019-2022 Tianling Shen <cnsztl@immortalwrt.org>
+# Copyright (C) 2024-2026 Refactored for OpenWrt 24.10 mt798x stability
 
 START=90
 STOP=10
 USE_PROCD=1
-start_service() {
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+resolve_hnat_path() {
+	if [ -n "${TURBOACC_HNAT_PATH:-}" ]; then
+		printf '%s\n' "$TURBOACC_HNAT_PATH"
+	elif [ -d "/sys/kernel/debug/hnat" ]; then
+		printf '/sys/kernel/debug/hnat\n'
+	elif [ -d "/sys/kernel/debug/mtk_ppe" ]; then
+		printf '/sys/kernel/debug/mtk_ppe\n'
+	else
+		printf '/sys/kernel/debug/hnat\n'
+	fi
+}
+
+module_loaded() {
+	local module
+	local sys_mod="${TURBOACC_SYS_MODULE:-/sys/module}"
+	for module in "$@"; do
+		[ -d "$sys_mod/$module" ] && return 0
+		lsmod 2>/dev/null | grep -q "^${module} " && return 0
+	done
+	return 1
+}
+
+try_modprobe() {
+	local module
+	for module in "$@"; do
+		modprobe "$module" 2>/dev/null && return 0
+	done
+	return 1
+}
+
+ensure_kmod_loaded() {
+	local mod
+	for mod in "$@"; do
+		if module_loaded "$mod" || try_modprobe "$mod"; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+hnat_module_loaded() {
+	module_loaded "mtkhnat" "mediatek_hnat"
+}
+
+load_hnat_module() {
+	try_modprobe "mtkhnat" "mediatek_hnat"
+}
+
+disable_hnat_runtime() {
+	local hnat_path="${1:-$(resolve_hnat_path)}"
+
+	[ -w "$hnat_path/hook_toggle" ] && echo "0" >"$hnat_path/hook_toggle" 2>/dev/null
+	[ -w "$hnat_path/hnat_setting" ] && echo "8 0" >"$hnat_path/hnat_setting" 2>/dev/null
+}
+
+wait_hnat_debugfs() {
+	local hnat_path="${1:-$(resolve_hnat_path)}"
+	local i
+
+	[ -n "${TURBOACC_HNAT_PATH:-}" ] && [ -d "$hnat_path" ] && return 0
+
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		[ -d "$hnat_path" ] && return 0
+		[ -d "/sys/kernel/debug/mtk_ppe" ] && return 0
+		sleep 0.2
+	done
+
+	return 1
+}
+
+# busybox-safe debugfs mount check; avoids `mountpoint -q` which may be absent
+ensure_debugfs() {
+	[ -n "${TURBOACC_HNAT_PATH:-}" ] && return 0
+	grep -q ' /sys/kernel/debug debugfs ' /proc/mounts 2>/dev/null && return 0
+	mkdir -p /sys/kernel/debug 2>/dev/null
+	mount -t debugfs none /sys/kernel/debug 2>/dev/null && return 0
+	logger -t turboacc "WARNING: cannot mount debugfs; HNAT runtime knobs may be absent"
+	return 1
+}
+
+# write a single decimal value to a debugfs knob with existence + writability guards
+hwrite() {
+	local path="$1"
+	local value="$2"
+	[ -n "$path" ] && [ -n "$value" ] || return 1
+	if [ -w "$path" ] && echo "$value" >"$path" 2>/dev/null; then
+		[ -n "${TURBOACC_HWRITE_LOG:-}" ] && printf '%s\n' "$value" >>"$TURBOACC_HWRITE_LOG" 2>/dev/null
+		return 0
+	fi
+	return 1
+}
+
+_uci_bool_enabled() {
+	# normalised check for UCI boolean: 1 / on / true / yes / enabled
+	case "${1:-0}" in
+	1|on|true|yes|enabled) return 0 ;;
+	esac
+	return 1
+}
+
+write_service_status() {
+	local state="$1"
+	local message="${2:-}"
+	local status_file="${TURBOACC_STATUS_FILE:-/var/run/turboacc.status}"
+	local tmp="${status_file}.tmp.$$"
+
+	message="$(printf '%s' "$message" | tr '\r\n' '  ')"
+	( umask 077; printf 'state=%s\nmessage=%s\n' "$state" "$message" >"$tmp" && mv "$tmp" "$status_file" ) || {
+		rm -f "$tmp"
+		logger -t turboacc "WARNING: cannot update service status at $status_file"
+		return 1
+	}
+}
+
+turboacc_error() {
+	TURBOACC_START_ERROR="$1"
+	logger -t turboacc "ERROR: $1"
+}
+
+has_nft_fullcone() {
+	local mod_sysfs="${TURBOACC_NFT_FULLCONE_SYSFS:-${TURBOACC_SYS_MODULE:-/sys/module}/nft_fullcone}"
+	local mod_dir="${TURBOACC_MODULES_DIR:-/lib/modules/$(uname -r)}"
+	local ext
+
+	[ -d "$mod_sysfs" ] && return 0
+	for ext in .ko .ko.gz .ko.xz .ko.zst; do
+		[ -e "$mod_dir/nft_fullcone$ext" ] && return 0
+	done
+	return 1
+}
+
+nft_fullcone_active() {
+	local mod_sysfs="${TURBOACC_NFT_FULLCONE_SYSFS:-${TURBOACC_SYS_MODULE:-/sys/module}/nft_fullcone}"
+	local refcnt
+
+	if [ -r "$mod_sysfs/refcnt" ]; then
+		refcnt="$(tr -d ' \t\r\n' <"$mod_sysfs/refcnt" 2>/dev/null)"
+		[ -n "$refcnt" ] && [ "$refcnt" != "0" ] && return 0
+		return 1
+	fi
+
+	[ -d "$mod_sysfs" ]
+}
+
+wait_nft_fullcone_inactive() {
+	local retries="${TURBOACC_WAIT_RETRIES:-30}"
+	local wait_sleep="${TURBOACC_WAIT_SLEEP:-0.1}"
+	local i=0
+
+	while [ "$i" -lt "$retries" ]; do
+		nft_fullcone_active || return 0
+		sleep "$wait_sleep" 2>/dev/null || sleep 1
+		i=$((i + 1))
+	done
+
+	! nft_fullcone_active
+}
+
+sync_fw4_defaults() {
+	local want_sw="$1"
+	local want_fc="$2"
+	local want_fc6="${3:-0}"
+	local force_reload="${4:-0}"
+	local uci_bin="${TURBOACC_UCI:-uci}"
+	local fw_init="${TURBOACC_FW_INIT:-/etc/init.d/firewall}"
+	local reload_pending="${TURBOACC_FW4_RELOAD_PENDING_FILE:-/var/run/turboacc-fw4-reload}"
+	local fw4_state="${TURBOACC_FW4_STATE_FILE:-/var/run/fw4.state}"
+	local pending cur_sw cur_hw cur_fc cur_fc6 changed=0 reload_rc delta_dir marker_created=0
+	local use_state_guard=0 fw_action="reload" fw_err=""
+	local fw_retries="${TURBOACC_FW_RELOAD_RETRIES:-1}"
+	local fw_sleep="${TURBOACC_FW_RELOAD_SLEEP:-1}"
+
+	case "$want_sw" in
+	0|1) ;;
+	*) turboacc_error "invalid software flowtable setting"; return 1 ;;
+	esac
+
+	case "$want_fc" in
+	0|1) ;;
+	*) turboacc_error "invalid fw4 fullcone setting"; return 1 ;;
+	esac
+
+	case "$want_fc6" in
+	0|1) ;;
+	*) turboacc_error "invalid fw4 fullcone6 setting"; return 1 ;;
+	esac
+
+	command -v "$uci_bin" >/dev/null 2>&1 || {
+		turboacc_error "uci command is unavailable; cannot configure fw4 defaults"
+		return 1
+	}
+
+	delta_dir="$(mktemp -d "${TURBOACC_UCI_TMPDIR:-/tmp}/turboacc-uci.XXXXXX" 2>/dev/null)" || {
+		turboacc_error "cannot create private fw4 UCI staging directory"
+		return 1
+	}
+	if ! "$uci_bin" -q -t "$delta_dir" get 'firewall.@defaults[0]' >/dev/null 2>&1; then
+		rm -rf "$delta_dir"
+		turboacc_error "fw4 defaults section is missing or unreadable"
+		return 1
+	fi
+
+	cur_sw="$("$uci_bin" -q -t "$delta_dir" get 'firewall.@defaults[0].flow_offloading' 2>/dev/null)" || cur_sw="0"
+	cur_hw="$("$uci_bin" -q -t "$delta_dir" get 'firewall.@defaults[0].flow_offloading_hw' 2>/dev/null)" || cur_hw="0"
+	cur_fc="$("$uci_bin" -q -t "$delta_dir" get 'firewall.@defaults[0].fullcone' 2>/dev/null)" || cur_fc="0"
+	cur_fc6="$("$uci_bin" -q -t "$delta_dir" get 'firewall.@defaults[0].fullcone6' 2>/dev/null)" || cur_fc6="0"
+	[ -n "$cur_sw" ] || cur_sw="0"
+	[ -n "$cur_hw" ] || cur_hw="0"
+	[ -n "$cur_fc" ] || cur_fc="0"
+	[ -n "$cur_fc6" ] || cur_fc6="0"
+
+	if [ "$cur_sw" != "$want_sw" ]; then
+		if ! "$uci_bin" -q -t "$delta_dir" set "firewall.@defaults[0].flow_offloading=$want_sw" >/dev/null 2>&1; then
+			rm -rf "$delta_dir"
+			turboacc_error "cannot stage fw4 flow_offloading=$want_sw"
+			return 1
+		fi
+		changed=1
+	fi
+	if [ "$cur_hw" != "0" ]; then
+		if ! "$uci_bin" -q -t "$delta_dir" set "firewall.@defaults[0].flow_offloading_hw=0" >/dev/null 2>&1; then
+			rm -rf "$delta_dir"
+			turboacc_error "cannot stage fw4 flow_offloading_hw=0"
+			return 1
+		fi
+		changed=1
+	fi
+	if [ "$cur_fc" != "$want_fc" ]; then
+		if ! "$uci_bin" -q -t "$delta_dir" set "firewall.@defaults[0].fullcone=$want_fc" >/dev/null 2>&1; then
+			rm -rf "$delta_dir"
+			turboacc_error "cannot stage fw4 fullcone=$want_fc"
+			return 1
+		fi
+		changed=1
+	fi
+	if [ "$cur_fc6" != "$want_fc6" ]; then
+		if ! "$uci_bin" -q -t "$delta_dir" set "firewall.@defaults[0].fullcone6=$want_fc6" >/dev/null 2>&1; then
+			rm -rf "$delta_dir"
+			turboacc_error "cannot stage fw4 fullcone6=$want_fc6"
+			return 1
+		fi
+		changed=1
+	fi
+
+	if [ "$changed" -eq 1 ]; then
+		if [ ! -e "$reload_pending" ]; then
+			if ! : >"$reload_pending" 2>/dev/null; then
+				rm -rf "$delta_dir"
+				turboacc_error "cannot record pending fw4 reload"
+				return 1
+			fi
+			marker_created=1
+		fi
+		# UCI -t writes to this private delta dir but still reads the shared
+		# default delta path. Only guard when we actually have defaults to commit.
+		pending="$("$uci_bin" -q changes firewall 2>/dev/null)" || {
+			rm -rf "$delta_dir"
+			[ "$marker_created" -eq 0 ] || rm -f "$reload_pending"
+			turboacc_error "cannot inspect pending firewall UCI changes before commit"
+			return 1
+		}
+		if [ -n "$pending" ]; then
+			rm -rf "$delta_dir"
+			[ "$marker_created" -eq 0 ] || rm -f "$reload_pending"
+			turboacc_error "firewall UCI has pre-existing staged changes; refusing to commit over them"
+			return 1
+		fi
+		if ! "$uci_bin" -q -t "$delta_dir" commit firewall >/dev/null 2>&1; then
+			rm -rf "$delta_dir"
+			[ "$marker_created" -eq 0 ] || rm -f "$reload_pending"
+			turboacc_error "cannot commit fw4 default settings"
+			return 1
+		fi
+	fi
+	rm -rf "$delta_dir"
+
+	[ "$changed" -eq 1 ] || [ -e "$reload_pending" ] || [ "$force_reload" -eq 1 ] || return 0
+	[ -x "$fw_init" ] || {
+		turboacc_error "fw4 reload script is unavailable; desired fw4 settings are saved"
+		return 1
+	}
+
+	if [ "$fw_init" = "/etc/init.d/firewall" ] || [ -n "${TURBOACC_FW4_STATE_FILE:-}" ]; then
+		use_state_guard=1
+	fi
+
+	if [ "$use_state_guard" -eq 1 ] && [ ! -f "$fw4_state" ]; then
+		fw_action="start"
+	fi
+
+	fw_err="$("$fw_init" "$fw_action" 2>&1 >/dev/null)"
+	reload_rc=$?
+	if [ "$reload_rc" -ne 0 ] && [ "$use_state_guard" -eq 1 ] && [ ! -f "$fw4_state" ] && [ "$fw_action" = "reload" ]; then
+		fw_action="start"
+		fw_err="$("$fw_init" start 2>&1 >/dev/null)"
+		reload_rc=$?
+	fi
+	if [ "$reload_rc" -ne 0 ] && [ "$fw_retries" -gt 0 ] && { [ "$fw_init" = "/etc/init.d/firewall" ] || [ -n "${TURBOACC_FW_RELOAD_RETRIES:-}" ]; }; then
+		sleep "$fw_sleep" 2>/dev/null || sleep 1
+		if [ "$use_state_guard" -eq 1 ] && [ ! -f "$fw4_state" ]; then
+			fw_action="start"
+		fi
+		fw_err="$("$fw_init" "$fw_action" 2>&1 >/dev/null)"
+		reload_rc=$?
+	fi
+
+	if [ "$reload_rc" -ne 0 ]; then
+		fw_err="$(printf '%s' "$fw_err" | awk 'NF {print; exit}')"
+		if [ -n "$fw_err" ]; then
+			turboacc_error "fw4 $fw_action failed (exit $reload_rc: $fw_err); desired fw4 settings are saved"
+		else
+			turboacc_error "fw4 $fw_action failed (exit $reload_rc); desired fw4 settings are saved"
+		fi
+		return 1
+	fi
+	rm -f "$reload_pending"
+	return 0
+}
+
+ensure_bcm_expect_max() {
+	local expect_max_file="${TURBOACC_EXPECT_MAX_FILE:-/proc/sys/net/netfilter/nf_conntrack_expect_max}"
+	local target_max="${TURBOACC_BCM_EXPECT_MAX:-4096}"
+	local cur_max
+
+	[ -r "$expect_max_file" ] && [ -w "$expect_max_file" ] || return 0
+	cur_max="$(tr -d ' \t\r\n' <"$expect_max_file" 2>/dev/null)"
+	case "$cur_max" in
+	''|*[!0-9]*) return 0 ;;
+	esac
+	if [ "$cur_max" -lt "$target_max" ]; then
+		echo "$target_max" >"$expect_max_file" 2>/dev/null || \
+			logger -t turboacc "WARNING: failed to raise $expect_max_file from $cur_max to $target_max"
+	fi
+	return 0
+}
+
+default_fullcone_mode() {
+	local nat_mode_file="${TURBOACC_NAT_MODE_FILE:-/proc/sys/net/netfilter/nf_conntrack_nat_mode}"
+	local mod_dir="${TURBOACC_MODULES_DIR:-/lib/modules/$(uname -r)}"
+	local mod_sysfs="${TURBOACC_SYS_MODULE:-/sys/module}"
+	local ext
+
+	if has_nft_fullcone; then
+		printf '1\n'
+		return 0
+	fi
+	if [ -e "$nat_mode_file" ]; then
+		printf '2\n'
+		return 0
+	fi
+	if [ -d "$mod_sysfs/xt_FULLCONENAT" ]; then
+		printf '1\n'
+		return 0
+	fi
+	for ext in .ko .ko.gz .ko.xz .ko.zst; do
+		if [ -e "$mod_dir/xt_FULLCONENAT$ext" ]; then
+			printf '1\n'
+			return 0
+		fi
+	done
+	printf '0\n'
+}
+
+# ---------------------------------------------------------------------------
+# procd lifecycle
+# ---------------------------------------------------------------------------
+stop_service() {
+	local hnat_path
+	local fc_sysfs="${TURBOACC_FAST_CLASSIFIER_SYSFS:-/sys/fast_classifier}"
+	local nat_mode_file="${TURBOACC_NAT_MODE_FILE:-/proc/sys/net/netfilter/nf_conntrack_nat_mode}"
+	local fw4_error=""
+
+	ensure_debugfs
+	hnat_path="$(resolve_hnat_path)"
+
+	# disable HNAT hook if still accessible
+	disable_hnat_runtime "$hnat_path"
+	sync_fw4_defaults "0" "0" "0" || fw4_error="$TURBOACC_START_ERROR"
+
+	# clean up fast_classifier / shortcut_fe_cm if loaded
+	if module_loaded "fast_classifier"; then
+		[ -w "$fc_sysfs/skip_to_bridge_ingress" ] && \
+			echo "0" >"$fc_sysfs/skip_to_bridge_ingress" 2>/dev/null
+		rm -f /dev/sfe_ipv6
+		rmmod "fast_classifier" 2>/dev/null
+	fi
+	if module_loaded "shortcut_fe_cm"; then
+		rmmod "shortcut_fe_cm" 2>/dev/null
+	fi
+
+	# restore fullcone to a safe default
+	if [ -w "$nat_mode_file" ]; then
+		echo "0" >"$nat_mode_file" 2>/dev/null
+	fi
+
+	# restore TCP CCA to cubic
+	sysctl -w net.ipv4.tcp_congestion_control=cubic >/dev/null 2>&1
+
+	logger -t turboacc "stopped"
+	if [ -n "$fw4_error" ]; then
+		write_service_status error "$fw4_error"
+		return 1
+	fi
+	write_service_status stopped ""
+}
+
+inital_conf() {
+	config_get fastpath "config" "fastpath" "none"
+	[ -n "$fastpath" ] || fastpath="none"
+
+	config_get_bool fastpath_mh_eth_hnat "config" "fastpath_mh_eth_hnat" "1"
+	local fastpath_mh_hnat_override
+	config_get fastpath_mh_hnat_override "config" "fastpath_mh_hnat" ""
+	if [ -n "$fastpath_mh_hnat_override" ]; then
+		config_get_bool fastpath_mh_eth_hnat "config" "fastpath_mh_hnat" "$fastpath_mh_eth_hnat"
+	fi
+}
+
+_start_service_impl() {
 	config_load "turboacc"
 
 	local fastpath
-	config_get fastpath "config" "fastpath"
+	local hnat_path
+	local fastpath_mh_eth_hnat="1"
+	local want_fw4_sw="0"
+	local fw4_rc=0
+	local fc_rc=0
+	inital_conf
 
-	if [ "$fastpath" != "fast_classifier" ] && lsmod | grep -q "fast_classifier"; then
-		echo "0" > "/sys/fast_classifier/skip_to_bridge_ingress" 2>"/dev/null"
-		rm -f "/dev/sfe_ipv6"
-		rmmod "fast_classifier" 2>"/dev/null"
-	fi
+	# ---------- debugfs (required for HNAT knobs) ----------
+	ensure_debugfs
+	hnat_path="$(resolve_hnat_path)"
 
-	if [ "$fastpath" != "shortcut_fe_cm" ] && lsmod | grep -q "shortcut_fe_cm"; then
-		rmmod "shortcut_fe_cm" 2>"/dev/null"
-	fi
-
-	if [ "$fastpath" != "mediatek_hnat" ] && lsmod | grep -q "mtkhnat"; then
-		echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
-	fi
-
+	# ---------- engine activation ----------
 	case "$fastpath" in
 	"fast_classifier")
-		local fastpath_fc_br fastpath_fc_ipv6
+		local fastpath_fc_br fastpath_fc_ipv6 fastpath_fc_pkts
 		config_get_bool fastpath_fc_br "config" "fastpath_fc_br" "0"
 		config_get_bool fastpath_fc_ipv6 "config" "fastpath_fc_ipv6" "0"
+		config_get fastpath_fc_pkts "config" "fastpath_fc_pkts" ""
 
-		lsmod | grep -q "fast_classifier" || modprobe "fast_classifier" 2>"/dev/null"
-		echo "$fastpath_fc_br" > "/sys/fast_classifier/skip_to_bridge_ingress" 2>"/dev/null"
+		if ! ensure_kmod_loaded "fast_classifier" "fast-classifier"; then
+			turboacc_error "fast_classifier module is not available; keeping existing HNAT state"
+			return 1
+		fi
+
+		if module_loaded "shortcut_fe_cm"; then
+			rmmod "shortcut_fe_cm" 2>/dev/null
+		fi
+
+		if hnat_module_loaded && [ -w "$hnat_path/hook_toggle" ]; then
+			disable_hnat_runtime "$hnat_path"
+		fi
+
+		local fc_sysfs="${TURBOACC_FAST_CLASSIFIER_SYSFS:-/sys/fast_classifier}"
+		if [ -d "$fc_sysfs" ]; then
+			if [ -w "$fc_sysfs/skip_to_bridge_ingress" ]; then
+				echo "$fastpath_fc_br" >"$fc_sysfs/skip_to_bridge_ingress" 2>/dev/null || {
+					turboacc_error "failed to write $fc_sysfs/skip_to_bridge_ingress"
+					return 1
+				}
+			fi
+			if [ -n "$fastpath_fc_pkts" ] && [ -w "$fc_sysfs/offload_at_pkts" ]; then
+				echo "$fastpath_fc_pkts" >"$fc_sysfs/offload_at_pkts" 2>/dev/null || {
+					turboacc_error "failed to write $fc_sysfs/offload_at_pkts"
+					return 1
+				}
+			fi
+		fi
+
 		if [ "$fastpath_fc_ipv6" -eq "1" ]; then
-			[ -e "/dev/sfe_ipv6" ] || mknod "/dev/sfe_ipv6" "c" "$(cat "/sys/sfe_ipv6/debug_dev")" "0"
+			[ -e "/dev/sfe_ipv6" ] || mknod "/dev/sfe_ipv6" c "$(cat "/sys/sfe_ipv6/debug_dev" 2>/dev/null)" 0 2>/dev/null
 		else
 			[ ! -e "/dev/sfe_ipv6" ] || rm -f "/dev/sfe_ipv6"
 		fi
+		logger -t turboacc "engine=fast_classifier br=$fastpath_fc_br v6=$fastpath_fc_ipv6"
 		;;
 	"shortcut_fe_cm")
-		lsmod |grep -q "shortcut_fe_cm" || modprobe "shortcut_fe_cm" 2>"/dev/null"
+		if ! ensure_kmod_loaded "shortcut_fe_cm" "shortcut-fe-cm"; then
+			turboacc_error "shortcut_fe_cm module is not available; keeping existing HNAT state"
+			return 1
+		fi
+
+		local fc_sysfs="${TURBOACC_FAST_CLASSIFIER_SYSFS:-/sys/fast_classifier}"
+		if module_loaded "fast_classifier"; then
+			echo "0" >"$fc_sysfs/skip_to_bridge_ingress" 2>/dev/null
+			rm -f "/dev/sfe_ipv6"
+			rmmod "fast_classifier" 2>/dev/null
+		fi
+
+		if hnat_module_loaded && [ -w "$hnat_path/hook_toggle" ]; then
+			disable_hnat_runtime "$hnat_path"
+		fi
+
+		logger -t turboacc "engine=shortcut_fe_cm"
 		;;
 	"mediatek_hnat")
-		local fastpath_mh_eth_hnat
-		local hnat_path="/sys/kernel/debug/hnat"
-
-		config_get_bool "fastpath_mh_eth_hnat" "config" "fastpath_mh_eth_hnat" "1"
-		echo 1 > "$hnat_path/hook_toggle"
-		echo 0 > "$hnat_path/hook_toggle"
-		echo "$fastpath_mh_eth_hnat" > "$hnat_path/hook_toggle"
-
-		if [ "$fastpath_mh_eth_hnat" -eq "1" ]; then
-			local fastpath_mh_eth_hnat_v6 fastpath_mh_eth_hnat_ap fastpath_mh_eth_hnat_bind_rate
-
-			config_get_bool "fastpath_mh_eth_hnat_v6" "config" "fastpath_mh_eth_hnat_v6" "1"
-			echo "8 $fastpath_mh_eth_hnat_v6" > "$hnat_path/hnat_setting"
-
-			config_get "fastpath_mh_eth_hnat_bind_rate" "config" "fastpath_mh_eth_hnat_bind_rate" "30"
-			echo "11 $fastpath_mh_eth_hnat_bind_rate" > "$hnat_path/hnat_setting"
-
-			config_get "fastpath_mh_eth_hnat_ap" "config" "fastpath_mh_eth_hnat_ap" ""
+		local fc_sysfs="${TURBOACC_FAST_CLASSIFIER_SYSFS:-/sys/fast_classifier}"
+		if module_loaded "fast_classifier"; then
+			echo "0" >"$fc_sysfs/skip_to_bridge_ingress" 2>/dev/null
+			rm -f "/dev/sfe_ipv6"
+			rmmod "fast_classifier" 2>/dev/null
 		fi
+		if module_loaded "shortcut_fe_cm"; then
+			rmmod "shortcut_fe_cm" 2>/dev/null
+		fi
+
+		if ! hnat_module_loaded; then
+			if ! (try_modprobe "mtkhnat" || try_modprobe "mediatek_hnat"); then
+				turboacc_error "cannot load mtkhnat/mediatek_hnat module"
+				return 1
+			fi
+		fi
+
+		ensure_debugfs
+		wait_hnat_debugfs "$hnat_path" || \
+			logger -t turboacc "WARNING: $hnat_path not present after loading HNAT module"
+		hnat_path="$(resolve_hnat_path)"
+
+		# hook_toggle: 1=enable global HNAT & WHNAT hooks, 0=disable
+		if [ ! -w "$hnat_path/hook_toggle" ]; then
+			turboacc_error "MediaTek HNAT debugfs hook_toggle is not available"
+			return 1
+		fi
+
+		if ! echo "$fastpath_mh_eth_hnat" >"$hnat_path/hook_toggle" 2>/dev/null; then
+			turboacc_error "failed to write MediaTek HNAT hook_toggle"
+			return 1
+		fi
+
+		if _uci_bool_enabled "$fastpath_mh_eth_hnat"; then
+			local fastpath_mh_eth_hnat_v6 fastpath_mh_eth_hnat_bind_rate fastpath_mh_sw_fallback
+
+			config_get_bool fastpath_mh_eth_hnat_v6 "config" "fastpath_mh_eth_hnat_v6" "1"
+			config_get fastpath_mh_eth_hnat_bind_rate "config" "fastpath_mh_eth_hnat_bind_rate" "5"
+			case "$fastpath_mh_eth_hnat_bind_rate" in
+			''|*[!0-9]*) fastpath_mh_eth_hnat_bind_rate="5" ;;
+			*)
+				if [ "$fastpath_mh_eth_hnat_bind_rate" -lt 1 ] || [ "$fastpath_mh_eth_hnat_bind_rate" -gt 30 ]; then
+					fastpath_mh_eth_hnat_bind_rate="5"
+				fi
+				;;
+			esac
+			config_get_bool fastpath_mh_sw_fallback "config" "fastpath_mh_sw_fallback" "1"
+
+			# hnat_setting: cmd 8 = IPv6 HNAT toggle, cmd 11 = bind rate threshold (single source of truth)
+			local bind_rate_log="$fastpath_mh_eth_hnat_bind_rate"
+			if [ -w "$hnat_path/hnat_setting" ]; then
+				hwrite "$hnat_path/hnat_setting" "8 $fastpath_mh_eth_hnat_v6" || {
+					turboacc_error "failed to write HNAT IPv6 setting"
+					return 1
+				}
+				hwrite "$hnat_path/hnat_setting" "11 $fastpath_mh_eth_hnat_bind_rate" || {
+					turboacc_error "failed to write HNAT bind-rate setting"
+					return 1
+				}
+			fi
+
+			if _uci_bool_enabled "$fastpath_mh_sw_fallback"; then
+				want_fw4_sw="1"
+			fi
+
+			logger -t turboacc "engine=mediatek_hnat eth=$fastpath_mh_eth_hnat v6=$fastpath_mh_eth_hnat_v6 bind_rate=$bind_rate_log sw_fallback=$fastpath_mh_sw_fallback"
+		else
+			if [ -w "$hnat_path/hnat_setting" ]; then
+				hwrite "$hnat_path/hnat_setting" "8 0" || {
+					turboacc_error "failed to disable HNAT IPv6 setting"
+					return 1
+				}
+			fi
+			logger -t turboacc "engine=mediatek_hnat eth=0 (Global HNAT/WHNAT hooks disabled by config)"
+		fi
+		;;
+	"none"|"disabled"|"")
+		local fc_sysfs="${TURBOACC_FAST_CLASSIFIER_SYSFS:-/sys/fast_classifier}"
+		if module_loaded "fast_classifier"; then
+			echo "0" >"$fc_sysfs/skip_to_bridge_ingress" 2>/dev/null
+			rm -f "/dev/sfe_ipv6"
+			rmmod "fast_classifier" 2>/dev/null
+		fi
+		if module_loaded "shortcut_fe_cm"; then
+			rmmod "shortcut_fe_cm" 2>/dev/null
+		fi
+		if hnat_module_loaded && [ -w "$hnat_path/hook_toggle" ]; then
+			disable_hnat_runtime "$hnat_path"
+		fi
+		logger -t turboacc "engine=none (no fastpath selected)"
+		;;
+	*)
+		turboacc_error "unsupported fastpath; keeping existing HNAT state"
+		return 1
 		;;
 	esac
 
-	local fullcone
-	config_get "fullcone" "config" "fullcone" "2"
-	echo "$fullcone" > /proc/sys/net/netfilter/nf_conntrack_nat_mode
+	# ---------- fullcone NAT ----------
+	local fullcone fullcone6 want_fw4_fc="0" want_fw4_fc6="0"
+	local nat_mode_file="${TURBOACC_NAT_MODE_FILE:-/proc/sys/net/netfilter/nf_conntrack_nat_mode}"
+	config_get fullcone "config" "fullcone" "$(default_fullcone_mode)"
+	config_get_bool fullcone6 "config" "fullcone6" "0"
 
+	case "$fullcone" in
+	"1")
+		if [ -w "$nat_mode_file" ] && ! echo "0" >"$nat_mode_file" 2>/dev/null; then
+			turboacc_error "failed to disable BCM Full Cone sysctl before enabling NFT Full Cone NAT"
+			fc_rc=1
+			want_fw4_fc="0"
+			want_fw4_fc6="0"
+		fi
+		if [ "$fc_rc" -eq 0 ]; then
+			if has_nft_fullcone; then
+				want_fw4_fc="1"
+				[ "$fullcone6" -eq 1 ] && want_fw4_fc6="1"
+			else
+				turboacc_error "nft_fullcone module is not available; cannot enable NFT Full Cone NAT"
+				fc_rc=1
+				want_fw4_fc="0"
+				want_fw4_fc6="0"
+			fi
+		fi
+		sync_fw4_defaults "$want_fw4_sw" "$want_fw4_fc" "$want_fw4_fc6" || fw4_rc=$?
+		if [ "$fw4_rc" -eq 0 ] && [ "$want_fw4_fc" = "1" ] && ! nft_fullcone_active; then
+			sync_fw4_defaults "$want_fw4_sw" "1" "$want_fw4_fc6" "1" || fw4_rc=$?
+		fi
+		;;
+	"2")
+		sync_fw4_defaults "$want_fw4_sw" "0" "0" || fw4_rc=$?
+		if [ "$fw4_rc" -eq 0 ] && nft_fullcone_active; then
+			sync_fw4_defaults "$want_fw4_sw" "0" "0" "1" || fw4_rc=$?
+		fi
+		if [ "$fw4_rc" -eq 0 ]; then
+			wait_nft_fullcone_inactive
+		fi
+		if [ "$fw4_rc" -ne 0 ] || nft_fullcone_active; then
+			[ -w "$nat_mode_file" ] && echo "0" >"$nat_mode_file" 2>/dev/null
+			if [ "$fw4_rc" -eq 0 ]; then
+				turboacc_error "nft_fullcone is still active; refusing to enable BCM Full Cone NAT"
+				fc_rc=1
+			fi
+		elif [ -w "$nat_mode_file" ]; then
+			if ! echo "1" >"$nat_mode_file" 2>/dev/null; then
+				turboacc_error "failed to write nf_conntrack_nat_mode=1"
+				fc_rc=1
+			else
+				ensure_bcm_expect_max
+			fi
+		else
+			turboacc_error "BCM Full Cone sysctl is not available"
+			fc_rc=1
+		fi
+		;;
+	"0")
+		if [ -w "$nat_mode_file" ] && ! echo "0" >"$nat_mode_file" 2>/dev/null; then
+			logger -t turboacc "WARNING: failed to write $nat_mode_file=0"
+		fi
+		sync_fw4_defaults "$want_fw4_sw" "0" "0" || fw4_rc=$?
+		;;
+	*)
+		if [ -w "$nat_mode_file" ] && ! echo "0" >"$nat_mode_file" 2>/dev/null; then
+			logger -t turboacc "WARNING: failed to write $nat_mode_file=0"
+		fi
+		sync_fw4_defaults "$want_fw4_sw" "0" "0" || fw4_rc=$?
+		turboacc_error "unsupported fullcone mode: $fullcone"
+		fc_rc=1
+		;;
+	esac
+
+	# ---------- TCP CCA ----------
 	local tcpcca
-	config_get "tcpcca" "config" "tcpcca" "cubic"
-	sysctl -w net.ipv4.tcp_congestion_control="$tcpcca" >"/dev/null"
+	config_get tcpcca "config" "tcpcca" "cubic"
+	if [ -n "$tcpcca" ] && grep -qF "$tcpcca" /proc/sys/net/ipv4/tcp_available_congestion_control 2>/dev/null; then
+		sysctl -w "net.ipv4.tcp_congestion_control=$tcpcca" >/dev/null 2>&1 || \
+			logger -t turboacc "WARNING: failed to set tcp_congestion_control=$tcpcca"
+	else
+		logger -t turboacc "WARNING: tcpcca=$tcpcca not available, keeping current"
+	fi
 
-	uci -q commit "firewall"
-	/etc/init.d/firewall restart >"/dev/null" 2>&1
-	available_interfaces=""
-for iface in eth0 eth1 wan; do
-    if ifconfig $iface 2>&1 | grep -qv "error fetching interface information"; then
-        echo "$iface interface detected."
-        available_interfaces="$available_interfaces $iface"
-    else
-        echo "$iface interface not found."
-    fi
-done
+	[ "$fw4_rc" -eq 0 ] || return "$fw4_rc"
+	[ "$fc_rc" -eq 0 ] || return "$fc_rc"
+	if [ "$want_fw4_sw" = "1" ]; then
+		local vpn_hp="${TURBOACC_VPN_HOTPLUG:-/etc/hotplug.d/net/40-turboacc-vpn-flowtable}"
+		[ -x "$vpn_hp" ] && "$vpn_hp" sync >/dev/null 2>&1 || true
+	fi
+	logger -t turboacc "started (fastpath=$fastpath fullcone=$fullcone tcpcca=$tcpcca)"
+}
 
-    if echo "$fastpath_mh_eth_hnat_ap" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
-    echo "Valid IPv4 address detected: $fastpath_mh_eth_hnat_ap"
-    uci delete network.wan
-    uci delete network.wwan
-    uci delete network.wan6
+start_service() {
+	local rc
 
-    current_ports=$(uci get network.@device[0].ports)
-    echo "Current bridge ports: $current_ports"
+	TURBOACC_START_ERROR=""
+	write_service_status starting ""
+	_start_service_impl "$@"
+	rc=$?
 
-    new_ports="$current_ports"
-    for port in $available_interfaces; do
-        if echo "$current_ports" | grep -qw "$port"; then
-            echo "Port $port is already part of the bridge"
-        else
-            echo "Adding port $port to the bridge"
-            new_ports="$new_ports $port"
-        fi
-    done
+	if [ "$rc" -eq 0 ]; then
+		write_service_status ok ""
+	else
+		write_service_status error "${TURBOACC_START_ERROR:-TurboACC service start failed; see the system log}"
+	fi
 
-    uci set network.@device[0].ports="$new_ports"
-    uci set dhcp.lan.ignore=1
-    uci set network.lan.ipaddr="$fastpath_mh_eth_hnat_ap"
-    uci set wireless.wifinet1.network='lan'
-    uci set wireless.wifinet2.network='lan'
-    echo "Committing changes"
-    uci commit
-else
-    echo "Invalid IPv4 address: $fastpath_mh_eth_hnat_ap"
-fi
-    echo 4096 > /proc/sys/vm/min_free_kbytes
-    echo 3 > /proc/sys/vm/drop_caches
-    sed -i '/prefer-family/d' /etc/wgetrc
-    echo "prefer-family = IPv4" >> /etc/wgetrc
+	return "$rc"
 }
 
 reload_service() {
-        start
-}
-
-stop_service() {
-        stop
+	start_service "$@"
 }
 
 service_triggers() {
-        procd_add_reload_trigger "turboacc"
+	procd_add_reload_trigger "turboacc"
 }

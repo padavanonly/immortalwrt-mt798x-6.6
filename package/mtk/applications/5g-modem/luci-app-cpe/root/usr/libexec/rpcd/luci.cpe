@@ -1,0 +1,385 @@
+#!/usr/bin/env ucode
+// Copyright (C) 2026 ImmortalWrt.org
+// Native ucode rpcd backend for luci-app-cpe (status telemetry, AT execution, modem environment)
+
+'use strict';
+
+import * as fs from 'fs';
+
+const ROOT = getenv('CPE_ROOT') || '';
+const CELL_FILE = getenv('CPE_CELL_FILE') || (ROOT ? ROOT + '/tmp/cpe_cell.file' : '/tmp/cpe_cell.file');
+const RESULT_AT_FILE = getenv('CPE_RESULT_AT_FILE') || (ROOT ? ROOT + '/tmp/result.at' : '/tmp/result.at');
+const ATCMD_SH = getenv('CPE_ATCMD_SH') || (ROOT ? ROOT + '/usr/share/cpe/atcmd.sh' : '/usr/share/cpe/atcmd.sh');
+const DELATCMD_SH = getenv('CPE_DELATCMD_SH') || (ROOT ? ROOT + '/usr/share/cpe/delatcmd.sh' : '/usr/share/cpe/delatcmd.sh');
+const SENDAT_BIN = getenv('CPE_SENDAT_BIN') || '';
+const UCI_DIR = getenv('UCI_CONFIG_DIR') || (ROOT ? ROOT + '/etc/config' : '/etc/config');
+
+const SHELL_META_CHARS = [';', '&', '|', '$', '`', '<', '>', '\\', '\n', '\r', "'", '"', '(', ')'];
+
+function rpath(p) {
+	if (!p || substr(p, 0, 1) != '/')
+		return p;
+	if (ROOT != '' && substr(p, 0, length(ROOT)) != ROOT)
+		return ROOT + p;
+	return p;
+}
+
+function has_shell_meta(val) {
+	if (val == null)
+		return false;
+	if (type(val) != 'string')
+		return true;
+	for (let ch in SHELL_META_CHARS) {
+		if (index(val, ch) >= 0)
+			return true;
+	}
+	return false;
+}
+
+function is_valid_cpe_port(port) {
+	if (port == null)
+		return false;
+	let s = `${port}`;
+	if (s == '' || has_shell_meta(s) || index(s, '..') >= 0)
+		return false;
+	if (match(s, /^([0-9]|1[0-2])$/) != null)
+		return true;
+	if (match(s, /^ttyUSB([0-9]|1[0-2])$/) != null)
+		return true;
+	if (match(s, /^\/dev\/(ttyUSB|ttyACM|cdc-wdm|mhi_)[A-Za-z0-9._-]+$/) != null)
+		return true;
+	return false;
+}
+
+function normalize_port_index(port) {
+	let s = `${port}`;
+	if (match(s, /^([0-9]|1[0-2])$/) != null)
+		return s;
+	let m = match(s, /ttyUSB([0-9]|1[0-2])$/);
+	if (m)
+		return m[1];
+	return s;
+}
+
+function is_valid_at_cmd(cmd) {
+	if (type(cmd) != 'string')
+		return false;
+	let s = trim(cmd);
+	if (s == '' || length(s) > 200)
+		return false;
+	if (has_shell_meta(s) || index(s, '..') >= 0)
+		return false;
+	if (match(s, /^AT([+A-Za-z0-9?=,.*\/_-]*)$/i) == null)
+		return false;
+	return true;
+}
+
+function run_cmd(cmd) {
+	let pipe = fs.popen(cmd, 'r');
+	if (!pipe)
+		return '';
+	let out = pipe.read('all') || '';
+	pipe.close();
+	return out;
+}
+
+function read_cell_telemetry() {
+	let rv = {
+		code: 0,
+		modem: '-',
+		conntype: '-',
+		modid: '-',
+		cops: '-',
+		port: '-',
+		tempur: '-',
+		proto: '-',
+		imei: '-',
+		imsi: '-',
+		iccid: '-',
+		phone: '-',
+		mode: '-',
+		csq: '-',
+		per: '-',
+		rssi: '-',
+		ecio: '-',
+		ecio1: '-',
+		rscp: '-',
+		rscp1: '-',
+		sinr: '-',
+		netmode: '-',
+		mcc: '-',
+		mnc: '-',
+		rnc: '-',
+		rncn: '',
+		lac: '-',
+		lacn: '',
+		cid: '-',
+		cidn: '',
+		lband: '-',
+		channel: '-',
+		pci: '-',
+		date: '-',
+		down: '-',
+		up: '-',
+		lat: '-',
+		long: '-',
+		simerr: '0',
+		havegps: fs.stat(rpath('/etc/havegps')) ? 1 : 0,
+		nosms: fs.stat(rpath('/etc/nosim')) ? 1 : 0,
+		crate: 'Fast (every 10s)'
+	};
+
+	let raw = fs.readfile(CELL_FILE);
+	if (raw == null)
+		return rv;
+
+	let lines = split( replace(raw, /\r\n/g, '\n'), '\n' );
+	function line_at(idx) {
+		return (idx < length(lines)) ? lines[idx] : null;
+	}
+
+	rv.modem = line_at(0) ?? '-';
+	rv.conntype = line_at(1) ?? '-';
+	rv.modid = line_at(2) ?? '-';
+	rv.cops = line_at(3) ?? '-';
+	rv.port = line_at(4) ?? '-';
+	rv.tempur = line_at(5) ?? '-';
+	rv.proto = line_at(6) ?? '-';
+	// line 7 is separator
+
+	rv.imei = line_at(8) ?? '-';
+	rv.imsi = line_at(9) ?? '-';
+	rv.iccid = line_at(10) ?? '-';
+	rv.phone = line_at(11) ?? '-';
+	// line 12 is separator
+
+	rv.mode = line_at(13) ?? '-';
+	rv.csq = line_at(14) ?? '-';
+	rv.per = line_at(15) ?? '-';
+	rv.rssi = line_at(16) ?? '-';
+
+	let ecio = line_at(17);
+	let ecio1 = line_at(18);
+	let rscp = line_at(19);
+	let rscp1 = line_at(20);
+
+	rv.sinr = line_at(21) ?? '-';
+	rv.netmode = line_at(22) ?? '-';
+	// line 23 is separator
+
+	if (ecio == null || ecio == '')
+		ecio = '-';
+	if (ecio1 == null || ecio1 == '')
+		ecio1 = '-';
+	if (rscp == null || rscp == '')
+		rscp = '-';
+	if (rscp1 == null || rscp1 == '')
+		rscp1 = '-';
+
+	if (ecio != '-')
+		rv.ecio = (index(ecio, 'dB') >= 0) ? ecio : (ecio + ' dB');
+	else
+		rv.ecio = '-';
+
+	if (rscp != '-')
+		rv.rscp = (index(rscp, 'dBm') >= 0) ? rscp : (rscp + ' dBm');
+	else
+		rv.rscp = '-';
+
+	if (ecio1 != ' ' && ecio1 != '-')
+		rv.ecio1 = ' (' + ecio1 + ' dB)';
+	else
+		rv.ecio1 = ecio1;
+
+	if (rscp1 != ' ' && rscp1 != '-')
+		rv.rscp1 = ' (' + rscp1 + ' dBm)';
+	else
+		rv.rscp1 = rscp1;
+
+	rv.mcc = line_at(24) ?? '-';
+	rv.mnc = line_at(25) ?? '-';
+	rv.rnc = line_at(26) ?? '-';
+	rv.rncn = line_at(27) ?? '';
+	rv.lac = line_at(28) ?? '-';
+	rv.lacn = line_at(29) ?? '';
+	rv.cid = line_at(30) ?? '-';
+	rv.cidn = line_at(31) ?? '';
+	rv.lband = line_at(32) ?? '-';
+	rv.channel = line_at(33) ?? '-';
+	rv.pci = line_at(34) ?? '-';
+	rv.date = line_at(35) ?? '-';
+
+	return rv;
+}
+
+function execute_at(args) {
+	if (type(args) != 'object')
+		return { code: 1, error: 'Invalid parameter: object required' };
+
+	let raw_port = args.port ?? args.p ?? '';
+	let raw_cmd = args.command ?? args.set ?? args.at ?? '';
+
+	if (!is_valid_cpe_port(raw_port))
+		return { code: 1, error: 'Invalid parameter: port rejected by sanitizer' };
+
+	if (!is_valid_at_cmd(raw_cmd))
+		return { code: 1, error: 'Invalid parameter: AT command rejected by sanitizer' };
+
+	let port = normalize_port_index(raw_port);
+	let cmd = trim(raw_cmd);
+
+	let result_text = ' ';
+	if (SENDAT_BIN != '' && fs.access(SENDAT_BIN)) {
+		result_text = run_cmd(`"${SENDAT_BIN}" '${port}' '${cmd}' 2>/dev/null`);
+	}
+	else if (fs.access(ATCMD_SH)) {
+		run_cmd(`sh "${ATCMD_SH}" '${port}' '${cmd}' 2>/dev/null`);
+		let f_content = fs.readfile(RESULT_AT_FILE);
+		if (f_content != null)
+			result_text = f_content;
+		if (fs.access(DELATCMD_SH))
+			run_cmd(`sh "${DELATCMD_SH}" 2>/dev/null`);
+		else
+			fs.unlink(RESULT_AT_FILE);
+	}
+	else {
+		let out = run_cmd(`sendat '${port}' '${cmd}' 2>/dev/null`);
+		if (out != '')
+			result_text = out;
+	}
+
+	return {
+		code: 0,
+		port: port,
+		at: cmd,
+		result: result_text,
+		response: result_text
+	};
+}
+
+function get_modem_env() {
+	let lsusb_out = run_cmd('lsusb 2>/dev/null');
+	let is_fm650 = (index(lsusb_out, 'ID 2cb7:0a05 ') >= 0);
+
+	let dev_dir = rpath('/dev');
+	let entries = fs.lsdir(dev_dir) || [];
+	let devices = [];
+	for (let name in sort(entries)) {
+		if (match(name, /^cdc-wdm[0-9]+$/))
+			push(devices, '/dev/' + name);
+	}
+	if (length(devices) == 0)
+		push(devices, '/dev/cdc-wdm0');
+
+	return {
+		code: 0,
+		is_fm650: is_fm650,
+		devices: devices,
+		havegps: fs.stat(rpath('/etc/havegps')) ? 1 : 0,
+		nosms: fs.stat(rpath('/etc/nosim')) ? 1 : 0
+	};
+}
+
+const methods = {
+	get_csq: {
+		args: {},
+		call: function(args) {
+			print(sprintf('%J\n', read_cell_telemetry()));
+		}
+	},
+	action_get_csq: {
+		args: {},
+		call: function(args) {
+			print(sprintf('%J\n', read_cell_telemetry()));
+		}
+	},
+	get_status: {
+		args: {},
+		call: function(args) {
+			print(sprintf('%J\n', read_cell_telemetry()));
+		}
+	},
+	exec_at: {
+		args: { port: 'port', command: 'command', p: 'p', set: 'set' },
+		call: function(args) {
+			print(sprintf('%J\n', execute_at(args)));
+		}
+	},
+	send_atcmd: {
+		args: { port: 'port', command: 'command', p: 'p', set: 'set' },
+		call: function(args) {
+			print(sprintf('%J\n', execute_at(args)));
+		}
+	},
+	action_Write: {
+		args: { port: 'port', command: 'command', p: 'p', set: 'set' },
+		call: function(args) {
+			print(sprintf('%J\n', execute_at(args)));
+		}
+	},
+	get_modem_env: {
+		args: {},
+		call: function(args) {
+			print(sprintf('%J\n', get_modem_env()));
+		}
+	},
+	restart_modem: {
+		args: {},
+		call: function(args) {
+			let init_script = rpath('/etc/init.d/modem');
+			if (fs.access(init_script))
+				run_cmd(`"${init_script}" restart >/dev/null 2>&1`);
+			print(sprintf('%J\n', { code: 0, status: true }));
+		}
+	}
+};
+
+function parseInput() {
+	let raw = getenv('CPE_RPC_ARGS');
+	if (raw == null || raw == '') {
+		raw = '';
+		while (true) {
+			let chunk = fs.stdin.read(4096);
+			if (!chunk || chunk == '')
+				break;
+			raw += chunk;
+		}
+	}
+	if (trim(raw) == '')
+		return {};
+	try {
+		let parsed = json(raw);
+		if (type(parsed) != 'object')
+			return {};
+		delete parsed.ubus_rpc_session;
+		return parsed;
+	}
+	catch (e) {
+		print(sprintf('%J\n', { code: 1, error: `Invalid JSON input: ${e}` }));
+		exit(0);
+	}
+}
+
+let cmd = ARGV[0];
+if (cmd == 'list' || cmd == '-l') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+	exit(0);
+}
+else if (cmd == 'call' || cmd == '-c') {
+	let func = ARGV[1];
+	let method = methods[func];
+	if (!method) {
+		print(sprintf('%J\n', { code: 1, error: 'Method not found' }));
+		exit(1);
+	}
+	let args = parseInput();
+	method.call(args);
+	exit(0);
+}
+else {
+	print(sprintf('%J\n', { code: 1, error: 'Usage: luci.cpe list | call <method>' }));
+	exit(1);
+}

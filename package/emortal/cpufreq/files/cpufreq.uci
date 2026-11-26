@@ -10,11 +10,15 @@ uci_write_config() {
 }
 
 [ "$(uci -q get cpufreq.global.set)" -eq "1" ] && exit 0
+[ -r /sys/devices/system/cpu/cpufreq/policy0/scaling_available_frequencies ] || exit 0
 
 CPU_FREQS="$(cat '/sys/devices/system/cpu/cpufreq/policy0/scaling_available_frequencies')"
 CPU_MIN_FREQ="$(cat '/sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq')"
 CPU_MAX_FREQ="$(cat '/sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq')"
 CPU_POLICYS="$(find '/sys/devices/system/cpu/cpufreq/policy'* -maxdepth 0 | grep -Eo '[0-9]+')"
+CPUFREQ_BOARD_FILE="${CPUFREQ_BOARD_FILE:-/tmp/sysinfo/board_name}"
+BOARD_NAME=""
+[ -r "$CPUFREQ_BOARD_FILE" ] && BOARD_NAME="$(cat "$CPUFREQ_BOARD_FILE" 2>/dev/null)"
 
 source "/etc/openwrt_release"
 case "$DISTRIB_TARGET" in
@@ -32,6 +36,26 @@ case "$DISTRIB_TARGET" in
 		;;
 	"mediatek/mt7622")
 		uci_write_config 0 ondemand 600000 1350000 10 50
+		;;
+	"mediatek/filogic"|\
+	"mediatek/filogic_mtwifi"|\
+	"mediatek/filogic_hwifi"|\
+	"mediatek/filogic_hwifi_a73"|\
+	"mediatek/filogic_a73")
+		if [ "$DISTRIB_TARGET" = "mediatek/filogic_hwifi_a73" ] || [ "$DISTRIB_TARGET" = "mediatek/filogic_a73" ]; then
+			echo "$CPU_FREQS" | grep -qw "1100000" && CPU_MIN_FREQ="1100000"
+		else
+			case "$BOARD_NAME" in
+				"hiveton,h5000m")
+					echo "$CPU_FREQS" | grep -qw "1300000" && CPU_MIN_FREQ="1300000"
+					;;
+			esac
+		fi
+		if grep -qw "schedutil" /sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors 2>/dev/null; then
+			uci_write_config 0 schedutil "$CPU_MIN_FREQ" "$CPU_MAX_FREQ"
+		else
+			uci_write_config 0 ondemand "$CPU_MIN_FREQ" "$CPU_MAX_FREQ" 10 50
+		fi
 		;;
 	"qualcommax/ipq60xx"|\
 	"qualcommax/ipq807x")

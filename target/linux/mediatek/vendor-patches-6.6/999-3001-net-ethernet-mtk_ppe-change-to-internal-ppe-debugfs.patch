@@ -1,0 +1,127 @@
+From 40f8dc32e989cc7e1b130e6d22b66b1d1e892927 Mon Sep 17 00:00:00 2001
+From: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+Date: Tue, 17 Dec 2024 18:03:19 +0800
+Subject: [PATCH] net: ethernet: mtk_ppe: change to internal ppe debugfs
+
+Without this patch, users cannot get the Bind or Unbind entries
+with a single debug command.
+
+Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c   |  1 +
+ drivers/net/ethernet/mediatek/mtk_ppe.c       |  1 +
+ drivers/net/ethernet/mediatek/mtk_ppe.h       |  2 +
+ .../net/ethernet/mediatek/mtk_ppe_debugfs.c   | 60 +++++++++++++++++++
+ 4 files changed, 64 insertions(+)
+
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -6812,6 +6812,7 @@ static int mtk_probe(struct platform_dev
+ 			if (err)
+ 				goto err_deinit_ppe;
+ 		}
++		mtk_ppe_internal_debugfs_init(eth);
+ 	}
+ #endif
+ 
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.c
+@@ -905,6 +905,7 @@ struct mtk_ppe *mtk_ppe_init(struct mtk_
+ 	ppe->base = base;
+ 	ppe->eth = eth;
+ 	ppe->dev = dev;
++	ppe->index = index;
+ 	ppe->version = eth->soc->offload_version;
+ 	ppe->accounting = accounting;
+ 
+--- a/drivers/net/ethernet/mediatek/mtk_ppe.h
++++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
+@@ -326,6 +326,7 @@ struct mtk_ppe {
+ 	struct mtk_eth *eth;
+ 	struct device *dev;
+ 	void __iomem *base;
++	int index;
+ 	int version;
+ 	char dirname[5];
+ 	bool accounting;
+@@ -401,6 +402,7 @@ int mtk_foe_entry_set_queue(struct mtk_e
+ int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+ void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+ int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index);
++int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth);
+ void mtk_foe_entry_get_stats(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+ 			     int *idle);
+ 
+--- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
+@@ -125,6 +125,8 @@ mtk_ppe_debugfs_foe_show(struct seq_file
+ 			break;
+ 		}
+ 
++		seq_printf(m, " ppe=%d", ppe->index);
++
+ 		seq_printf(m, " orig=");
+ 		mtk_print_addr_info(m, &ai);
+ 
+@@ -192,3 +194,61 @@ int mtk_ppe_debugfs_init(struct mtk_ppe
+ 
+ 	return 0;
+ }
++
++static int
++mtk_ppe_internal_debugfs_foe_all_show(struct seq_file *m, void *private)
++{
++	struct mtk_eth *eth = m->private;
++	void *backup;
++	int i;
++
++	backup = m->private;
++	for (i = 0; i < eth->soc->ppe_num; i++) {
++		if (!eth->ppe[i])
++			continue;
++
++		m->private = eth->ppe[i];
++		mtk_ppe_debugfs_foe_show(m, private, false);
++	}
++	m->private = backup;
++
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(mtk_ppe_internal_debugfs_foe_all);
++
++static int
++mtk_ppe_internal_debugfs_foe_bind_show(struct seq_file *m, void *private)
++{
++	struct mtk_eth *eth = m->private;
++	void *backup;
++	int i;
++
++	backup = m->private;
++	for (i = 0; i < eth->soc->ppe_num; i++) {
++		if (!eth->ppe[i])
++			continue;
++
++		m->private = eth->ppe[i];
++		mtk_ppe_debugfs_foe_show(m, private, true);
++	}
++	m->private = backup;
++
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(mtk_ppe_internal_debugfs_foe_bind);
++
++int mtk_ppe_internal_debugfs_init(struct mtk_eth *eth)
++{
++	struct dentry *root;
++
++	root = debugfs_create_dir("mtk_ppe", NULL);
++	if (!root)
++		return -ENOMEM;
++
++	debugfs_create_file("entries", S_IRUGO, root, eth,
++			    &mtk_ppe_internal_debugfs_foe_all_fops);
++	debugfs_create_file("bind", S_IRUGO, root, eth,
++			    &mtk_ppe_internal_debugfs_foe_bind_fops);
++
++	return 0;
++}

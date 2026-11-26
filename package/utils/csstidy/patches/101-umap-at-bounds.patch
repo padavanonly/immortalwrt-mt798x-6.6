@@ -1,0 +1,30 @@
+--- a/csstidy/umap.hpp
++++ b/csstidy/umap.hpp
+@@ -17,10 +17,12 @@
+  *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
++#include <cstddef>
+ #include <cstdlib>
+ #include <iostream>
+ #include <string>
+ #include <vector>
++#include <stdexcept>
+ #include <map>
+ #include <algorithm>
+ #include <iterator>
+@@ -118,10 +120,10 @@
+ 
+ 		valT& at(int index)
+ 		{
+-			if(index < size() && index >= 0)
+-			{
+-				return sortv[index]->second;
+-			}
++			if (index < 0 || static_cast<std::size_t>(index) >= sortv.size())
++				throw std::out_of_range("umap::at");
++
++			return sortv[static_cast<std::size_t>(index)]->second;
+ 		}
+ 
+ 		// Iterator

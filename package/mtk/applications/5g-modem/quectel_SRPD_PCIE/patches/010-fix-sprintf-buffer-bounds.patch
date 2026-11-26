@@ -1,0 +1,66 @@
+diff -Naur a/pcie/pcie_host_resource.c b/pcie/pcie_host_resource.c
+--- a/pcie/pcie_host_resource.c
++++ b/pcie/pcie_host_resource.c
+@@ -540,7 +540,7 @@
+ 	INIT_WORK(&res->scan_work, sprd_pcie_resource_scan_fn);
+ 	INIT_WORK(&res->remove_work, sprd_pcie_resource_remove_fn);
+ 
+-	sprintf(res->pms_name, "ep-request-%d", dst);
++	snprintf(res->pms_name, sizeof(res->pms_name), "ep-request-%u", (unsigned int)dst & 0xffff);
+ 	res->pms = sprd_pms_create(dst, res->pms_name, false);
+ 	if (!res->pms)
+ 		pr_err("pcie res:create pms failed.\n");
+diff -Naur a/sipc/sblock.c b/sipc/sblock.c
+--- a/sipc/sblock.c
++++ b/sipc/sblock.c
+@@ -782,12 +782,12 @@
+ 
+ static void sblock_pms_init(uint8_t dst, uint8_t ch, struct sblock_ring *ring)
+ {
+-	sprintf(ring->tx_pms_name, "sblock-%d-%d-tx", dst, ch);
++	snprintf(ring->tx_pms_name, sizeof(ring->tx_pms_name), "sblock-%u-%u-tx", (unsigned int)dst & 0xff, (unsigned int)ch & 0xff);
+ 	ring->tx_pms = sprd_pms_create(dst, ring->tx_pms_name, true);
+ 	if (!ring->tx_pms)
+ 		pr_warn("create pms %s failed!\n", ring->tx_pms_name);
+ 
+-	sprintf(ring->rx_pms_name, "sblock-%d-%d-rx", dst, ch);
++	snprintf(ring->rx_pms_name, sizeof(ring->rx_pms_name), "sblock-%u-%u-rx", (unsigned int)dst & 0xff, (unsigned int)ch & 0xff);
+ 	ring->rx_pms = sprd_pms_create(dst, ring->rx_pms_name, true);
+ 	if (!ring->rx_pms)
+ 		pr_warn("create pms %s failed!\n", ring->rx_pms_name);
+diff -Naur a/sipc/sbuf.c b/sipc/sbuf.c
+--- a/sipc/sbuf.c
++++ b/sipc/sbuf.c
+@@ -266,12 +266,12 @@
+ 			  uint8_t dst, uint8_t ch, int index)
+ {
+ 	ring->need_wake_lock = true;
+-	sprintf(ring->tx_pms_name, "sbuf-%d-%d-%d-tx", dst, ch, index);
++	snprintf(ring->tx_pms_name, sizeof(ring->tx_pms_name), "sbuf-%u-%u-%u-tx", (unsigned int)dst & 0xff, (unsigned int)ch & 0xff, (unsigned int)index & 0xff);
+ 	ring->tx_pms = sprd_pms_create(dst, ring->tx_pms_name, false);
+ 	if (!ring->tx_pms)
+ 		pr_warn("create pms %s failed!\n", ring->tx_pms_name);
+ 
+-	sprintf(ring->rx_pms_name, "sbuf-%d-%d-%d-rx", dst, ch, index);
++	snprintf(ring->rx_pms_name, sizeof(ring->rx_pms_name), "sbuf-%u-%u-%u-rx", (unsigned int)dst & 0xff, (unsigned int)ch & 0xff, (unsigned int)index & 0xff);
+ 	ring->rx_pms = sprd_pms_create(dst, ring->rx_pms_name, false);
+ 	if (!ring->rx_pms)
+ 		pr_warn("create pms %s failed!\n", ring->rx_pms_name);
+diff -Naur a/sipc/smsg.c b/sipc/smsg.c
+--- a/sipc/smsg.c
++++ b/sipc/smsg.c
+@@ -606,12 +606,12 @@
+ 	if (!ch)
+ 		return -ENOMEM;
+ 
+-	sprintf(ch->tx_name, "smsg-%d-%d-tx", dst, channel);
++	snprintf(ch->tx_name, sizeof(ch->tx_name), "smsg-%u-%u-tx", (unsigned int)dst & 0xff, (unsigned int)channel & 0xff);
+ 	ch->tx_pms = sprd_pms_create(dst, ch->tx_name, true);
+ 	if (!ch->tx_pms)
+ 		pr_warn("create pms %s failed!\n", ch->tx_name);
+ 
+-	sprintf(ch->rx_name, "smsg-%d-%d-rx", dst, channel);
++	snprintf(ch->rx_name, sizeof(ch->rx_name), "smsg-%u-%u-rx", (unsigned int)dst & 0xff, (unsigned int)channel & 0xff);
+ 	ch->rx_pms = sprd_pms_create(dst, ch->rx_name, true);
+ 	if (!ch->rx_pms)
+ 		pr_warn("create pms %s failed!\n", ch->rx_name);

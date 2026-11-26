@@ -1,0 +1,61 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi: compile cold control TUs with -Os and fix gcc check
+
+Compile large cold control/ioctl/WSC/ATE/MCU-command translation units with
+-Os while keeping hot TX/RX/data-path units at -O2, and replace the broken
+expr CONFIG_GCC_VERSION check with cc-option. Retain -DDBG_ENHANCE so
+MTWF_DBG preserves structured log levels across mt_wifi builds.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/mt_wifi_ap/Makefile
++++ b/mt_wifi_ap/Makefile
+@@ -40,15 +40,8 @@
+ 
+ SRC_DIR = ../mt_wifi
+ 
+-ifneq ($(CONFIG_GCC_VERSION), )
+-ifeq ($(shell expr $(CONFIG_GCC_VERSION) \>= 8.4.0), 1)
+-# this option only have after 8.x.x
+-# workaround of bin compare on preflight will get the .rodata.str1.8 and it's abs path of __FILE__
+-# will false the compare due to build server folder is not the same
+-ccflags-y += -fmacro-prefix-map=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))=
++ccflags-y += $(call cc-option,-fmacro-prefix-map=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))=)
+ ccflags-y += $(call cc-option,-fstrict-flex-arrays=0)
+-endif
+-endif
+ 
+ SRC_EMBEDDED_DIR = ../mt_wifi/embedded
+ SERV_DIR = ../wlan_service
+@@ -3006,3 +2999,31 @@
+ MODULE_FLAGS=$(EXTRA_CFLAGS)
+ export MODULE_FLAGS
+ obj-m+=$(SRC_EMBEDDED_DIR)/plug_in/
++
++# Compile large cold control-plane, configuration, ioctl, ATE, WSC, and MCU command TUs with -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/ap/ap_cfg.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/cmm_info.o += -Os
++CFLAGS_$(SRC_DIR)/mcu/mt_cmd.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/cmm_cfg.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/cmm_profile.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/wsc.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/wsc_tlv.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/sr_cmd.o += -Os
++CFLAGS_$(SRC_DIR)/ate/mt_mac/mt_testmode.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/sta/sta_cfg.o += -Os
++CFLAGS_$(SRC_DIR)/ate/testmode_ioctl.o += -Os
++CFLAGS_$(SRC_DIR)/ate/ate_agent.o += -Os
++CFLAGS_$(SERV_DIR)/agent/agent.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/cmm_rdm_mt.o += -Os
++CFLAGS_$(SRC_DIR)/chips/mt7981_dbg.o += -Os
++CFLAGS_$(SRC_DIR)/chips/mt7986_dbg.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/ap/ap_vow.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/ap/ap_mumimo.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/ap/ap_muru.o += -Os
++CFLAGS_$(SRC_DIR)/mcu/fw_cmd.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/common/wnm.o += -Os
++CFLAGS_$(SRC_DIR)/os/linux/ap_ioctl.o += -Os
++CFLAGS_$(SRC_DIR)/os/linux/sta_ioctl.o += -Os
++CFLAGS_$(SRC_DIR)/os/linux/rt_profile.o += -Os
++CFLAGS_$(SRC_EMBEDDED_DIR)/../os/linux/cfg80211/cfg80211.o += -Os
++CFLAGS_$(SRC_DIR)/os/linux/cfg80211/cfg80211.o += -Os

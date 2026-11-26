@@ -5,7 +5,7 @@ define Package/airoha-en8811h-firmware/install
 		$(PKG_BUILD_DIR)/airoha/EthMD32.dm.bin \
 		$(PKG_BUILD_DIR)/airoha/EthMD32.DSP.bin \
 		$(1)/lib/firmware/airoha
-ifneq ($(CONFIG_TARGET_mediatek_filogic),)
+ifneq ($(filter y,$(CONFIG_TARGET_mediatek_filogic) $(CONFIG_TARGET_mediatek_filogic_mtwifi) $(CONFIG_TARGET_mediatek_filogic_hwifi) $(CONFIG_TARGET_mediatek_filogic_hwifi_a73) $(CONFIG_TARGET_mediatek_filogic_a73)),)
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 	cat \
 		$(PKG_BUILD_DIR)/airoha/EthMD32.dm.bin \

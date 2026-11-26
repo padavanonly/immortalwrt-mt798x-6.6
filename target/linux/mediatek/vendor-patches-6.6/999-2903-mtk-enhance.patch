@@ -1,0 +1,529 @@
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
+@@ -93,7 +93,10 @@
+ #include <net/xdp.h>
+ 
+ #include "bonding_priv.h"
+-
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++#include <linux/netfilter.h>
++#include <net/netfilter/nf_flow_table.h>
++#endif
+ /*---------------------------- Module parameters ----------------------------*/
+ 
+ /* monitor all links that often (in milliseconds). <=0 disables monitoring */
+@@ -4351,6 +4354,8 @@
+ 		if (bond->params.tlb_dynamic_lb || BOND_MODE(bond) == BOND_MODE_ALB)
+ 			queue_delayed_work(bond->wq, &bond->alb_work, 0);
+ 	}
++	if (BOND_MODE(bond) == BOND_MODE_8023AD && !bond->params.miimon)
++		bond->params.miimon = BOND_DEFAULT_MIIMON;
+ 
+ 	if (bond->params.miimon)  /* link check interval, in milliseconds. */
+ 		queue_delayed_work(bond->wq, &bond->mii_work, 0);
+@@ -5932,6 +5937,71 @@
+ 	dev_put(real_dev);
+ 	return ret;
+ }
++
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++static int bond_dev_flow_offload_check(struct flow_offload_hw_path *path)
++{
++	struct net_device *master_dev = path->dev;
++	struct bonding *bond = netdev_priv(master_dev);
++	struct net_device *slave_dev[10];
++	struct list_head *iter;
++	struct slave *slave;
++	int i = 0;
++
++	rcu_read_lock();
++	bond_for_each_slave_rcu(bond, slave, iter) {
++		if (!bond_slave_can_tx(slave))
++			continue;
++		slave_dev[i++] = slave->dev;
++		if (i >= ARRAY_SIZE(slave_dev))
++			break;
++	}
++	rcu_read_unlock();
++
++	if (i <= 0)
++		return -ENODEV;
++
++	i = ((path->skb_hash) >> 1) % i;
++	if (i >= 0 && i < ARRAY_SIZE(slave_dev)) {
++		if (path->virt_dev == master_dev)
++			path->virt_dev = slave_dev[i];
++		path->dev = slave_dev[i];
++	}
++
++	if (path->dev->netdev_ops->ndo_flow_offload_check)
++		return path->dev->netdev_ops->ndo_flow_offload_check(path);
++	return 0;
++}
++
++static int bond_fill_forward_path(struct net_device_path_ctx *ctx,
++				  struct net_device_path *path)
++{
++	struct net_device *master_dev = (struct net_device *)ctx->dev;
++	struct bonding *bond = netdev_priv(master_dev);
++	struct net_device *slave_dev[10];
++	struct list_head *iter;
++	struct slave *slave;
++	int i = 0;
++
++	rcu_read_lock();
++	bond_for_each_slave_rcu(bond, slave, iter) {
++		if (!bond_slave_can_tx(slave))
++			continue;
++		slave_dev[i++] = slave->dev;
++		if (i >= ARRAY_SIZE(slave_dev))
++			break;
++	}
++	rcu_read_unlock();
++
++	if (i <= 0)
++		return -ENODEV;
++
++	path->type = DEV_PATH_ETHERNET;
++	path->dev = ctx->dev;
++	ctx->dev = slave_dev[(ctx->daddr[5] ^ ctx->daddr[4]) % i];
++	return 0;
++}
++#endif /* CONFIG_NF_FLOW_TABLE */
+ 
+ static const struct ethtool_ops bond_ethtool_ops = {
+ 	.get_drvinfo		= bond_ethtool_get_drvinfo,
+@@ -5974,6 +6044,10 @@
+ 	.ndo_xdp_get_xmit_slave = bond_xdp_get_xmit_slave,
+ 	.ndo_hwtstamp_get	= bond_hwtstamp_get,
+ 	.ndo_hwtstamp_set	= bond_hwtstamp_set,
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++	.ndo_flow_offload_check = bond_dev_flow_offload_check,
++	.ndo_fill_forward_path	= bond_fill_forward_path,
++#endif
+ };
+ 
+ static const struct device_type bond_type = {
+--- a/drivers/net/bonding/bond_options.c
++++ b/drivers/net/bonding/bond_options.c
+@@ -1009,7 +1009,13 @@ static int bond_option_miimon_set(struct
+ {
+ 	netdev_dbg(bond->dev, "Setting MII monitoring interval to %llu\n",
+ 		   newval->value);
+-	bond->params.miimon = newval->value;
++	if (!newval->value && BOND_MODE(bond) == BOND_MODE_8023AD) {
++		netdev_dbg(bond->dev, "802.3ad mode requires MII monitoring, forcing miimon to %d ms\n",
++			   BOND_DEFAULT_MIIMON);
++		bond->params.miimon = BOND_DEFAULT_MIIMON;
++	} else {
++		bond->params.miimon = newval->value;
++	}
+ 	if (bond->params.updelay)
+ 		netdev_dbg(bond->dev, "Note: Updating updelay (to %d) since it is a multiple of the miimon value\n",
+ 			   bond->params.updelay * bond->params.miimon);
+@@ -1032,6 +1038,6 @@ static int bond_option_miimon_set(struct
+ 		 * is called.
+ 		 */
+-		if (!newval->value) {
++		if (!bond->params.miimon) {
+ 			cancel_delayed_work_sync(&bond->mii_work);
+ 		} else {
+ 			cancel_delayed_work_sync(&bond->arp_work);
+--- a/net/netfilter/nft_counter.c
++++ b/net/netfilter/nft_counter.c
+@@ -15,6 +15,74 @@
+ #include <net/netfilter/nf_tables.h>
+ #include <net/netfilter/nf_tables_core.h>
+ #include <net/netfilter/nf_tables_offload.h>
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_acct.h>
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 16;
++	u32 bssid : 8;
++	u32 usr_info : 16;
++	u32 tid : 4;
++	u32 is_fixedrate : 1;
++	u32 is_prior : 1;
++	u32 is_sp : 1;
++	u32 hf : 1;
++	u32 amsdu : 1;
++	u32 resv3 : 19;
++	u32 magic_tag_protect : 16;
++} __packed;
++#elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++	u32 resv5 : 20;
++	u32 magic_tag_protect : 16;
++} __packed;
++#else
++struct hnat_desc {
++	u32 entry : 14;
++	u32 crsn : 5;
++	u32 sport : 4;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 filled : 3;
++	u32 resv : 1;
++	u32 magic_tag_protect : 16;
++	u32 wdmaid : 8;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++} __packed;
++#endif
++#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
++#define HNAT_MAGIC_TAG 0x6789
++#define WIFI_INFO_LEN 6
++#define FOE_INFO_LEN (10 + WIFI_INFO_LEN)
++#define skb_hnat_reason(skb) (((struct hnat_desc *)((skb)->head))->crsn)
++#define skb_hnat_magic_tag(skb) (((struct hnat_desc *)((skb)->head))->magic_tag_protect)
++#define IS_SPACE_AVAILABLE_HEAD(skb) ((skb_headroom(skb) >= FOE_INFO_LEN) ? 1 : 0)
++#define is_hnat_valid(skb) (IS_SPACE_AVAILABLE_HEAD(skb) && (skb_hnat_magic_tag(skb) == HNAT_MAGIC_TAG))
++
+ 
+ struct nft_counter {
+ 	u64_stats_t	bytes;
+@@ -41,6 +109,24 @@
+ {
+ 	struct u64_stats_sync *nft_sync;
+ 	struct nft_counter *this_cpu;
++	struct nf_conn *ct;
++        struct nf_conn_acct *acct;
++        struct nf_conn_counter *conn_counter;
++        enum ip_conntrack_info ctinfo;
++	s64 bytes = 0;
++        s64 packets = 0;
++
++	if (unlikely(pkt->skb && is_hnat_valid(pkt->skb) && skb_hnat_reason(pkt->skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)){
++               ct = nf_ct_get(pkt->skb, &ctinfo);
++               if (ct) {
++                       acct = nf_conn_acct_find(ct);
++                       if (acct) {
++                       conn_counter = acct->counter;
++                       bytes = atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes);
++                       packets = atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets);
++                       }
++               }
++       }
+ 
+ 	local_bh_disable();
+ 	this_cpu = this_cpu_ptr(priv->counter);
+@@ -49,6 +135,8 @@
+ 	u64_stats_update_begin(nft_sync);
+ 	u64_stats_add(&this_cpu->bytes, pkt->skb->len);
+ 	u64_stats_inc(&this_cpu->packets);
++	u64_stats_add(&this_cpu->bytes, bytes);
++	u64_stats_add(&this_cpu->packets, packets);
+ 	u64_stats_update_end(nft_sync);
+ 
+ 	local_bh_enable();
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -196,6 +196,7 @@ struct flow_offload_hw_path {
+ 	u16 vlan_id;
+ 	u16 pppoe_sid;
+ 	u16 dsa_port;
++	u32 skb_hash;
+ };
+ 
+ #define NF_FLOW_TIMEOUT (30 * HZ)
+--- a/include/net/netfilter/nf_conntrack_acct.h
++++ b/include/net/netfilter/nf_conntrack_acct.h
+@@ -14,6 +14,8 @@
+ struct nf_conn_counter {
+ 	atomic64_t packets;
+ 	atomic64_t bytes;
++	atomic64_t diff_packets;
++	atomic64_t diff_bytes;
+ };
+ 
+ struct nf_conn_acct {
+--- a/net/ipv4/netfilter/ip_tables.c
++++ b/net/ipv4/netfilter/ip_tables.c
+@@ -26,6 +26,8 @@
+ #include <linux/netfilter_ipv4/ip_tables.h>
+ #include <net/netfilter/nf_log.h>
+ #include "../../netfilter/xt_repldata.h"
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_acct.h>
+ 
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
+@@ -271,6 +273,71 @@
+ 	return true;
+ }
+ 
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 16;
++	u32 bssid : 8;
++	u32 usr_info : 16;
++	u32 tid : 4;
++	u32 is_fixedrate : 1;
++	u32 is_prior : 1;
++	u32 is_sp : 1;
++	u32 hf : 1;
++	u32 amsdu : 1;
++	u32 resv3 : 19;
++	u32 magic_tag_protect : 16;
++} __packed;
++#elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++	u32 resv5 : 20;
++	u32 magic_tag_protect : 16;
++} __packed;
++#else
++struct hnat_desc {
++	u32 entry : 14;
++	u32 crsn : 5;
++	u32 sport : 4;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 filled : 3;
++	u32 resv : 1;
++	u32 magic_tag_protect : 16;
++	u32 wdmaid : 8;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++} __packed;
++#endif
++#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
++#define HNAT_MAGIC_TAG 0x6789
++#define WIFI_INFO_LEN 6
++#define FOE_INFO_LEN (10 + WIFI_INFO_LEN)
++#define skb_hnat_reason(skb) (((struct hnat_desc *)((skb)->head))->crsn)
++#define skb_hnat_magic_tag(skb) (((struct hnat_desc *)((skb)->head))->magic_tag_protect)
++#define IS_SPACE_AVAILABLE_HEAD(skb) ((skb_headroom(skb) >= FOE_INFO_LEN) ? 1 : 0)
++#define is_hnat_valid(skb) (IS_SPACE_AVAILABLE_HEAD(skb) && (skb_hnat_magic_tag(skb) == HNAT_MAGIC_TAG))
+ /* Returns one of the generic firewall policies, like NF_ACCEPT. */
+ unsigned int
+ ipt_do_table(void *priv,
+@@ -290,7 +357,12 @@
+ 	const struct xt_table_info *private;
+ 	struct xt_action_param acpar;
+ 	unsigned int addend;
+-
++	
++	struct nf_conn *ct;
++	struct nf_conn_acct *acct;
++	struct nf_conn_counter *conn_counter;
++	enum ip_conntrack_info ctinfo;
++	
+ 	/* Initialization */
+ 	WARN_ON(!(table->valid_hooks & (1 << hook)));
+ 	local_bh_disable();
+@@ -301,9 +373,22 @@
+ 	e = get_entry(table_base, private->hook_entry[hook]);
+ 	if (ipt_handle_default_rule(e, &verdict)) {
+ 		struct xt_counters *counter;
+-
+ 		counter = xt_get_this_cpu_counter(&e->counters);
+ 		ADD_COUNTER(*counter, skb->len, 1);
++		
++		if (unlikely(is_hnat_valid(skb) && skb_hnat_reason(skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)){
++		ct = nf_ct_get(skb, &ctinfo);
++		if (ct) {
++			acct = nf_conn_acct_find(ct);
++			if (acct) {
++			conn_counter = acct->counter;			
++			ADD_COUNTER(*counter, 		   	    
++ atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes),atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets));
++				  }
++			}
++		}
++
++			
+ 		local_bh_enable();
+ 		return verdict;
+ 	}
+@@ -359,6 +444,17 @@
+ 
+ 		counter = xt_get_this_cpu_counter(&e->counters);
+ 		ADD_COUNTER(*counter, skb->len, 1);
++		if (unlikely(is_hnat_valid(skb) && skb_hnat_reason(skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)){
++		ct = nf_ct_get(skb, &ctinfo);
++		if (ct) {
++			acct = nf_conn_acct_find(ct);
++			if (acct) {
++			conn_counter = acct->counter;			
++			ADD_COUNTER(*counter, 		   	    
++ atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes),atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets));
++				  }
++			}
++		}
+ 
+ 		t = ipt_get_target_c(e);
+ 		WARN_ON(!t->u.kernel.target);
+--- a/net/ipv6/netfilter/ip6_tables.c
++++ b/net/ipv6/netfilter/ip6_tables.c
+@@ -30,6 +30,8 @@
+ #include <linux/netfilter/x_tables.h>
+ #include <net/netfilter/nf_log.h>
+ #include "../../netfilter/xt_repldata.h"
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_acct.h>
+ 
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
+@@ -243,6 +245,71 @@
+ 	return (void *)entry + entry->next_offset;
+ }
+ 
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 16;
++	u32 bssid : 8;
++	u32 usr_info : 16;
++	u32 tid : 4;
++	u32 is_fixedrate : 1;
++	u32 is_prior : 1;
++	u32 is_sp : 1;
++	u32 hf : 1;
++	u32 amsdu : 1;
++	u32 resv3 : 19;
++	u32 magic_tag_protect : 16;
++} __packed;
++#elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++	u32 resv5 : 20;
++	u32 magic_tag_protect : 16;
++} __packed;
++#else
++struct hnat_desc {
++	u32 entry : 14;
++	u32 crsn : 5;
++	u32 sport : 4;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 filled : 3;
++	u32 resv : 1;
++	u32 magic_tag_protect : 16;
++	u32 wdmaid : 8;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++} __packed;
++#endif
++#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
++#define HNAT_MAGIC_TAG 0x6789
++#define WIFI_INFO_LEN 6
++#define FOE_INFO_LEN (10 + WIFI_INFO_LEN)
++#define skb_hnat_reason(skb) (((struct hnat_desc *)((skb)->head))->crsn)
++#define skb_hnat_magic_tag(skb) (((struct hnat_desc *)((skb)->head))->magic_tag_protect)
++#define IS_SPACE_AVAILABLE_HEAD(skb) ((skb_headroom(skb) >= FOE_INFO_LEN) ? 1 : 0)
++#define is_hnat_valid(skb) (IS_SPACE_AVAILABLE_HEAD(skb) && (skb_hnat_magic_tag(skb) == HNAT_MAGIC_TAG))
+ /* Returns one of the generic firewall policies, like NF_ACCEPT. */
+ unsigned int
+ ip6t_do_table(void *priv, struct sk_buff *skb,
+@@ -260,7 +327,12 @@
+ 	const struct xt_table_info *private;
+ 	struct xt_action_param acpar;
+ 	unsigned int addend;
+-
++	
++	struct nf_conn *ct;
++	struct nf_conn_acct *acct;
++	struct nf_conn_counter *conn_counter;
++	enum ip_conntrack_info ctinfo;
++	
+ 	/* Initialization */
+ 	stackidx = 0;
+ 	indev = state->in ? state->in->name : nulldevname;
+@@ -283,6 +355,7 @@
+ 	cpu        = smp_processor_id();
+ 	table_base = private->entries;
+ 	jumpstack  = (struct ip6t_entry **)private->jumpstack[cpu];
++	
+ 
+ 	/* Switch to alternate jumpstack if we're being invoked via TEE.
+ 	 * TEE issues XT_CONTINUE verdict on original skb so we must not
+@@ -319,7 +392,20 @@
+ 
+ 		counter = xt_get_this_cpu_counter(&e->counters);
+ 		ADD_COUNTER(*counter, skb->len, 1);
+-
++		
++		if (unlikely(is_hnat_valid(skb) && skb_hnat_reason(skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)){
++		ct = nf_ct_get(skb, &ctinfo);
++		if (ct) {
++			acct = nf_conn_acct_find(ct);
++			if (acct) {
++			conn_counter = acct->counter;			
++			ADD_COUNTER(*counter, 		   	    
++ atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes),atomic64_read(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets));
++				  }
++			}
++		}
++
++			
+ 		t = ip6t_get_target_c(e);
+ 		WARN_ON(!t->u.kernel.target);
+ 

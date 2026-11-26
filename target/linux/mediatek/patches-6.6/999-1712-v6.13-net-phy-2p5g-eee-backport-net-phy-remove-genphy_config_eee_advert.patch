@@ -20,7 +20,7 @@
   * genphy_c45_pma_baset1_read_abilities - read supported baset1 link modes from PMA
 --- a/drivers/net/phy/phy_device.c
 +++ b/drivers/net/phy/phy_device.c
-@@ -2180,29 +2180,6 @@ static int genphy_c37_config_advert(stru
+@@ -2182,29 +2182,6 @@ static int genphy_c37_config_advert(stru
  }
  
  /**
@@ -52,7 +52,7 @@
   *
 --- a/include/linux/phy.h
 +++ b/include/linux/phy.h
-@@ -1892,7 +1892,6 @@ int genphy_read_abilities(struct phy_dev
+@@ -1889,7 +1889,6 @@ int genphy_read_abilities(struct phy_dev
  int genphy_setup_forced(struct phy_device *phydev);
  int genphy_restart_aneg(struct phy_device *phydev);
  int genphy_check_and_restart_aneg(struct phy_device *phydev, bool restart);
@@ -60,7 +60,7 @@
  int __genphy_config_aneg(struct phy_device *phydev, bool changed);
  int genphy_aneg_done(struct phy_device *phydev);
  int genphy_update_link(struct phy_device *phydev);
-@@ -1960,7 +1959,6 @@ int genphy_c45_ethtool_get_eee(struct ph
+@@ -1957,7 +1956,6 @@ int genphy_c45_ethtool_get_eee(struct ph
  			       struct ethtool_keee *data);
  int genphy_c45_ethtool_set_eee(struct phy_device *phydev,
  			       struct ethtool_keee *data);

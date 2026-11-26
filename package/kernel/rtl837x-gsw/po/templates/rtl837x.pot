@@ -1,0 +1,122 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "-"
+msgstr ""
+
+msgid "Full"
+msgstr ""
+
+msgid "Half"
+msgstr ""
+
+msgid "Empty / Not Present"
+msgstr ""
+
+msgid "Generic"
+msgstr ""
+
+msgid "Vendor"
+msgstr ""
+
+msgid "Part Number"
+msgstr ""
+
+msgid "Serial"
+msgstr ""
+
+msgid "DDM Optical Diagnostics"
+msgstr ""
+
+msgid "Temperature"
+msgstr ""
+
+msgid "Supply Voltage"
+msgstr ""
+
+msgid "TX Bias Current"
+msgstr ""
+
+msgid "TX Optical Power"
+msgstr ""
+
+msgid "RX Optical Power"
+msgstr ""
+
+msgid "DDM"
+msgstr ""
+
+msgid "Passive DAC or Non-DDM module"
+msgstr ""
+
+msgid "DAC / Non-DDM"
+msgstr ""
+
+msgid "RTL8372 Switch & SFP Status"
+msgstr ""
+
+msgid "Switch Chip: "
+msgstr ""
+
+msgid "CPU Port: "
+msgstr ""
+
+msgid "IGMP Snooping: "
+msgstr ""
+
+msgid "Active"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "IGMP Fast Leave: "
+msgstr ""
+
+msgid "Port"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Speed / Duplex"
+msgstr ""
+
+msgid "MTU"
+msgstr ""
+
+msgid "Port Information & SFP DDM Sensors"
+msgstr ""
+
+msgid "Link Up"
+msgstr ""
+
+msgid "Link Down"
+msgstr ""
+
+msgid "Internal CPU SerDes Interconnect"
+msgstr ""
+
+msgid "Copper (2.5G Base-T)"
+msgstr ""
+
+msgid "EEE On"
+msgstr ""
+
+msgid "EEE Off"
+msgstr ""
+
+msgid "STP Fwd"
+msgstr ""
+
+msgid "STP Block"
+msgstr ""
+
+msgid "Storm Filter"
+msgstr ""
+
+msgid "Isolated"
+msgstr ""

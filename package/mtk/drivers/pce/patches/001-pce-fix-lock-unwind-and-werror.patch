@@ -1,0 +1,117 @@
+diff -uNr /tmp/b37_pce_a/cdrt.c /tmp/b37_pce_b/cdrt.c
+--- a/cdrt.c	2026-09-18 10:18:56.492055502 +0800
++++ b/cdrt.c	2026-11-18 23:15:20.657859791 +0800
+@@ -120,7 +120,7 @@
+ 
+ struct cdrt_entry *mtk_pce_cdrt_entry_find(u32 cdrt_idx)
+ {
+-	struct cdrt_entry *cdrt;
++	struct cdrt_entry *cdrt = ERR_PTR(-ENODEV);
+ 	unsigned long flag;
+ 	u32 idx;
+ 
+@@ -131,16 +131,12 @@
+ 
+ 	if (cdrt_idx < CDRT_DEC_IDX_OFS + CDRT_DEC_MAX_ENTRY) {
+ 		idx = cdrt_idx - CDRT_DEC_IDX_OFS;
+-		if (!test_bit(idx, cdrt_hw.dec_used))
+-			return ERR_PTR(-ENODEV);
+-
+-		cdrt = &cdrt_hw.dec_tbl[idx];
++		if (test_bit(idx, cdrt_hw.dec_used))
++			cdrt = &cdrt_hw.dec_tbl[idx];
+ 	} else {
+ 		idx = cdrt_idx - CDRT_ENC_IDX_OFS;
+-		if (!test_bit(idx, cdrt_hw.enc_used))
+-			return ERR_PTR(-ENODEV);
+-
+-		cdrt = &cdrt_hw.enc_tbl[idx];
++		if (test_bit(idx, cdrt_hw.enc_used))
++			cdrt = &cdrt_hw.enc_tbl[idx];
+ 	}
+ 
+ 	spin_unlock_irqrestore(&cdrt_hw.lock, flag);
+@@ -243,7 +239,7 @@
+ 
+ 		ret = mtk_pce_fe_mem_msg_send(&msg);
+ 		if (ret)
+-			return;
++			break;
+ 
+ 		/* TODO: clean up bit map? */
+ 	}
+diff -uNr /tmp/b37_pce_a/debugfs.c /tmp/b37_pce_b/debugfs.c
+--- a/debugfs.c	2026-09-18 10:18:56.492055502 +0800
++++ b/debugfs.c	2026-11-18 23:15:20.657947192 +0800
+@@ -460,6 +460,8 @@
+ 
+ 	for (i = 1; i < (FE_MEM_CDRT_MAX_INDEX / 3) - 1; i++) {
+ 		ret = mtk_pce_cdrt_desc_read(&desc, i);
++		if (ret)
++			return ret;
+ 
+ 		seq_printf(s, "CDRT Entry%02u, Type: %02u, aad len: %u\n", i,
+ 				desc.desc1.ipsec.type, desc.desc1.token_len);
+@@ -664,6 +666,7 @@
+ 	char arg1[21] = {0};
+ 	char cmd[21] = {0};
+ 	char buf[512];
++	u32 port_val = 0;
+ 	u32 tport_idx = 0;
+ 	int nchar = 0;
+ 	int ret;
+@@ -680,7 +683,7 @@
+ 	if (ret != 3)
+ 		return -EINVAL;
+ 
+-	if (tport_idx > TPORT_IDX_MAX) {
++	if (tport_idx >= TPORT_IDX_MAX) {
+ 		PCE_ERR("invalid tport idx: %u\n", tport_idx);
+ 		return -EINVAL;
+ 	}
+@@ -691,11 +694,12 @@
+ 			if (ret)
+ 				return ret;
+ 		} else {
+-			ret = kstrtou32(arg1, 10, &port);
+-			if (ret) {
+-				PCE_ERR("invalid pse port: %u\n", port);
+-				return ret;
++			ret = kstrtou32(arg1, 10, &port_val);
++			if (ret || port_val >= __PSE_PORT_MAX) {
++				PCE_ERR("invalid pse port: %s\n", arg1);
++				return ret ? ret : -EINVAL;
+ 			}
++			port = port_val;
+ 
+ 			ret = tport_map_debug_update_single(buf, &nchar,
+ 							    port, tport_idx);
+diff -uNr /tmp/b37_pce_a/netsys.c /tmp/b37_pce_b/netsys.c
+--- a/netsys.c	2026-09-18 10:18:56.492933773 +0800
++++ b/netsys.c	2026-11-18 23:15:20.658004852 +0800
+@@ -201,16 +201,21 @@
+ 		return -ENODEV;
+ 	}
+ 
+-	if (of_address_to_resource(fe_mem, 0, &res))
+-		return -ENXIO;
++	if (of_address_to_resource(fe_mem, 0, &res)) {
++		ret = -ENXIO;
++		goto out;
++	}
+ 
+ 	/* map fe_mem */
+ 	netsys.base = devm_ioremap(&pdev->dev, res.start, resource_size(&res));
+-	if (!netsys.base)
+-		return -ENOMEM;
++	if (!netsys.base) {
++		ret = -ENOMEM;
++		goto out;
++	}
+ 
+ 	spin_lock_init(&netsys.lock);
+ 
++out:
+ 	of_node_put(fe_mem);
+ 
+ 	return ret;

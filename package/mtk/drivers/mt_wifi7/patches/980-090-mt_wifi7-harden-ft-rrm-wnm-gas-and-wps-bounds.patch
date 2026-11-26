@@ -1,0 +1,3629 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: harden FT, RRM, WNM, GAS, WPS, OCE, and 6G bounds
+
+Prevent shared RSNIE mutation, SHA-384 FT PTK truncation,
+6GHz AKM bitmask pollution, and 6GHz op_class
+table over-reads. Harden 802.11r FT, KDP spinlock/bounds, and RIC
+length parsing; enforce WNM/BTM/ProxyARP/GAS bounds, locking, and
+MLME ABI wrappers; fix RRM MIN macro, TSF sub-IE, Beacon Report bounds,
+and live-packet NUL writes; and fix WPS EAP fragment underflow,
+M2-M8 buffer bounds, M7 E-Hash2 verification, M8 HMAC ordering, and
+encrypted IV randomization.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/mt_wifi/common/security/cmm_wpa.c
++++ b/mt_wifi/common/security/cmm_wpa.c
+@@ -3730,6 +3730,11 @@
+ 	if (is_ie_presnet & RSNE_PRESNET) {
+ 		UCHAR *RSNIE = NULL;
+ 		UCHAR RSNIE_LEN = 0;
++		UCHAR rsnie_buf[MAX_LEN_OF_RSNIE];
++		struct _SECURITY_CONFIG *rsn_cfg = sec_group;
++#ifdef DOT11R_FT_SUPPORT
++		struct _SECURITY_CONFIG *ft_sec_cfg = NULL;
++#endif /* DOT11R_FT_SUPPORT */
+ 		CHAR rsne_idx = 0;
+ 		SEC_RSNIE_TYPE RSNType = SEC_RSNIE_WPA1_IE;
+ 
+@@ -3737,7 +3742,12 @@
+ 		if (IS_FT_RSN_STA(pEntry)) {
+ 			/* YF_FT */
+ 			pEntry->FT_Status = TX_EAPOL_3;
+-			WPAMakeRSNIE(pEntry->wdev->wdev_type, sec_group, pEntry);
++			os_alloc_mem(NULL, (UCHAR **)&ft_sec_cfg, sizeof(*ft_sec_cfg));
++			if (ft_sec_cfg) {
++				NdisCopyMemory(ft_sec_cfg, sec_group, sizeof(*ft_sec_cfg));
++				WPAMakeRSNIE(pEntry->wdev->wdev_type, ft_sec_cfg, pEntry);
++				rsn_cfg = ft_sec_cfg;
++			}
+ 		}
+ #endif /* DOT11R_FT_SUPPORT */
+ 
+@@ -3745,12 +3755,17 @@
+ 			RSNType = SEC_RSNIE_WPA2_IE;
+ 
+ 		for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
+-			if (sec_group->RSNE_Type[rsne_idx] == RSNType) {
+-				RSNIE = &sec_group->RSNE_Content[rsne_idx][0];
+-				RSNIE_LEN = sec_group->RSNE_Len[rsne_idx];
++			if (rsn_cfg->RSNE_Type[rsne_idx] == RSNType) {
++				RSNIE_LEN = min_t(UCHAR, rsn_cfg->RSNE_Len[rsne_idx], MAX_LEN_OF_RSNIE);
++				NdisMoveMemory(rsnie_buf, &rsn_cfg->RSNE_Content[rsne_idx][0], RSNIE_LEN);
++				RSNIE = rsnie_buf;
+ 				break;
+ 			}
+ 		}
++#ifdef DOT11R_FT_SUPPORT
++		if (ft_sec_cfg)
++			os_free_mem(ft_sec_cfg);
++#endif /* DOT11R_FT_SUPPORT */
+ 
+ 
+ 		WPAInsertRSNIE(&buf[*offset],
+@@ -6395,7 +6410,16 @@
+ 						   FT_PMK_R1,
+ 						   FT_PMK_R1_NAME);
+ 
+-			ptk_len = 32 + sec_get_cipher_key_len(pEntry->SecConfig.PairwiseCipher);
++			{
++				UINT8 kck_kek_len = 32;
++
++				if (IS_AKM_SHA384(pSecConfig->AKMMap) ||
++					pSecConfig->key_deri_alg == SEC_KEY_DERI_SHA384)
++					kck_kek_len = LEN_PTK_KCK_SHA384 + LEN_PTK_KEK_SHA384;
++				ptk_len = min_t(UINT8,
++					kck_kek_len + sec_get_cipher_key_len(pEntry->SecConfig.PairwiseCipher),
++					LEN_MAX_PTK);
++			}
+ 
+ 			FT_DerivePTK(FT_PMK_R1,
+ 						 FT_PMK_R1_NAME,
+--- a/mt_wifi/ap/ap_sec.c
++++ b/mt_wifi/ap/ap_sec.c
+@@ -342,7 +342,8 @@
+ 			if (IS_AKM_WPA2PSK(pSecConfig->AKMMap)) {
+ 				MTWF_DBG(pAd, DBG_CAT_AP, CATAP_SEC, DBG_LVL_WARN,
+ 						"\x1b[31mshould not use wpa3psk transition mode, force to use SAE h2e\x1b[m\n");
+-				SET_AKM_WPA3PSK(pSecConfig->AKMMap);
++				CLEAR_SEC_AKM(pSecConfig->AKMMap);
++				SET_AKM_SAE_SHA256(pSecConfig->AKMMap);
+ 			}
+ 		}
+ 	}
+--- a/mt_wifi/common/op_class.c
++++ b/mt_wifi/common/op_class.c
+@@ -2301,6 +2301,8 @@
+ 					/*80Mhz centre frequencies*/
+ 					if (reg_class_he[i].center_freq[j] != 0) {
+ 						chValid = 0;
++						if (pAd->CommonCfg.CountryRegionForABand > REGION_MAXIMUM_A_BAND_6GHZ)
++							break;
+ 						pChDesc = Country_Region_ChDesc_6GHZ[pAd->CommonCfg.CountryRegionForABand].pChDesc;
+ 						center_freq = reg_class_he[i].center_freq[j];
+ 						while (pChDesc->FirstChannel) {
+--- a/mt_wifi/feature/ft/ft.c
++++ b/mt_wifi/feature/ft/ft.c
+@@ -626,7 +626,6 @@
+ 		}
+ 
+ 		if (pFtInfo->RSNIE_Len != 0) {
+-			UINT16	result;
+ 			UINT8	rsnie_len = 0;
+ 			PUINT8  rsnie_ptr = NULL;
+ 			UINT8	ft_len = 0;
+@@ -1107,9 +1106,15 @@
+ 		goto out;
+ 	}
+ 
++	if (Elem->MsgLen < (LENGTH_802_11 + sizeof(FT_ACTION))) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++			"FT action frame too short (%lu)\n", Elem->MsgLen);
++		goto out;
++	}
++
+ 	pHdr = (PHEADER_802_11)Elem->Msg;
+ 	pFtAction = (PFT_ACTION)(&Elem->Msg[LENGTH_802_11]);
+-	FtActLen = (Elem->MsgLen - LENGTH_802_11);
++	FtActLen = (UINT16)(Elem->MsgLen - LENGTH_802_11);
+ 	/* Find which MBSSID to be authenticate */
+ 	apidx = get_apidx_by_addr(pAd, pHdr->Addr1);
+ 
+@@ -1129,6 +1134,9 @@
+ 				 "Get FT_ACTION_BT_REQ IsTerminate=%d\n", IsTerminate);
+ 
+ 		if (IsTerminate) {
++			if (!pFtCfg->FtCapFlag.Dot11rFtEnable)
++				goto out;
++
+ 			NStatus = MlmeAllocateMemory(pAd, &pFtActFrame);
+ 
+ 			if (NStatus != NDIS_STATUS_SUCCESS) {
+@@ -1137,9 +1145,6 @@
+ 				goto out;
+ 			}
+ 
+-			if (!pFtCfg->FtCapFlag.Dot11rFtEnable)
+-				goto out;
+-
+ 			pEntry = MacTableLookup(pAd, pHdr->Addr2);
+ 
+ 			if (!pEntry) {
+@@ -1179,8 +1184,9 @@
+ 			FT_RrbEnqueue(pAd, pHdr->Addr3, (PFT_ACTION)pFtActFrame,
+ 						  FtActFrameLen, pEntry->func_tb_idx);
+ 		} else {
+-			FT_RrbEnqueue(pAd, pFtAction->TargetApAddr,
+-						  (PFT_ACTION)pFtAction, FtActLen, apidx);
++			if (pFtCfg->FtCapFlag.Dot11rFtEnable && (FtActLen <= 512))
++				FT_RrbEnqueue(pAd, pFtAction->TargetApAddr,
++							  (PFT_ACTION)pFtAction, FtActLen, apidx);
+ 		}
+ 
+ 		break;
+@@ -1190,7 +1196,12 @@
+ 				 "Get FT_ACTION_BT_CONFIRM IsTerminate=%d\n", IsTerminate);
+ 
+ 		if (IsTerminate) {
+-			NDIS_STATUS NStatus = MlmeAllocateMemory(pAd, &pFtActFrame);
++			NDIS_STATUS NStatus;
++
++			if (!pFtCfg->FtCapFlag.Dot11rFtEnable)
++				goto out;
++
++			NStatus = MlmeAllocateMemory(pAd, &pFtActFrame);
+ 
+ 			if (NStatus != NDIS_STATUS_SUCCESS) {
+ 				MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
+@@ -1205,10 +1216,7 @@
+ 				goto out;
+ 			}
+ 
+-			if (pEntry->func_tb_idx > pAd->ApCfg.BssidNum)
+-				goto out;
+-
+-			if (!pFtCfg->FtCapFlag.Dot11rFtEnable)
++			if (pEntry->func_tb_idx >= pAd->ApCfg.BssidNum)
+ 				goto out;
+ 
+ 			/* Parse FT-Request action frame. */
+@@ -1233,7 +1241,7 @@
+ 				os_free_mem(pFtInfoBuf->RicInfo.pRicInfo);
+ 			} else
+ 				goto out;
+-		} else
++		} else if (pFtCfg->FtCapFlag.Dot11rFtEnable && (FtActLen <= 512))
+ 			FT_RrbEnqueue(pAd, pFtAction->TargetApAddr,
+ 						  pFtAction, FtActLen, apidx);
+ 
+@@ -1350,13 +1358,13 @@
+ 	PUCHAR pOutBuffer = NULL;
+ 	ULONG FrameLen;
+ 	HEADER_802_11 Hdr;
+-	PFT_RRB pRrb = (PFT_RRB)(pPktSrc + LENGTH_802_3);
++	PFT_RRB pRrb;
+ 	PUCHAR pDA;
+ 	PUCHAR pSA;
+ 	PFT_ACTION pFtAction;
+ 	UINT16 Wcid;
+ 	struct wifi_dev *wdev;
+-	UINT16 ft_act_len = ntohs(pRrb->FTActLen);
++	UINT16 ft_act_len;
+ 
+ 	if (ApIdx >= pAd->ApCfg.BssidNum || ApIdx < 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
+@@ -1365,6 +1373,21 @@
+ 		return;
+ 	}
+ 
++	if (!pPktSrc || PktLen < (INT32)(LENGTH_802_3 + sizeof(FT_RRB))) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++				"Invalid RRB packet len (%d)\n", PktLen);
++		return;
++	}
++
++	pRrb = (PFT_RRB)(pPktSrc + LENGTH_802_3);
++	ft_act_len = ntohs(pRrb->FTActLen);
++	if (ft_act_len < sizeof(FT_ACTION) ||
++		(INT32)(LENGTH_802_3 + sizeof(FT_RRB) + ft_act_len) > PktLen) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++				"Invalid RRB FTActLen (%u vs %d)\n", ft_act_len, PktLen);
++		return;
++	}
++
+ 	wdev = &pAd->ApCfg.MBSSID[ApIdx].wdev;
+ 	Status = MlmeAllocateMemory(pAd, &pOutBuffer);
+ 
+@@ -1499,6 +1522,8 @@
+ 	UINT8	e_key_buf[40];
+ 	UINT8	key_len;
+ 	UINT	e_key_len;
++	UINT8	kck_len;
++	UINT8	kek_len;
+ 	UCHAR	apidx;
+ 	UCHAR	key_idx;
+ 	UINT32	cipher_alg;
+@@ -1545,10 +1570,18 @@
+ 	KeyInfo.word = cpu2le16(KeyInfo.word);
+ 	/* Get Group RSC form Asic */
+ 	NdisZeroMemory(rsc, 8);
+-	AsicGetTxTsc(pAd, wdev, TSC_TYPE_GTK_PN, rsc);
+-	e_key_len = key_len;
++	AsicGetTxTsc(pAd, wdev, TSC_TYPE_GTK_PN_MASK, rsc);
++	if (IS_AKM_SHA384(pEntry->SecConfig.AKMMap) ||
++		pEntry->SecConfig.key_deri_alg == SEC_KEY_DERI_SHA384) {
++		kck_len = LEN_PTK_KCK_SHA384;
++		kek_len = LEN_PTK_KEK_SHA384;
++	} else {
++		kck_len = LEN_PTK_KCK;
++		kek_len = LEN_PTK_KEK;
++	}
++	e_key_len = sizeof(e_key_buf);
+ 	AES_Key_Wrap(key_buf, key_len,
+-				 &pEntry->FT_PTK[LEN_PTK_KCK], LEN_PTK_KEK,
++				 &pEntry->FT_PTK[kck_len], kek_len,
+ 				 e_key_buf, &e_key_len);
+ 	/* Construct FT GTK-IE*/
+ 	MakeOutgoingFrame(pFtInfo->GtkSubIE,            &TmpLen,
+@@ -1567,10 +1600,12 @@
+ {
+ 	UINT8	igtk_len = LEN_AES_GTK;
+ 	UINT8	pad_len = 0;
+-	UINT8	key_buf[LEN_AES_GTK];
+-	UINT8	e_key_buf[24];
++	UINT8	key_buf[LEN_MAX_IGTK];
++	UINT8	e_key_buf[LEN_MAX_IGTK + 8];
+ 	UINT8	key_len;
+ 	UINT	e_key_len;
++	UINT8	kck_len;
++	UINT8	kek_len;
+ 	UCHAR	apidx;
+ 	UCHAR	idx;
+ 	UINT16	key_idx;
+@@ -1585,6 +1620,10 @@
+ 		return;
+ 	}
+ 
++	if (IS_CIPHER_BIP_CMAC256(wdev->SecConfig.PmfCfg.igtk_cipher) ||
++		IS_CIPHER_BIP_GMAC256(wdev->SecConfig.PmfCfg.igtk_cipher))
++		igtk_len = LEN_MAX_IGTK;
++	NdisZeroMemory(key_buf, sizeof(key_buf));
+ 	apidx = pEntry->func_tb_idx;
+ 	key_idx = cpu2le16(wdev->SecConfig.PmfCfg.IGTK_KeyIdx);
+ 	idx = (wdev->SecConfig.PmfCfg.IGTK_KeyIdx == 5) ? 1 : 0;
+@@ -1621,9 +1660,17 @@
+ 	/* Fill in the IPN field */
+ 	NdisMoveMemory(IPN, &wdev->SecConfig.PmfCfg.IPN[idx][0], LEN_WPA_TSC);
+ 
+-	e_key_len = key_len;
++	if (IS_AKM_SHA384(pEntry->SecConfig.AKMMap) ||
++		pEntry->SecConfig.key_deri_alg == SEC_KEY_DERI_SHA384) {
++		kck_len = LEN_PTK_KCK_SHA384;
++		kek_len = LEN_PTK_KEK_SHA384;
++	} else {
++		kck_len = LEN_PTK_KCK;
++		kek_len = LEN_PTK_KEK;
++	}
++	e_key_len = sizeof(e_key_buf);
+ 	AES_Key_Wrap(key_buf, key_len,
+-			 &pEntry->FT_PTK[LEN_PTK_KCK], LEN_PTK_KEK,
++			 &pEntry->FT_PTK[kck_len], kek_len,
+ 				 e_key_buf, &e_key_len);
+ 
+ 	/* Construct FT IGTK-IE*/
+@@ -1646,10 +1693,12 @@
+ {
+ 	UINT8	bigtk_len = LEN_AES_GTK;
+ 	UINT8	pad_len = 0;
+-	UINT8	key_buf[LEN_AES_GTK];
+-	UINT8	e_key_buf[24];
++	UINT8	key_buf[LEN_MAX_IGTK];
++	UINT8	e_key_buf[LEN_MAX_IGTK + 8];
+ 	UINT8	key_len;
+ 	UINT	e_key_len;
++	UINT8	kck_len;
++	UINT8	kek_len;
+ 	UCHAR	apidx;
+ 	UCHAR	idx;
+ 	UINT16	key_idx;
+@@ -1665,6 +1714,10 @@
+ 		return;
+ 	}
+ 
++	if (IS_CIPHER_BIP_CMAC256(wdev->SecConfig.bcn_prot_cfg.bigtk_cipher) ||
++		IS_CIPHER_BIP_GMAC256(wdev->SecConfig.bcn_prot_cfg.bigtk_cipher))
++		bigtk_len = LEN_MAX_IGTK;
++	NdisZeroMemory(key_buf, sizeof(key_buf));
+ 	apidx = pEntry->func_tb_idx;
+ 	key_idx = cpu2le16(wdev->SecConfig.bcn_prot_cfg.bigtk_key_idx);
+ 	idx = (wdev->SecConfig.bcn_prot_cfg.bigtk_key_idx == 7) ? 1 : 0;
+@@ -1699,11 +1752,19 @@
+ 	}
+ 
+ 	/* Fill in the BIPN field */
+-	AsicGetTxTsc(pAd, wdev, TSC_TYPE_BIGTK_PN, BIPN);
++	AsicGetTxTsc(pAd, wdev, TSC_TYPE_BIGTK_PN_MASK, BIPN);
+ 
+-	e_key_len = key_len;
++	if (IS_AKM_SHA384(pEntry->SecConfig.AKMMap) ||
++		pEntry->SecConfig.key_deri_alg == SEC_KEY_DERI_SHA384) {
++		kck_len = LEN_PTK_KCK_SHA384;
++		kek_len = LEN_PTK_KEK_SHA384;
++	} else {
++		kck_len = LEN_PTK_KCK;
++		kek_len = LEN_PTK_KEK;
++	}
++	e_key_len = sizeof(e_key_buf);
+ 	AES_Key_Wrap(key_buf, key_len,
+-			 &pEntry->FT_PTK[LEN_PTK_KCK], LEN_PTK_KEK,
++			 &pEntry->FT_PTK[kck_len], kek_len,
+ 				 e_key_buf, &e_key_len);
+ 
+ 	/* Construct FT BIGTK-IE*/
+@@ -2096,10 +2157,13 @@
+ 	hex_dump_with_cat_and_lvl("anonce", handshake->ANonce, 32, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_DEBUG);
+ 	hex_dump_with_cat_and_lvl("snonce", handshake->SNonce, 32, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_DEBUG);
+ 
+-	if (IS_CIPHER_TKIP_Entry(pEntry))
+-		ptk_len = 32 + 32;
+-	else
+-		ptk_len = 32 + 16;
++	{
++		UINT8 kck_kek_len = (IS_AKM_SHA384(pEntry->SecConfig.AKMMap) ||
++			pEntry->SecConfig.key_deri_alg == SEC_KEY_DERI_SHA384) ?
++			(LEN_PTK_KCK_SHA384 + LEN_PTK_KEK_SHA384) :
++			(LEN_PTK_KCK + LEN_PTK_KEK);
++		ptk_len = min_t(UINT, kck_kek_len + sec_get_cipher_key_len(pEntry->SecConfig.PairwiseCipher), LEN_MAX_PTK);
++	}
+ 
+ 	/* Derive FT PTK and PTK-NAME */
+ 	FT_DerivePTK(pEntry->FT_PMK_R1,
+@@ -2133,33 +2197,41 @@
+ 	/*
+ 		Assign wdev seconfig to sec_config for makeing FT RSN IE.
+ 	*/
+-	sec_config = &wdev->SecConfig;
+-	/* YF_FT */
+-	/* hex_dump("111111111111111111111111111111111111111111111111111 PMKR0Name", pPmkR0Name, LEN_PMK_NAME); */
+-	/* hex_dump("222222222222222222222222222222222222222222222222222 PMKR0Name", pEntry->FT_PMK_R0_NAME, LEN_PMK_NAME); */
+-	NdisMoveMemory(pEntry->FT_PMK_R0_NAME, pPmkR0Name, LEN_PMK_NAME);
+-	pEntry->FT_Status = TX_AUTH_RSP;
+-	WPAMakeRSNIE(wdev->wdev_type, sec_config, pEntry);
+-
+-	/* Prepare RSNIE for authentication response */
+-	for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
+-		if (sec_config->RSNE_Type[rsne_idx]
+-			== SEC_RSNIE_WPA2_IE) {
+-			rsnie_ptr =
+-				&sec_config->RSNE_Content[rsne_idx][0];
+-			rsnie_len =
+-				sec_config->RSNE_Len[rsne_idx];
+-			break;
++	{
++		struct _SECURITY_CONFIG *ft_sec_cfg = NULL;
++		UCHAR rsnie_buf[MAX_LEN_OF_RSNIE];
++
++		sec_config = &wdev->SecConfig;
++		NdisMoveMemory(pEntry->FT_PMK_R0_NAME, pPmkR0Name, LEN_PMK_NAME);
++		pEntry->FT_Status = TX_AUTH_RSP;
++		os_alloc_mem(NULL, (UCHAR **)&ft_sec_cfg, sizeof(*ft_sec_cfg));
++		if (ft_sec_cfg) {
++			NdisCopyMemory(ft_sec_cfg, &wdev->SecConfig, sizeof(*ft_sec_cfg));
++			WPAMakeRSNIE(wdev->wdev_type, ft_sec_cfg, pEntry);
++			sec_config = ft_sec_cfg;
+ 		}
+-	}
+ 
+-	pFtInfo_out->RSNIE_Len = 0;
+-	WPAInsertRSNIE(pFtInfo_out->RSN_IE,
+-				   &temp_len,
+-				   rsnie_ptr,
+-				   rsnie_len,
+-				   pmkid_ptr,
+-				   pmkid_len);
++		/* Prepare RSNIE for authentication response */
++		for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
++			if (sec_config->RSNE_Type[rsne_idx]
++				== SEC_RSNIE_WPA2_IE) {
++				rsnie_len = min_t(UINT8, sec_config->RSNE_Len[rsne_idx], MAX_LEN_OF_RSNIE);
++				NdisMoveMemory(rsnie_buf, &sec_config->RSNE_Content[rsne_idx][0], rsnie_len);
++				rsnie_ptr = rsnie_buf;
++				break;
++			}
++		}
++		if (ft_sec_cfg)
++			os_free_mem(ft_sec_cfg);
++
++		pFtInfo_out->RSNIE_Len = 0;
++		WPAInsertRSNIE(pFtInfo_out->RSN_IE,
++					   &temp_len,
++					   rsnie_ptr,
++					   rsnie_len,
++					   pmkid_ptr,
++					   pmkid_len);
++	}
+ 
+ 	pFtInfo_out->RSNIE_Len = (UCHAR)temp_len;
+ 
+@@ -2401,34 +2473,40 @@
+ 		return FT_STATUS_CODE_INVALID_PMKID;
+ 	}
+ 
+-	/*
+-		Assign wdev seconfig to sec_config for makeing FT RSN IE.
+-	*/
+-	sec_config = &wdev->SecConfig;
++	{
++		struct _SECURITY_CONFIG *ft_sec_cfg = NULL;
++		UCHAR rsnie_buf[MAX_LEN_OF_RSNIE];
+ 
+-	/* YF_FT */
+-	pEntry->FT_Status = TX_ASSOC_RSP;
+-	WPAMakeRSNIE(wdev->wdev_type, sec_config, pEntry);
+-
+-	/* Prepare RSNIE for outgoing frame */
+-	for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
+-		if (sec_config->RSNE_Type[rsne_idx]
+-			== SEC_RSNIE_WPA2_IE) {
+-			rsnie_ptr =
+-				&sec_config->RSNE_Content[rsne_idx][0];
+-			rsnie_len =
+-				sec_config->RSNE_Len[rsne_idx];
+-			break;
++		sec_config = &wdev->SecConfig;
++		pEntry->FT_Status = TX_ASSOC_RSP;
++		os_alloc_mem(NULL, (UCHAR **)&ft_sec_cfg, sizeof(*ft_sec_cfg));
++		if (ft_sec_cfg) {
++			NdisCopyMemory(ft_sec_cfg, &wdev->SecConfig, sizeof(*ft_sec_cfg));
++			WPAMakeRSNIE(wdev->wdev_type, ft_sec_cfg, pEntry);
++			sec_config = ft_sec_cfg;
+ 		}
+-	}
+ 
+-	pFtInfo_out->RSNIE_Len = 0;
+-	WPAInsertRSNIE(pFtInfo_out->RSN_IE,
+-				   &temp_len,
+-				   rsnie_ptr,
+-				   rsnie_len,
+-				   pmkid_ptr,
+-				   pmkid_len);
++		/* Prepare RSNIE for outgoing frame */
++		for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
++			if (sec_config->RSNE_Type[rsne_idx]
++				== SEC_RSNIE_WPA2_IE) {
++				rsnie_len = min_t(UINT8, sec_config->RSNE_Len[rsne_idx], MAX_LEN_OF_RSNIE);
++				NdisMoveMemory(rsnie_buf, &sec_config->RSNE_Content[rsne_idx][0], rsnie_len);
++				rsnie_ptr = rsnie_buf;
++				break;
++			}
++		}
++		if (ft_sec_cfg)
++			os_free_mem(ft_sec_cfg);
++
++		pFtInfo_out->RSNIE_Len = 0;
++		WPAInsertRSNIE(pFtInfo_out->RSN_IE,
++					   &temp_len,
++					   rsnie_ptr,
++					   rsnie_len,
++					   pmkid_ptr,
++					   pmkid_len);
++	}
+ 
+ 	pFtInfo_out->RSNIE_Len = (UCHAR)temp_len;
+ 
+@@ -2637,13 +2715,18 @@
+ 	PFT_OPTION_FIELD subEidPtr;
+ 	*GTKLen = 0;
+ 	*R0KH_IdLen = 0;
++	if (!pFtIe || FtIeLen < sizeof(FT_FTIE))
++		return;
++
+ 	ptr = (PUCHAR)&pFtIe->Option[0];
+ 	RemainLen = FtIeLen - sizeof(FT_FTIE);
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "FT_TEMP- FtIeParse (  FtIeLen = %d )\n", FtIeLen);
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "FT_TEMP- FtIeParse ( Len that doesn't include subelement = %d )\n", RemainLen);
+ 
+-	while (RemainLen > 0) {
++	while (RemainLen >= 2) {
+ 		subEidPtr = (PFT_OPTION_FIELD)ptr;
++		if ((UINT16)(subEidPtr->Len + 2) > RemainLen)
++			break;
+ 
+ 		if ((subEidPtr->SubElementId == FT_R1KH_ID) &&
+ 			(subEidPtr->Len <= FT_R1KH_ID_LEN)) {
+@@ -2793,12 +2876,15 @@
+ {
+ 	PFT_GTK_KEY_INFO	pKeyInfo;
+ 	UCHAR				gtk_len;
+-	UINT				unwrap_len = 0;
++	UINT				unwrap_len = sizeof(UINT8) * 64;
+ 	PUINT8				pData;
+ 	UINT8				data_offset = 0;
+ 	UINT8				key_p[64] = { 0 };
++	UINT8				kck_len;
++	UINT8				kek_len;
++	INT					unwrap_ret;
+ 
+-	if (pFtInfo->GtkLen < 11) {
++	if (pFtInfo->GtkLen <= 11 || pFtInfo->GtkLen > sizeof(pFtInfo->GtkSubIE)) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "The length is invalid\n");
+ 		return FALSE;
+ 	}
+@@ -2807,8 +2893,8 @@
+ 	/* Extract the Key Info field */
+ 	pKeyInfo = (PFT_GTK_KEY_INFO)pData;
+ 	pKeyInfo->word = cpu2le16(pKeyInfo->word);
+-	pEntry->SecConfig.PairwiseKeyId = pKeyInfo->field.KeyId;
+-	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "key idx(%d)\n", pEntry->SecConfig.PairwiseKeyId);
++	pEntry->SecConfig.GroupKeyId = pKeyInfo->field.KeyId;
++	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "key idx(%d)\n", pEntry->SecConfig.GroupKeyId);
+ 	data_offset += sizeof(FT_GTK_KEY_INFO);
+ 
+ 	/* Extract the Key Length field */
+@@ -2816,13 +2902,25 @@
+ 	data_offset += 1;
+ 	/* Extract the RSC field */
+ 	data_offset += 8;
++	if ((pFtInfo->GtkLen <= data_offset) || (gtk_len < 16) || (gtk_len > MAX_LEN_GTK)) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid GTK length (%u)\n", gtk_len);
++		return FALSE;
++	}
++	if (IS_AKM_SHA384(pEntry->SecConfig.AKMMap) ||
++		pEntry->SecConfig.key_deri_alg == SEC_KEY_DERI_SHA384) {
++		kck_len = LEN_PTK_KCK_SHA384;
++		kek_len = LEN_PTK_KEK_SHA384;
++	} else {
++		kck_len = LEN_PTK_KCK;
++		kek_len = LEN_PTK_KEK;
++	}
+ 	/* Decrypt the Key field by AES Key UNWRAP */
+-	AES_Key_Unwrap(pData + data_offset, pFtInfo->GtkLen - data_offset,
+-				   &pEntry->SecConfig.PTK[LEN_PTK_KCK], LEN_PTK_KEK,
+-				   key_p, &unwrap_len);
++	unwrap_ret = AES_Key_Unwrap(pData + data_offset, pFtInfo->GtkLen - data_offset,
++							&pEntry->SecConfig.PTK[kck_len], kek_len,
++							key_p, &unwrap_len);
+ 
+ 	/* Compare the GTK length */
+-	if (unwrap_len != gtk_len) {
++	if (unwrap_ret != 0 || unwrap_len != gtk_len) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "The GTK length is unmatched\n");
+ 		return FALSE;
+ 	}
+@@ -3155,9 +3253,11 @@
+ 	OUT	PUINT8	ptk_name)
+ {
+ 	const char label_name[] = "FT-PTKN";
+-	UCHAR	temp_result[64];
++	UCHAR	temp_result[LEN_MAX_PTK];
+ 	UCHAR   context[128];
+ 	UINT    c_len = 0;
++
++	key_len = min_t(UINT, key_len, LEN_MAX_PTK);
+ 	/* =============================== */
+ 	/*		PTK derivation */
+ 	/* =============================== */
+@@ -3167,7 +3267,7 @@
+ 	/* BSSID (6 bytes) */
+ 	/* STA-ADDR (6-bytes) */
+ 	/* Initial the related parameter */
+-	NdisZeroMemory(temp_result, 64);
++	NdisZeroMemory(temp_result, sizeof(temp_result));
+ 	NdisZeroMemory(context, 128);
+ 	c_len = 0;
+ 	/* concatenate the SNonce with 32-octets */
+@@ -3198,7 +3298,7 @@
+ 	/*		PTK-Name derivation */
+ 	/* =============================== */
+ 	/* Initial the related parameter for PTK-Name derivation */
+-	NdisZeroMemory(temp_result, 64);
++	NdisZeroMemory(temp_result, sizeof(temp_result));
+ 	NdisZeroMemory(context, 128);
+ 	c_len = 0;
+ 	/* concatenate the PMK-R1-Name with 16-octets */
+@@ -3279,11 +3379,24 @@
+ 	ULONG	FrameLen = 0;
+ 	ULONG	TmpLen = 0;
+ 	UINT	mlen = AES_KEY128_LENGTH;
++	UINT32	alloc_len;
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "\n");
+ 	NdisZeroMemory(mic, mlen);
+-	/* allocate memory for MIC calculation */
+-	os_alloc_mem(NULL, (PUCHAR *)&OutBuffer, 512);
++	if (ftie != NULL && ftie_len != 0 && ftie_len < 20) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++			"FT_CalculateMIC: invalid ftie_len (%u)\n", ftie_len);
++		return;
++	}
++	alloc_len = (MAC_ADDR_LEN * 2) + 1 + (UINT32)rsnie_len + (UINT32)mdie_len +
++		(UINT32)ftie_len + (UINT32)ric_len + (UINT32)rsnxe_len;
++	if (alloc_len > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++			"FT_CalculateMIC: length overflow (%u)\n", alloc_len);
++		return;
++	}
++	/* allocate exact buffer for MIC calculation */
++	os_alloc_mem(NULL, (PUCHAR *)&OutBuffer, alloc_len);
+ 
+ 	if (OutBuffer == NULL) {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "!!!FT_CalculateMIC: no memory!!!\n");
+@@ -3299,7 +3412,7 @@
+ 	FrameLen += TmpLen;
+ 
+ 	/* concatenate RSNIE */
+-	if (rsnie_len != 0) {
++	if (rsnie != NULL && rsnie_len != 0) {
+ 		MakeOutgoingFrame(OutBuffer + FrameLen,		&TmpLen,
+ 						  rsnie_len,				rsnie,
+ 						  END_OF_ARGS);
+@@ -3307,7 +3420,7 @@
+ 	}
+ 
+ 	/* concatenate MDIE */
+-	if (mdie_len != 0) {
++	if (mdie != NULL && mdie_len != 0) {
+ 		MakeOutgoingFrame(OutBuffer + FrameLen,		&TmpLen,
+ 						  mdie_len,					mdie,
+ 						  END_OF_ARGS);
+@@ -3315,12 +3428,12 @@
+ 	}
+ 
+ 	/* concatenate FTIE */
+-	if (ftie != NULL && ftie_len != 0) {
+-		/* The MIC field of the FTIE set to 0 */
+-		NdisZeroMemory(ftie + 4, 16);
++	if (ftie != NULL && ftie_len >= 20) {
+ 		MakeOutgoingFrame(OutBuffer + FrameLen,		&TmpLen,
+ 						  ftie_len,					ftie,
+ 						  END_OF_ARGS);
++		/* Zero only the copied MIC field inside OutBuffer */
++		NdisZeroMemory(OutBuffer + FrameLen + 4, 16);
+ 		FrameLen += TmpLen;
+ 	}
+ 
+@@ -3355,7 +3468,7 @@
+ 
+ 	Value = (UINT) os_str_tol(arg, 0, 10);
+ 
+-	if (apidx > pAd->ApCfg.BssidNum || apidx < 0) {
++	if (apidx >= pAd->ApCfg.BssidNum || apidx >= MAX_BEACON_NUM || apidx < 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid interface number (%d).\n",
+ 				apidx);
+ 		return TRUE;
+@@ -3373,7 +3486,7 @@
+ 	PFT_CFG pFtCfg;
+ 	RTMP_STRING	 *value, *mode = NULL;
+ 
+-	if (apidx > pAd->ApCfg.BssidNum || apidx < 0) {
++	if (apidx >= pAd->ApCfg.BssidNum || apidx >= MAX_BEACON_NUM || apidx < 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid interface number (%d).\n",
+ 				apidx);
+ 		return TRUE;
+@@ -3410,7 +3523,7 @@
+ 	INT apidx = pObj->ioctl_if;
+ 	PFT_CFG pFtCfg;
+ 
+-	if (apidx > pAd->ApCfg.BssidNum || apidx < 0) {
++	if (apidx >= pAd->ApCfg.BssidNum || apidx >= MAX_BEACON_NUM || apidx < 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid interface number (%d).\n",
+ 				apidx);
+ 		return TRUE;
+@@ -3438,7 +3551,7 @@
+ 
+ 	Value = (UINT) os_str_tol(arg, 0, 10);
+ 
+-	if (apidx > pAd->ApCfg.BssidNum || apidx < 0) {
++	if (apidx >= pAd->ApCfg.BssidNum || apidx >= MAX_BEACON_NUM || apidx < 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid interface number (%d).\n",
+ 				apidx);
+ 		return TRUE;
+@@ -3458,7 +3571,7 @@
+ 
+ 	Value = (UINT) os_str_tol(arg, 0, 10);
+ 
+-	if (apidx > pAd->ApCfg.BssidNum || apidx < 0) {
++	if (apidx >= pAd->ApCfg.BssidNum || apidx >= MAX_BEACON_NUM || apidx < 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid interface number (%d).\n",
+ 				apidx);
+ 		return TRUE;
+--- a/mt_wifi/feature/ft/ap_ftkd.c
++++ b/mt_wifi/feature/ft/ap_ftkd.c
+@@ -472,6 +472,20 @@
+ 		return;
+ 	}
+ 
++	if (ApIdx >= pAd->ApCfg.BssidNum) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++				"ap_ftkd> Invalid ApIdx (%u)!\n", ApIdx);
++		FT_MEM_FREE(pAd, pFtKdp);
++		return;
++	}
++
++	if (EventLen > (sizeof(pFtKdp->Content) - sizeof(FT_KDP_EVT_HEADER))) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++				"ap_ftkd> EventLen (%u) exceeds buffer!\n", EventLen);
++		FT_MEM_FREE(pAd, pFtKdp);
++		return;
++	}
++
+ 	/* init event content */
+ 	EvtHdr.PeerIpAddr = PeerIP;
+ 	EvtHdr.EventLen = EventLen;
+@@ -899,14 +913,14 @@
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "ap_ftkd>\n");
+ 
+-	wdev = &pAd->ApCfg.MBSSID[ApIdx].wdev;
+-
+-	if (!wdev) {
++	if (ApIdx >= pAd->ApCfg.BssidNum) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
+-				 "wdev == NULL!\n");
++				 "invalid ApIdx (%u)!\n", ApIdx);
+ 		return;
+ 	}
+ 
++	wdev = &pAd->ApCfg.MBSSID[ApIdx].wdev;
++
+ 	if (pAd->ApCfg.FtTab.FlgIsFtKdpInit == 0) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
+ 				 "ap_ftkd> FT KDP is not init!\n");
+@@ -915,13 +929,18 @@
+ 
+ 	/* init */
+ 	IAPP_DAEMON_CMD_PARSE(pInfo, InfoLen, PeerIP, pData, DataLen);
++	if (DataLen < ETH_ALEN) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
++				 "ap_ftkd> StationInform short DataLen (%u)\n", DataLen);
++		return;
++	}
+ #ifndef FT_KDP_FUNC_TEST
+ 
+-	/* check if we are in security mode; if not, return */
+-	if (!IS_AKM_OPEN(pAd->ApCfg.MBSSID[ApIdx].wdev.SecConfig.AKMMap)) {
++	/* check if we are in security mode; if open mode, return */
++	if (IS_AKM_OPEN(pAd->ApCfg.MBSSID[ApIdx].wdev.SecConfig.AKMMap)) {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "ap_ftkd> BSS ["MACSTR"] is open mode!\n",
+ 			MAC2STR(pAd->ApCfg.MBSSID[ApIdx].wdev.bssid));
+-		return; /* this BSS are open mode */
++		return; /* this BSS is open mode */
+ 	}
+ 
+ #endif
+@@ -1053,9 +1072,9 @@
+ 		return;
+ 	}
+ 
+-	if (pData == NULL) {
++	if (pData == NULL || pDataLen == NULL || *pDataLen == 0 || *pDataLen > 1024) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
+-				 "ap_ftkd> pData buffer is null!\n");
++				 "ap_ftkd> invalid encryption input!\n");
+ 		return;
+ 	}
+ 
+@@ -1068,9 +1087,15 @@
+ 	}
+ 
+ 	NdisZeroMemory(pOutputBuf, *pDataLen + FT_KDP_KEY_ENCRYPTION_EXTEND);
++	OutputLen = *pDataLen + FT_KDP_KEY_ENCRYPTION_EXTEND;
+ 	/* encrypt */
+-	AES_Key_Wrap(pData, *pDataLen, FT_KDP_CB->CryptKey, 16,
+-				 pOutputBuf, &OutputLen);
++	if (AES_Key_Wrap(pData, *pDataLen, FT_KDP_CB->CryptKey, 16,
++				 pOutputBuf, &OutputLen) != 0 ||
++		OutputLen > (*pDataLen + FT_KDP_KEY_ENCRYPTION_EXTEND)) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "ap_ftkd> AES_Key_Wrap failed!\n");
++		FT_MEM_FREE(pAd, pOutputBuf);
++		return;
++	}
+ 	*pDataLen = OutputLen;
+ 	NdisMoveMemory(pData, pOutputBuf, *pDataLen);
+ 	FT_MEM_FREE(pAd, pOutputBuf);
+@@ -1128,10 +1153,16 @@
+ 		return;
+ 	}
+ 
++	OutputLen = *pDataLen;
+ 	/* decrypt */
+-	AES_Key_Unwrap(pData, *pDataLen,
++	if (AES_Key_Unwrap(pData, *pDataLen,
+ 				   FT_KDP_CB->CryptKey, 16,
+-				   pOutputBuf, &OutputLen);
++				   pOutputBuf, &OutputLen) != 0 || OutputLen > *pDataLen) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "ap_ftkd> AES_Key_Unwrap failed!\n");
++		*pDataLen = 0;
++		FT_MEM_FREE(pAd, pOutputBuf);
++		return;
++	}
+ 	*pDataLen = OutputLen;
+ 	NdisMoveMemory(pData, pOutputBuf, *pDataLen);
+ 	FT_MEM_FREE(pAd, pOutputBuf);
+@@ -1158,6 +1189,69 @@
+ Note:
+ ========================================================================
+ */
++#ifndef FT_KDP_EMPTY
++static FT_KDP_R0KH_INFO *ft_kdp_r0kh_info_del_locked(
++	IN	PRTMP_ADAPTER		pAd,
++	IN	UCHAR				*pR0KHID,
++	IN	UCHAR				*pMAC,
++	IN	UINT32				IP)
++{
++	FT_KDP_R0KH_INFO *pInfo;
++	FT_KDP_R0KH_INFO *pInfoBackup, *pInfoDelPrev = NULL, *pInfoDel = NULL;
++	ULONG TimeOldest = 0xFFFFFFFF;
++
++	pInfo = FT_KDP_CB->R0KH_InfoHead;
++	if (pInfo == NULL)
++		return NULL;
++
++	pInfoBackup = pInfo;
++	while (pInfo != NULL) {
++		if ((pR0KHID == NULL) && (pMAC == NULL) && (IP == 0)) {
++			if (pInfo->TimeUpdate < TimeOldest) {
++				TimeOldest = pInfo->TimeUpdate;
++				pInfoDelPrev = pInfoBackup;
++				pInfoDel = pInfo;
++			}
++		} else {
++			if ((pR0KHID != NULL) &&
++				(NdisEqualMemory(pR0KHID, pInfo->R0KHID, sizeof(pInfo->R0KHID)))) {
++				pInfoDelPrev = pInfoBackup;
++				pInfoDel = pInfo;
++				break;
++			}
++			if ((pMAC != NULL) &&
++				(NdisEqualMemory(pMAC, pInfo->MAC, sizeof(pInfo->MAC)))) {
++				pInfoDelPrev = pInfoBackup;
++				pInfoDel = pInfo;
++				break;
++			}
++			if (pInfo->IP == IP) {
++				pInfoDelPrev = pInfoBackup;
++				pInfoDel = pInfo;
++				break;
++			}
++		}
++		pInfoBackup = pInfo;
++		pInfo = pInfo->pNext;
++	}
++
++	if (pInfoDel != NULL) {
++		FT_KDP_CB->R0KH_Size--;
++		if (FT_KDP_CB->R0KH_Size == 0) {
++			FT_KDP_CB->R0KH_InfoHead = NULL;
++			FT_KDP_CB->R0KH_InfoTail = NULL;
++		} else if (pInfoDelPrev == pInfoDel) {
++			FT_KDP_CB->R0KH_InfoHead = pInfoDel->pNext;
++		} else {
++			pInfoDelPrev->pNext = pInfoDel->pNext;
++			if (FT_KDP_CB->R0KH_InfoTail == pInfoDel)
++				FT_KDP_CB->R0KH_InfoTail = pInfoDelPrev;
++		}
++	}
++	return pInfoDel;
++}
++#endif /* FT_KDP_EMPTY */
++
+ BOOLEAN TYPE_FUNC FT_KDP_R0KH_InfoAdd(
+ 	IN	PRTMP_ADAPTER		pAd,
+ 	IN	UCHAR				*pR0KHID,
+@@ -1165,7 +1259,7 @@
+ 	IN	UINT32				IP)
+ {
+ #ifndef FT_KDP_EMPTY
+-	FT_KDP_R0KH_INFO *pInfo;
++	FT_KDP_R0KH_INFO *pInfo, *pEvicted = NULL;
+ 	BOOLEAN FlgIsSameRecordFound;
+ 
+ 	if (pAd->ApCfg.FtTab.FlgIsFtKdpInit == 0) {
+@@ -1181,11 +1275,9 @@
+ 	}
+ 
+ 	OS_SEM_LOCK(&(pAd->ApCfg.FtTab.FT_KdpLock));
+-	/* sanity check for maximum size */
+-	if (FT_KDP_CB->R0KH_Size >= FT_KDP_R0KH_INFO_MAX_SIZE) {
+-		/* delete oldest record first */
+-		FT_KDP_R0KH_InfoDel(pAd, NULL, NULL, 0);
+-	}
++	/* sanity check for maximum size without recursively locking */
++	if (FT_KDP_CB->R0KH_Size >= FT_KDP_R0KH_INFO_MAX_SIZE)
++		pEvicted = ft_kdp_r0kh_info_del_locked(pAd, NULL, NULL, 0);
+ 
+ 	/* sanity check if same information exists */
+ 	FlgIsSameRecordFound = FALSE;
+@@ -1210,6 +1302,8 @@
+ 
+ 		if (pInfo == NULL) {
+ 			OS_SEM_UNLOCK(&(pAd->ApCfg.FtTab.FT_KdpLock));
++	if (pEvicted)
++		FT_MEM_FREE(pAd, pEvicted);
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "ap_ftkd> Allocate R0KH INFO fail!\n");
+ 			return FALSE;
+ 		}
+@@ -1237,6 +1331,8 @@
+ 	}
+ 
+ 	OS_SEM_UNLOCK(&(pAd->ApCfg.FtTab.FT_KdpLock));
++	if (pEvicted)
++		FT_MEM_FREE(pAd, pEvicted);
+ #endif /* FT_KDP_EMPTY */
+ 	return TRUE;
+ }
+@@ -1277,79 +1373,13 @@
+ 		return;
+ 	}
+ 
+-	/* init */
+-	pInfoDelPrev = NULL;
+-	pInfoDel = NULL;
+-	TimeOldest = 0xFFFFFFFF;
+ 	OS_SEM_LOCK(&(pAd->ApCfg.FtTab.FT_KdpLock));
+-	/* try to find the one expected to delete */
+-	pInfo = FT_KDP_CB->R0KH_InfoHead;
+-
+-	if (pInfo == NULL) {
+-		OS_SEM_UNLOCK(&(pAd->ApCfg.FtTab.FT_KdpLock));
+-		return;
+-	}
+-
+-	pInfoBackup = pInfo;
+-
+-	while (pInfo != NULL) {
+-		if ((pR0KHID == NULL) && (pMAC == NULL) && (IP == 0)) {
+-			/* check if the info is the oldest one */
+-			if (pInfo->TimeUpdate < TimeOldest) {
+-				TimeOldest = pInfo->TimeUpdate;
+-				pInfoDelPrev = pInfoBackup;
+-				pInfoDel = pInfo;
+-			}
+-		} else {
+-			/* check if the info is the one expected to delete */
+-			if ((pR0KHID != NULL) &&
+-				(NdisEqualMemory(pR0KHID, pInfo->R0KHID, sizeof(pInfo->R0KHID)))) {
+-				pInfoDelPrev = pInfoBackup;
+-				pInfoDel = pInfo;
+-				break;
+-			}
+-
+-			if ((pMAC != NULL) &&
+-				(NdisEqualMemory(pMAC, pInfo->MAC, sizeof(pInfo->MAC)))) {
+-				pInfoDelPrev = pInfoBackup;
+-				pInfoDel = pInfo;
+-				break;
+-			}
+-
+-			if (pInfo->IP == IP) {
+-				pInfoDelPrev = pInfoBackup;
+-				pInfoDel = pInfo;
+-				break;
+-			}
+-		}
+-
+-		/* check next one */
+-		pInfoBackup = pInfo;
+-		pInfo = pInfo->pNext;
+-	}
+-
+-	/* delete the information record */
+-	if (pInfoDel != NULL) {
+-		FT_KDP_CB->R0KH_Size--;
+-
+-		if (FT_KDP_CB->R0KH_Size == 0) {
+-			/* list is empty */
+-			FT_KDP_CB->R0KH_InfoHead = NULL;
+-			FT_KDP_CB->R0KH_InfoTail = NULL;
+-		} else {
+-			if (pInfoDelPrev == pInfoDel) {
+-				/* must be the head one */
+-				FT_KDP_CB->R0KH_InfoHead = pInfoDel->pNext;
+-			} else {
+-				/* must not be the head one */
+-				pInfoDelPrev->pNext = pInfoDel->pNext;
+-			}
+-		}
+-	} else {
+-		/* sorry! can not find the one in the list */
+-	}
+-
++	pInfoDel = ft_kdp_r0kh_info_del_locked(pAd, pR0KHID, pMAC, IP);
+ 	OS_SEM_UNLOCK(&(pAd->ApCfg.FtTab.FT_KdpLock));
++	(void)pInfo;
++	(void)pInfoBackup;
++	(void)pInfoDelPrev;
++	(void)TimeOldest;
+ 
+ 	/* free the one */
+ 	if (pInfoDel != NULL)
+@@ -1545,6 +1575,7 @@
+ 	UCHAR *pData;
+ 	UINT32 IdBssNum;
+ 	UINT16 SsidLen;
++	CHAR ssid[MAX_LEN_OF_SSID + 1];
+ 	RTMP_STRING *pSSID;
+ 
+ 	if (pAd->ApCfg.FtTab.FlgIsFtKdpInit == 0) {
+@@ -1555,9 +1586,12 @@
+ 
+ 	/* init */
+ 	IAPP_DAEMON_CMD_PARSE(pInfo, InfoLen, PeerIP, pData, DataLen);
+-	SsidLen = DataLen;
+-	pSSID = (RTMP_STRING *)pData;
+-	pSSID[SsidLen] = 0x00;
++	SsidLen = (UINT16)min_t(UINT32, DataLen, MAX_LEN_OF_SSID);
++	NdisZeroMemory(ssid, sizeof(ssid));
++	if (pData && SsidLen > 0)
++		NdisMoveMemory(ssid, pData, SsidLen);
++	ssid[SsidLen] = '\0';
++	pSSID = ssid;
+ 	IdBssNum = BSS0;
+ #ifdef FT_KDP_DEBUG
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO,
+--- a/mt_wifi/feature/ft/ft_rc.c
++++ b/mt_wifi/feature/ft/ft_rc.c
+@@ -581,11 +581,17 @@
+ 	*/
+ 	while (HandledSize < ReqLen) {
+ 		/* sanity check the RDIE */
++		if ((HandledSize + sizeof(FT_ELM_RIC_DATA_INFO)) > ReqLen)
++			break;
+ 		pElmDataInfoReq = (FT_ELM_RIC_DATA_INFO *)pBufReqElm;
+ 
+-		if (pElmDataInfoReq->ElmID != FT_ELM_ID_RIC_DATA_INFO)
++		if (pElmDataInfoReq->ElmID != FT_ELM_ID_RIC_DATA_INFO ||
++			(HandledSize + FT_ELM_HDR_LEN + pElmDataInfoReq->ElmLen) > ReqLen)
++			break;
++		if ((*pRspLen + sizeof(FT_ELM_RIC_DATA_INFO)) > MAX_RICIES_LEN)
+ 			break;
+ 
++		RspLen = 0;
+ 		/* End of if */
+ 		/* make up reponse */
+ 		/*
+@@ -614,7 +620,10 @@
+ 		pElmReqDescp += FT_ELM_HDR_LEN + pElmDataInfoReq->ElmLen;
+ 		HandledSize += FT_ELM_HDR_LEN + pElmDataInfoReq->ElmLen;
+ 
+-		while (DescpCnt > 0) {
++		while ((DescpCnt > 0) && ((HandledSize + FT_ELM_HDR_LEN) <= ReqLen)) {
++			ElmLen = *(pElmReqDescp + 1);
++			if ((HandledSize + FT_ELM_HDR_LEN + ElmLen) > ReqLen)
++				break;
+ 			if (FlgIsTspecAccepted == FALSE) {
+ 				/* only one resource descriptor is accepted is enough */
+ 				/*
+@@ -625,6 +634,8 @@
+ 				case IE_FT_RIC_DESCRIPTOR:
+ 					/* BLOCK ACK */
+ 					/* reject the resource */
++					if ((*pRspLen + FT_ELM_RIC_DESCP_INFO_LEN) > MAX_RICIES_LEN)
++						break;
+ 					MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO,
+ 							 "ft_ric> Handle a resource request BLOCK ACK...\n");
+ 
+@@ -645,14 +656,13 @@
+ 			} /* End of if */
+ 
+ 			/* find the next RD Descriptor element */
+-			ElmLen = *(pElmReqDescp + 1);
+ 			pElmReqDescp += FT_ELM_HDR_LEN + ElmLen;
+ 			HandledSize += FT_ELM_HDR_LEN + ElmLen;
+ 			DescpCnt--;
+ 		} /* End of while */
+ 
+ 		/* re-assign the reponse RD Count/status code of RDIE */
+-		if (FlgIsTspecAccepted == TRUE) {
++		if ((FlgIsTspecAccepted == TRUE) && ((*pRspLen + RspLen) <= MAX_RICIES_LEN)) {
+ 			/*
+ 				A resource request is considered successful by a non-AP STA
+ 				if the Status Code 0 is returned in each RDIE.
+@@ -738,6 +748,9 @@
+ 		UINT16 Value;
+ 
+ 		pRicDesInfo = (FT_ELM_RIC_DESCP_INFO *)pBufRscReq;
++		if (pRicDesInfo->ElmLen < FT_ELM_LEN_RIC_DESCP_INFO_RSC_BLOCK_ACK ||
++			pRicDesInfo->ResourceType != FT_ELM_RIC_DESCP_INFO_RSC_TYPE_BLOCK_ACK)
++			return 38;
+ 		pRicBaInfo = (FT_RIC_DESCP_BLOCK_ACK *)pRicDesInfo->Container;
+ 		Value = le2cpu16(*(UINT16 *)(&pRicBaInfo->BaParm));
+ 		NdisMoveMemory((PUCHAR)&AddreqFrame.BaParm, &Value, sizeof(UINT16));
+--- a/mt_wifi/feature/ft/ft_tlv.c
++++ b/mt_wifi/feature/ft/ft_tlv.c
+@@ -124,9 +124,10 @@
+ 	}
+ 
+ 	/* The length of R0KHID must in range of 1 to 48 octects.*/
+-	if ((SubId == FT_R0KH_ID) && ((KhIdLen > 48) && (KhIdLen < 1))) {
++	if ((SubId == FT_R0KH_ID) && ((KhIdLen > 48) || (KhIdLen < 1))) {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "Invalid R0KHID length (%d)\n",
+ 				 KhIdLen);
++		return;
+ 	}
+ 
+ 	TempSubID = (UCHAR)SubId;
+--- a/mt_wifi/include/wnm.h
++++ b/mt_wifi/include/wnm.h
+@@ -474,6 +474,7 @@
+ enum WNM_NOTIFY_EVENT {
+ 	WNM_NOTIFY_REQ,
+ 	WNM_NOTIFY_RSP,
++	WNM_NOTIFY_RSP_TIMEOUT,
+ 	MAX_WNM_NOTIFY_MSG,
+ };
+ 
+--- a/mt_wifi/feature/hs_r2/wnm.c
++++ b/mt_wifi/feature/hs_r2/wnm.c
+@@ -49,9 +49,14 @@
+ {
+ 	struct btm_query_data *query_data = NULL;
+ 	struct wnm_event *event_data = NULL;
+-	UINT16 buflen = 0;
++	UINT32 buflen = 0;
+ 	char *buf;
+ 
++	if (btm_query_len > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"Event payload too large (%u)\n", btm_query_len);
++		return;
++	}
+ 	buflen = sizeof(struct wnm_event) + sizeof(struct btm_query_data) + btm_query_len;
+ 	os_alloc_mem(NULL, (UCHAR **)&buf, buflen);
+ 	if (buf == NULL) {
+@@ -86,8 +91,13 @@
+ 							   const char *btm_query, UINT16 btm_query_len)
+ {
+ 	struct btm_query_data *query_data;
+-	UINT16 buflen = 0;
++	UINT32 buflen = 0;
+ 	char *buf;
++	if (btm_query_len > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"Event payload too large (%u)\n", btm_query_len);
++		return;
++	}
+ 	buflen = sizeof(*query_data) + btm_query_len;
+ 	os_alloc_mem(NULL, (UCHAR **)&buf, buflen);
+ 	if (buf == NULL) {
+@@ -164,10 +174,15 @@
+ 
+ 	struct btm_rsp_data *rsp_data = NULL;
+ 	struct wnm_event *event_data = NULL;
+-	UINT16 buflen = 0;
++	UINT32 buflen = 0;
+ 	char *buf;
+ 
+ 
++	if (btm_rsp_len > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"Event payload too large (%u)\n", btm_rsp_len);
++		return;
++	}
+ 	buflen = sizeof(struct wnm_event) + sizeof(*rsp_data) + btm_rsp_len;
+ 	os_alloc_mem(NULL, (UCHAR **)&buf, buflen);
+ 	if (buf == NULL) {
+@@ -199,8 +214,13 @@
+ 							 const char *btm_rsp, UINT16 btm_rsp_len)
+ {
+ 	struct btm_rsp_data *rsp_data;
+-	UINT16 buflen = 0;
++	UINT32 buflen = 0;
+ 	char *buf;
++	if (btm_rsp_len > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"Event payload too large (%u)\n", btm_rsp_len);
++		return;
++	}
+ 	buflen = sizeof(*rsp_data) + btm_rsp_len;
+ 	os_alloc_mem(NULL, (UCHAR **)&buf, buflen);
+ 	if (buf == NULL) {
+@@ -1231,20 +1251,20 @@
+ 
+ 		if ((MAC_ADDR_EQUAL(ProxyARPEntry->TargetMACAddr, pTargetMACAddr) == FALSE) &&
+ 			IPV6_ADDR_EQUAL(ProxyARPEntry->TargetIPAddr, pTargetIPAddr)) {
++			UCHAR match_mac[MAC_ADDR_LEN];
++			UCHAR match_ip[16];
++
++			NdisMoveMemory(match_mac, ProxyARPEntry->TargetMACAddr, MAC_ADDR_LEN);
++			NdisMoveMemory(match_ip, ProxyARPEntry->TargetIPAddr, 16);
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR, " different Mac address use IPv6 address which already in List!\n");
+ 			if (!is_atomic)
+ 				OS_SEM_UNLOCK(&pWNMCtrl->ProxyARPIPv6ListLock);
+ 			IsDAD = TRUE;
+-			/*we got IPv6 DAD here, AP shall issue Neighbor Advertisement back to sender in below format */
+-			/* SenderMAC is the mac which in List, */
+-			/* DestMAC is multicast address e.g, 33:33:00:00:00:01 */
+-			/* SourceIP = TargetIP = TentativeIP, in this case is the IP which in List */
+-			/* DestIP = FF02::1 */
+ 			SendProxyARPEvent(NetDev,
+ 							  pTargetMACAddr,
+-							  ProxyARPEntry->TargetIPAddr,
+-							  ProxyARPEntry->TargetMACAddr,
+-							  ProxyARPEntry->TargetIPAddr,
++							  match_ip,
++							  match_mac,
++							  match_ip,
+ 							  IPV6,
+ 							  FALSE,
+ 							  IsDAD);
+@@ -1314,6 +1334,8 @@
+ 	PNET_DEV NetDev = pMbss->wdev.if_dev;
+ 	BOOLEAN IsFound = FALSE, InTable = FALSE;
+ 	PROXY_ARP_IPV4_ENTRY *ProxyARPEntry;
++	UCHAR FoundMACAddr[MAC_ADDR_LEN] = {0};
++	UCHAR FoundIPAddr[4] = {0};
+ 	/* PROXY_ARP_IPV4_ENTRY *ProxyARPSrcEntry; */
+ 	PUCHAR SourceMACAddr = pData + 10;
+ 	PUCHAR SourceIPAddr = pData + 16;
+@@ -1331,6 +1353,8 @@
+ 	DlListForEach(ProxyARPEntry, &pWNMCtrl->IPv4ProxyARPList, PROXY_ARP_IPV4_ENTRY, List) {
+ 		if (IPV4_ADDR_EQUAL(ProxyARPEntry->TargetIPAddr, TargetIPAddr)) {
+ 			IsFound = TRUE;
++			NdisMoveMemory(FoundMACAddr, ProxyARPEntry->TargetMACAddr, MAC_ADDR_LEN);
++			NdisMoveMemory(FoundIPAddr, ProxyARPEntry->TargetIPAddr, 4);
+ 
+ 			if (
+ 				(MAC_ADDR_EQUAL(ProxyARPEntry->TargetMACAddr, SourceMACAddr) == FALSE) &&
+@@ -1364,8 +1388,8 @@
+ 		SendProxyARPEvent(NetDev,
+ 						  SourceMACAddr,
+ 						  SourceIPAddr,
+-						  ProxyARPEntry->TargetMACAddr,
+-						  ProxyARPEntry->TargetIPAddr,
++						  FoundMACAddr,
++						  FoundIPAddr,
+ 						  IPV4,
+ 						  FromDS,
+ 						  IsDAD);
+@@ -1438,12 +1462,15 @@
+ 	PUCHAR SourceIPAddr = pData + 10;
+ 	PUCHAR TargetIPAddr = pData + 50;
+ 	BOOLEAN IsDAD = FALSE;
+-	/* MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO, "\n"); */
++	UCHAR FoundMACAddr[MAC_ADDR_LEN] = {0};
++	UCHAR FoundIPAddr[16] = {0};
+ 	if (!is_atomic)
+ 		OS_SEM_LOCK(&pWNMCtrl->ProxyARPIPv6ListLock);
+ 	DlListForEach(ProxyARPEntry, &pWNMCtrl->IPv6ProxyARPList, PROXY_ARP_IPV6_ENTRY, List) {
+ 		if (IPV6_ADDR_EQUAL(ProxyARPEntry->TargetIPAddr, TargetIPAddr)) {
+ 			IsFound = TRUE;
++			NdisMoveMemory(FoundMACAddr, ProxyARPEntry->TargetMACAddr, MAC_ADDR_LEN);
++			NdisMoveMemory(FoundIPAddr, ProxyARPEntry->TargetIPAddr, 16);
+ 			break;
+ 		}
+ 	}
+@@ -1456,8 +1483,8 @@
+ 		SendProxyARPEvent(NetDev,
+ 						  SourceMACAddr,
+ 						  SourceIPAddr,
+-						  ProxyARPEntry->TargetMACAddr,
+-						  ProxyARPEntry->TargetIPAddr,
++						  FoundMACAddr,
++						  FoundIPAddr,
+ 						  IPV6,
+ 						  FromDS,
+ 						  IsDAD);
+@@ -1549,44 +1576,59 @@
+ 			if (ProtoType_temp > (1500 - IPV6_HDR_LEN))
+ 				return;
+ 			PayloadLen = (INT16)ProtoType_temp;
+-			printk("WNMIPv6ProxyARPCheck: offset=%d\n", Offset);
++			if (PayloadLen < (16 + (INT16)Offset))
++				return;
+ 			/* IPv6 options */
+ 			Pos += 52 + Offset;
+ 			PayloadLen -= (16 + Offset);
+ 
+-			while (PayloadLen > 0) {
++			while (PayloadLen >= 2) {
+ 				UINT8 OptionsLen = (*(Pos + 1)) * 8;
+ 
+-				/* FATAL error, OUT to avoid infinite loop */
+-				if (OptionsLen == 0) {
++				/* FATAL error, OUT to avoid infinite loop or OOB read */
++				if (OptionsLen == 0 || OptionsLen > PayloadLen) {
+ 					MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
+-							"RouterAdvertisement len is 0!\n");
++							"RouterAdvertisement invalid opt len (%u vs %d)!\n",
++							OptionsLen, PayloadLen);
+ 					break;
+ 				}
+-				/* Prefix information */
+-				if (*Pos == 0x03) {
+-					UCHAR *Prefix;
++				/* Prefix information (RFC 4861 section 4.6.2 requires 32 bytes) */
++				if ((*Pos == 0x03) && (OptionsLen >= 32)) {
++					UCHAR *Prefix = (Pos + 16);
+ 					PROXY_ARP_IPV6_ENTRY *ProxyARPEntry;
+ 					PWNM_CTRL pWNMCtrl = &pMbss->WNMCtrl;
+-					/* Prefix */
+-					Prefix = (Pos + 16);
+-					/* Copy global address prefix */
++					struct {
++						UCHAR mac[MAC_ADDR_LEN];
++						UCHAR iid[8];
++					} *pending = NULL;
++					UINT16 pending_cnt = 0;
++					UINT16 idx;
++
++					os_alloc_mem(NULL, (UCHAR **)&pending, 64 * sizeof(*pending));
+ 					NdisMoveMemory(TargetIPAddr, Prefix, 8);
+-					if (!is_atomic)
+-						OS_SEM_LOCK(&pWNMCtrl->ProxyARPIPv6ListLock);
+-					DlListForEach(ProxyARPEntry, &pWNMCtrl->IPv6ProxyARPList,
+-								  PROXY_ARP_IPV6_ENTRY, List) {
+-						if (ProxyARPEntry->TargetIPType == IPV6_LINK_LOCAL) {
+-							/* Copy host ipv6 interface identifier */
+-							NdisMoveMemory(&TargetIPAddr[8],
+-										   &ProxyARPEntry->TargetIPAddr[8], 8);
+-							/* Proxy MAC address/IPv6 mapping for global address */
+-							AddIPv6ProxyARPEntry(pAd, pMbss, ProxyARPEntry->TargetMACAddr,
+-												 TargetIPAddr, is_atomic);
++					if (pending) {
++						if (!is_atomic)
++							OS_SEM_LOCK(&pWNMCtrl->ProxyARPIPv6ListLock);
++						DlListForEach(ProxyARPEntry, &pWNMCtrl->IPv6ProxyARPList,
++									  PROXY_ARP_IPV6_ENTRY, List) {
++							if (ProxyARPEntry->TargetIPType == IPV6_LINK_LOCAL &&
++								pending_cnt < 64) {
++								NdisMoveMemory(pending[pending_cnt].mac,
++									ProxyARPEntry->TargetMACAddr, MAC_ADDR_LEN);
++								NdisMoveMemory(pending[pending_cnt].iid,
++									&ProxyARPEntry->TargetIPAddr[8], 8);
++								pending_cnt++;
++							}
++						}
++						if (!is_atomic)
++							OS_SEM_UNLOCK(&pWNMCtrl->ProxyARPIPv6ListLock);
++						for (idx = 0; idx < pending_cnt; idx++) {
++							NdisMoveMemory(&TargetIPAddr[8], pending[idx].iid, 8);
++							AddIPv6ProxyARPEntry(pAd, pMbss, pending[idx].mac,
++								TargetIPAddr, is_atomic);
+ 						}
++						os_free_mem(pending);
+ 					}
+-					if (!is_atomic)
+-						OS_SEM_UNLOCK(&pWNMCtrl->ProxyARPIPv6ListLock);
+ 				}
+ 
+ 				Pos += OptionsLen;
+@@ -1606,10 +1648,15 @@
+ 	BOOL os_need = FALSE;
+ #endif
+ #endif
++	if (!Elem->wdev || Elem->MsgLen < (sizeof(HEADER_802_11) + 3))
++		return;
+ 	rest_len -= (sizeof(HEADER_802_11) + 3);
+-	while (rest_len > 0) {
++	while (rest_len >= 5) {
+ 		struct WNM_EVT_REPORT_ELEMENT *pRptElement = (struct WNM_EVT_REPORT_ELEMENT *)ptr;
+ 
++		if (pRptElement->Length < 3 || (int)(pRptElement->Length + 2) > rest_len)
++			break;
++
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+ 			"Element_ID = %d, EvtToken = %d, EvtStatus = %d, EvtType = %d\n",
+ 			pRptElement->Element_ID, pRptElement->EvtToken, pRptElement->EvtStatus,
+@@ -1619,9 +1666,11 @@
+ 			if (pRptElement->EvtToken == 0) { /* sent autonomously */
+ #ifdef DOT11_HE_AX
+ 				if (pRptElement->EvtStatus == STATUS_SUCCESSFUL) {
+-					if (pRptElement->EvtType == BSS_COLOR_COLLISION)
++					if (pRptElement->EvtType == BSS_COLOR_COLLISION &&
++						pRptElement->Length >= 11)
+ 						bss_color_parse_collision_report(Elem->wdev, pRptElement->EvtReport);
+-					else if (pRptElement->EvtType == BSS_COLOR_INUSE)
++					else if (pRptElement->EvtType == BSS_COLOR_INUSE &&
++						pRptElement->Length >= 4)
+ 						bss_color_parse_inuse_report(Elem->wdev, pRptElement->EvtReport);
+ 				}
+ #endif
+@@ -1691,6 +1740,12 @@
+ 		return;
+ 	}
+ 
++	if (Elem->MsgLen < (sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_QUERY))) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"BTM Query too short (%lu)\n", Elem->MsgLen);
++		return;
++	}
++
+ #ifdef RT_CFG80211_SUPPORT
+ 	MAP_CHANNEL_ID_TO_KHZ(pAd->LatchRfRegs.Channel, freq);
+ 	freq /= 1000;
+@@ -1724,6 +1779,7 @@
+ 
+ 	NdisZeroMemory(BTMPeerEntry, sizeof(*BTMPeerEntry));
+ 	BTMPeerEntry->CurrentState = WAIT_BTM_REQ;
++	BTMPeerEntry->ControlIndex = APIndex;
+ 	NdisMoveMemory(BTMPeerEntry->PeerMACAddr, WNMFrame->Hdr.Addr2, MAC_ADDR_LEN);
+ 	BTMPeerEntry->DialogToken = WNMFrame->u.BTM_QUERY.DialogToken;
+ 	BTMPeerEntry->Priv = pAd;
+@@ -1810,10 +1866,13 @@
+ 	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+ 	BTM_free_Entry(BTMPeerEntry);
+ 
++	if (Elem->MsgLen < (sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_RSP)))
++		return;
++
+ 	NetDev = pAd->ApCfg.MBSSID[APIndex].wdev.if_dev;
+ 	/* Send BTM confirm to daemon */
+-	VarLen = Elem->MsgLen -
+-		(sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_RSP)) + 1;
++	VarLen = (UINT16)(Elem->MsgLen -
++		(sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_RSP)) + 1);
+ 
+ #ifdef WAPP_SUPPORT
+ 	SendBTMConfirmEvent(NetDev,
+@@ -2045,12 +2104,16 @@
+ 	UINT32 FrameLen = 0, VarLen = Event->u.BTM_REQ_DATA.BTMReqLen;
+ 	INT32 Ret;
+ 	BOOLEAN Cancelled;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
+ 	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+ 	DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList,
+ 				  BTM_PEER_ENTRY, List) {
+ 		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, Event->PeerMACAddr))
+-			break;
++			goto found_btm_req_entry;
+ 	}
++	BTMPeerEntry = NULL;
++found_btm_req_entry:
+ 	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+ 
+ 	if (BTMPeerEntry == NULL) {
+@@ -2406,15 +2469,26 @@
+ 
+ 	os_move_mem(&event, Elem->Msg, sizeof(event));
+ 
++	if (event.ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++
+ 	pWNMCtrl = &pAd->ApCfg.MBSSID[event.ControlIndex].WNMCtrl;
+ 	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+ 	DlListForEachSafe(BTMPeerEntry, BTMPeerEntryTmp, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List)
+ 	{
+ 		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, &event.PeerMACAddr[0]))
+-			break;
++			goto found_btm_timeout_entry;
+ 	}
++	BTMPeerEntry = NULL;
++found_btm_timeout_entry:
+ 	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+ 
++	if (!BTMPeerEntry) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++			"BTMReqTimeout: BTMPeerEntry already removed\n");
++		return;
++	}
++
+ 	/**
+ 	  * no other place to delete BTMPeerEntry when receive btm query;
+ 	  * so here must exist BTMPeerEntry
+@@ -2497,6 +2571,9 @@
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO, "--->\n");
+ 
++	if (APIndex >= pAd->ApCfg.BssidNum || APIndex >= MAX_MBSSID_NUM(pAd))
++		return NDIS_STATUS_FAILURE;
++
+ 	pMbss = &pAd->ApCfg.MBSSID[APIndex];
+ 	pWNMCtrl = &pMbss->WNMCtrl;
+ 	if (pWNMCtrl->WNMBTMEnable == FALSE) {
+@@ -2622,6 +2699,9 @@
+ 	UCHAR ifIndex = pObj->ioctl_if;
+ 	BOOLEAN IsFound = FALSE;
+ 
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd))
++		return NDIS_STATUS_FAILURE;
++
+ 	pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+ 	pWNMCtrl = &pMbss->WNMCtrl;
+ 	if (pWNMCtrl->WNMBTMEnable == FALSE) {
+@@ -2739,12 +2819,19 @@
+ 
+ 	POS_COOKIE pObj = (POS_COOKIE)pAd->OS_Cookie;
+ 	UCHAR APIndex = pObj->ioctl_if;
+-	PWNM_CTRL pWNMCtrl = &pAd->ApCfg.MBSSID[APIndex].WNMCtrl;
++	PWNM_CTRL pWNMCtrl;
+ 	int status = NDIS_STATUS_SUCCESS;
+ 
++	if (APIndex >= pAd->ApCfg.BssidNum || APIndex >= MAX_MBSSID_NUM(pAd))
++		return NDIS_STATUS_FAILURE;
++
++	pWNMCtrl = &pAd->ApCfg.MBSSID[APIndex].WNMCtrl;
++
+ 	switch (pCmd_data->command_id) {
+ 	case OID_802_11_WNM_CMD_ENABLE:
+ 	{
++		if (pCmd_data->command_len < 1)
++			return NDIS_STATUS_INVALID_DATA;
+ 		if (pCmd_data->command_body[0] == 0) {
+ 			/*Disable All Features*/
+ 			pWNMCtrl->WNMBTMEnable = 0;
+@@ -2757,6 +2844,8 @@
+ 
+ 	case OID_802_11_WNM_CMD_CAP:
+ 	{
++		if (pCmd_data->command_len < 1)
++			return NDIS_STATUS_INVALID_DATA;
+ 		if (pCmd_data->command_body[0] & BTM_ENABLE_OFFSET)
+ 			pWNMCtrl->WNMBTMEnable = 1;
+ 		else
+@@ -2771,7 +2860,11 @@
+ 		MAC_TABLE_ENTRY  *pEntry;
+ 		struct btm_req_data *req_data;
+ 
++		if (pCmd_data->command_len < sizeof(struct btm_req_data))
++			return NDIS_STATUS_INVALID_DATA;
+ 		req_data = (struct btm_req_data *)pCmd_data->command_body;
++		if (req_data->btm_req_len > (pCmd_data->command_len - sizeof(struct btm_req_data)))
++			return NDIS_STATUS_INVALID_DATA;
+ 		pEntry = MacTableLookup(pAd, req_data->peer_mac_addr);
+ 
+ 		if (pEntry != NULL) {
+@@ -2817,8 +2910,10 @@
+ {
+ 	UCHAR *Buf;
+ 	POS_COOKIE pObj = (POS_COOKIE)pAd->OS_Cookie;
+-	UCHAR APcliIndex = pObj->ioctl_if;
+-	PWNM_CTRL pWNMCtrl = &pAd->StaCfg[APcliIndex].WNMCtrl;
++	UCHAR APcliIndex = 0;
++	UCHAR loop;
++	PWNM_CTRL pWNMCtrl = NULL;
++	BTM_PEER_ENTRY *PeerTmp;
+ 	BTM_PEER_ENTRY *BTMPeerEntry;
+ 	UINT32 Len = 0;
+ 	INT32 Ret;
+@@ -2828,6 +2923,28 @@
+ 
+ 	MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_NOTICE, "--->\n");
+ 
++	for (loop = 0; loop < MAX_MULTI_STA && loop < pAd->MSTANum; loop++) {
++		pWNMCtrl = &pAd->StaCfg[loop].WNMCtrl;
++		RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
++		DlListForEach(PeerTmp, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List) {
++			if (MAC_ADDR_EQUAL(PeerTmp->PeerMACAddr, PeerMACAddr)) {
++				APcliIndex = loop;
++				IsFound = TRUE;
++				break;
++			}
++		}
++		RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
++		if (IsFound)
++			break;
++	}
++	if (!IsFound) {
++		if (pObj->ioctl_if < 0 || pObj->ioctl_if >= MAX_MULTI_STA)
++			return FALSE;
++		APcliIndex = (UCHAR)pObj->ioctl_if;
++	}
++	pWNMCtrl = &pAd->StaCfg[APcliIndex].WNMCtrl;
++	IsFound = FALSE;
++
+ 	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+ 	DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List) {
+ 		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, PeerMACAddr)) {
+@@ -3008,11 +3125,13 @@
+ 		btm_rsp_len += MAC_ADDR_LEN;
+ 	}
+ 
++	if (!wdev || wdev->func_idx >= MAX_MULTI_STA)
++		return;
++	(void)pObj;
+ 	ret = Send_BTM_Rsp(pAd, peer_mac_addr, btm_rsp_buf, btm_rsp_len);
+ 	/* Roam to target_bssid */
+ 	if (ret == TRUE) {
+-		pObj = (POS_COOKIE) pAd->OS_Cookie;
+-		ifIndex = pObj->ioctl_if;
++		ifIndex = wdev->func_idx;
+ 
+ 		pAd->StaCfg[ifIndex].isReassoc = TRUE;
+ 		pAd->StaCfg[ifIndex].bAutoRoaming = TRUE;
+@@ -3072,7 +3191,10 @@
+ 	enum bss_trans_mgmt_status_code status;
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO, "\n");
+-	for (loop = 0; loop < pAd->MSTANum; loop++) {
++	if (Elem->MsgLen < (sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_REQ)))
++		return;
++
++	for (loop = 0; loop < MAX_MULTI_STA && loop < pAd->MSTANum; loop++) {
+ 		if (MAC_ADDR_EQUAL(WNMFrame->Hdr.Addr1, pAd->StaCfg[loop].wdev.if_addr)) {
+ 			pWNMCtrl = &pAd->StaCfg[loop].WNMCtrl;
+ 			wdev = &pAd->StaCfg[loop].wdev;
+@@ -3101,9 +3223,10 @@
+ 	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+ 	DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List)
+ 	{
+-		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, WNMFrame->Hdr.Addr2))
++		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, WNMFrame->Hdr.Addr2)) {
+ 			IsFound = TRUE;
+-		break;
++			break;
++		}
+ 	}
+ 	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+ 
+@@ -3123,6 +3246,7 @@
+ 
+ 	NdisZeroMemory(BTMPeerEntry, sizeof(*BTMPeerEntry));
+ 	BTMPeerEntry->CurrentState = WAIT_BTM_RSP;
++	BTMPeerEntry->ControlIndex = loop;
+ 	NdisMoveMemory(BTMPeerEntry->PeerMACAddr, WNMFrame->Hdr.Addr2, MAC_ADDR_LEN);
+ 	BTMPeerEntry->DialogToken = WNMFrame->u.BTM_REQ.DialogToken;
+ 	BTMPeerEntry->Priv = pAd;
+@@ -3130,19 +3254,19 @@
+ 	DlListAddTail(&pWNMCtrl->BTMPeerList, &BTMPeerEntry->List);
+ 	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+ 
+-	VarLen = Elem->MsgLen - (sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_REQ)) + 1;
++	VarLen = (UINT16)(Elem->MsgLen - (sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_REQ)) + 1);
+ 	if (check_btm_req_sanity(pAd, wdev, BTMPeerEntry->PeerMACAddr,
+ 				(PUCHAR)&(WNMFrame->u.BTM_REQ.Variable), VarLen, &status) == FALSE) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
+ 				"BTM Sanity Failed\n");
+-		return;
++		goto err_free_btm_entry;
+ 	}
+ 
+ #ifdef MBO_SUPPORT
+ 	if (nr_list_get_target_bss(pAd, wdev, target_bssid, &ChNum) != MBO_SUCCESS) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
+ 				"Target BSS not found\n");
+-		return;
++		goto err_free_btm_entry;
+ 	}
+ #endif /* MBO_SUPPORT */
+ 
+@@ -3152,6 +3276,13 @@
+ 
+ 	build_btm_rsp(pAd, wdev, status, BTMPeerEntry->PeerMACAddr, target_bssid, ChNum);
+ 	return;
++
++err_free_btm_entry:
++	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
++	DlListDel(&BTMPeerEntry->List);
++	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
++	BTM_free_Entry(BTMPeerEntry);
++	return;
+ }
+ 
+ 
+@@ -3180,15 +3311,20 @@
+ 	BTM_PEER_ENTRY *BTMPeerEntry = NULL;
+ 	UINT32 FrameLen = 0;
+ 	BTM_EVENT_DATA *Event = (BTM_EVENT_DATA *)Elem->Msg;
+-	PWNM_CTRL pWNMCtrl = &pAd->StaCfg[Event->ControlIndex].WNMCtrl;
++	PWNM_CTRL pWNMCtrl;
+ 	UINT32 VarLen = Event->u.BTM_RSP_DATA.BTMRspLen;
+ 
++	if (Event->ControlIndex >= MAX_MULTI_STA)
++		return;
++	pWNMCtrl = &pAd->StaCfg[Event->ControlIndex].WNMCtrl;
+ 	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+ 	DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList,
+ 			BTM_PEER_ENTRY, List) {
+ 		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, Event->PeerMACAddr))
+-			break;
++			goto found_btm_rsp_entry;
+ 	}
++	BTMPeerEntry = NULL;
++found_btm_rsp_entry:
+ 	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+ 
+ 	if (BTMPeerEntry == NULL) {
+@@ -3274,7 +3410,11 @@
+ void PeerWNMAction(IN PRTMP_ADAPTER pAd,
+ 				   IN MLME_QUEUE_ELEM * Elem)
+ {
+-	UCHAR Action = Elem->Msg[LENGTH_802_11 + 1];
++	UCHAR Action;
++
++	if (!Elem || Elem->MsgLen < (LENGTH_802_11 + 2))
++		return;
++	Action = Elem->Msg[LENGTH_802_11 + 1];
+ 
+ 	switch (Action) {
+ #ifdef CONFIG_AP_SUPPORT
+@@ -3481,6 +3621,9 @@
+ 	PWNM_CTRL pWNMCtrl;
+ 	PROXY_ARP_IPV4_ENTRY *ProxyARPIPv4Entry, *ProxyARPIPv4EntryTmp;
+ 	PROXY_ARP_IPV6_ENTRY *ProxyARPIPv6Entry, *ProxyARPIPv6EntryTmp;
++
++	if (APIndex >= pAd->ApCfg.BssidNum || APIndex >= MAX_MBSSID_NUM(pAd))
++		return;
+ 	pWNMCtrl = &pAd->ApCfg.MBSSID[APIndex].WNMCtrl;
+ 	OS_SEM_LOCK(&pWNMCtrl->ProxyARPListLock);
+ 	/* Remove all proxy arp entry */
+@@ -3794,6 +3937,37 @@
+ 	return WNM_NOTIFY_UNKNOWN;
+ }
+ 
++static VOID WNMNotifyRspTimeout(
++	IN PRTMP_ADAPTER pAd,
++	IN MLME_QUEUE_ELEM *Elem)
++{
++	WNM_NOTIFY_EVENT_DATA *Event;
++	PWNM_CTRL pWNMCtrl;
++	PWNM_NOTIFY_PEER_ENTRY WNMNotifyPeerEntry, WNMNotifyPeerEntryTmp;
++	INT32 Ret;
++	BOOLEAN Cancelled;
++
++	if (!Elem || Elem->MsgLen < sizeof(WNM_NOTIFY_EVENT_DATA))
++		return;
++	Event = (WNM_NOTIFY_EVENT_DATA *)Elem->Msg;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++
++	pWNMCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].WNMCtrl;
++	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->WNMNotifyPeerListLock, Ret);
++	DlListForEachSafe(WNMNotifyPeerEntry, WNMNotifyPeerEntryTmp,
++			 &pWNMCtrl->WNMNotifyPeerList, WNM_NOTIFY_PEER_ENTRY, List) {
++		if (MAC_ADDR_EQUAL(WNMNotifyPeerEntry->PeerMACAddr, Event->PeerMACAddr)) {
++			DlListDel(&WNMNotifyPeerEntry->List);
++			RTMPCancelTimer(&WNMNotifyPeerEntry->WaitPeerWNMNotifyRspTimer, &Cancelled);
++			RTMPReleaseTimer(&WNMNotifyPeerEntry->WaitPeerWNMNotifyRspTimer, &Cancelled);
++			os_free_mem(WNMNotifyPeerEntry);
++			break;
++		}
++	}
++	RTMP_SEM_EVENT_UP(&pWNMCtrl->WNMNotifyPeerListLock);
++}
++
+ VOID WaitPeerWNMNotifyRspTimeout(
+ 	IN PVOID SystemSpecific1,
+ 	IN PVOID FunctionContext,
+@@ -3802,26 +3976,22 @@
+ {
+ 	WNM_NOTIFY_PEER_ENTRY *WNMNotifyPeerEntry = (WNM_NOTIFY_PEER_ENTRY *)FunctionContext;
+ 	PRTMP_ADAPTER pAd;
+-	PWNM_CTRL pWNMCtrl;
+-	INT32 Ret;
+-	BOOLEAN Cancelled;
+-	printk("%s\n", __func__);
++	WNM_NOTIFY_EVENT_DATA Event;
+ 
+ 	if (!WNMNotifyPeerEntry)
+ 		return;
+ 
+ 	pAd = WNMNotifyPeerEntry->Priv;
+-	RTMPReleaseTimer(&WNMNotifyPeerEntry->WaitPeerWNMNotifyRspTimer, &Cancelled);
+-
+-	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS
++	if (!pAd || RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS
+ 					   | fRTMP_ADAPTER_NIC_NOT_EXIST))
+ 		return;
+ 
+-	pWNMCtrl = &pAd->ApCfg.MBSSID[WNMNotifyPeerEntry->ControlIndex].WNMCtrl;
+-	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->WNMNotifyPeerListLock, Ret);
+-	DlListDel(&WNMNotifyPeerEntry->List);
+-	RTMP_SEM_EVENT_UP(&pWNMCtrl->WNMNotifyPeerListLock);
+-	os_free_mem(WNMNotifyPeerEntry);
++	NdisZeroMemory(&Event, sizeof(Event));
++	Event.ControlIndex = WNMNotifyPeerEntry->ControlIndex;
++	COPY_MAC_ADDR(Event.PeerMACAddr, WNMNotifyPeerEntry->PeerMACAddr);
++	MlmeEnqueue(pAd, WNM_NOTIFY_STATE_MACHINE, WNM_NOTIFY_RSP_TIMEOUT,
++		sizeof(Event), (VOID *)&Event, 0);
++	RTMP_MLME_HANDLER(pAd);
+ }
+ BUILD_TIMER_FUNCTION(WaitPeerWNMNotifyRspTimeout);
+ 
+@@ -3907,7 +4077,7 @@
+ 					case MBO_OUI_NON_PREFERRED_CHANNEL_REPORT:
+ 						MboParseStaNPCElement(pAd, pWdev
+ 							, &WNMFrame->u.WNM_NOTIFY_REQ.Variable[pos+4]
+-							, ElementLen, &MboStaInfoNPC, MBO_FRAME_TYPE_WNM_REQ);
++							, ElementLen - 4, &MboStaInfoNPC, MBO_FRAME_TYPE_WNM_REQ);
+ 						bIndicateNPC = TRUE;
+ 						MTWF_DBG(pAd,
+ 						DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO
+@@ -3917,6 +4087,8 @@
+ 						, bIndicateNPC);
+ 						break;
+ 					case MBO_OUI_CELLULAR_DATA_CAPABILITY:
++						if (ElementLen < 5)
++							break;
+ 						MboStaInfoCDC.cdc = WNMFrame->u.WNM_NOTIFY_REQ.Variable[pos+4];
+ 						MboStaInfoCDC.npc_num = 0;
+ 						MboIndicateStaInfoToDaemon(pAd
+@@ -4046,17 +4218,22 @@
+ 	PWNM_CTRL pWNMCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].WNMCtrl;
+ 	UINT32 FrameLen = 0, VarLen = Event->u.WNM_NOTIFY_REQ_DATA.WNMNotifyReqLen;
+ 	INT32 Ret;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++	pWNMCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].WNMCtrl;
+ 	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->WNMNotifyPeerListLock, Ret);
+ 	DlListForEach(WNMNotifyPeerEntry, &pWNMCtrl->WNMNotifyPeerList,
+ 				  WNM_NOTIFY_PEER_ENTRY, List) {
+ 		if (MAC_ADDR_EQUAL(WNMNotifyPeerEntry->PeerMACAddr, Event->PeerMACAddr))
+-			break;
++			goto found_wnm_notify_entry;
+ 	}
++	WNMNotifyPeerEntry = NULL;
++found_wnm_notify_entry:
++	RTMP_SEM_EVENT_UP(&pWNMCtrl->WNMNotifyPeerListLock);
+ 	if (!WNMNotifyPeerEntry) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR, "Warning:WNMNotifyPeerEntry is NULL\n");
+ 		return;
+ 	}
+-	RTMP_SEM_EVENT_UP(&pWNMCtrl->WNMNotifyPeerListLock);
+ 	os_alloc_mem(NULL, (UCHAR **)&Buf, sizeof(*WNMFrame) + VarLen + 7);
+ 
+ 	if (!Buf) {
+@@ -4199,7 +4376,9 @@
+ 	StateMachineInit(S,	(STATE_MACHINE_FUNC *)Trans, MAX_WNM_NOTIFY_STATE, MAX_WNM_NOTIFY_MSG, (STATE_MACHINE_FUNC)Drop, WNM_NOTIFY_UNKNOWN, WNM_NOTIFY_MACHINE_BASE);
+ #ifdef CONFIG_AP_SUPPORT
+ 	StateMachineSetAction(S, WAIT_WNM_NOTIFY_REQ, WNM_NOTIFY_REQ, (STATE_MACHINE_FUNC)SendWNMNotifyReq);
++	StateMachineSetAction(S, WAIT_WNM_NOTIFY_REQ, WNM_NOTIFY_RSP_TIMEOUT, (STATE_MACHINE_FUNC)WNMNotifyRspTimeout);
+ 	StateMachineSetAction(S, WAIT_WNM_NOTIFY_RSP, WNM_NOTIFY_RSP, (STATE_MACHINE_FUNC)SendWNMNotifyConfirm);
++	StateMachineSetAction(S, WAIT_WNM_NOTIFY_RSP, WNM_NOTIFY_RSP_TIMEOUT, (STATE_MACHINE_FUNC)WNMNotifyRspTimeout);
+ #endif /* CONFIG_AP_SUPPORT */
+ }
+ #endif
+--- a/mt_wifi/feature/hs_r2/gas.c
++++ b/mt_wifi/feature/hs_r2/gas.c
+@@ -44,6 +44,10 @@
+ 	PGAS_CTRL pGASCtrl;
+ 	PGAS_PEER_ENTRY GASPeerEntry;
+ 	PGAS_EVENT_DATA Event = (PGAS_EVENT_DATA)Elem->Msg;
++
++	if (!Elem || Elem->MsgLen < offsetof(GAS_EVENT_DATA, u) ||
++		Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return GAS_UNKNOWN;
+ #ifdef CONFIG_AP_SUPPORT
+ 	pGASCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].GASCtrl;
+ #endif /* CONFIG_AP_SUPPORT */
+@@ -185,9 +189,14 @@
+ 							  const char *anqp_req, UINT16 anqp_req_len)
+ {
+ 	struct anqp_req_data *req_data;
+-	UINT16 buflen = 0;
++	UINT32 buflen = 0;
+ 	char *buf;
+ 
++	if (anqp_req_len > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++				"anqp_req_len (%u) too large!\n", anqp_req_len);
++		return;
++	}
+ 	buflen = sizeof(*req_data) + anqp_req_len;
+ 	os_alloc_mem(NULL, (UCHAR **)&buf, buflen);
+ 	if (buf == NULL) {
+@@ -494,6 +503,12 @@
+ 	BOOLEAN IsFound = FALSE;
+ 	PNET_DEV NetDev;
+ 
++	if (Elem->MsgLen < (sizeof(HEADER_802_11) + 4)) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"GAS Init Req too short (%lu)\n", Elem->MsgLen);
++		return;
++	}
++
+ 	MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+ 		"Addr2 = "MACSTR", Dialog Token = %d\n",
+ 		MAC2STR(GASFrame->Hdr.Addr2), GASFrame->u.GAS_INIT_REQ.DialogToken);
+@@ -528,13 +543,12 @@
+ 			break;
+ 		}
+ 	}
+-	NetDev = pAd->ApCfg.MBSSID[APIndex].wdev.if_dev;
+-
+-	if (!pGASCtrl) {
++	if (!pGASCtrl || APIndex >= MAX_MBSSID_NUM(pAd)) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+ 				 "Can not find Peer Control DA="MACSTR"\n", MAC2STR(GASFrame->Hdr.Addr1));
+ 		return;
+ 	}
++	NetDev = pAd->ApCfg.MBSSID[APIndex].wdev.if_dev;
+ 
+ 	OS_SEM_LOCK(&pGASCtrl->GASPeerListLock);
+ 	DlListForEach(GASPeerEntry, &pGASCtrl->GASPeerList, GAS_PEER_ENTRY, List) {
+@@ -613,8 +627,19 @@
+ 	OS_SEM_LOCK(&pGASCtrl->GASPeerListLock);
+ 	DlListAddTail(&pGASCtrl->GASPeerList, &GASPeerEntry->List);
+ 	OS_SEM_UNLOCK(&pGASCtrl->GASPeerListLock);
++	if (Elem->MsgLen < (sizeof(HEADER_802_11) + 9)) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"GAS Init Req missing ANQP header (%lu)\n", Elem->MsgLen);
++		goto error;
++	}
+ 	NdisMoveMemory(&VarLen, GASFrame->u.GAS_INIT_REQ.Variable + 4, 2);
+ 	VarLen = le2cpu16(VarLen);
++	if ((ULONG)VarLen > (Elem->MsgLen - (sizeof(HEADER_802_11) + 9)) ||
++		VarLen > MAX_MGMT_PKT_LEN) {
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
++			"Invalid GAS QueryReqLen (%u vs %lu)\n", VarLen, Elem->MsgLen);
++		goto error;
++	}
+ 	os_alloc_mem(NULL, (UCHAR **)&Buf, sizeof(*Event) + VarLen);
+ 
+ 	if (!Buf) {
+@@ -657,8 +682,9 @@
+ 	os_free_mem(Buf);
+ 	return;
+ error:
+-	DlListDel(&GASPeerEntry->List);
+-	os_free_mem(GASPeerEntry);
++	OS_SEM_LOCK(&pGASCtrl->GASPeerListLock);
++	FreeGasPeerEntry(GASPeerEntry);
++	OS_SEM_UNLOCK(&pGASCtrl->GASPeerListLock);
+ }
+ 
+ VOID FreeGasPeerEntryTimers(IN GAS_PEER_ENTRY *GASPeerEntry)
+@@ -1343,6 +1369,64 @@
+ }
+ 
+ 
++#ifdef CONFIG_AP_SUPPORT
++static VOID MlmeSendGASIndicationAction(
++	IN PRTMP_ADAPTER pAd,
++	IN MLME_QUEUE_ELEM *Elem)
++{
++	GAS_EVENT_DATA *Event;
++
++	if (!Elem || Elem->MsgLen < sizeof(GAS_EVENT_DATA))
++		return;
++	Event = (GAS_EVENT_DATA *)Elem->Msg;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++	SendGASIndication(pAd, Event);
++}
++
++static VOID MlmeSendGASRspAction(
++	IN PRTMP_ADAPTER pAd,
++	IN MLME_QUEUE_ELEM *Elem)
++{
++	GAS_EVENT_DATA *Event;
++
++	if (!Elem || Elem->MsgLen < sizeof(GAS_EVENT_DATA))
++		return;
++	Event = (GAS_EVENT_DATA *)Elem->Msg;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++	SendGASRsp(pAd, Event);
++}
++
++static VOID MlmeSendGASCBRspAction(
++	IN PRTMP_ADAPTER pAd,
++	IN MLME_QUEUE_ELEM *Elem)
++{
++	GAS_EVENT_DATA *Event;
++
++	if (!Elem || Elem->MsgLen < sizeof(GAS_EVENT_DATA))
++		return;
++	Event = (GAS_EVENT_DATA *)Elem->Msg;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++	SendGASCBRsp(pAd, Event);
++}
++
++static VOID MlmeDelGasPeerEntryAction(
++	IN PRTMP_ADAPTER pAd,
++	IN MLME_QUEUE_ELEM *Elem)
++{
++	GAS_EVENT_DATA *Event;
++
++	if (!Elem || Elem->MsgLen < offsetof(GAS_EVENT_DATA, u))
++		return;
++	Event = (GAS_EVENT_DATA *)Elem->Msg;
++	if (Event->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++	DelGasPeerEntry(pAd, Event);
++}
++#endif /* CONFIG_AP_SUPPORT */
++
+ VOID GASStateMachineInit(
+ 	IN PRTMP_ADAPTER pAd,
+ 	IN STATE_MACHINE * S,
+@@ -1352,15 +1436,15 @@
+ 	GASCtrlInit(pAd);
+ 	StateMachineInit(S,	(STATE_MACHINE_FUNC *)Trans, MAX_GAS_STATE, MAX_GAS_MSG, (STATE_MACHINE_FUNC)Drop, GAS_UNKNOWN, GAS_MACHINE_BASE);
+ #ifdef CONFIG_AP_SUPPORT
+-	StateMachineSetAction(S, WAIT_PEER_GAS_REQ, PEER_GAS_REQ, (STATE_MACHINE_FUNC)SendGASIndication);
+-	StateMachineSetAction(S, WAIT_GAS_RSP, GAS_RSP, (STATE_MACHINE_FUNC)SendGASRsp);
+-	StateMachineSetAction(S, WAIT_GAS_RSP, GAS_RSP_MORE, (STATE_MACHINE_FUNC)SendGASRsp);
+-	StateMachineSetAction(S, WAIT_GAS_RSP, GAS_CB_REQ, (STATE_MACHINE_FUNC)SendGASCBRsp);
+-	StateMachineSetAction(S, WAIT_GAS_CB_REQ, GAS_CB_REQ, (STATE_MACHINE_FUNC)SendGASCBRsp);
+-	StateMachineSetAction(S, WAIT_GAS_CB_REQ, GAS_CB_REQ_MORE, (STATE_MACHINE_FUNC)SendGASCBRsp);
+-	StateMachineSetAction(S, WAIT_PEER_GAS_REQ, DEL_PEER_ENTRY, (STATE_MACHINE_FUNC)DelGasPeerEntry);
+-	StateMachineSetAction(S, WAIT_GAS_RSP, DEL_PEER_ENTRY, (STATE_MACHINE_FUNC)DelGasPeerEntry);
+-	StateMachineSetAction(S, WAIT_GAS_CB_REQ, DEL_PEER_ENTRY, (STATE_MACHINE_FUNC)DelGasPeerEntry);
++	StateMachineSetAction(S, WAIT_PEER_GAS_REQ, PEER_GAS_REQ, (STATE_MACHINE_FUNC)MlmeSendGASIndicationAction);
++	StateMachineSetAction(S, WAIT_GAS_RSP, GAS_RSP, (STATE_MACHINE_FUNC)MlmeSendGASRspAction);
++	StateMachineSetAction(S, WAIT_GAS_RSP, GAS_RSP_MORE, (STATE_MACHINE_FUNC)MlmeSendGASRspAction);
++	StateMachineSetAction(S, WAIT_GAS_RSP, GAS_CB_REQ, (STATE_MACHINE_FUNC)MlmeSendGASCBRspAction);
++	StateMachineSetAction(S, WAIT_GAS_CB_REQ, GAS_CB_REQ, (STATE_MACHINE_FUNC)MlmeSendGASCBRspAction);
++	StateMachineSetAction(S, WAIT_GAS_CB_REQ, GAS_CB_REQ_MORE, (STATE_MACHINE_FUNC)MlmeSendGASCBRspAction);
++	StateMachineSetAction(S, WAIT_PEER_GAS_REQ, DEL_PEER_ENTRY, (STATE_MACHINE_FUNC)MlmeDelGasPeerEntryAction);
++	StateMachineSetAction(S, WAIT_GAS_RSP, DEL_PEER_ENTRY, (STATE_MACHINE_FUNC)MlmeDelGasPeerEntryAction);
++	StateMachineSetAction(S, WAIT_GAS_CB_REQ, DEL_PEER_ENTRY, (STATE_MACHINE_FUNC)MlmeDelGasPeerEntryAction);
+ #endif /* CONFIG_AP_SUPPORT */
+ }
+ BOOLEAN GasEnable(IN PRTMP_ADAPTER pAd, IN MLME_QUEUE_ELEM * Elem)
+--- a/mt_wifi/feature/rrm/rrm.c
++++ b/mt_wifi/feature/rrm/rrm.c
+@@ -111,12 +111,13 @@
+ 	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+ 	UCHAR ifIndex = pObj->ioctl_if;
+ 	ULONG Value;
+-	BSS_STRUCT *pMbss = &pAd->ApCfg.MBSSID[ifIndex];
++	BSS_STRUCT *pMbss;
+ 
+-	if (ifIndex >= pAd->ApCfg.BssidNum) {
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd)) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "Unknow If index (%d)", ifIndex);
+ 		return -1;
+ 	}
++	pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+ 
+ 	Value = (UINT) os_str_tol(arg, 0, 10);
+ 	pMbss->wdev.RrmCfg.bDot11kRRMEnable =
+@@ -154,7 +155,11 @@
+ 	UINT ArgIdx;
+ 	RTMP_STRING *thisChar;
+ 	RRM_MLME_BCN_REQ_INFO BcnReq;
+-	struct wifi_dev *pWdev = &pAd->ApCfg.MBSSID[ifIndex].wdev;
++	struct wifi_dev *pWdev;
++
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd))
++		return FALSE;
++	pWdev = &pAd->ApCfg.MBSSID[ifIndex].wdev;
+ 	UINT8 default_request_ie[MAX_NUM_OF_REQ_IE] = {
+ 							0,		/* SSID */
+ 							1, /* Support Rate*/
+@@ -279,7 +284,8 @@
+ 
+ 			RegClassIdx = 0;
+ 
+-			while ((RegClassString = strsep((char **)&thisChar, "+")) != NULL) {
++			while ((RegClassString = strsep((char **)&thisChar, "+")) != NULL &&
++				   RegClassIdx < ARRAY_SIZE(BcnReq.ChRepRegulatoryClass)) {
+ 				BcnReq.ChRepRegulatoryClass[RegClassIdx] =
+ 					(UINT8) os_str_tol(RegClassString, 0, 10);
+ 				RegClassIdx++;
+@@ -293,7 +299,8 @@
+ 
+ 			ChId = 0;
+ 
+-			while ((ChIdString = strsep((char **)&thisChar, "#")) != NULL) {
++			while ((ChIdString = strsep((char **)&thisChar, "#")) != NULL &&
++				   ChId < ARRAY_SIZE(BcnReq.ChRepList)) {
+ 				BcnReq.ChRepList[ChId] =
+ 					(UINT8) os_str_tol(ChIdString, 0, 10);
+ 				ChId++;
+@@ -307,7 +314,8 @@
+ 			RTMP_STRING *req_ie_str;
+ 			BcnReq.request_ie_num = 0;
+ 
+-			while ((req_ie_str = strsep((char **)&thisChar, "#")) != NULL) {
++			while ((req_ie_str = strsep((char **)&thisChar, "#")) != NULL &&
++				   BcnReq.request_ie_num < ARRAY_SIZE(BcnReq.request_ie)) {
+ 				if (req_ie_str[0] == '\0')
+ 					break;
+ 
+@@ -736,8 +744,10 @@
+ 					GET_TIMER_FUNCTION(WaitNRRspTimeout), pMeasure_Entry, FALSE);
+ 			OS_SEM_UNLOCK(&pAd->CommonCfg.MeasureReqTabLock);
+ 
+-			FrameLen = Elem->MsgLen - sizeof(HEADER_802_11) - 2;
+-			wext_send_nr_req_event(NetDev, pFr->Hdr.Addr2, pFramePtr, FrameLen);
++			if (Elem->MsgLen >= (sizeof(HEADER_802_11) + 2)) {
++				FrameLen = Elem->MsgLen - sizeof(HEADER_802_11) - 2;
++				wext_send_nr_req_event(NetDev, pFr->Hdr.Addr2, pFramePtr, FrameLen);
++			}
+ 
+ 			RTMPSetTimer(&pMeasure_Entry->WaitNRRspTimer, NR_RSP_TIMEOUT_VALUE);
+ 		} else
+@@ -788,6 +798,10 @@
+ 	PNET_DEV NetDev = NULL;
+ 
+ 
++	if (Length < (LONG)sizeof(RRM_BEACON_REP_INFO) ||
++		pDialogEntry->ControlIndex >= MAX_MBSSID_NUM(pAd))
++		return;
++
+ 	os_alloc_mem(NULL, (UCHAR **)&VarIE, 1024);
+ 	if (VarIE == NULL) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "Alloc VarIE failed!\n");
+@@ -832,10 +846,18 @@
+ 		pBcnRep->RegulatoryClass, pBcnRep->ChNumber, pBcnRep->RCPI);
+ 
+ 	/* check option sub element IE. */
+-	while (RemainLen > 0) {
++	while (RemainLen >= 2) {
+ 		PRRM_SUBFRAME_INFO pRrmSubFrame;
+ 
+ 		pRrmSubFrame = (PRRM_SUBFRAME_INFO)ptr;
++		if ((pRrmSubFrame->Length > BEACON_REPORT_MAX_OPTIONAL_SUB_IE_LEN) ||
++			(pRrmSubFrame->Length == 0) ||
++			((LONG)(pRrmSubFrame->Length + 2) > RemainLen)) {
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
++				"SubIe: ID=%x, Len=%d invalid vs RemainLen=%ld\n",
++				pRrmSubFrame->SubId, pRrmSubFrame->Length, RemainLen);
++			break;
++		}
+ 
+ 		switch (pRrmSubFrame->SubId) {
+ 		case 1:
+@@ -956,7 +978,10 @@
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "\n");
+ 	/*RRM_measurement_report_to_host(pAd, Elem);*/
+ #ifdef USE_BEACON_REPORT_FOR_NEIGHBOR_REPORT
+-	/* skip Category and action code. */
++	if (MsgLen < (sizeof(HEADER_802_11) + 6))
++		return FALSE;
++	/* skip 802.11 header, Category and action code. */
++	MsgLen -= sizeof(HEADER_802_11);
+ 	pFramePtr += 2;
+ 	MsgLen -= 2;
+ 	/* get DialogToken. */
+@@ -1036,13 +1061,14 @@
+ 
+ 		eid_ptr = (PEID_STRUCT)pFramePtr;
+ 
+-		if (parse_measurement_ie(eid_ptr->Len) == FALSE) {
++		if (MsgLen < 2 || parse_measurement_ie(eid_ptr->Len) == FALSE) {
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+ 					"Beacon Report length incorrect. Abort parsing\n");
+ 			return FALSE;
+ 		}
+ 
+-		while (((UCHAR *)eid_ptr + eid_ptr->Len + 1) < ((PUCHAR)pFramePtr + MsgLen)) {
++		while ((((UCHAR *)eid_ptr + 2) <= ((PUCHAR)pFramePtr + MsgLen)) &&
++		       (((UCHAR *)eid_ptr + eid_ptr->Len + 2) <= ((PUCHAR)pFramePtr + MsgLen))) {
+ 			switch (eid_ptr->Eid) {
+ 			case IE_MEASUREMENT_REPORT: {
+ 				LONG BcnRepLen = (LONG)eid_ptr->Len - 3;
+@@ -1112,6 +1138,11 @@
+ {
+ 	p_rrm_command_t p_rrm_command = NULL;
+ 	int status = NDIS_STATUS_FAILURE;
++
++	if (!wrq->u.data.pointer || wrq->u.data.length < sizeof(*p_rrm_command) ||
++		wrq->u.data.length > MAX_MGMT_PKT_LEN)
++		return NDIS_STATUS_FAILURE;
++
+ 	os_alloc_mem(NULL, (UCHAR **)&p_rrm_command, wrq->u.data.length);
+ 
+ 	if (p_rrm_command == NULL) {
+@@ -1119,11 +1150,15 @@
+ 		return NDIS_STATUS_FAILURE;
+ 	}
+ 
+-	status = copy_from_user(p_rrm_command, wrq->u.data.pointer, wrq->u.data.length);
+-	if (status) {
++	if (copy_from_user(p_rrm_command, wrq->u.data.pointer, wrq->u.data.length)) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+ 			" copy_from_user return status received = failure");
+-		status = NDIS_STATUS_FAILURE;
++		os_free_mem(p_rrm_command);
++		return NDIS_STATUS_FAILURE;
++	}
++	if (p_rrm_command->command_len > (wrq->u.data.length - sizeof(*p_rrm_command))) {
++		os_free_mem(p_rrm_command);
++		return NDIS_STATUS_FAILURE;
+ 	}
+ 
+ 	switch (p_rrm_command->command_id) {
+@@ -1172,7 +1207,10 @@
+ 		break;
+ 	/*this cmd is used to config whether the driver or the up-layer handle the neighbor report request*/
+ 	case OID_802_11_RRM_CMD_HANDLE_NEIGHBOR_REQUEST_BY_DAEMON:
+-		status = rrm_set_handle_nr_req_flag(pAd, p_rrm_command->command_body[0]);
++		if (p_rrm_command->command_len >= 1)
++			status = rrm_set_handle_nr_req_flag(pAd, p_rrm_command->command_body[0]);
++		else
++			status = NDIS_STATUS_FAILURE;
+ 		break;
+ 	}
+ 
+@@ -1186,12 +1224,13 @@
+ {
+ 	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+ 	UCHAR ifIndex = pObj->ioctl_if;
+-	BSS_STRUCT *pMbss = &pAd->ApCfg.MBSSID[ifIndex];
++	BSS_STRUCT *pMbss;
+ 
+-	if (ifIndex >= pAd->ApCfg.BssidNum) {
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd)) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "Unknow If index (%d)", ifIndex);
+ 		return NDIS_STATUS_FAILURE;
+ 	}
++	pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+ 
+ 	pMbss->wdev.RrmCfg.bDot11kRRMEnable = (BOOLEAN)(enable) == 0 ? FALSE : TRUE;
+ 
+@@ -1243,6 +1282,10 @@
+ 	UCHAR ifIndex = pObj->ioctl_if;
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "\n");
+ 
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd) ||
++		bcn_req_len < sizeof(*p_bcn_req_data))
++		return NDIS_STATUS_FAILURE;
++
+ 	/* check the AP supports 11k or not */
+ 	pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+ 	if (pMbss->wdev.RrmCfg.bDot11kRRMEnable == FALSE) {
+@@ -1252,6 +1295,9 @@
+ 		return NDIS_STATUS_FAILURE;
+ 	}
+ 
++	if (p_bcn_req_data->bcn_req_len > (bcn_req_len - sizeof(*p_bcn_req_data)) ||
++		p_bcn_req_data->bcn_req_len > MAX_MGMT_PKT_LEN)
++		return NDIS_STATUS_FAILURE;
+ 	Len = sizeof(*p_bcn_req_data) + p_bcn_req_data->bcn_req_len;
+ 	if (bcn_req_len != Len) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+@@ -1365,6 +1411,10 @@
+ 	UINT32 Len = 0;
+ 	UCHAR ifIndex = pObj->ioctl_if;
+ 
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd) ||
++		nr_rsp_data_len < (MAC_ADDR_LEN + 2))
++		return NDIS_STATUS_FAILURE;
++
+ 	pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+ 	if (pMbss->wdev.RrmCfg.bDot11kRRMEnable == FALSE) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+@@ -1580,6 +1630,7 @@
+ 
+ 		RRM_InsertNeighborRepIE(pAd, (nr_rsp_ie + *p_ie_len), &ie_len,
+ 				sizeof(RRM_NEIGHBOR_REP_INFO), &NeighborRepInfo);
++		*p_ie_len = (UINT32)ie_len;
+ 	}
+ 
+ }
+@@ -1743,10 +1794,15 @@
+ 	BSS_STRUCT *pMbss = NULL;
+ 	PNR_EVENT_DATA Event = NULL;
+ 	PUCHAR pBuf = NULL;
+-	UINT32 FrameLen = p_nr_rsp_data->nr_rsp_len;
++	UINT32 FrameLen;
+ 	UINT32 Len = 0;
+ 	UINT8 ifIndex = pObj->ioctl_if;
+ 
++	if (ifIndex >= pAd->ApCfg.BssidNum || ifIndex >= MAX_MBSSID_NUM(pAd) ||
++		nr_rsp_data_len < sizeof(*p_nr_rsp_data))
++		return NDIS_STATUS_FAILURE;
++
++	FrameLen = p_nr_rsp_data->nr_rsp_len;
+ 	pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+ 	if (pMbss->wdev.RrmCfg.bDot11kRRMEnable == FALSE) {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+@@ -2067,7 +2123,8 @@
+ 	UINT32 FramelenTmp = 0;
+ 	UINT16 Repetitions = 0;
+ 	UINT8 MeasureReqType = RRM_MEASURE_SUBTYPE_BEACON;
+-	UINT8 TotalLen = 0, idx = 0;
++	UINT16 TotalLen = 0;
++	UINT8 idx = 0;
+ 	MEASURE_REQ_MODE MeasureReqMode;
+ 	RRM_BEACON_REQ_INFO BcnReq;
+ 
+@@ -2121,7 +2178,8 @@
+ 	/* insert channel report sub field. */
+ 	if (p_beacon_req->channum == 255) {
+ 		idx = 0;
+-		while (p_beacon_req->op_class_list[idx] != 0) {
++		while ((idx < ARRAY_SIZE(p_beacon_req->op_class_list)) &&
++		       (p_beacon_req->op_class_list[idx] != 0)) {
+ 			FramelenTmp = FrameLen;
+ 			InsertChannelRepIE(pAd, (pOutBuffer+FrameLen), &FrameLen,
+ 				(RTMP_STRING *)pAd->CommonCfg.CountryCode, p_beacon_req->op_class_list[idx],
+@@ -2201,19 +2259,26 @@
+ 			"Bcnreq entry not founded\n");
+ 		return;
+ 	}
+-	RTMPReleaseTimer(&pEntry->WaitBCNRepTimer, &Cancelled);
+-	MeasureReqDelete(pAd, MeasureReqToken, BCN_MEASURE_REQ);
+-	if (pEntry->RcvBcnRepCnt != 0) {
+-		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+-			"Receive Beacon Report Count=%d, not send to up-layer\n", pEntry->RcvBcnRepCnt);
+-		return;
+-	}
+-	/* send Beacon Request timeout to up-layer */
+-	NetDev = pAd->ApCfg.MBSSID[pEntry->ControlIndex].wdev.if_dev;
+-	if (NetDev == NULL) {
+-		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+-			"no valid NetDev! IfIndex=%d\n", pEntry->ControlIndex);
+-		return;
++	{
++		UINT8 rcv_cnt = pEntry->RcvBcnRepCnt;
++		UINT8 ctrl_idx = pEntry->ControlIndex;
++
++		RTMPReleaseTimer(&pEntry->WaitBCNRepTimer, &Cancelled);
++		MeasureReqDelete(pAd, MeasureReqToken, BCN_MEASURE_REQ);
++		if (rcv_cnt != 0) {
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
++				"Receive Beacon Report Count=%d, not send to up-layer\n", rcv_cnt);
++			return;
++		}
++		if (ctrl_idx >= MAX_MBSSID_NUM(pAd))
++			return;
++		/* send Beacon Request timeout to up-layer */
++		NetDev = pAd->ApCfg.MBSSID[ctrl_idx].wdev.if_dev;
++		if (NetDev == NULL) {
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
++				"no valid NetDev! IfIndex=%d\n", ctrl_idx);
++			return;
++		}
+ 	}
+ 
+ 	wext_send_bcn_rsp_event(NetDev, Event->stamac, Event->Data,
+@@ -2504,7 +2569,7 @@
+ 		IN MLME_QUEUE_ELEM *Elem)
+ {
+ #ifndef MIN
+-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
++#define MIN(_x, _y) ((_x) < (_y) ? (_x) : (_y))
+ #endif
+ 	MEASURE_REQ_INFO MeasureReqInfo;
+ 	RRM_BEACON_REQ_INFO BcnReq;
+@@ -2539,12 +2604,12 @@
+ 		ScanTab = get_scan_tab_by_wdev(pAd, wdev);
+ 		if (!ScanTab)
+ 			return;
+-		ret = snprintf(ssidbuf, sizeof(ssidbuf), "%s", pSsid);
+-		if (os_snprintf_error(sizeof(ssidbuf), ret)) {
+-			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+-					"snprintf error!\n");
++		(void)ret;
++		if (SsidLen > MAX_LEN_OF_SSID)
+ 			return;
+-		}
++		NdisZeroMemory(ssidbuf, sizeof(ssidbuf));
++		if (pSsid && SsidLen > 0)
++			NdisMoveMemory(ssidbuf, pSsid, SsidLen);
+ 		ssidbuf[SsidLen] = '\0';
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_NOTICE, "pSsid=%s\n", ssidbuf);
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_NOTICE, "SsidLen=%d\n", SsidLen);
+@@ -2563,8 +2628,8 @@
+ 			isWildcardBssid = RTMPEqualMemory(BcnReq.Bssid, WildCardBssid, MAC_ADDR_LEN);
+ 			if (isWildcardBssid == TRUE) {
+ 				if (SsidLen != 0) {
+-					BssMatch = RTMPEqualMemory(pBssEntry->Ssid, pSsid,
+-							MIN(SsidLen, pBssEntry->SsidLen));
++					BssMatch = (pBssEntry->SsidLen == SsidLen) &&
++						RTMPEqualMemory(pBssEntry->Ssid, pSsid, SsidLen);
+ 					if (BssMatch)
+ 						RRM_EnqueuePeerBeaconRep(pAd, pFr->Hdr.Addr2, pFr->Hdr.Addr1, DialogToken, MeasureReqInfo,
+ 						BcnReq, pBssEntry);
+--- a/mt_wifi/feature/rrm/rrm_tlv.c
++++ b/mt_wifi/feature/rrm/rrm_tlv.c
+@@ -754,6 +754,11 @@
+ 	MAC_TABLE_ENTRY *pEntry;
+ 	UINT8 mode;
+ 
++	if (IfIdx >= pAd->ApCfg.BssidNum || IfIdx >= MAX_MBSSID_NUM(pAd) ||
++		p_bcn_req_data->bcn_req_len <= RRM_BCNREQ_MODE_OFFSET ||
++		p_bcn_req_data->bcn_req_len > (MAX_MGMT_PKT_LEN - sizeof(HEADER_802_11) - 16))
++		return NDIS_STATUS_FAILURE;
++
+ 	mode = p_bcn_req_data->bcn_req[RRM_BCNREQ_MODE_OFFSET];
+ 
+ 	if (mode > 0x2) {
+@@ -801,6 +806,7 @@
+ 		NdisMoveMemory(pOutBuffer, (PCHAR)&ActHdr, sizeof(HEADER_802_11));
+ 	else {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "%s() move memory failed\n", __func__);
++		MlmeFreeMemory(pOutBuffer);
+ 		return NDIS_STATUS_FAILURE;
+ 	}
+ 
+@@ -835,6 +841,9 @@
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "%s\n", __func__);
+ 
++	if (IfIdx >= pAd->ApCfg.BssidNum || IfIdx >= MAX_MBSSID_NUM(pAd))
++		return NDIS_STATUS_FAILURE;
++
+ 	/* check the AP supports 11k or not */
+ 	pMbss = &pAd->ApCfg.MBSSID[IfIdx];
+ 	if (pMbss->wdev.RrmCfg.bDot11kRRMEnable == FALSE) {
+@@ -923,12 +932,18 @@
+ 		NdisMoveMemory(pOutBuffer, (PCHAR)&ActHdr, sizeof(HEADER_802_11));
+ 	else {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s() move memory failed\n", __func__);
++		MlmeFreeMemory(pOutBuffer);
+ 		return;
+ 	}
+ 
+ 	FrameLen = sizeof(HEADER_802_11);
++	InsertActField(pAd, (pOutBuffer + FrameLen), &FrameLen,
++		CATEGORY_RM, RRM_NEIGHTBOR_REQ);
+ 	/* fill Dialog Token */
+ 	InsertDialogToken(pAd, (pOutBuffer + FrameLen), &FrameLen, DialogToken);
++	if (pSsid && SsidLen > 0 && SsidLen <= MAX_LEN_OF_SSID)
++		RRM_InsertBcnReqSsidSubIE(pAd, (pOutBuffer + FrameLen),
++			&FrameLen, pSsid, SsidLen);
+ 	MiniportMMRequest(pAd, (MGMT_USE_QUEUE_FLAG | QID_AC_BE), pOutBuffer, FrameLen, NULL);
+ 
+ 	if (pOutBuffer)
+@@ -980,7 +995,7 @@
+ 	IN UINT8 SsidLen)
+ {
+ #ifndef MIN
+-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
++#define MIN(_x, _y) ((_x) < (_y) ? (_x) : (_y))
+ #endif
+ 	UINT loop;
+ 	HEADER_802_11 ActHdr;
+@@ -1021,6 +1036,7 @@
+ 		NdisMoveMemory(pOutBuffer, (PCHAR)&ActHdr, sizeof(HEADER_802_11));
+ 	else {
+ 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s() move memory failed\n", __func__);
++		MlmeFreeMemory(pOutBuffer);
+ 		return;
+ 	}
+ 	FrameLen = sizeof(HEADER_802_11);
+@@ -1045,8 +1061,8 @@
+ 			break;
+ 
+ 		if (SsidLen != 0)
+-			BssMatch = RTMPEqualMemory(pBssEntry->Ssid, pSsid,
+-									   MIN(SsidLen, pBssEntry->SsidLen));
++			BssMatch = (pBssEntry->SsidLen == SsidLen) &&
++				RTMPEqualMemory(pBssEntry->Ssid, pSsid, SsidLen);
+ 		else
+ 			BssMatch = TRUE;
+ 
+@@ -1132,25 +1148,25 @@
+ 			NeighborRepInfo.PhyType = pBssEntry->CondensedPhyType;
+ 			RRM_InsertNeighborRepIE(pAd, (pOutBuffer + FrameLen), &FrameLen,
+ 									sizeof(RRM_NEIGHBOR_REP_INFO), &NeighborRepInfo);
+-		}
+ 
+-		/*
+-			shall insert Neighbor Report TSF offset
+-			when the MIB attribute
+-			dot11RRMNeighborReportTSFOffsetEnabled is true.
+-		*/
+-		if (pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable) {
+-			UINT32 Ttfs = (UINT32)(pBssEntry->TTSF[3] << 24)
+-						  + (UINT32)(pBssEntry->TTSF[2] << 16)
+-						  + (UINT32)(pBssEntry->TTSF[1] << 8)
+-						  + (UINT32)(pBssEntry->TTSF[0]);
+-			UINT32 Ptfs = (UINT32)(pBssEntry->PTSF[3] << 24)
+-						  + (UINT32)(pBssEntry->PTSF[2] << 16)
+-						  + (UINT32)(pBssEntry->PTSF[1] << 8)
+-						  + (UINT32)(pBssEntry->PTSF[0]);
+-			RRM_InsertNeighborTSFOffsetSubIE(pAd, (pOutBuffer + FrameLen),
+-				&FrameLen, cpu2le16((UINT16)ABS(Ttfs, Ptfs)),
+-				cpu2le16(pBssEntry->BeaconPeriod));
++			/*
++				shall insert Neighbor Report TSF offset
++				when the MIB attribute
++				dot11RRMNeighborReportTSFOffsetEnabled is true.
++			*/
++			if (pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable) {
++				UINT32 Ttfs = (UINT32)(pBssEntry->TTSF[3] << 24)
++							  + (UINT32)(pBssEntry->TTSF[2] << 16)
++							  + (UINT32)(pBssEntry->TTSF[1] << 8)
++							  + (UINT32)(pBssEntry->TTSF[0]);
++				UINT32 Ptfs = (UINT32)(pBssEntry->PTSF[3] << 24)
++							  + (UINT32)(pBssEntry->PTSF[2] << 16)
++							  + (UINT32)(pBssEntry->PTSF[1] << 8)
++							  + (UINT32)(pBssEntry->PTSF[0]);
++				RRM_InsertNeighborTSFOffsetSubIE(pAd, (pOutBuffer + FrameLen),
++					&FrameLen, cpu2le16((UINT16)ABS(Ttfs, Ptfs)),
++					cpu2le16(pBssEntry->BeaconPeriod));
++			}
+ 		}
+ 	}
+ 
+--- a/mt_wifi/feature/rrm/rrm_sanity.c
++++ b/mt_wifi/feature/rrm/rrm_sanity.c
+@@ -50,7 +50,7 @@
+ 	PRRM_CONFIG pRrmCfg;
+ 	UINT8 PeerMeasurementType;
+ 
+-	if ((Fr == NULL) || (pDialogToken == NULL))
++	if ((Fr == NULL) || (pDialogToken == NULL) || (MsgLen < (sizeof(HEADER_802_11) + 2)))
+ 		return result;
+ 
+ 	MsgLen -= sizeof(HEADER_802_11);
+@@ -60,7 +60,7 @@
+ 	MsgLen -= 2;
+ 
+ 	pEntry = MacTableLookup(pAd, Fr->Hdr.Addr2);
+-	if ((pEntry == NULL) || (pEntry->func_tb_idx > pAd->ApCfg.BssidNum))
++	if ((pEntry == NULL) || (pEntry->func_tb_idx >= pAd->ApCfg.BssidNum))
+ 		return result;
+ 
+ 	pRrmCfg = &pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.RrmCfg;
+@@ -140,15 +140,16 @@
+ 	PUCHAR pFramePtr = Fr->Octet;
+ 	BOOLEAN result = FALSE;
+ 	PEID_STRUCT eid_ptr;
++	if ((Fr == NULL) || (pDialogToken == NULL) || (pMeasureReportInfo == NULL) ||
++		(MsgLen < (sizeof(HEADER_802_11) + 5)))
++		return result;
++
+ 	/* skip 802.11 header. */
+ 	MsgLen -= sizeof(HEADER_802_11);
+ 	/* skip category and action code. */
+ 	pFramePtr += 2;
+ 	MsgLen -= 2;
+ 
+-	if (pMeasureReportInfo == NULL)
+-		return result;
+-
+ 	NdisMoveMemory(pDialogToken, pFramePtr, 1);
+ 	pFramePtr += 1;
+ 	MsgLen -= 1;
+@@ -160,7 +161,10 @@
+ 		goto len_error;
+ 	}
+ 
+-	while (((UCHAR *)eid_ptr + eid_ptr->Len + 1) < ((PUCHAR)pFramePtr + MsgLen)) {
++	while ((((UCHAR *)eid_ptr + 2) <= ((PUCHAR)pFramePtr + MsgLen)) &&
++	       (((UCHAR *)eid_ptr + eid_ptr->Len + 2) <= ((PUCHAR)pFramePtr + MsgLen))) {
++		if (eid_ptr->Len < 3)
++			break;
+ 		switch (eid_ptr->Eid) {
+ 		case IE_MEASUREMENT_REPORT:
+ 			NdisMoveMemory(&pMeasureReportInfo->Token, eid_ptr->Octet, 1);
+@@ -206,10 +210,8 @@
+ 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO,
+ 		"Got STA Beacon Measurement Request\n");
+ 
+-	if ((Fr == NULL) || (pDialogToken == NULL))
+-		return result;
+-
+-	if (pMeasureReqInfo == NULL)
++	if ((Fr == NULL) || (pDialogToken == NULL) || (pMeasureReqInfo == NULL) ||
++		(MsgLen < (sizeof(HEADER_802_11) + 21)))
+ 		return result;
+ 
+ 	MsgLen -= sizeof(HEADER_802_11);
+@@ -229,6 +231,8 @@
+ 	pFramePtr += 2;
+ 	MsgLen -= 2;
+ 	eid_ptr = (PEID_STRUCT)pFramePtr;
++	if ((eid_ptr->Len < 16) || ((ULONG)(eid_ptr->Len + 2) > MsgLen))
++		return FALSE;
+ 
+ 	switch (eid_ptr->Eid) {
+ 	case RRM_NEIGHBOR_REQ_MEASUREMENT_REQUEST_SUB_ID:
+@@ -291,7 +295,8 @@
+ 				 pBeaconReq->MeasureMode);
+ 		pBcnReqSubElem = (PRRM_SUBFRAME_INFO)(ptr + 13);
+ 
+-		while (((UCHAR *)pBcnReqSubElem + pBcnReqSubElem->Length + 2) <= ((PUCHAR)pFramePtr + MsgLen)) {
++		while ((((UCHAR *)pBcnReqSubElem + 2) <= ((PUCHAR)pFramePtr + MsgLen)) &&
++		       (((UCHAR *)pBcnReqSubElem + pBcnReqSubElem->Length + 2) <= ((PUCHAR)pFramePtr + MsgLen))) {
+ 			switch (pBcnReqSubElem->SubId) {
+ 			case RRM_BCN_REQ_SUBID_SSID:
+ 				if (!pBcnReqSubElem->Length) {
+@@ -309,7 +314,6 @@
+ 				if (*pSsidLen == 0) {
+ 					*pSsid = (PCHAR)pBcnReqSubElem->Oct;
+ 					*pSsidLen = pBcnReqSubElem->Length;
+-					*(*pSsid + pBcnReqSubElem->Length) = '\0';
+ 				}
+ 				result = TRUE;
+ 				break;
+--- a/mt_wifi/feature/wps/wsc.c
++++ b/mt_wifi/feature/wps/wsc.c
+@@ -9750,6 +9750,11 @@
+ 		/* WSC_STATE_MACHINE can service only one station at one time */
+ 		RTMP_STRING *pData;
+ 		PEAP_FRAME  pEapFrame;
++		if (Elem->MsgLen < (ULONG)HeaderLen) {
++			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
++				"Elem->MsgLen(%lu) < HeaderLen(%d) !!\n", Elem->MsgLen, HeaderLen);
++			return;
++		}
+ 		/* Skip the EAP LLC header */
+ 		pData = (RTMP_STRING *) &Elem->Msg[LENGTH_802_11 + LENGTH_802_1_H];
+ #ifdef A4_CONN
+@@ -9790,8 +9795,9 @@
+ 			pWpsCtrl->lastId = pEapFrame->Id;
+ 			Elem->MsgLen -= HeaderLen;
+ 
+-			if (WscCheckWSCHeader((PUCHAR)pData)) {
++			if ((Elem->MsgLen >= sizeof(WSC_FRAME)) && WscCheckWSCHeader((PUCHAR)pData)) {
+ 				PWSC_FRAME			pWsc = (PWSC_FRAME) pData;
++				ULONG wsc_hdr_len;
+ 
+ 				NdisMoveMemory(Elem->Msg, pHeader->Addr2, MAC_ADDR_LEN);
+ 
+@@ -9811,15 +9817,15 @@
+ 					Elem->MsgLen = strlen(wsc_start);
+ 					StateMachinePerformAction(pAd, &pAd->Mlme.WscMachine, Elem, pAd->Mlme.WscMachine.CurrState);
+ 				} else {
+-					if (pWsc->Flags & WSC_MSG_FLAG_LF) {
+-						pData += (sizeof(WSC_FRAME) + 2);
+-						Elem->MsgLen -= (sizeof(WSC_FRAME) + 2);
+-					} else {
+-						pData += sizeof(WSC_FRAME);
+-						Elem->MsgLen -= sizeof(WSC_FRAME);
+-					}
++					wsc_hdr_len = (pWsc->Flags & WSC_MSG_FLAG_LF) ?
++						(sizeof(WSC_FRAME) + 2) : sizeof(WSC_FRAME);
++					if (Elem->MsgLen < wsc_hdr_len)
++						return;
++					pData += wsc_hdr_len;
++					Elem->MsgLen -= wsc_hdr_len;
+ 
+-					if ((pWpsCtrl->WscRxBufLen + Elem->MsgLen) < (MAX_MGMT_PKT_LEN - 6)) {
++					if (Elem->MsgLen < (MAX_MGMT_PKT_LEN - 6) &&
++						pWpsCtrl->WscRxBufLen < (MAX_MGMT_PKT_LEN - 6 - Elem->MsgLen)) {
+ 						NdisMoveMemory((pWpsCtrl->pWscRxBuf + pWpsCtrl->WscRxBufLen), pData, Elem->MsgLen);
+ 						pWpsCtrl->WscRxBufLen += Elem->MsgLen;
+ 					}
+@@ -9859,7 +9865,7 @@
+ 			(pEapFrame->Type == EAP_TYPE_ID)) {
+ 			BOOLEAN Cancelled;
+ 
+-			if (strstr(pData, "SimpleConfig")) {
++			if (strnstr(pData, "SimpleConfig", Elem->MsgLen)) {
+ 				/* EAP-Rsp (Identity) */
+ 				NdisMoveMemory(Elem->Msg + 6, pData, Elem->MsgLen);
+ 				StateMachinePerformAction(pAd, &pAd->Mlme.WscMachine, Elem, pAd->Mlme.WscMachine.CurrState);
+@@ -9873,9 +9879,10 @@
+ 			return;
+ 		}
+ 
+-		if (WscCheckWSCHeader((PUCHAR) pData)) {
++		if ((Elem->MsgLen >= sizeof(WSC_FRAME)) && WscCheckWSCHeader((PUCHAR) pData)) {
+ 			/* EAP-Rsp (Messages) */
+ 			PWSC_FRAME			pWsc = (PWSC_FRAME) pData;
++			ULONG wsc_hdr_len;
+ 
+ 			if (pWsc->OpCode == WSC_OPCODE_FRAG_ACK) {
+ 				/*
+@@ -9887,15 +9894,15 @@
+ 				Elem->MsgLen = strlen(wsc_frag_ack);
+ 				StateMachinePerformAction(pAd, &pAd->Mlme.WscMachine, Elem, pAd->Mlme.WscMachine.CurrState);
+ 			} else {
+-				if (pWsc->Flags & WSC_MSG_FLAG_LF) {
+-					pData += (sizeof(WSC_FRAME) + 2);
+-					Elem->MsgLen -= (sizeof(WSC_FRAME) + 2);
+-				} else {
+-					pData += sizeof(WSC_FRAME);
+-					Elem->MsgLen -= sizeof(WSC_FRAME);
+-				}
++				wsc_hdr_len = (pWsc->Flags & WSC_MSG_FLAG_LF) ?
++					(sizeof(WSC_FRAME) + 2) : sizeof(WSC_FRAME);
++				if (Elem->MsgLen < wsc_hdr_len)
++					return;
++				pData += wsc_hdr_len;
++				Elem->MsgLen -= wsc_hdr_len;
+ 
+-				if ((pWpsCtrl->WscRxBufLen + Elem->MsgLen) < (MAX_MGMT_PKT_LEN - 6)) {
++				if (Elem->MsgLen < (MAX_MGMT_PKT_LEN - 6) &&
++					pWpsCtrl->WscRxBufLen < (MAX_MGMT_PKT_LEN - 6 - Elem->MsgLen)) {
+ 					NdisMoveMemory((pWpsCtrl->pWscRxBuf + pWpsCtrl->WscRxBufLen), pData, Elem->MsgLen);
+ 					pWpsCtrl->WscRxBufLen += Elem->MsgLen;
+ 				}
+--- a/mt_wifi/feature/wps/wsc_tlv.c
++++ b/mt_wifi/feature/wps/wsc_tlv.c
+@@ -197,7 +197,7 @@
+ *
+ *	========================================================================
+ */
+-VOID	WscParseEncrSettings(
++BOOLEAN	WscParseEncrSettings(
+ 	IN  PRTMP_ADAPTER pAdapter,
+ 	IN  PUCHAR pPlainData,
+ 	IN  INT PlainLength,
+@@ -218,19 +218,21 @@
+ 
+ 	NdisZeroMemory(&Hmac, sizeof(Hmac));
+ 	NdisZeroMemory(&Temp, sizeof(Temp));
++	if (!pPlainData || PlainLength < 12)
++		return FALSE;
+ 	HmacLen = (USHORT)(PlainLength - 12);
+ 	pData  = pPlainData;
+ 
+ 	/* Start to process WSC IEs */
+-	while (PlainLength > 4) {
++	while (PlainLength >= 4) {
+ 		WSC_IE	TLV_Encr;
+ 
+ 		memcpy((UINT8 *)&TLV_Encr, pData, 4);
+ 		WscType = be2cpu16(TLV_Encr.Type);
+ 		WscLen  = be2cpu16(TLV_Encr.Length);
+-		if (PlainLength < WscLen + 4) {
++		if (PlainLength < (INT)WscLen + 4) {
+ 			MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "unexpected WSC IE Length(%u)\n", WscLen);
+-			break;
++			return FALSE;
+ 		}
+ 		pData  += 4;
+ 		PlainLength -= 4;
+@@ -317,18 +319,23 @@
+ 			break;
+ 
+ 		case WSC_ID_AUTH_TYPE:
+-			tmpVal = get_unaligned((PUSHORT) pData);
+-			pProfile->Profile[0].AuthType = cpu2be16(tmpVal);/*cpu2be16(*((PUSHORT) pData)); */
++			if (WscLen >= sizeof(tmpVal) && PlainLength >= (INT)sizeof(tmpVal)) {
++				tmpVal = get_unaligned((PUSHORT) pData);
++				pProfile->Profile[0].AuthType = cpu2be16(tmpVal);
++			}
+ 			break;
+ 
+ 		case WSC_ID_ENCR_TYPE:
+-			tmpVal = get_unaligned((PUSHORT) pData);
+-			pProfile->Profile[0].EncrType = cpu2be16(tmpVal);/*cpu2be16(*((PUSHORT) pData)); */
++			if (WscLen >= sizeof(tmpVal) && PlainLength >= (INT)sizeof(tmpVal)) {
++				tmpVal = get_unaligned((PUSHORT) pData);
++				pProfile->Profile[0].EncrType = cpu2be16(tmpVal);
++			}
+ 			break;
+ 
+ 		case WSC_ID_NW_KEY_INDEX:
+ 			/* Netork Key Index: 1 ~ 4 */
+-			pProfile->Profile[0].KeyIndex = (*pData);
++			if (WscLen >= 1 && PlainLength >= 1)
++				pProfile->Profile[0].KeyIndex = (*pData);
+ 			break;
+ 
+ 		case WSC_ID_NW_KEY:
+@@ -375,7 +382,9 @@
+ 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+ 				 "calculated --> 0x%08x-%08x\n",
+ 				  (UINT)cpu2be32(*((PUINT)&Hmac[0])), (UINT)cpu2be32(*((PUINT)&Hmac[4])));
++		return FALSE;
+ 	}
++	return TRUE;
+ }
+ 
+ /*
+@@ -420,7 +429,7 @@
+ 	hex_dump("WscProcessCredential - PlainData", pPlainData, PlainLength);
+ 
+ 	/* Start to process WSC IEs within credential */
+-	while (PlainLength > 4) {
++	while (PlainLength >= 4) {
+ 		WSC_IE	TLV_Recv;
+ 
+ 		memcpy((UINT8 *)&TLV_Recv, pData, 4);
+@@ -437,6 +446,11 @@
+ 		switch (WscType) {
+ 		case WSC_ID_NW_INDEX:
+ 			/* A new profile, add the cnt and save to database */
++			if (Cnt >= ARRAY_SIZE(pProfile->Profile)) {
++				MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
++					"Too many WPS credential profiles (%u)\n", Cnt);
++				return FALSE;
++			}
+ 			CurrentIdx = Cnt;	/* since the index start from 0, we have to minus 1 */
+ 			Cnt++;
+ 			break;
+@@ -465,14 +479,14 @@
+ 			break;
+ 
+ 		case WSC_ID_AUTH_TYPE:
+-			if (WscLen && (PlainLength >= sizeof(tmpVal))) {
++			if (WscLen >= sizeof(tmpVal) && (PlainLength >= (INT)sizeof(tmpVal))) {
+ 				tmpVal = get_unaligned((PUSHORT) pData);
+ 				pProfile->Profile[CurrentIdx].AuthType = cpu2be16(tmpVal);
+ 			}
+ 			break;
+ 
+ 		case WSC_ID_ENCR_TYPE:
+-			if (WscLen && PlainLength >= sizeof(tmpVal)) {
++			if (WscLen >= sizeof(tmpVal) && PlainLength >= (INT)sizeof(tmpVal)) {
+ 				tmpVal = get_unaligned((PUSHORT) pData);
+ 				pProfile->Profile[CurrentIdx].EncrType = cpu2be16(tmpVal);
+ 			}
+@@ -480,7 +494,8 @@
+ 
+ 		case WSC_ID_NW_KEY_INDEX:
+ 			/* Netork Key Index: 1 ~ 4 */
+-			pProfile->Profile[CurrentIdx].KeyIndex = (*pData);
++			if (WscLen >= 1 && PlainLength >= 1)
++				pProfile->Profile[CurrentIdx].KeyIndex = (*pData);
+ 			break;
+ 
+ 		case WSC_ID_NW_KEY:
+@@ -1590,6 +1605,7 @@
+ 
+ 	/* 6b. Encrypted Settings */
+ 	/* Encrypt data */
++	get_random_bytes(IV_EncrData, 16);
+ 	EncrLen = IV_ENCR_DATA_LEN_144 - 16;
+ 	AES_CBC_Encrypt(Plain, PlainLen, pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), &IV_EncrData[0], 16, (UINT8 *) &IV_EncrData[16], (UINT *) &EncrLen);
+ 	templen = AppendWSCTLV(WSC_ID_ENCR_SETTINGS, pData, &IV_EncrData[0], 16 + EncrLen);/*IVLen + EncrLen */
+@@ -1724,6 +1740,7 @@
+ 
+ 	/* 4b. Encrypted Settings */
+ 	/* Encrypt data */
++	get_random_bytes(IV_EncrData, 16);
+ 	EncrLen = IV_ENCR_DATA_LEN_144 - 16;
+ 	AES_CBC_Encrypt(Plain, PlainLen, pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), &IV_EncrData[0], 16, (UINT8 *) &IV_EncrData[16], (UINT *) &EncrLen);
+ 	templen = AppendWSCTLV(WSC_ID_ENCR_SETTINGS, pData, &IV_EncrData[0], 16 + EncrLen);/*IVLen + EncrLen */
+@@ -1853,6 +1870,7 @@
+ 
+ 	/* 4b. Encrypted Settings */
+ 	/* Encrypt data */
++	get_random_bytes(IV_EncrData, 16);
+ 	EncrLen = IV_ENCR_DATA_LEN_144 - 16;
+ 	AES_CBC_Encrypt(Plain, PlainLen, pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), &IV_EncrData[0], 16, (UINT8 *) &IV_EncrData[16], (UINT *) &EncrLen);
+ 	templen = AppendWSCTLV(WSC_ID_ENCR_SETTINGS, pData, &IV_EncrData[0], 16 + EncrLen);/*IVLen + EncrLen */
+@@ -2053,6 +2071,7 @@
+ 
+ 	/* 4b. Encrypted Settings */
+ 	/* Encrypt data */
++	get_random_bytes(IV_EncrData, 16);
+ 	EncrLen = IV_ENCR_DATA_LEN_512 - 16;
+ 	AES_CBC_Encrypt(Plain, PlainLen, pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), &IV_EncrData[0], 16, (UINT8 *) &IV_EncrData[16], (UINT *) &EncrLen);
+ 	templen = AppendWSCTLV(WSC_ID_ENCR_SETTINGS, pData, IV_EncrData, 16 + EncrLen);/*IVLen + EncrLen */
+@@ -2457,6 +2476,7 @@
+ 
+ 	/* 4b. Encrypted Settings */
+ 	/* Encrypt data */
++	get_random_bytes(IV_EncrData, 16);
+ 	EncrLen = IV_ENCR_DATA_LEN_512 - 16;
+ 	AES_CBC_Encrypt(Plain, PlainLen, pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), &IV_EncrData[0], 16, (UINT8 *) &IV_EncrData[16], (UINT *) &EncrLen);
+ 	templen = AppendWSCTLV(WSC_ID_ENCR_SETTINGS, pData, IV_EncrData, 16 + EncrLen);/*IVLen + EncrLen */
+@@ -2792,9 +2812,9 @@
+ 	FieldCheck[(WSC_TLV_BYTE2(WSC_ID_OS_VERSION))] |= (1 << WSC_TLV_BYTE1(WSC_ID_OS_VERSION));
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+-	if (Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++	if (!precv || Length < 5 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Not enough buffer\n");
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid M1 length (%d)\n", Length);
+ 		return ret;
+ 	}
+ 	pReg->LastRx.Length = Length;
+@@ -2802,11 +2822,6 @@
+ 	pData = pReg->LastRx.Data;
+ 	NdisZeroMemory(&pWscControl->WscPeerInfo, sizeof(WSC_PEER_DEV_INFO));
+ 
+-	if (Length == 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		return ret;
+-	}
+-
+ 	/* Start to process WSC IEs */
+ 	while (Length > 4) {
+ 		WSC_IE	TLV_Recv;
+@@ -2990,40 +3005,48 @@
+ 			break;
+ 
+ 		case WSC_ID_RF_BAND:
+-			pReg->PeerInfo.RfBand = *pData;
+-			/*if() ret = WSC_ERROR_CHAN24_NOT_SUPP; */
+-			/*if() ret = WSC_ERROR_CHAN50_NOT_SUPP; */
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_RF_BAND))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_RF_BAND));
++			if (WscLen >= 1) {
++				pReg->PeerInfo.RfBand = *pData;
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_RF_BAND))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_RF_BAND));
++			}
+ 			break;
+ 
+ 		case WSC_ID_ASSOC_STATE:
+-			pReg->PeerInfo.AssocState = get_unaligned((PUSHORT) pData);/**((PUSHORT) pData); */
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ASSOC_STATE))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ASSOC_STATE));
++			if (WscLen >= 2) {
++				pReg->PeerInfo.AssocState = get_unaligned((PUSHORT) pData);
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ASSOC_STATE))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ASSOC_STATE));
++			}
+ 			break;
+ 
+ 		case WSC_ID_CONFIG_ERROR:
+-			pReg->PeerInfo.ConfigError = get_unaligned((PUSHORT) pData);/**((PUSHORT) pData); */
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_CONFIG_ERROR))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_CONFIG_ERROR));
++			if (WscLen >= 2) {
++				pReg->PeerInfo.ConfigError = get_unaligned((PUSHORT) pData);
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_CONFIG_ERROR))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_CONFIG_ERROR));
++			}
+ 			break;
+ 
+ 		case WSC_ID_DEVICE_PWD_ID:
+-			MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "   WPS Registrar DPID %04x\n", pReg->SelfInfo.DevPwdId);
++			if (WscLen >= 2) {
++				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "   WPS Registrar DPID %04x\n", pReg->SelfInfo.DevPwdId);
+ 
+-			if (get_unaligned((PUSHORT) pData) == WSC_DEVICEPWDID_DEFAULT) { /**(PUSHORT) pData) */
+-				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "Rx WPS           DPID PIN\n");
+-				pWscControl->RegData.SelfInfo.DevPwdId = cpu2be16(DEV_PASS_ID_PIN);
+-			} else if (get_unaligned((PUSHORT) pData) == WSC_DEVICEPWDID_PUSH_BTN) { /**(PUSHORT) pData) */
+-				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "Rx WPS           DPID PBC\n");
+-				pWscControl->RegData.SelfInfo.DevPwdId = cpu2be16(DEV_PASS_ID_PBC);
+-			} else
+-				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "Rx WPS           DPID unsupport\n");
++				if (get_unaligned((PUSHORT) pData) == WSC_DEVICEPWDID_DEFAULT) {
++					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "Rx WPS           DPID PIN\n");
++					pWscControl->RegData.SelfInfo.DevPwdId = cpu2be16(DEV_PASS_ID_PIN);
++				} else if (get_unaligned((PUSHORT) pData) == WSC_DEVICEPWDID_PUSH_BTN) {
++					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "Rx WPS           DPID PBC\n");
++					pWscControl->RegData.SelfInfo.DevPwdId = cpu2be16(DEV_PASS_ID_PBC);
++				} else
++					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "Rx WPS           DPID unsupport\n");
+ 
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_DEVICE_PWD_ID))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_DEVICE_PWD_ID));
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_DEVICE_PWD_ID))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_DEVICE_PWD_ID));
++			}
+ 			break;
+ 
+ 		case WSC_ID_OS_VERSION:
+-			pReg->PeerInfo.OsVersion = get_unalignedlong((PULONG) pData);/**((PULONG) pData); */
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_OS_VERSION))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_OS_VERSION));
++			if (WscLen >= 4) {
++				pReg->PeerInfo.OsVersion = get_unalignedlong((PULONG) pData);
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_OS_VERSION))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_OS_VERSION));
++			}
+ 			break;
+ 
+ 		case WSC_ID_VENDOR_EXT:
+@@ -3145,9 +3168,9 @@
+ 	FieldCheck[(WSC_TLV_BYTE2(WSC_ID_AUTHENTICATOR))] |= (1 << WSC_TLV_BYTE1(WSC_ID_AUTHENTICATOR));
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+-	if (Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Not enough buffer\n");
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid M2 length (%d)\n", Length);
+ 		return ret;
+ 	}
+ 	pReg->LastRx.Length = Length;
+@@ -3164,7 +3187,7 @@
+ #endif
+ 	NdisZeroMemory(&pWscControl->WscPeerInfo, sizeof(WSC_PEER_DEV_INFO));
+ 
+-	if (Length == 0 || Length > MAX_VIE_LEN) {
++	if (Length > MAX_VIE_LEN) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
+ 		return ret;
+ 	}
+@@ -3252,23 +3275,31 @@
+ 			break;
+ 
+ 		case WSC_ID_AUTH_TYPE_FLAGS:
+-			pReg->PeerInfo.AuthTypeFlags = get_unaligned((PUSHORT) pData);
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_AUTH_TYPE_FLAGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_AUTH_TYPE_FLAGS));
++			if (WscLen >= 2) {
++				pReg->PeerInfo.AuthTypeFlags = get_unaligned((PUSHORT) pData);
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_AUTH_TYPE_FLAGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_AUTH_TYPE_FLAGS));
++			}
+ 			break;
+ 
+ 		case WSC_ID_ENCR_TYPE_FLAGS:
+-			pReg->PeerInfo.EncrTypeFlags = get_unaligned((PUSHORT) pData);
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENCR_TYPE_FLAGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENCR_TYPE_FLAGS));
++			if (WscLen >= 2) {
++				pReg->PeerInfo.EncrTypeFlags = get_unaligned((PUSHORT) pData);
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENCR_TYPE_FLAGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENCR_TYPE_FLAGS));
++			}
+ 			break;
+ 
+ 		case WSC_ID_CONN_TYPE_FLAGS:
+-			pReg->PeerInfo.ConnTypeFlags = *pData;
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_CONN_TYPE_FLAGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_CONN_TYPE_FLAGS));
++			if (WscLen >= 1) {
++				pReg->PeerInfo.ConnTypeFlags = *pData;
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_CONN_TYPE_FLAGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_CONN_TYPE_FLAGS));
++			}
+ 			break;
+ 
+ 		case WSC_ID_CONFIG_METHODS:
+-			pReg->PeerInfo.ConfigMethods = get_unaligned((PUSHORT) pData);
+-			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_CONFIG_METHODS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_CONFIG_METHODS));
++			if (WscLen >= 2) {
++				pReg->PeerInfo.ConfigMethods = get_unaligned((PUSHORT) pData);
++				FieldCheck[(WSC_TLV_BYTE2(WSC_ID_CONFIG_METHODS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_CONFIG_METHODS));
++			}
+ 			break;
+ 
+ 		case WSC_ID_MANUFACTURER:
+@@ -3500,20 +3531,15 @@
+ 	USHORT				WscType, WscLen;
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+-	if (Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++	if (!precv || Length < 5 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Not enough buffer\n");
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid M2D length (%d)\n", Length);
+ 		return ret;
+ 	}
+ 	pReg->LastRx.Length = Length;
+ 	NdisMoveMemory(pReg->LastRx.Data, precv, Length);
+ 	pData = pReg->LastRx.Data;
+ 
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		return ret;
+-	}
+-
+ 	/* Start to process WSC IEs */
+ 	while (Length > 4) {
+ 		WSC_IE	TLV_Recv;
+@@ -3549,12 +3575,12 @@
+ 			break;
+ 
+ 		case WSC_ID_ENROLLEE_NONCE:
+-
+ 			/* for verification with our enrollee nonce */
+-			if (WscLen <= sizeof(pReg->EnrolleeNonce)) {
+-				if (RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0)
+-					MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
+-							"Rx M2 Compare enrollee nonce mismatched\n");
++			if (WscLen != sizeof(pReg->EnrolleeNonce) ||
++				RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0) {
++				MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
++						"Rx M2D Compare enrollee nonce mismatched\n");
++				return WSC_ERROR_DEV_PWD_AUTH_FAIL;
+ 			}
+ 			break;
+ 
+@@ -3582,19 +3608,23 @@
+ 			break;
+ 
+ 		case WSC_ID_AUTH_TYPE_FLAGS:
+-			pReg->PeerInfo.AuthTypeFlags = get_unaligned((PUSHORT) pData);/**((PUSHORT) pData); */
++			if (WscLen >= 2)
++				pReg->PeerInfo.AuthTypeFlags = get_unaligned((PUSHORT) pData);
+ 			break;
+ 
+ 		case WSC_ID_ENCR_TYPE_FLAGS:
+-			pReg->PeerInfo.EncrTypeFlags = get_unaligned((PUSHORT) pData);/**((PUSHORT) pData); */
++			if (WscLen >= 2)
++				pReg->PeerInfo.EncrTypeFlags = get_unaligned((PUSHORT) pData);
+ 			break;
+ 
+ 		case WSC_ID_CONN_TYPE_FLAGS:
+-			pReg->PeerInfo.ConnTypeFlags = *pData;
++			if (WscLen >= 1)
++				pReg->PeerInfo.ConnTypeFlags = *pData;
+ 			break;
+ 
+ 		case WSC_ID_CONFIG_METHODS:
+-			pReg->PeerInfo.ConfigMethods = be2cpu16(get_unaligned((PUSHORT) pData));/*be2cpu16(*((PUSHORT) pData)); */
++			if (WscLen >= 2)
++				pReg->PeerInfo.ConfigMethods = be2cpu16(get_unaligned((PUSHORT) pData));
+ 			break;
+ 
+ 		case WSC_ID_MANUFACTURER:
+@@ -3652,22 +3682,26 @@
+ 			break;
+ 
+ 		case WSC_ID_RF_BAND:
+-			pReg->PeerInfo.RfBand = *pData;
++			if (WscLen >= 1)
++				pReg->PeerInfo.RfBand = *pData;
+ 			break;
+ 
+ 		case WSC_ID_ASSOC_STATE:
+-			pReg->PeerInfo.AssocState = get_unaligned((PUSHORT) pData);/**((PUSHORT) pData); */
++			if (WscLen >= 2)
++				pReg->PeerInfo.AssocState = get_unaligned((PUSHORT) pData);
+ 			break;
+ 
+ 		case WSC_ID_CONFIG_ERROR:
+-			pReg->PeerInfo.ConfigError = get_unaligned((PUSHORT) pData);/**((PUSHORT) pData); */
++			if (WscLen >= 2)
++				pReg->PeerInfo.ConfigError = get_unaligned((PUSHORT) pData);
+ 			break;
+ 
+ 		case WSC_ID_DEVICE_PWD_ID:
+ 			break;
+ 
+ 		case WSC_ID_OS_VERSION:
+-			pReg->PeerInfo.OsVersion = get_unalignedlong((PULONG)pData);
++			if (WscLen >= 4)
++				pReg->PeerInfo.OsVersion = get_unalignedlong((PULONG)pData);
+ 			break;
+ 
+ 		case WSC_ID_AUTHENTICATOR:
+@@ -3731,20 +3765,15 @@
+ 	FieldCheck[(WSC_TLV_BYTE2(WSC_ID_AUTHENTICATOR))] |= (1 << WSC_TLV_BYTE1(WSC_ID_AUTHENTICATOR));
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+-	if (Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Not enough buffer\n");
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid M3 length (%d)\n", Length);
+ 		return ret;
+ 	}
+ 	pReg->LastRx.Length = Length;
+ 	NdisMoveMemory(pReg->LastRx.Data, precv, Length);
+ 	pData = pReg->LastRx.Data;
+ 
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		return ret;
+-	}
+-
+ 	/* Start to process WSC IEs */
+ 	while (Length > 4) {
+ 		WSC_IE	TLV_Recv;
+@@ -3782,13 +3811,12 @@
+ 			break;
+ 
+ 		case WSC_ID_REGISTRAR_NONCE:
+-
+ 			/* for verification with our Registrar nonce */
+-			if (WscLen <= sizeof(pReg->RegistrarNonce)) {
+-				if (RTMPCompareMemory(pReg->RegistrarNonce, pData, WscLen) != 0)
+-					MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
+-							"Rx M3 Compare Registrar nonce mismatched\n");
+-
++			if (WscLen != sizeof(pReg->RegistrarNonce) ||
++				RTMPCompareMemory(pReg->RegistrarNonce, pData, WscLen) != 0) {
++				MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
++						"Rx M3 Compare Registrar nonce mismatched\n");
++				return WSC_ERROR_DEV_PWD_AUTH_FAIL;
+ 			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_REGISTRAR_NONCE))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_REGISTRAR_NONCE));
+ 			break;
+@@ -3908,19 +3936,14 @@
+ 
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+-	if (Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Not enough buffer\n");
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid M4 length (%d)\n", Length);
+ 		return ret;
+ 	}
+ 	pReg->LastRx.Length = Length;
+ 	NdisMoveMemory(pReg->LastRx.Data, precv, Length);
+ 	pData = pReg->LastRx.Data;
+-
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		return ret;
+-	}
+ 	os_alloc_mem(NULL, (UCHAR **)&IV_DecrData, 512);
+ 
+ 	if (!IV_DecrData) {
+@@ -3968,12 +3991,13 @@
+ 			break;
+ 
+ 		case WSC_ID_ENROLLEE_NONCE:
+-
+ 			/* for verification with our enrollee nonce */
+-			if (WscLen <= sizeof(pReg->EnrolleeNonce)) {
+-				if (RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0)
+-					MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
+-							"Rx M4 Compare enrollee nonce mismatched\n");
++			if (WscLen != sizeof(pReg->EnrolleeNonce) ||
++				RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0) {
++				MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
++						"Rx M4 Compare enrollee nonce mismatched\n");
++				ret = WSC_ERROR_DEV_PWD_AUTH_FAIL;
++				goto out;
+ 			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENROLLEE_NONCE))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENROLLEE_NONCE));
+ 			break;
+@@ -4015,7 +4039,10 @@
+ 			AES_CBC_Decrypt(IV_DecrData + 16, (WscLen - 16), pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), IV_DecrData, 16, (UINT8 *) pReg->ApEncrSettings, (UINT *) &EncrLen);
+ 			MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "M4 ApEncrSettings len = %d\n", EncrLen);
+ 			/* Parse encryption settings */
+-			WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl);
++			if (!WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl)) {
++				ret = WSC_ERROR_HMAC_FAIL;
++				goto out;
++			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENCR_SETTINGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENCR_SETTINGS));
+ 			break;
+ 
+@@ -4132,13 +4159,9 @@
+ 	FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENCR_SETTINGS))] |= (1 << WSC_TLV_BYTE1(WSC_ID_ENCR_SETTINGS));
+ 	FieldCheck[(WSC_TLV_BYTE2(WSC_ID_AUTHENTICATOR))] |= (1 << WSC_TLV_BYTE1(WSC_ID_AUTHENTICATOR));
+ 
+-	if (Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Not enough buffer\n");
+-		return ret;
+-	}
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
+ 		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid M5 length (%d)\n", Length);
+ 		return ret;
+ 	}
+ 
+@@ -4194,10 +4217,12 @@
+ 
+ 		case WSC_ID_REGISTRAR_NONCE:
+ 			/* for verification with our Registrar nonce */
+-			if (WscLen <= sizeof(pReg->RegistrarNonce)) {
+-				if (RTMPCompareMemory(pReg->RegistrarNonce, pData, WscLen) != 0)
+-					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+-							"Rx M5 Compare Registrar nonce mismatched\n");
++			if (WscLen != sizeof(pReg->RegistrarNonce) ||
++				RTMPCompareMemory(pReg->RegistrarNonce, pData, WscLen) != 0) {
++				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
++						"Rx M5 Compare Registrar nonce mismatched\n");
++				ret = WSC_ERROR_DEV_PWD_AUTH_FAIL;
++				goto out;
+ 			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_REGISTRAR_NONCE))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_REGISTRAR_NONCE));
+ 			break;
+@@ -4219,7 +4244,10 @@
+ 			AES_CBC_Decrypt(IV_DecrData + 16, (WscLen - 16), pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), IV_DecrData, 16, (UINT8 *) pReg->ApEncrSettings, (UINT *) &EncrLen);
+ 			MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "M5 ApEncrSettings len = %d\n", EncrLen);
+ 			/* Parse encryption settings */
+-			WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl);
++			if (!WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl)) {
++				ret = WSC_ERROR_HMAC_FAIL;
++				goto out;
++			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENCR_SETTINGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENCR_SETTINGS));
+ 			break;
+ 
+@@ -4247,10 +4275,12 @@
+ 	/* We have to exclude last 12 bytes from last receive since it's authenticator value */
+ 	HmacLen = pReg->LastTx.Length + pReg->LastRx.Length - 12;
+ 
+-	if ((pAdapter->pHmacData) && (HmacLen < 2048)) {
+-		NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
+-		NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
++	if ((!pAdapter->pHmacData) || (HmacLen < 0) || (HmacLen > 2048)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		goto out;
+ 	}
++	NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
++	NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
+ 
+ 	/* Verify E-Hash1 */
+ 	/* Create input for E-Hash1 */
+@@ -4345,18 +4375,17 @@
+ 	}
+ 
+ 	pHash = IV_DecrData;
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		os_free_mem(IV_DecrData);
++		return ret;
++	}
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+ 	pReg->LastRx.Length = Length;
+ 	NdisMoveMemory(pReg->LastRx.Data, precv, Length);
+ 	pData = pReg->LastRx.Data;
+ 
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		os_free_mem(IV_DecrData);
+-		return ret;
+-	}
+-
+ 	/* Start to process WSC IEs */
+ 	while (Length > 4) {
+ 		WSC_IE	TLV_Recv;
+@@ -4395,12 +4424,13 @@
+ 			break;
+ 
+ 		case WSC_ID_ENROLLEE_NONCE:
+-
+ 			/* for verification with our enrollee nonce */
+-			if (WscLen <= sizeof(pReg->EnrolleeNonce)) {
+-				if (RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0)
+-					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+-							"Rx M6 Compare enrollee nonce mismatched\n");
++			if (WscLen != sizeof(pReg->EnrolleeNonce) ||
++				RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0) {
++				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
++						"Rx M6 Compare enrollee nonce mismatched\n");
++				ret = WSC_ERROR_DEV_PWD_AUTH_FAIL;
++				goto out;
+ 			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENROLLEE_NONCE))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENROLLEE_NONCE));
+ 			break;
+@@ -4422,7 +4452,10 @@
+ 			AES_CBC_Decrypt(IV_DecrData + 16, (WscLen - 16), pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), IV_DecrData, 16, (UINT8 *) pReg->ApEncrSettings, (UINT *) &EncrLen);
+ 			MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "M6 ApEncrSettings len = %d\n", EncrLen);
+ 			/* Parse encryption settings */
+-			WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl);
++			if (!WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl)) {
++				ret = WSC_ERROR_HMAC_FAIL;
++				goto out;
++			}
+ 			FieldCheck[(WSC_TLV_BYTE2(WSC_ID_ENCR_SETTINGS))] ^= (1 << WSC_TLV_BYTE1(WSC_ID_ENCR_SETTINGS));
+ 			break;
+ 
+@@ -4466,14 +4499,16 @@
+ 	/* We have to exclude last 12 bytes from last receive since it's authenticator value */
+ 	HmacLen = pReg->LastTx.Length + pReg->LastRx.Length - 12;
+ 
+-	if (pAdapter->pHmacData) {
+-		NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
+-		NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
++	if ((!pAdapter->pHmacData) || (HmacLen < 0) || (HmacLen > 2048)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		goto out;
++	}
++	NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
++	NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
+ #ifndef RT_CFG80211_SUPPORT
+-		/* Validate HMAC, reuse KDK buffer */
+-		RT_HMAC_SHA256(pReg->AuthKey, 32, pAdapter->pHmacData, HmacLen, KDK, SHA256_DIGEST_SIZE);
++	/* Validate HMAC, reuse KDK buffer */
++	RT_HMAC_SHA256(pReg->AuthKey, 32, pAdapter->pHmacData, HmacLen, KDK, SHA256_DIGEST_SIZE);
+ #endif /*#ifndef RT_CFG80211_SUPPORT*/
+-	}
+ 
+ 	if (RTMPEqualMemory(Hmac, KDK, 8) != 1) {
+ 		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "ProcessMessageM6 --> HMAC not match\n");
+@@ -4526,11 +4561,18 @@
+ {
+ 	int ret = WSC_ERROR_NO_ERROR;
+ 	INT HmacLen;
+-	UCHAR Hmac[8] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }, KDK[32] = {0};
++	UCHAR Hmac[8] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }, KDK[32] = {0}, EHash[32] = {0};
+ 	INT EncrLen;
+ 	PUCHAR pData = NULL;
+ 	USHORT WscType, WscLen;
+ 	UCHAR *IV_DecrData = NULL; /*IV len 16 ,DecrData len */
++	UCHAR *pHash = NULL;
++	BOOLEAN bHasEncrSettings = FALSE;
++
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		return ret;
++	}
+ 
+ 	os_alloc_mem(NULL, (UCHAR **)&IV_DecrData, 1024);
+ 
+@@ -4538,6 +4580,7 @@
+ 		ret = WSC_ERROR_CAN_NOT_ALLOCMEM;
+ 		return ret;
+ 	}
++	pHash = IV_DecrData;
+ 
+ 	/* Copy the content to Regdata for lastRx information */
+ 	/* Length must include authenticator IE size */
+@@ -4545,12 +4588,6 @@
+ 	NdisMoveMemory(pReg->LastRx.Data, precv, Length);
+ 	pData = pReg->LastRx.Data;
+ 
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		os_free_mem(IV_DecrData);
+-		return ret;
+-	}
+-
+ 	/* Start to process WSC IEs */
+ 	while (Length > 4) {
+ 		WSC_IE	TLV_Recv;
+@@ -4587,12 +4624,13 @@
+ 			break;
+ 
+ 		case WSC_ID_REGISTRAR_NONCE:
+-
+ 			/* for verification with our Registrar nonce */
+-			if (WscLen <= sizeof(pReg->RegistrarNonce)) {
+-				if (RTMPCompareMemory(pReg->RegistrarNonce, pData, WscLen) != 0)
+-					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+-							"Rx M5 Compare Registrar nonce mismatched\n");
++			if (WscLen != sizeof(pReg->RegistrarNonce) ||
++				RTMPCompareMemory(pReg->RegistrarNonce, pData, WscLen) != 0) {
++				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
++						"Rx M7 Compare Registrar nonce mismatched\n");
++				ret = WSC_ERROR_DEV_PWD_AUTH_FAIL;
++				goto out;
+ 			}
+ 			break;
+ 
+@@ -4619,7 +4657,11 @@
+ 			}
+ #endif /* CONFIG_STA_SUPPORT */
+ 			/* Parse encryption settings */
+-			WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl);
++			if (!WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl)) {
++				ret = WSC_ERROR_HMAC_FAIL;
++				goto out;
++			}
++			bHasEncrSettings = TRUE;
+ 			break;
+ 
+ 		case WSC_ID_AUTHENTICATOR:
+@@ -4641,18 +4683,39 @@
+ 		Length -= WscLen;
+ 	}
+ 
++	/* Verify Enrollee E-Hash2 over decrypted E-S2 from M7 encrypted settings */
++	if (!bHasEncrSettings) {
++		ret = WSC_ERROR_WANTING_FIELD;
++		goto out;
++	}
++	NdisMoveMemory(pHash, pReg->Es2, 16);
++	NdisMoveMemory(pHash + 16, pReg->Psk2, 16);
++	NdisMoveMemory(pHash + 32, pReg->Pke, 192);
++	NdisMoveMemory(pHash + 224, pReg->Pkr, 192);
++#ifndef RT_CFG80211_SUPPORT
++	RT_HMAC_SHA256(pReg->AuthKey, 32, pHash, 416, EHash, SHA256_DIGEST_SIZE);
++#endif /* #ifndef RT_CFG80211_SUPPORT */
++	if (RTMPCompareMemory(pReg->EHash2, EHash, 32) != 0) {
++		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "ProcessMessageM7 --> EHash2 not matched\n");
++		pReg->SelfInfo.ConfigError = WSC_ERROR_HASH_FAIL;
++		ret = WSC_ERROR_HASH_FAIL;
++		goto out;
++	}
++
+ 	/* Combine last TX & RX message contents and validate the HMAC */
+ 	/* We have to exclude last 12 bytes from last receive since it's authenticator value */
+ 	HmacLen = pReg->LastTx.Length + pReg->LastRx.Length - 12;
+ 
+-	if (pAdapter->pHmacData) {
+-		NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
+-		NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
++	if ((!pAdapter->pHmacData) || (HmacLen < 0) || (HmacLen > 2048)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		goto out;
++	}
++	NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
++	NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
+ #ifndef RT_CFG80211_SUPPORT
+-		/* Validate HMAC, reuse KDK buffer */
+-		RT_HMAC_SHA256(pReg->AuthKey, 32, pAdapter->pHmacData, HmacLen, KDK, SHA256_DIGEST_SIZE);
++	/* Validate HMAC, reuse KDK buffer */
++	RT_HMAC_SHA256(pReg->AuthKey, 32, pAdapter->pHmacData, HmacLen, KDK, SHA256_DIGEST_SIZE);
+ #endif /*#ifndef RT_CFG80211_SUPPORT*/
+-	}
+ 
+ 	if (RTMPEqualMemory(Hmac, KDK, 8) != 1) {
+ 		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "ProcessMessageM7 --> HMAC not match\n");
+@@ -4660,6 +4723,8 @@
+ 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "calculated --> 0x%08x-%08x\n", (UINT)cpu2be32(*((PUINT)&Hmac[0])), (UINT)cpu2be32(*((PUINT)&Hmac[4])));
+ 		ret = WSC_ERROR_HMAC_FAIL;
+ 	}
++
++out:
+ 	if (IV_DecrData)
+ 		os_free_mem(IV_DecrData);
+ 
+@@ -4699,11 +4764,17 @@
+ 	int ret = WSC_ERROR_NO_ERROR;
+ 	INT HmacLen;
+ 	UCHAR Hmac[8] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }, KDK[32] = {0};
+-	INT EncrLen;
++	INT EncrLen = 0;
+ 	PUCHAR pData = NULL;
+ 	USHORT WscType, WscLen;
+ 	UCHAR *IV_DecrData = NULL; /*IV len 16 ,DecrData len */
+ 	PWSC_REG_DATA pReg = &pWscControl->RegData;
++	BOOLEAN bHasEncrCred = FALSE;
++
++	if (!precv || Length < 12 || Length > ARRAY_SIZE(pReg->LastRx.Data)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		return ret;
++	}
+ 
+ 	os_alloc_mem(NULL, (UCHAR **)&IV_DecrData, 1024);
+ 
+@@ -4718,12 +4789,6 @@
+ 	NdisMoveMemory(pReg->LastRx.Data, precv, Length);
+ 	pData = pReg->LastRx.Data;
+ 
+-	if (Length <= 0 || Length > sizeof(WSC_REG_DATA)) {
+-		ret = WSC_ERROR_OOB_INT_READ_ERR;
+-		os_free_mem(IV_DecrData);
+-		return ret;
+-	}
+-
+ 	/* Start to process WSC IEs */
+ 	while (Length > 4) {
+ 		WSC_IE	TLV_Recv;
+@@ -4760,12 +4825,13 @@
+ 			break;
+ 
+ 		case WSC_ID_ENROLLEE_NONCE:
+-
+ 			/* for verification with our enrollee nonce */
+-			if (WscLen <= sizeof(pReg->EnrolleeNonce)) {
+-				if (RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0)
+-					MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+-							"Rx M8 Compare enrollee nonce mismatched\n");
++			if (WscLen != sizeof(pReg->EnrolleeNonce) ||
++				RTMPCompareMemory(pReg->EnrolleeNonce, pData, WscLen) != 0) {
++				MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
++						"Rx M8 Compare enrollee nonce mismatched\n");
++				ret = WSC_ERROR_DEV_PWD_AUTH_FAIL;
++				goto out;
+ 			}
+ 			break;
+ 
+@@ -4785,15 +4851,8 @@
+ 			EncrLen = sizeof(pReg->ApEncrSettings);
+ 			AES_CBC_Decrypt(IV_DecrData + 16, (WscLen - 16), pReg->KeyWrapKey, sizeof(pReg->KeyWrapKey), IV_DecrData, 16, (UINT8 *) pReg->ApEncrSettings, (UINT *) &EncrLen);
+ 			MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "M8 ApEncrSettings len = %d\n", EncrLen);
+-
+-			/* Parse encryption settings */
+-			if (WscProcessCredential(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl) == FALSE) {
+-				if (IV_DecrData)
+-					os_free_mem(IV_DecrData);
+-
+-				return WSC_ERROR_SETUP_LOCKED;
+-			}
+-
++			/* Defer WscProcessCredential until Authenticator HMAC and KeyWrapAuth pass */
++			bHasEncrCred = TRUE;
+ 			break;
+ 
+ 		case WSC_ID_AUTHENTICATOR:
+@@ -4819,21 +4878,37 @@
+ 	/* We have to exclude last 12 bytes from last receive since it's authenticator value */
+ 	HmacLen = pReg->LastTx.Length + pReg->LastRx.Length - 12;
+ 
+-	if (pAdapter->pHmacData) {
+-		NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
+-		NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
++	if ((!pAdapter->pHmacData) || (HmacLen < 0) || (HmacLen > 2048)) {
++		ret = WSC_ERROR_OOB_INT_READ_ERR;
++		goto out;
++	}
++	NdisMoveMemory(pAdapter->pHmacData, pReg->LastTx.Data, pReg->LastTx.Length);
++	NdisMoveMemory(pAdapter->pHmacData + pReg->LastTx.Length, pReg->LastRx.Data, pReg->LastRx.Length - 12);
+ #ifndef RT_CFG80211_SUPPORT
+-		/* Validate HMAC, reuse KDK buffer */
+-		RT_HMAC_SHA256(pReg->AuthKey, 32, pAdapter->pHmacData, HmacLen, KDK, SHA256_DIGEST_SIZE);
++	/* Validate HMAC, reuse KDK buffer */
++	RT_HMAC_SHA256(pReg->AuthKey, 32, pAdapter->pHmacData, HmacLen, KDK, SHA256_DIGEST_SIZE);
+ #endif /*#ifndef RT_CFG80211_SUPPORT*/
+-	}
+ 
+ 	if (RTMPEqualMemory(Hmac, KDK, 8) != 1) {
+ 		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "ProcessMessageM8 --> HMAC not match\n");
+ 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "MD --> 0x%08x-%08x\n", (UINT)cpu2be32(*((PUINT) KDK)), (UINT)cpu2be32(*((PUINT)(KDK + 4))));
+ 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "calculated --> 0x%08x-%08x\n", (UINT)cpu2be32(*((PUINT)&Hmac[0])), (UINT)cpu2be32(*((PUINT)&Hmac[4])));
+ 		ret = WSC_ERROR_HMAC_FAIL;
++		goto out;
+ 	}
++
++	if (bHasEncrCred) {
++		if (!WscParseEncrSettings(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl)) {
++			ret = WSC_ERROR_HMAC_FAIL;
++			goto out;
++		}
++		if (WscProcessCredential(pAdapter, pReg->ApEncrSettings, EncrLen, pWscControl) == FALSE) {
++			ret = WSC_ERROR_SETUP_LOCKED;
++			goto out;
++		}
++	}
++
++out:
+ 	if (IV_DecrData)
+ 		os_free_mem(IV_DecrData);
+ 
+--- a/mt_wifi/feature/oce/oce_fils.c
++++ b/mt_wifi/feature/oce/oce_fils.c
+@@ -762,8 +762,10 @@
+ 
+ 	pSyncEvent->IGN = pSecConfig->PmfCfg.IGTK_KeyIdx;
+ 	pSyncEvent->IGTK_len = LEN_TK;
+-	if ((pSyncEvent->IGN - 4 + pSyncEvent->IGTK_len) <= ARRAY_SIZE(pSecConfig->PmfCfg.IGTK))
+-		NdisMoveMemory(pSyncEvent->IGTK, pSecConfig->PmfCfg.IGTK[pSyncEvent->IGN-4], pSyncEvent->IGTK_len);
++	if ((pSyncEvent->IGN == 4 || pSyncEvent->IGN == 5) &&
++		pSyncEvent->IGTK_len <= sizeof(pSecConfig->PmfCfg.IGTK[0]) &&
++		pSyncEvent->IGTK_len <= sizeof(pSyncEvent->IGTK))
++		NdisMoveMemory(pSyncEvent->IGTK, pSecConfig->PmfCfg.IGTK[pSyncEvent->IGN - 4], pSyncEvent->IGTK_len);
+ 	else {
+ 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_ERROR,
+ 			"Length of IGN is invalid.\n");
+@@ -777,16 +779,16 @@
+ 	for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
+ 		if (pSecConfig->RSNE_Type[rsne_idx] == SEC_RSNIE_NONE)
+ 			continue;
+-		if (pSyncEvent->rsne_len + 3 < MAX_OPT_IE) {
++		if ((pSyncEvent->rsne_len + pSecConfig->RSNE_Len[rsne_idx] + 2) <= MAX_OPT_IE) {
+ 			NdisMoveMemory(&pSyncEvent->rsne[pSyncEvent->rsne_len], pSecConfig->RSNE_EID[rsne_idx], 1);
+ 			NdisMoveMemory(&pSyncEvent->rsne[pSyncEvent->rsne_len + 1], &pSecConfig->RSNE_Len[rsne_idx], 1);
+ 			NdisMoveMemory(&pSyncEvent->rsne[pSyncEvent->rsne_len + 2], pSecConfig->RSNE_Content[rsne_idx],
+ 				pSecConfig->RSNE_Len[rsne_idx]);
++			pSyncEvent->rsne_len += pSecConfig->RSNE_Len[rsne_idx] + 2;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_ERROR,
+ 				"syncEvent.rsne_len:%d\n", pSyncEvent->rsne_len);
+ 		}
+-		pSyncEvent->rsne_len += pSecConfig->RSNE_Len[rsne_idx] + 2;
+ 	}
+ 
+ 	if (pSyncEvent->rsne_len > MAX_OPT_IE) {

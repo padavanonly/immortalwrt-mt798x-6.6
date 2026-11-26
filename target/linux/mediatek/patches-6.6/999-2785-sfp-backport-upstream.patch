@@ -1,0 +1,33 @@
+Subject: [PATCH] 999-2785-sfp-backport-upstream
+
+---
+--- a/drivers/net/phy/sfp.c
++++ b/drivers/net/phy/sfp.c
+@@ -550,6 +550,11 @@
+ 	SFP_QUIRK("ALCATELLUCENT", "3FE46541AA", sfp_quirk_2500basex,
+ 		  sfp_fixup_nokia),
+ 
++	SFP_QUIRK_F("BIDB", "X-ONU-SFPP", sfp_fixup_potron),
++
++	// FLYPRO SFP-10GT-CS-30M uses Rollball protocol to talk to the PHY.
++	SFP_QUIRK_F("FLYPRO", "SFP-10GT-CS-30M", sfp_fixup_rollball),
++
+ 	// Fiberstore SFP-10G-T doesn't identify as copper, uses the Rollball
+ 	// protocol to talk to the PHY and needs 4 sec wait before probing the
+ 	// PHY.
+@@ -604,9 +609,13 @@
+ 	// OEM SFP-GE-T is 1000Base-T module
+ 	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
+ 
+-	// Lantech 8330-262D-E can operate at 2500base-X, but incorrectly report
+-	// 2500MBd NRZ in their EEPROM
++	// Lantech 8330-262D-E and 8330-265D can operate at 2500base-X, but
++	// incorrectly report 2500MBd NRZ in their EEPROM.
++	// Some 8330-265D modules have inverted LOS, while all of them report
++	// normal LOS in EEPROM. Therefore we need to ignore LOS entirely.
+ 	SFP_QUIRK_M("Lantech", "8330-262D-E", sfp_quirk_2500basex),
++	SFP_QUIRK("Lantech", "8330-265D", sfp_quirk_2500basex,
++		  sfp_fixup_ignore_los),
+ 
+ 	SFP_QUIRK_M("UBNT", "UF-INSTANT", sfp_quirk_ubnt_uf_instant),
+ 

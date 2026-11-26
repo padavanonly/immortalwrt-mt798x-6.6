@@ -1,11 +1,11 @@
 #!/bin/sh
 
-uci -q batch <<-EOF >/dev/null
+uci -q batch <<-EOF >/dev/null 2>/dev/null || true
 	delete ucitrack.@hypermodem[-1]
 	add ucitrack hypermodem
 	set ucitrack.@hypermodem[-1].init=hypermodem
 	commit ucitrack
 EOF
 
-rm -f /tmp/luci-indexcache
+rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
 exit 0

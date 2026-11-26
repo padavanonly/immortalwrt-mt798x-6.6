@@ -1,0 +1,534 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] rtl837x-gsw: fix watchdog bounds, MDIO/SDS error checks, and
+ SFP teardown
+
+Propagate negative MDIO and SerDes register read errors, fix 9-port RTL8373 PVID array bounds and procfs leaks, bound watchdog recovery, and cancel SFP delayed work on teardown.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ src/rtl837x_common.h   |   3 +-
+ src/rtl837x_dbg.c      | 223 ++++++++++++++++++++++++++++-------------
+ src/rtl837x_mdio.c     |  80 +++++++++------
+ src/rtl837x_swconfig.c |   8 +-
+ 4 files changed, 213 insertions(+), 101 deletions(-)
+
+diff --git a/src/rtl837x_common.h b/src/rtl837x_common.h
+index cd17de8..978b277 100644
+--- a/src/rtl837x_common.h
++++ b/src/rtl837x_common.h
+@@ -98,6 +98,7 @@ struct rtk_gsw {
+ 	struct sfp_bus *sfp_bus;
+ 	struct delayed_work sfp_start_work;
+ 	bool sfp_present;
++	int retry_cnt;
+ 
+ 	struct rtl837x_mib_counter *mib_counters;
+ 	unsigned int num_mib_counters;
+@@ -113,7 +114,7 @@ struct rtk_gsw {
+ 
+ 	char buf[4096];
+ 
+-	uint16_t port_pvid[6];  // 端口PVID配置
++	uint16_t port_pvid[10];  /* Port PVID configuration */
+ 
+ 	uint16_t flow_control_map; // 流控配置位图
+ 	bool global_vlan_enable;
+diff --git a/src/rtl837x_dbg.c b/src/rtl837x_dbg.c
+index da5bfdb..ecac9a1 100644
+--- a/src/rtl837x_dbg.c
++++ b/src/rtl837x_dbg.c
+@@ -8,6 +8,7 @@
+ #include <linux/seq_file.h>
+ #include <linux/proc_fs.h>
+ #include <linux/u64_stats_sync.h>
++#include <linux/slab.h>
+ 
+ #include "./rtl837x_common.h"
+ 
+@@ -18,7 +19,7 @@
+ #define TO_FOPS(name) _##name##_rw_fops
+ 
+ #define REGRWFUNC(name) \
+-	static char _buf_rd_##name[64];  \
++	static char _buf_rd_##name[128];  \
+ 	static ssize_t _##name##_rw_read(struct file *filep, char __user *ubuf,  \
+ 				  size_t count, loff_t *offp)   \
+ 	{   \
+@@ -48,23 +49,28 @@ ssize_t _sdsreg_rw_write(struct file *filep, const char __user *ubuf,
+ 		return PTR_ERR(buf);
+ 	
+ 	if(buf[0] == 'w') {
+-		if(sscanf(buf, "w %d %x %x %x", &sds_id, &page, &reg, &val) == -1)
++		if(sscanf(buf, "w %d %x %x %x", &sds_id, &page, &reg, &val) != 4) {
++			kfree(buf);
+ 			return -EFAULT;
+-		else{
+-			if (sds_id > 1)
++		} else {
++			if (sds_id > 1) {
++				kfree(buf);
+ 				return -EFAULT;
++			}
+ 			rtk_rtl8373_sds_reg_write(sds_id, page, reg, val);
+ 		}
+ 	} else if(buf[0] == 'r') {
+-		if(sscanf(buf, "r %d %x %x", &sds_id, &page, &reg) == -1)
++		if(sscanf(buf, "r %d %x %x", &sds_id, &page, &reg) != 3) {
++			kfree(buf);
+ 			return -EFAULT;
+-		else {
++		} else {
+ 			rtk_rtl8373_sds_reg_read(sds_id, page, reg, &val);
+-			snprintf(_buf_rd_sdsreg, 64, "sds_id: %d, page: 0x%08x, reg: 0x%08x, val: 0x%08x\n", sds_id, page, reg, val);
++			snprintf(_buf_rd_sdsreg, sizeof(_buf_rd_sdsreg), "sds_id: %d, page: 0x%08x, reg: 0x%08x, val: 0x%08x\n", sds_id, page, reg, val);
+ 		}
+ 	} else {
+-		snprintf(_buf_rd_sdsreg, 64, "echo \"w/r <sds_id> <page> <reg> [<val>]\" > sdsreg\n");
++		snprintf(_buf_rd_sdsreg, sizeof(_buf_rd_sdsreg), "echo \"w/r <sds_id> <page> <reg> [<val>]\" > sdsreg\n");
+ 	}
++	kfree(buf);
+ 	return count;
+ }
+ 
+@@ -79,23 +85,28 @@ ssize_t _phyreg_mmd_rw_write(struct file *filep, const char __user *ubuf,
+ 		return PTR_ERR(buf);
+ 	
+ 	if(buf[0] == 'w') {
+-		if(sscanf(buf, "w %d %x %x %x", &port, &devad, &reg, &val) == -1)
++		if(sscanf(buf, "w %d %x %x %x", &port, &devad, &reg, &val) != 4) {
++			kfree(buf);
+ 			return -EFAULT;
+-		else{
+-			if (port > 9)
++		} else {
++			if (port > 9) {
++				kfree(buf);
+ 				return -EFAULT;
++			}
+ 			rtk_port_phyReg_set(1<<port, devad, reg, val);
+ 		}
+ 	} else if(buf[0] == 'r') {
+-		if(sscanf(buf, "r %d %x %x", &port, &devad, &reg) == -1)
++		if(sscanf(buf, "r %d %x %x", &port, &devad, &reg) != 3) {
++			kfree(buf);
+ 			return -EFAULT;
+-		else {
++		} else {
+ 			rtk_port_phyReg_get(port, devad, reg, &val);
+-			snprintf(_buf_rd_phyreg_mmd, 64, "port: %d, devad: 0x%08x, reg: 0x%08x, val: 0x%08x\n", port, devad, reg, val);
++			snprintf(_buf_rd_phyreg_mmd, sizeof(_buf_rd_phyreg_mmd), "port: %d, devad: 0x%08x, reg: 0x%08x, val: 0x%08x\n", port, devad, reg, val);
+ 		}
+ 	} else {
+-		snprintf(_buf_rd_phyreg_mmd, 64, "echo \"w/r <real_port_index> <devad> <reg> [<val>]\" > phyreg_mmd\n");
++		snprintf(_buf_rd_phyreg_mmd, sizeof(_buf_rd_phyreg_mmd), "echo \"w/r <real_port_index> <devad> <reg> [<val>]\" > phyreg_mmd\n");
+ 	}
++	kfree(buf);
+ 	return count;
+ }
+ 
+@@ -112,75 +123,151 @@ ssize_t _reg_rw_write(struct file *filep, const char __user *ubuf,
+ 		return PTR_ERR(buf);
+ 
+ 	if(buf[0] == 'w') {
+-		if(sscanf(buf, "w %x %x", &reg, &val) == -1)
++		if(sscanf(buf, "w %x %x", &reg, &val) != 2) {
++			kfree(buf);
+ 			return -EFAULT;
+-		else
++		} else
+ 			rtk_rtl8373_setAsicReg(reg, val);
+ 	} else if(buf[0] == 'r') {
+-		if(sscanf(buf, "r %x", &reg) == -1)
++		if(sscanf(buf, "r %x", &reg) != 1) {
++			kfree(buf);
+ 			return -EFAULT;
+-		else {
++		} else {
+ 			rtk_rtl8373_getAsicReg(reg, &val);
+-			snprintf(_buf_rd_reg, 64, "reg: 0x%08x, val: 0x%08x\n", reg, val);
++			snprintf(_buf_rd_reg, sizeof(_buf_rd_reg), "reg: 0x%08x, val: 0x%08x\n", reg, val);
+ 		}
+ 	} else {
+-		snprintf(_buf_rd_reg, 64, "echo \"w/r <reg> [<val>]\" > reg\n");
++		snprintf(_buf_rd_reg, sizeof(_buf_rd_reg), "echo \"w/r <reg> [<val>]\" > reg\n");
+ 	}
++	kfree(buf);
+ 	return count;
+ }
+ 
++#define RTL837X_SDS_PAGE_DUMP_BUF_SIZE 2048
++
+ static ssize_t _sds_page_dump_read(struct file *filep, char __user *ubuf,
+ 				size_t count, loff_t *offp)
+ {
+-	char buf[2048];
+-	int len = 0;
++	char *buf;
++	size_t len = 0;
+ 	unsigned int v3;
++	ssize_t ret;
++
++	buf = kzalloc(RTL837X_SDS_PAGE_DUMP_BUF_SIZE, GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++
++	if (rtk_rtl8373_getAsicReg(RTL8373_SDS_MODE_SEL_ADDR, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "reg 0x7b20: %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x21, 0x10, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x21  reg 0x10; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x21, 0x13, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x21  reg 0x13; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x21, 0x18, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x21  reg 0x18; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x21, 0x1B, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x21  reg 0x1b; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x21, 0x1D, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x21  reg 0x1d; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x36, 0x1C, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x36  reg 0x1c; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x36, 0x14, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x36  reg 0x14; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x36, 0x10, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x36  reg 0x10; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 4, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x04; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 6, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x06; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 7, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x07; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 9, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x09; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 0xB, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x0b; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 0xC, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x0c; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 0xD, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x0d; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 0x15, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x15; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 0x16, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x16; data = %#x\n", v3);
++	if (rtk_rtl8373_sds_reg_read(0, 0x2E, 0x1D, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 0x2e  reg 0x1d; data = %#x\n", v3);
++
++	if (rtk_rtl8373_sds_regbits_read(0, 5, 0, 1, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 5  reg 0; bit0 = %#x\n", v3);
++	if (rtk_rtl8373_sds_regbits_read(0, 5, 1, 255, &v3) != RT_ERR_OK) {
++		ret = -EIO;
++		goto out;
++	}
++	len += scnprintf(buf + len, RTL837X_SDS_PAGE_DUMP_BUF_SIZE - len, "sds page 5  reg 1; bit7:0 = %#x\n", v3);
+ 
+-	rtk_rtl8373_getAsicReg(RTL8373_SDS_MODE_SEL_ADDR, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "reg 0x7b20: %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x21, 0x10, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x21  reg 0x10; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x21, 0x13, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x21  reg 0x13; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x21, 0x18, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x21  reg 0x18; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x21, 0x1B, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x21  reg 0x1b; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x21, 0x1D, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x21  reg 0x1d; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x36, 0x1C, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x36  reg 0x1c; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x36, 0x14, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x36  reg 0x14; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x36, 0x10, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x36  reg 0x10; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 4, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x04; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 6, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x06; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 7, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x07; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 9, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x09; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 0xB, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x0b; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 0xC, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x0c; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 0xD, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x0d; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 0x15, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x15; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 0x16, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x16; data = %#x\n", v3);
+-	rtk_rtl8373_sds_reg_read(0, 0x2E, 0x1D, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 0x2e  reg 0x1d; data = %#x\n", v3);
+-
+-	rtk_rtl8373_sds_regbits_read(0, 5, 0, 1, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 5  reg 0; bit0 = %#x\n", v3);
+-	rtk_rtl8373_sds_regbits_read(0, 5, 1, 255, &v3);
+-	len += snprintf(buf + len, sizeof(buf)-len, "sds page 5  reg 1; bit7:0 = %#x\n", v3);
+-
+-	return simple_read_from_buffer(ubuf, count, offp, buf, strlen(buf));
++	ret = simple_read_from_buffer(ubuf, count, offp, buf, len);
++out:
++	kfree(buf);
++	return ret;
+ }
+ 
+ static const struct file_operations _sds_page_dump_fops = {
+diff --git a/src/rtl837x_mdio.c b/src/rtl837x_mdio.c
+index 4463758..86938c0 100644
+--- a/src/rtl837x_mdio.c
++++ b/src/rtl837x_mdio.c
+@@ -85,6 +85,8 @@ static int rtl837x_mdio_write(void *ctx, u32 reg, u32 val)
+ 
+ 	// check busy
+ 	ret = bus->read(bus, priv->mdio_addr, MDC_MDIO_CTRL_REG);
++	if (ret < 0)
++		goto out_unlock;
+     if (ret & 0x4) {
+ 		ret = RT_ERR_BUSYWAIT_TIMEOUT;
+ 		goto out_unlock;
+@@ -108,6 +110,8 @@ static int rtl837x_mdio_write(void *ctx, u32 reg, u32 val)
+ 
+ 	// check busy
+ 	ret = bus->read(bus, priv->mdio_addr, MDC_MDIO_CTRL_REG);
++	if (ret < 0)
++		goto out_unlock;
+     if (ret & 0x4) {
+ 		ret = RT_ERR_BUSYWAIT_TIMEOUT;
+ 		goto out_unlock;
+@@ -129,6 +133,8 @@ static int rtl837x_mdio_read(void *ctx, u32 reg, u32 *val)
+ 
+ 	// check busy
+ 	ret = bus->read(bus, priv->mdio_addr, MDC_MDIO_CTRL_REG);
++	if (ret < 0)
++		goto out_unlock;
+     if (ret & 0x4) {
+ 		ret = RT_ERR_BUSYWAIT_TIMEOUT;
+ 		goto out_unlock;
+@@ -144,6 +150,8 @@ static int rtl837x_mdio_read(void *ctx, u32 reg, u32 *val)
+ 
+ 	// check busy
+ 	ret = bus->read(bus, priv->mdio_addr, MDC_MDIO_CTRL_REG);
++	if (ret < 0)
++		goto out_unlock;
+     if (ret & 0x4) {
+ 		ret = RT_ERR_BUSYWAIT_TIMEOUT;
+ 		goto out_unlock;
+@@ -151,7 +159,15 @@ static int rtl837x_mdio_read(void *ctx, u32 reg, u32 *val)
+ 
+ 
+ 	val_l = bus->read(bus, priv->mdio_addr, MDC_MDIO_DATA_LOW);
++	if (val_l < 0) {
++		ret = val_l;
++		goto out_unlock;
++	}
+ 	val_h = bus->read(bus, priv->mdio_addr, MDC_MDIO_DATA_HIGH);
++	if (val_h < 0) {
++		ret = val_h;
++		goto out_unlock;
++	}
+ 
+     *val = val_l & 0xffff;
+     *val |= (val_h & 0xffff) << 16;
+@@ -514,45 +530,48 @@ int rtl8372n_hw_init(struct rtk_gsw *gsw, rtl837x_pnswap_cfg_t swap_cfg)
+ static void rtl837x_status_check_work_func(struct work_struct *work)
+ {
+ 	struct rtk_gsw *gsw = container_of(work, struct rtk_gsw, status_check_work.work);
+-
+ 	rtk_port_status_t port_status;
++	int ret;
+ 
+ 	if (!gsw->ethernet_master)
+ 		return;
+ 
+-	rtk_port_macStatus_get(PORT_MAPPED(gsw->cpu_port), &port_status);
+-	if (!port_status.link)
+-	{
+-		if (PORT_MAPPED(gsw->cpu_port) != UTP_PORT3 && PORT_MAPPED(gsw->cpu_port) != UTP_PORT8)
+-		{
++	ret = rtk_port_macStatus_get(PORT_MAPPED(gsw->cpu_port), &port_status);
++	if (ret != RT_ERR_OK) {
++		dev_warn(gsw->dev, "Failed to read CPU port status: %d\n", ret);
++		goto requeue;
++	}
++
++	if (!port_status.link) {
++		if (PORT_MAPPED(gsw->cpu_port) != UTP_PORT3 &&
++		    PORT_MAPPED(gsw->cpu_port) != UTP_PORT8) {
+ 			dev_warn(gsw->dev, "CPU Port Down, But the CPU port is not Serdes Port, Skip Reset and stop CPU port check work\n");
+ 			return;
+ 		}
+ 
+-		dev_info(gsw->dev, "CPU Port Down, Try to reset Serdes, mode: 0x%x\n", gsw->sds0mode);
+-
+-		rtnl_lock();
+-		dev_close(gsw->ethernet_master);
+-		rtnl_unlock();
+-		rtk_sdsMode_set(0, SERDES_OFF);
+-		mdelay(200);
+-
+-		rtnl_lock();
+-		dev_open(gsw->ethernet_master, NULL);
+-		rtnl_unlock();
+-		rtk_sdsMode_set(0, gsw->sds0mode);
+-
+-		mdelay(2000);
++		if (gsw->retry_cnt < 3) {
++			gsw->retry_cnt++;
++			dev_info(gsw->dev, "CPU Port Down (attempt %d/3), re-initializing Serdes, mode: 0x%x\n",
++				 gsw->retry_cnt, gsw->sds0mode);
++			rtk_sdsMode_set(0, SERDES_OFF);
++			msleep(100);
++			rtk_sdsMode_set(0, gsw->sds0mode);
++			msleep(500);
++		} else if (gsw->retry_cnt == 3) {
++			gsw->retry_cnt++;
++			dev_warn(gsw->dev, "CPU Port Down after 3 retries, stopping watchdog SerDes reset\n");
++		}
++	} else {
++		gsw->retry_cnt = 0;
+ 	}
+ 
+-	queue_delayed_work_on(smp_processor_id(), 
+-						system_wq, 
+-						&gsw->status_check_work, 
+-						msecs_to_jiffies(gsw->default_work_delay_ms)
+-					);
++requeue:
++	queue_delayed_work_on(smp_processor_id(),
++			      system_wq,
++			      &gsw->status_check_work,
++			      msecs_to_jiffies(gsw->default_work_delay_ms));
+ }
+ 
+-
+ static void rtl837x_sfp_attach(void *upstream, struct sfp_bus *bus)
+ {
+ 	struct rtk_gsw *gsw = upstream;
+@@ -737,7 +756,7 @@ static int rtl837x_gsw_probe(struct mdio_device *mdiodev)
+ 	rtk_sds_mode_t sdsmode;
+ 	struct regmap_config rc;
+ 	
+-	int ret;
++	int ret = 0;
+ 	dev_info(dev,"start rtl837x_gsw_probe");
+ 
+ 	ethernet = of_parse_phandle(np, "ethernet", 0);
+@@ -787,7 +806,8 @@ static int rtl837x_gsw_probe(struct mdio_device *mdiodev)
+ 		dev_warn(dev, "failed to get RESET GPIO!!!\n");
+ 	}
+ 
+-	if (of_property_read_u32(np, "rtl837x,cpu-port", &gsw->cpu_port)) {
++	ret = of_property_read_u32(np, "rtl837x,cpu-port", &gsw->cpu_port);
++	if (ret) {
+ 		dev_err(gsw->dev, "failed to get cpu port\n");
+ 		devm_kfree(dev, gsw);
+ 		return ret;
+@@ -857,8 +877,10 @@ static void rtl837x_gsw_remove(struct mdio_device *mdiodev)
+ {
+ 	struct rtk_gsw *gsw = dev_get_drvdata(&mdiodev->dev);;
+ 	cancel_delayed_work_sync(&gsw->status_check_work);
+-	if (gsw->sfp_bus)
++	if (gsw->sfp_bus) {
++		cancel_delayed_work_sync(&gsw->sfp_start_work);
+ 		sfp_bus_del_upstream(gsw->sfp_bus);
++	}
+ 
+ 	unregister_switch(&gsw->sw_dev);
+ 	rtl837x_debug_proc_deinit(gsw);
+diff --git a/src/rtl837x_swconfig.c b/src/rtl837x_swconfig.c
+index 4e2b32b..0e5c5eb 100644
+--- a/src/rtl837x_swconfig.c
++++ b/src/rtl837x_swconfig.c
+@@ -266,7 +266,7 @@ static int rtl837x_sw_get_port_pvid(struct switch_dev *dev, int port, int *val)
+ 	int result; // x0
+ 	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
+ 
+-	if (port > gsw->num_ports) return -EINVAL;
++	if (port < 0 || port >= (int)gsw->num_ports) return -EINVAL;
+ 
+ 	result = rtk_vlan_portPvid_get(PORT_MAPPED(port), val);
+ 	if ( result )
+@@ -281,7 +281,7 @@ static int rtl837x_sw_set_port_pvid(struct switch_dev *dev, int port, int val)
+ {
+ 	struct rtk_gsw *gsw = container_of(dev, struct rtk_gsw, sw_dev);
+ 
+-	if (port > gsw->num_ports) return -22;
++	if (port < 0 || port >= (int)gsw->num_ports) return -EINVAL;
+ 
+ 	gsw->port_pvid[port] = val;
+ 
+@@ -492,6 +492,8 @@ static int rtl837x_sw_reset_hw(struct switch_dev *dev, const struct switch_attr
+ 		return -ENODEV;
+ 	}
+ 
++	gsw->retry_cnt = 0;
++
+ 	queue_delayed_work_on(smp_processor_id(), 
+ 					system_wq, 
+ 					&gsw->status_check_work, 
+@@ -504,7 +506,7 @@ static int rtl837x_sw_reset_hw(struct switch_dev *dev, const struct switch_attr
+ 
+ static int _rtl837x_sw_force_set_serdes_mode(struct rtk_gsw *gsw, uint8_t sds_index, rtk_sds_mode_t mode)
+ {
+-	switch(mode)
++	switch ((int)mode)
+ 	{
+ 		case SERDES_10GQXG:
+ 		case SERDES_10GUSXG:

@@ -1,0 +1,56 @@
+diff -Naur a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -1,12 +1,11 @@
+ EXEC = mii_mgr
+ 
+-CFLAGS += -Wall -Werror
++override CFLAGS += -Wall -Werror
+ 
+ all: $(EXEC)
+ 
+ mii_mgr: mii_mgr.o
+-
+-	$(CC) $(LDFLAGS) -o $@ $^
++	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+ 
+ romfs:
+ 	$(ROMFSINST) /bin/mii_mgr
+diff -Naur a/mii_mgr.c b/mii_mgr.c
+--- a/mii_mgr.c
++++ b/mii_mgr.c
+@@ -1,4 +1,5 @@
+ #include <errno.h>
++#include <limits.h>
+ #include <stdbool.h>
+ #include <stdint.h>
+ #include <stdio.h>
+@@ -84,7 +85,8 @@
+ 		fill_mtk_mii_ioctl(&mtk_mii, phy_id, reg_num, val);
+ 		ifr.ifr_data = (char *)&mtk_mii;
+ 	} else {
+-		fill_mii_ioctl(&mii, phy_id, reg_num, (uint16_t *)val);
++		uint16_t v16 = (uint16_t)*val;
++		fill_mii_ioctl(&mii, phy_id, reg_num, &v16);
+ 		ifr.ifr_data = (char *)&mii;
+ 	}
+ 
+@@ -104,7 +106,7 @@
+ int main(int argc, char *argv[])
+ {
+ 	int opt;
+-	char options[] = "gsui:p:d:r:v:?t";
++	char options[] = "gsui:p:d:r:v:z?t";
+ 	int is_write = 0,is_cl45 = 0;
+ 	int is_priv = 1;
+ 	unsigned int port=0, dev=0,reg_num=0,val=0;
+@@ -129,8 +131,7 @@
+ 				is_priv = 0;
+ 				break;
+ 			case 'i':
+-				strncpy(ifname, optarg, 5);
+-				ifname[IFNAMSIZ - 1] = '\0';
++				snprintf(ifname, sizeof(ifname), "%s", optarg);
+ 				break;
+ 			case 'p':
+ 				port = strtoul(optarg, NULL, 16);

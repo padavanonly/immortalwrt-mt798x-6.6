@@ -1,0 +1,46 @@
+#!/bin/sh
+
+NPROCS="$(grep -c "^processor.*:" /proc/cpuinfo)"
+[ "$NPROCS" -gt 1 ] || exit 0
+
+[ -f /etc/init.d/mtk_smp ] && /etc/init.d/mtk_smp restart
+
+PS_MODE="$(uci -q get network.@globals[0].packet_steering 2>/dev/null)"
+[ -n "$PS_MODE" ] || PS_MODE="2"
+EXT_FLOW="4096"
+
+if [ "$PS_MODE" = "0" ]; then
+	EXT_RPS="0"
+	EXT_FLOW="0"
+elif [ "$PS_MODE" = "2" ]; then
+	EXT_RPS="$(printf '%x' $(((1 << NPROCS) - 1)))"
+elif [ "$NPROCS" -ge 4 ]; then
+	EXT_RPS="c"
+elif [ "$NPROCS" -gt 2 ]; then
+	EXT_RPS="6"
+else
+	EXT_RPS="1"
+fi
+
+sysctl -qw net.core.rps_sock_flow_entries=32768 >/dev/null 2>&1 || true
+
+for IFACE in /sys/class/net/*; do
+	INTERFACE=$(basename "$IFACE")
+	IFNAME_PREFIX="${INTERFACE%%[0-9]*}"
+
+	case "$INTERFACE" in
+		eth0|eth1|hnat|lo|br-*)
+			continue
+			;;
+	esac
+
+	case "$IFNAME_PREFIX" in
+		usb|wwan|rmnet|rmnet_*|qmimux|eth)
+			for q in "/sys/class/net/${INTERFACE}/queues"/rx-*; do
+				[ -d "$q" ] || continue
+				[ -w "${q}/rps_cpus" ] && echo "$EXT_RPS" > "${q}/rps_cpus" 2>/dev/null || true
+				[ -w "${q}/rps_flow_cnt" ] && echo "$EXT_FLOW" > "${q}/rps_flow_cnt" 2>/dev/null || true
+			done
+			;;
+	esac
+done

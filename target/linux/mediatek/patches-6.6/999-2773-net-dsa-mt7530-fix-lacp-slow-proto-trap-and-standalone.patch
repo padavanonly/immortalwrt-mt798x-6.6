@@ -1,0 +1,36 @@
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -1482,6 +1482,11 @@ mt7530_port_bridge_leave(struct dsa_swit
+ 	 */
+ 	mt7530_rmw(priv, MT7530_PCR_P(port), PCR_PORT_VLAN_MASK,
+ 		   MT7530_PORT_MATRIX_MODE);
++	mt7530_rmw(priv, MT7530_PVC_P(port),
++		   VLAN_ATTR_MASK | PVC_EG_TAG_MASK | ACC_FRM_MASK,
++		   VLAN_ATTR(MT7530_VLAN_TRANSPARENT) |
++		   PVC_EG_TAG(MT7530_VLAN_EG_CONSISTENT) |
++		   MT7530_VLAN_ACC_ALL);
+ 
+ 	mutex_unlock(&priv->reg_mutex);
+ }
+@@ -2418,6 +2423,10 @@ mt7530_setup(struct dsa_switch *ds)
+ 			/* Set default PVID to 0 on all user ports */
+ 			mt7530_rmw(priv, MT7530_PPBV1_P(i), G0_PORT_VID_MASK,
+ 				   G0_PORT_VID_DEF);
++			mt7530_rmw(priv, MT7530_PVC_P(i),
++				   VLAN_ATTR_MASK | ACC_FRM_MASK,
++				   VLAN_ATTR(MT7530_VLAN_TRANSPARENT) |
++				   MT7530_VLAN_ACC_ALL);
+ 		}
+ 		/* Enable consistent egress tag */
+ 		mt7530_rmw(priv, MT7530_PVC_P(i), PVC_EG_TAG_MASK,
+@@ -2537,6 +2546,10 @@ mt7531_setup_common(struct dsa_switch *d
+ 			/* Set default PVID to 0 on all user ports */
+ 			mt7530_rmw(priv, MT7530_PPBV1_P(i), G0_PORT_VID_MASK,
+ 				   G0_PORT_VID_DEF);
++			mt7530_rmw(priv, MT7530_PVC_P(i),
++				   VLAN_ATTR_MASK | ACC_FRM_MASK,
++				   VLAN_ATTR(MT7530_VLAN_TRANSPARENT) |
++				   MT7530_VLAN_ACC_ALL);
+ 		}
+ 
+ 		/* Enable consistent egress tag */

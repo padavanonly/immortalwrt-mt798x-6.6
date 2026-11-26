@@ -1,0 +1,48 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] gcc: keep LTO wrapper documentation diagnostic format literal
+
+Pass format string literals safely in lto-wrapper under -Werror=format-security.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/gcc/lto-wrapper.cc
++++ b/gcc/lto-wrapper.cc
+@@ -1358,18 +1358,27 @@
+ print_lto_docs_link ()
+ {
+   bool print_url = global_dc->printer->url_format != URL_FORMAT_NONE;
+-  const char *url = global_dc->get_option_url (global_dc, OPT_flto);
++  char *url = global_dc->get_option_url (global_dc, OPT_flto);
+ 
+-  pretty_printer pp;
+-  pp.url_format = URL_FORMAT_DEFAULT;
+-  pp_string (&pp, "see the ");
+-  if (print_url)
+-    pp_begin_url (&pp, url);
+-  pp_string (&pp, "%<-flto%> option documentation");
+-  if (print_url)
+-    pp_end_url (&pp);
+-  pp_string (&pp, " for more information");
+-  inform (UNKNOWN_LOCATION, pp_formatted_text (&pp));
++  if (print_url && url)
++    {
++      pretty_printer open_pp;
++      open_pp.url_format = URL_FORMAT_DEFAULT;
++      pp_begin_url (&open_pp, url);
++
++      pretty_printer close_pp;
++      close_pp.url_format = URL_FORMAT_DEFAULT;
++      pp_end_url (&close_pp);
++
++      inform (UNKNOWN_LOCATION,
++	      "see the %s%<-flto%> option documentation%s for more information",
++	      pp_formatted_text (&open_pp), pp_formatted_text (&close_pp));
++    }
++  else
++    inform (UNKNOWN_LOCATION,
++	    "see the %<-flto%> option documentation for more information");
++
++  free (url);
+ }
+ 
+ /* Test that a make command is present and working, return true if so.  */

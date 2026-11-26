@@ -1,0 +1,80 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] thermal/drivers/mediatek/lvts: harden calibration and probe
+ error unwind
+
+Validate LVTS efuse calibration parameters and unwind allocations cleanly on error.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/thermal/mediatek/lvts_thermal.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/thermal/mediatek/lvts_thermal.c b/drivers/thermal/mediatek/lvts_thermal.c
+index f175bd9..bbd6dc5 100644
+--- a/drivers/thermal/mediatek/lvts_thermal.c
++++ b/drivers/thermal/mediatek/lvts_thermal.c
+@@ -149,6 +149,7 @@ struct lvts_ctrl {
+ 	struct lvts_sensor vir_sensor;
+ 	struct lvts_domain *lvts_domain;
+ 	const struct lvts_data *lvts_data;
++	const struct lvts_ctrl_data *ctrl_data;
+ 	u32 calibration[LVTS_SENSOR_MAX];
+ 	u32 hw_tshut_raw_temp;
+ 	int num_lvts_sensor;
+@@ -388,6 +389,9 @@ static int lvts_get_max_temp(struct thermal_zone_device *tz, int *temp)
+ 		}
+ 	}
+ 
++	if (max_temp == THERMAL_TEMP_INVALID)
++		return -EAGAIN;
++
+ 	*temp = max_temp;
+ 
+ 	return 0;
+@@ -900,6 +904,7 @@ static int lvts_ctrl_init(struct device *dev, struct lvts_domain *lvts_td,
+ 		lvts_ctrl[i].lvts_domain = lvts_td;
+ 		lvts_ctrl[i].base = lvts_td->base + lvts_data->lvts_ctrl[i].offset;
+ 		lvts_ctrl[i].lvts_data = lvts_data;
++		lvts_ctrl[i].ctrl_data = &lvts_data->lvts_ctrl[i];
+ 
+ 		ret = lvts_sensor_init(dev, &lvts_ctrl[i],
+ 				       &lvts_data->lvts_ctrl[i]);
+@@ -1175,8 +1180,7 @@ static int lvts_ctrl_calibrate(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+ 
+ static int lvts_ctrl_configure(struct device *dev, struct lvts_ctrl *lvts_ctrl)
+ {
+-	const struct lvts_ctrl_data *lvts_ctrl_data =
+-		lvts_ctrl->lvts_data->lvts_ctrl;
++	const struct lvts_ctrl_data *lvts_ctrl_data = lvts_ctrl->ctrl_data;
+ 	const struct lvts_hw_speed *hw_speed = &lvts_ctrl_data->hw_speed;
+ 	u32 value;
+ 
+@@ -1428,8 +1432,8 @@ static int mt7988_lvts_ctrl_start(struct device *dev,
+ 	if (IS_ERR(tz)) {
+ 		tz = devm_thermal_of_zone_register(dev, 0, vir_sensor,
+ 						   &lvts_vir_tz_ops);
+-		if (IS_ERR(tz) && PTR_ERR(tz) != -ENODEV)
+-			return PTR_ERR(tz);
++		if (IS_ERR(tz))
++			return PTR_ERR(tz) == -ENODEV ? 0 : PTR_ERR(tz);
+ 
+ 		devm_thermal_add_hwmon_sysfs(dev, tz);
+ 
+@@ -1457,8 +1461,8 @@ static int mt7987_lvts_ctrl_start(struct device *dev,
+ 	if (IS_ERR(tz)) {
+ 		tz = devm_thermal_of_zone_register(dev, 0, vir_sensor,
+ 						   &lvts_vir_tz_ops);
+-		if (IS_ERR(tz) && PTR_ERR(tz) != -ENODEV)
+-			return PTR_ERR(tz);
++		if (IS_ERR(tz))
++			return PTR_ERR(tz) == -ENODEV ? 0 : PTR_ERR(tz);
+ 
+ 		devm_thermal_add_hwmon_sysfs(dev, tz);
+ 
+@@ -1585,6 +1589,7 @@ static int lvts_probe(struct platform_device *pdev)
+ 			return irq;
+ 	}
+ 
++	use_fake_efuse = 0;
+ 	golden_temp_offset = lvts_data->temp_offset;
+ 
+ 	ret = lvts_domain_init(dev, lvts_td, lvts_data);

@@ -1,0 +1,34 @@
+--- a/mt_linux.c
++++ b/mt_linux.c
+@@ -108,6 +108,12 @@
+ }
+ EXPORT_SYMBOL(mt_ktime_get_boottime_ns);
+ 
++void mt_ktime_get_real_ts64(struct timespec64 *ts)
++{
++	ktime_get_real_ts64(ts);
++}
++EXPORT_SYMBOL(mt_ktime_get_real_ts64);
++
+ #ifdef RT_CFG80211_SUPPORT
+ int mt_cfg80211_vendor_cmd_reply(struct sk_buff *skb)
+ {
+
+--- a/mt_linux.h
++++ b/mt_linux.h
+@@ -61,6 +61,7 @@
+ ktime_t mt_ktime_get(void);
+ ktime_t mt_ktime_get_with_offset(enum tk_offsets offs);
+ u64 mt_ktime_get_boottime_ns(void);
++void mt_ktime_get_real_ts64(struct timespec64 *ts);
+ int mt_register_oom_notifier(struct notifier_block *nb);
+ int mt_unregister_oom_notifier(struct notifier_block *nb);
+ void mt_debugfs_remove(struct dentry *dentry);
+@@ -117,6 +118,7 @@
+ #define mt_ktime_get() ktime_get()
+ #define mt_ktime_get_with_offset(offs) ktime_get_with_offset(offs)
+ #define mt_ktime_get_boottime_ns() ktime_get_boottime_ns()
++#define mt_ktime_get_real_ts64(ts) ktime_get_real_ts64(ts)
+ #define mt_register_oom_notifier(nb) register_oom_notifier(nb)
+ #define mt_unregister_oom_notifier(nb) unregister_oom_notifier(nb)
+ #define mt_debugfs_remove(dentry) debugfs_remove(dentry)

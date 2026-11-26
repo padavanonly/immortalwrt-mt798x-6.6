@@ -4,11 +4,6 @@
 /*CR Definition*/
 
 #define WDMA_OFFSET 0x400
-#define WDMA0_OFST0 0x2a042a20
-#define WDMA0_OFST1 0x29002800
-#define WDMA1_OFST0 0x2e042e20
-#define WDMA1_OFST1 0x2d002c00
-
 #define WDMA_BIT(shift) shift
 /*
  * WDMA0 Base: 0x1B102800

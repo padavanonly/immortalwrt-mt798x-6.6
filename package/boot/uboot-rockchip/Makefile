@@ -94,18 +94,18 @@ define U-Boot/roc-cc-rk3328
     firefly_roc-rk3328-cc
 endef
 
-define U-Boot/rock-pi-e-rk3328
-  $(U-Boot/rk3328/Default)
-  NAME:=ROCK Pi E
-  BUILD_DEVICES:= \
-    radxa_rock-pi-e
-endef
-
 define U-Boot/rock64-rk3328
   $(U-Boot/rk3328/Default)
   NAME:=Rock64
   BUILD_DEVICES:= \
     pine64_rock64
+endef
+
+define U-Boot/rock-pi-e-rk3328
+  $(U-Boot/rk3328/Default)
+  NAME:=ROCK Pi E
+  BUILD_DEVICES:= \
+    radxa_rock-pi-e
 endef
 
 
@@ -144,6 +144,20 @@ define U-Boot/nanopi-r4se-rk3399
   NAME:=NanoPi R4SE
   BUILD_DEVICES:= \
     friendlyarm_nanopi-r4se
+endef
+
+define U-Boot/rock-4c-plus-rk3399
+  $(U-Boot/rk3399/Default)
+  NAME:=ROCK 4C+
+  BUILD_DEVICES:= \
+    radxa_rock-4c-plus
+endef
+
+define U-Boot/rock-4se-rk3399
+  $(U-Boot/rk3399/Default)
+  NAME:=ROCK 4SE
+  BUILD_DEVICES:= \
+    radxa_rock-4se
 endef
 
 define U-Boot/rock-pi-4-rk3399
@@ -208,11 +222,25 @@ define U-Boot/rk3568/Default
   TPL:=$(RK3568_TPL)
 endef
 
+define U-Boot/9tripod-x3568-v4-rk3568
+  $(U-Boot/rk3568/Default)
+  NAME:=9Tripod X3568 v4
+  BUILD_DEVICES:= \
+    9tripod_x3568-v4
+endef
+
 define U-Boot/bpi-r2-pro-rk3568
   $(U-Boot/rk3568/Default)
   NAME:=Bananapi-R2 Pro
   BUILD_DEVICES:= \
     sinovoip_bpi-r2-pro
+endef
+
+define U-Boot/easepi-r1-rk3568
+  $(U-Boot/rk3568/Default)
+  NAME:=LinkEase EasePi R1
+  BUILD_DEVICES:= \
+    linkease_easepi-r1
 endef
 
 define U-Boot/fastrhino-r66s-rk3568
@@ -308,10 +336,16 @@ define U-Boot/sige3-rk3568
     armsom_sige3
 endef
 
+define U-Boot/xiguapi-v3-rk3568
+  $(U-Boot/rk3568/Default)
+  NAME:=XiGuaPi V3
+  BUILD_DEVICES:= \
+    nlnet_xiguapi-v3
+endef
 
-# RK3588 boards
+# RK358x boards
 
-define U-Boot/rk3588/Default
+define U-Boot/rk358x/Default
   BUILD_SUBTARGET:=armv8
   DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3588
   ATF:=$(RK3588_ATF)
@@ -319,35 +353,51 @@ define U-Boot/rk3588/Default
 endef
 
 define U-Boot/cyber3588-aib-rk3588
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=Cyber3588 AIB
   BUILD_DEVICES:= \
     cyber_cyber3588-aib
 endef
 
+define U-Boot/generic-rk3588
+  $(U-Boot/rk358x/Default)
+  NAME:=Generic RK358x board
+  BUILD_DEVICES:= \
+    radxa_e52c \
+    radxa_rock-5b-plus \
+    radxa_rock-5t
+endef
+
 define U-Boot/nanopc-t6-rk3588
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=NanoPC T6
   BUILD_DEVICES:= \
     friendlyarm_nanopc-t6
 endef
 
 define U-Boot/orangepi-5-plus-rk3588
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=OrangePi 5 Plus
   BUILD_DEVICES:= \
     xunlong_orangepi-5-plus
 endef
 
+define U-Boot/rock-5-itx-rk3588
+  $(U-Boot/rk358x/Default)
+  NAME:=ROCK 5 ITX/ITX+
+  BUILD_DEVICES:= \
+    radxa_rock-5-itx
+endef
+
 define U-Boot/rock5b-rk3588
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=ROCK 5B
   BUILD_DEVICES:= \
     radxa_rock-5b
 endef
 
 define U-Boot/sige7-rk3588
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=Sige7
   BUILD_DEVICES:= \
     armsom_sige7
@@ -357,31 +407,38 @@ endef
 # RK3588S boards
 
 define U-Boot/nanopi-r6c-rk3588s
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=NanoPi R6C
   BUILD_DEVICES:= \
     friendlyarm_nanopi-r6c
 endef
 
 define U-Boot/nanopi-r6s-rk3588s
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=NanoPi R6S
   BUILD_DEVICES:= \
     friendlyarm_nanopi-r6s
 endef
 
 define U-Boot/orangepi-5-rk3588s
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=OrangePi 5
   BUILD_DEVICES:= \
     xunlong_orangepi-5
 endef
 
 define U-Boot/rock5a-rk3588s
-  $(U-Boot/rk3588/Default)
+  $(U-Boot/rk358x/Default)
   NAME:=ROCK 5A
   BUILD_DEVICES:= \
     radxa_rock-5a
+endef
+
+define U-Boot/rock-5c-rk3588s
+  $(U-Boot/rk358x/Default)
+  NAME:=ROCK 5C/5C Lite
+  BUILD_DEVICES:= \
+    radxa_rock-5c
 endef
 
 UBOOT_TARGETS := \
@@ -389,6 +446,8 @@ UBOOT_TARGETS := \
   nanopc-t4-rk3399 \
   nanopi-r4s-rk3399 \
   nanopi-r4se-rk3399 \
+  rock-4c-plus-rk3399 \
+  rock-4se-rk3399 \
   rock-pi-4-rk3399 \
   rockpro64-rk3399 \
   rock-pi-s-rk3308 \
@@ -398,13 +457,15 @@ UBOOT_TARGETS := \
   orangepi-r1-plus-rk3328 \
   orangepi-r1-plus-lts-rk3328 \
   roc-cc-rk3328 \
-  rock-pi-e-rk3328 \
   rock64-rk3328 \
+  rock-pi-e-rk3328 \
   nanopi-r3s-rk3566 \
   radxa-cm3-io-rk3566 \
   radxa-zero-3-rk3566 \
   rock-3c-rk3566 \
+  9tripod-x3568-v4-rk3568 \
   bpi-r2-pro-rk3568 \
+  easepi-r1-rk3568 \
   fastrhino-r66s-rk3568 \
   fastrhino-r68s-rk3568 \
   lyt-t68m-rk3568 \
@@ -413,20 +474,24 @@ UBOOT_TARGETS := \
   nanopi-r5c-rk3568 \
   nanopi-r5s-rk3568 \
   photonicat-rk3568 \
+  xiguapi-v3-rk3568 \
   radxa-e25-rk3568 \
   roc-pc-rk3568 \
   rock-3a-rk3568 \
   rock-3b-rk3568 \
   sige3-rk3568 \
   cyber3588-aib-rk3588 \
+  generic-rk3588 \
   nanopc-t6-rk3588 \
   orangepi-5-plus-rk3588 \
+  rock-5-itx-rk3588 \
   rock5b-rk3588 \
   sige7-rk3588 \
   nanopi-r6c-rk3588s \
   nanopi-r6s-rk3588s \
   orangepi-5-rk3588s \
-  rock5a-rk3588s
+  rock5a-rk3588s \
+  rock-5c-rk3588s
 
 UBOOT_CONFIGURE_VARS += USE_PRIVATE_LIBGCC=yes
 

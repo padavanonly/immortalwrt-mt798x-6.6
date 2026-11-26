@@ -73,7 +73,13 @@ msgstr "下载日志"
 msgid "connect"
 msgstr "已连接"
 
+msgid "connected"
+msgstr "已连接"
+
 msgid "disconnect"
+msgstr "未连接"
+
+msgid "disconnected"
 msgstr "未连接"
 
 msgid "disabled"
@@ -394,9 +400,6 @@ msgstr "上传速率"
 msgid "Rx Rate"
 msgstr "下载速率"
 
-msgid "RSSI"
-msgstr "接收信号强度指示"
-
 msgid "BER"
 msgstr "信道误码率"
 
@@ -675,3 +678,69 @@ msgstr "私有（广和通）"
 
 msgid "Private (Meig)"
 msgstr "私有（美格）"
+
+msgid "AT command execution failed"
+msgstr "AT命令执行失败"
+
+msgid "Collecting data..."
+msgstr "正在收集数据..."
+
+msgid "DNS"
+msgstr "DNS 服务器"
+
+msgid "Define Connect"
+msgstr "自定义连接"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "Extend Prefix"
+msgstr "扩展前缀"
+
+msgid "Failed to apply band preferences"
+msgstr "应用频段偏好失败"
+
+msgid "Failed to set mode"
+msgstr "设置模式失败"
+
+msgid "Failed to set network preference"
+msgstr "设置网络偏好失败"
+
+msgid "GPS Port"
+msgstr "GPS 端口"
+
+msgid "IPv4"
+msgstr "IPv4"
+
+msgid "IPv4/IPv6"
+msgstr "IPv4/IPv6"
+
+msgid "IPv6"
+msgstr "IPv6"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Manual"
+msgstr "手动"
+
+msgid "Metric"
+msgstr "跃点数"
+
+msgid "NAT"
+msgstr "网络地址转换 (NAT)"
+
+msgid "Net LED"
+msgstr "网络指示灯"
+
+msgid "Network"
+msgstr "网络"
+
+msgid "Platform"
+msgstr "平台"
+
+msgid "Router Advertisement"
+msgstr "路由通告"
+
+msgid "Translation"
+msgstr "转换"

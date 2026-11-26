@@ -1,0 +1,74 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] rpcd: clamp session timeout and check rc list allocation
+ failures
+
+Prevent integer overflow when converting session timeout to milliseconds and abort safely on rc list memory allocation failure.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ rc.c      | 15 +++++++++++++--
+ session.c |  9 +++------
+ 2 files changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/rc.c b/rc.c
+index ca38b8c..4ea8692 100644
+--- a/rc.c
++++ b/rc.c
+@@ -280,21 +280,32 @@ static int rc_list(struct ubus_context *ctx, struct ubus_object *obj,
+ 		return UBUS_STATUS_UNKNOWN_ERROR;
+ 	}
+ 
+-	blob_buf_init(&c->buf, 0);
++	if (blob_buf_init(&c->buf, 0))
++		goto error;
+ 
+ 	if (tb[RC_LIST_SKIP_RUNNING_CHECK])
+ 		c->skip_running_check = blobmsg_get_bool(tb[RC_LIST_SKIP_RUNNING_CHECK]);
+ 	/* Copy the requested name: msg (and the ctx receive buffer it points
+ 	 * into) is only valid during this call, but req_name is dereferenced
+ 	 * later from the deferred, asynchronous directory walk. */
+-	if (tb[RC_LIST_NAME])
++	if (tb[RC_LIST_NAME]) {
+ 		c->req_name = strdup(blobmsg_get_string(tb[RC_LIST_NAME]));
++		if (!c->req_name)
++			goto error;
++	}
+ 
+ 	ubus_defer_request(ctx, req, &c->req);
+ 
+ 	rc_list_readdir(c);
+ 
+ 	return 0; /* Deferred */
++
++error:
++	free(c->req_name);
++	closedir(c->dir);
++	blob_buf_free(&c->buf);
++	free(c);
++	return UBUS_STATUS_UNKNOWN_ERROR;
+ }
+ 
+ struct rc_init_context {
+diff --git a/session.c b/session.c
+index 6ac226a..61c022c 100644
+--- a/session.c
++++ b/session.c
+@@ -259,16 +259,13 @@ rpc_session_dump(struct rpc_session *ses, struct ubus_context *ctx,
+ static int
+ rpc_session_timeout_ms(int64_t seconds)
+ {
+-	int64_t msecs;
+-
+ 	if (seconds < 0)
+ 		seconds = 0;
+ 
+-	msecs = seconds * 1000;
+-	if (msecs > INT_MAX)
+-		msecs = INT_MAX;
++	if (seconds > INT_MAX / 1000)
++		return INT_MAX;
+ 
+-	return (int)msecs;
++	return (int)(seconds * 1000);
+ }
+ 
+ static void

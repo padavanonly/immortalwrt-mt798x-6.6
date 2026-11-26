@@ -26,7 +26,7 @@ function total(i) {
 
 BEGIN {
 	if (ipv6) {
-		iptNF	= 9
+		iptNF	= 8
 		iptKey	= "ip6tables"
 	} else {
 		iptNF	= 9
@@ -82,7 +82,7 @@ FNR==1 {
 ARGIND==2 {
 	#!@todo regex match IPs and MACs for sanity
 	if (ipv6) {
-		statFlag = ($6 != "FAILED" && $6 != "INCOMPLETE" && substr($1,1,1) != "f" && substr($1,1,1) != "d")
+		statFlag= ($4 != "FAILED" && $4 != "INCOMPLETE")
 		macAddr	= $5
 		hwIF	= $3
 	} else {
@@ -113,7 +113,7 @@ ARGIND==2 {
 # at the top.
 ARGIND==3 && NF==iptNF && $1!="pkts" { # iptables input
 	if (ipv6) {
-		lfn = 6
+		lfn = 5
 		tag = "::/0"
 	} else {
 		lfn = 6

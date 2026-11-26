@@ -7,8 +7,6 @@ Subject: [PATCH] net: pcs: mtk_usxgmii: add pextp reset
  drivers/net/pcs/pcs-mtk-usxgmii.c | 23 +++++++++++++++++++++++
  1 file changed, 23 insertions(+)
 
-diff --git a/drivers/net/pcs/pcs-mtk-usxgmii.c b/drivers/net/pcs/pcs-mtk-usxgmii.c
-index 43be634..5a80b89 100644
 --- a/drivers/net/pcs/pcs-mtk-usxgmii.c
 +++ b/drivers/net/pcs/pcs-mtk-usxgmii.c
 @@ -14,6 +14,7 @@
@@ -27,7 +25,7 @@ index 43be634..5a80b89 100644
  	phy_interface_t			interface;
  	unsigned int			polarity;
  	unsigned int			neg_mode;
-@@ -160,6 +162,7 @@ static int mtk_usxgmii_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode
+@@ -160,6 +162,7 @@ static int mtk_usxgmii_pcs_config(struct
  		mode_changed = true;
  	}
  
@@ -35,7 +33,7 @@ index 43be634..5a80b89 100644
  	mtk_usxgmii_reset(mpcs);
  
  	/* Configure the interface polarity */
-@@ -298,6 +301,7 @@ static void mtk_usxgmii_pcs_get_state(struct phylink_pcs *pcs,
+@@ -298,6 +301,7 @@ static void mtk_usxgmii_pcs_get_state(st
  	if (!state->link) {
  		mtk_usxgmii_pcs_config(pcs, mpcs->neg_mode,
  				       state->interface, NULL, false);
@@ -43,7 +41,7 @@ index 43be634..5a80b89 100644
  		return;
  	}
  
-@@ -318,10 +322,22 @@ static void mtk_usxgmii_pcs_link_up(struct phylink_pcs *pcs, unsigned int neg_mo
+@@ -318,10 +322,22 @@ static void mtk_usxgmii_pcs_link_up(stru
  				    phy_interface_t interface,
  				    int speed, int duplex)
  {
@@ -66,7 +64,7 @@ index 43be634..5a80b89 100644
  }
  
  static void mtk_usxgmii_pcs_disable(struct phylink_pcs *pcs)
-@@ -330,6 +346,8 @@ static void mtk_usxgmii_pcs_disable(struct phylink_pcs *pcs)
+@@ -330,6 +346,8 @@ static void mtk_usxgmii_pcs_disable(stru
  
  	mpcs->interface = PHY_INTERFACE_MODE_NA;
  	mpcs->neg_mode = -1;
@@ -75,7 +73,7 @@ index 43be634..5a80b89 100644
  }
  
  static const struct phylink_pcs_ops mtk_usxgmii_pcs_ops = {
-@@ -337,6 +355,7 @@ static const struct phylink_pcs_ops mtk_usxgmii_pcs_ops = {
+@@ -337,6 +355,7 @@ static const struct phylink_pcs_ops mtk_
  	.pcs_get_state = mtk_usxgmii_pcs_get_state,
  	.pcs_an_restart = mtk_usxgmii_pcs_restart_an,
  	.pcs_link_up = mtk_usxgmii_pcs_link_up,
@@ -83,7 +81,7 @@ index 43be634..5a80b89 100644
  	.pcs_disable = mtk_usxgmii_pcs_disable,
  };
  
-@@ -372,6 +391,10 @@ static int mtk_usxgmii_probe(struct platform_device *pdev)
+@@ -372,6 +391,10 @@ static int mtk_usxgmii_probe(struct plat
  	if (IS_ERR(mpcs->clk))
  		return PTR_ERR(mpcs->clk);
  
@@ -94,6 +92,3 @@ index 43be634..5a80b89 100644
  	mpcs->reset = devm_reset_control_get_shared(dev, NULL);
  	if (IS_ERR(mpcs->reset))
  		return PTR_ERR(mpcs->reset);
--- 
-2.45.2
-

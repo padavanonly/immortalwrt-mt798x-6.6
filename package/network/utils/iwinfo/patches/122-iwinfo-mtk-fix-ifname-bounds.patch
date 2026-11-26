@@ -1,0 +1,32 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] iwinfo: mtk: bound ifname copies in mtk_ioctl and mtk_is_ifup
+
+Replace unbounded strncpy() on wrq->ifr_name and ifr.ifr_name with
+NUL-guaranteed snprintf() and zero-initialized struct ifreq, refreshed
+cleanly against 0002-skip-ioctl-ifdown.patch and 121-*.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/iwinfo_mtk.c
++++ b/iwinfo_mtk.c
+@@ -10,7 +10,8 @@
+ static int mtk_is_ifup(const char *ifname);
+ static inline int mtk_ioctl(const char *ifname, int cmd, struct iwreq *wrq)
+ {
+-	strncpy(wrq->ifr_name, ifname, IFNAMSIZ);
++	snprintf(wrq->ifr_name, sizeof(wrq->ifr_name), "%.*s",
++	         (int)(sizeof(wrq->ifr_name) - 1), ifname ? ifname : "");
+ 	/* Skip ioctls when interface is down to avoid kernel log noise */
+ 	if (cmd != SIOCGIFFLAGS && !mtk_is_ifup(ifname))
+ 		return -1;
+@@ -301,7 +302,9 @@
+ {
+ 	struct ifreq ifr;
+ 
+-	strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
++	memset(&ifr, 0, sizeof(ifr));
++	snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%.*s",
++	         (int)(sizeof(ifr.ifr_name) - 1), ifname ? ifname : "");
+ 
+ 	if (iwinfo_ioctl(SIOCGIFFLAGS, &ifr) >= 0)
+ 	{

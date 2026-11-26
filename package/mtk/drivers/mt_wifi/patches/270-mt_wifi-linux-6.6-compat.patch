@@ -1,0 +1,210 @@
+--- a/mt_wifi/os/linux/rt_proc.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/rt_proc.c	2026-11-12 15:58:30.182393261 +0800
+@@ -599,7 +599,7 @@
+ 	struct CSI_INFO_T *prCSIInfo = NULL;
+ 	RTMP_ADAPTER *pAd = NULL;
+ #if (KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE)
+-	pAd = (RTMP_ADAPTER *)(PDE_DATA(file_inode(f)));
++	pAd = (RTMP_ADAPTER *)(pde_data(file_inode(f)));
+ #else
+ 	pAd = (RTMP_ADAPTER *)(PDE(file_inode(f))->data);
+ #endif
+@@ -621,7 +621,7 @@
+ 	struct CSI_INFO_T *prCSIInfo = NULL;
+ 	RTMP_ADAPTER *pAd = NULL;
+ #if (KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE)
+-	pAd = (RTMP_ADAPTER *)(PDE_DATA(file_inode(f)));
++	pAd = (RTMP_ADAPTER *)(pde_data(file_inode(f)));
+ #else
+ 	pAd = (RTMP_ADAPTER *)(PDE(file_inode(f))->data);
+ #endif
+@@ -832,7 +832,7 @@
+ 	struct CSI_INFO_T *prCSIInfo = NULL;
+ 	RTMP_ADAPTER *pAd = NULL;
+ #if (KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE)
+-	pAd = (RTMP_ADAPTER *)(PDE_DATA(file_inode(filp)));
++	pAd = (RTMP_ADAPTER *)(pde_data(file_inode(filp)));
+ #else
+ 	pAd = (RTMP_ADAPTER *)(PDE(file_inode(filp))->data);
+ #endif
+--- a/mt_wifi/os/linux/diag.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/diag.c	2026-11-12 15:58:30.182904061 +0800
+@@ -28,8 +28,8 @@
+ 
+ 
+ #if KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
+-#define GET_PRIV_DATA_FROM_INODE(inode)		PDE_DATA(inode)
+-#define GET_PRIV_DATA_FROM_FILE(file)		PDE_DATA(file_inode(file))
++#define GET_PRIV_DATA_FROM_INODE(inode)		pde_data(inode)
++#define GET_PRIV_DATA_FROM_FILE(file)		pde_data(file_inode(file))
+ #else
+ #define GET_PRIV_DATA_FROM_INODE(inode)		(PDE(inode)->data)
+ #define GET_PRIV_DATA_FROM_FILE(file)		(PDE(file->f_path.dentry->d_inode)->data)
+--- a/mt_wifi/os/linux/mt_fwdump.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/mt_fwdump.c	2026-11-12 15:58:30.183205211 +0800
+@@ -31,7 +31,7 @@
+ #if (KERNEL_VERSION(3, 10, 0) > LINUX_VERSION_CODE)
+ 	pAd = (struct _RTMP_ADAPTER *)PDE(fp->f_dentry->d_inode)->data;
+ #else
+-	pAd = (struct _RTMP_ADAPTER *)PDE_DATA(file_inode(fp));
++	pAd = (struct _RTMP_ADAPTER *)pde_data(file_inode(fp));
+ #endif
+ 	MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+ 			 ("%s fw_dump_size=%d\n", __func__, pAd->fw_dump_size));
+@@ -46,7 +46,7 @@
+ #if (KERNEL_VERSION(3, 10, 0) > LINUX_VERSION_CODE)
+ 	pAd = (struct _RTMP_ADAPTER *)PDE(fp->f_dentry->d_inode)->data;
+ #else
+-	pAd = (struct _RTMP_ADAPTER *)PDE_DATA(file_inode(fp));
++	pAd = (struct _RTMP_ADAPTER *)pde_data(file_inode(fp));
+ #endif
+ 
+ 	if ((pAd->fw_dump_read + cnt) > pAd->fw_dump_size)
+--- a/mt_wifi/embedded/plug_in/whnat/woe_proc.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/plug_in/whnat/woe_proc.c	2026-11-12 15:58:30.183343891 +0800
+@@ -55,7 +55,7 @@
+ */
+ static int wdma_proc_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, wdma_proc_show, PDE_DATA(file_inode(file)));
++	return single_open(file, wdma_proc_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -68,7 +68,7 @@
+ 	char value[64];
+ 	char *end;
+ 	char choice;
+-	struct wdma_entry *wdma = (struct wdma_entry *)PDE_DATA(file_inode(file));
++	struct wdma_entry *wdma = (struct wdma_entry *)pde_data(file_inode(file));
+ 
+ 	if (buff && !copy_from_user(value, buff, len1)) {
+ 		choice = whnat_str_tol(value, &end, 10);
+@@ -108,7 +108,7 @@
+ */
+ static int wed_proc_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, wed_proc_show, PDE_DATA(file_inode(file)));
++	return single_open(file, wed_proc_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -120,7 +120,7 @@
+ 	char value[64];
+ 	char *end;
+ 	char choice;
+-	struct wed_entry *wed = (struct wed_entry *)PDE_DATA(file_inode(file));
++	struct wed_entry *wed = (struct wed_entry *)pde_data(file_inode(file));
+ 
+ 	if (buff && !copy_from_user(value, buff, len1)) {
+ 		choice = whnat_str_tol(value, &end, 10);
+@@ -153,7 +153,7 @@
+ */
+ static int whnat_proc_cr_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_cr_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_cr_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -171,7 +171,7 @@
+ 	char *s = value;
+ 	unsigned long addr;
+ 	unsigned int cr_value = 0;
+-	struct whnat_entry *whnat = (struct whnat_entry *)PDE_DATA(file_inode(file));
++	struct whnat_entry *whnat = (struct whnat_entry *)pde_data(file_inode(file));
+ 
+ 	if (buff && !copy_from_user(value, buff, len1)) {
+ 		token = strsep(&s, " ");
+@@ -249,7 +249,7 @@
+ */
+ static int whnat_proc_ctrl_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_ctrl_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_ctrl_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -265,7 +265,7 @@
+ 	char is_true;
+ 	char type;
+ 	char *s = value;
+-	struct whnat_entry *whnat = (struct whnat_entry *)PDE_DATA(file_inode(file));
++	struct whnat_entry *whnat = (struct whnat_entry *)pde_data(file_inode(file));
+ 
+ 	if (buff && !copy_from_user(value, buff, len1)) {
+ 		token = strsep(&s, " ");
+@@ -310,7 +310,7 @@
+ */
+ static int whnat_proc_trace_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_trace_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_trace_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -326,7 +326,7 @@
+ 	char *token;
+ 	char *s = value;
+ 	unsigned int tmp;
+-	struct whnat_ctrl *ctrl = (struct whnat_ctrl *)PDE_DATA(file_inode(file));
++	struct whnat_ctrl *ctrl = (struct whnat_ctrl *)pde_data(file_inode(file));
+ 	struct whnat_cputracer *tracer = &ctrl->hif_cfg.tracer;
+ 
+ 	if (buff && !copy_from_user(value, buff, len1)) {
+@@ -383,7 +383,7 @@
+ */
+ static int whnat_proc_state_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_state_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_state_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -396,7 +396,7 @@
+ 	char value[64];
+ 	char *end;
+ 	char log;
+-	struct whnat_entry *whnat = (struct whnat_entry *)PDE_DATA(file_inode(file));
++	struct whnat_entry *whnat = (struct whnat_entry *)pde_data(file_inode(file));
+ 
+ 	if (buff && !copy_from_user(value, buff, len1)) {
+ 		log = whnat_str_tol(value, &end, 10);
+@@ -434,7 +434,7 @@
+ */
+ static int whnat_proc_cfg_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_cfg_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_cfg_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -453,7 +453,7 @@
+ */
+ static int whnat_proc_tx_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_tx_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_tx_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+@@ -472,7 +472,7 @@
+ */
+ static int whnat_proc_rx_open(struct inode *inode, struct file *file)
+ {
+-	return single_open(file, whnat_proc_rx_show, PDE_DATA(file_inode(file)));
++	return single_open(file, whnat_proc_rx_show, pde_data(file_inode(file)));
+ }
+ 
+ /*
+--- a/mt_wifi/embedded/common/hif_pci.c	2026-11-12 15:47:26.855779555 +0800
++++ b/mt_wifi/embedded/common/hif_pci.c	2026-11-12 15:58:30.184938001 +0800
+@@ -6159,7 +6159,7 @@
+ 			hif_chip->schedule_task_ops = &tasklet_napi_schedule_ops;
+ 			init_dummy_netdev(&task_group->napi_dev);
+ 			task_group->priv = (VOID *)hif_chip;
+-			netif_napi_add(&task_group->napi_dev, &task_group->rx_data_done_napi_task, pci_rx_data_done_poll_func, NAPI_POLL_WEIGHT);
++			netif_napi_add_weight(&task_group->napi_dev, &task_group->rx_data_done_napi_task, pci_rx_data_done_poll_func, NAPI_POLL_WEIGHT);
+ 			ad->tr_ctl.napi = (VOID *)&task_group->rx_data_done_napi_task;
+ 			napi_enable(&task_group->rx_data_done_napi_task);
+ 			RTMP_OS_TASKLET_INIT(NULL, &task_group->rx_event_done_task, pci_rx_event_done_func, (unsigned long)hif_chip);

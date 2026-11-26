@@ -1,0 +1,53 @@
+--- a/Makefile
++++ b/Makefile
+@@ -1,5 +1,5 @@
+ obj-m := qmi_wwan_m.o
+-GobiNet-objs := qmi_wwan_m.o
++qmi_wwan_m-objs := qmi_wwan.o
+ 
+ PWD := $(shell pwd)
+ OUTPUTDIR=/lib/modules/`uname -r`/kernel/drivers/net/usb/
+--- a/qmi_wwan.c
++++ b/qmi_wwan.c
+@@ -47,7 +47,7 @@
+  
+  #if 1
+ //Added by zhangqingyun@meigsmart.com always need if not dhcp can't get ip address
+-struct sk_buff *qmi_wwan_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags)
++static struct sk_buff *qmi_wwan_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags)
+ {
+ 	if (dev->udev->descriptor.idVendor != cpu_to_le16(0x2C7C) &&
+ 	    dev->udev->descriptor.idVendor != cpu_to_le16(0x05c6) &&
+@@ -232,7 +232,8 @@
+ 
+ 	/* register subdriver */
+ 	subdriver = usb_cdc_wdm_register(info->control, &dev->status->desc,
+-					 4096, &qmi_wwan_cdc_wdm_manage_power);
++					 4096, WWAN_PORT_QMI,
++					 &qmi_wwan_cdc_wdm_manage_power);
+ 	if (IS_ERR(subdriver)) {
+ 		dev_err(&info->control->dev, "subdriver registration failed\n");
+ 		rv = PTR_ERR(subdriver);
+@@ -267,7 +268,7 @@
+ 	/* set up initial state */
+ 	info->control = intf;
+ 	info->data = intf;
+-        /*add by zhangqingyun@meigsmart.com begain
++        /*add by zhangqingyun@meigsmart.com begain*/
+ 	/* and a number of CDC descriptors */
+ 	while (len > 3) {
+ 		struct usb_descriptor_header *h = (void *)buf;
+@@ -368,8 +369,11 @@
+ 
+ 	/* make MAC addr easily distinguishable from an IP header */
+ 	if (possibly_iphdr(dev->net->dev_addr)) {
+-		dev->net->dev_addr[0] |= 0x02;	/* set local assignment bit */
+-		dev->net->dev_addr[0] &= 0xbf;	/* clear "IP" bit */
++		u8 addr = dev->net->dev_addr[0];
++
++		addr |= 0x02;	/* set local assignment bit */
++		addr &= 0xbf;	/* clear "IP" bit */
++		dev_addr_mod(dev->net, 0, &addr, 1);
+ 	}
+ 	dev->net->netdev_ops = &qmi_wwan_netdev_ops;
+ 

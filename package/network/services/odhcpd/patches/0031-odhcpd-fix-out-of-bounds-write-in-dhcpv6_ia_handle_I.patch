@@ -1,0 +1,46 @@
+From 9fd7ee00717f1a9a96297ca6ebb30956f6b695e1 Mon Sep 17 00:00:00 2001
+From: David Bauer <mail@david-bauer.net>
+Date: Tue, 9 Jun 2026 20:29:28 +0200
+Subject: odhcpd: fix out of bounds write in dhcpv6_ia_handle_IAs
+
+Check the buffer size before writing the DHCOv6 Reconf accept element to
+the buffer. This was previously not the case, allowing an out of bounds
+write.
+
+Fixes: CVE-2026-53921
+Reported-by: Ying Dong <dyingc@gmail.com>
+Signed-off-by: David Bauer <mail@david-bauer.net>
+(cherry picked from commit 0320032ae313452f3c8cb8725c621dd06c36dc03)
+[adjusted context for 2026-03-16 snapshot]
+---
+--- a/src/dhcpv6-ia.c
++++ b/src/dhcpv6-ia.c
+@@ -1245,6 +1245,11 @@
+ 				}
+ 			}
+ 
++			/* Reconfigure Accept */
++			size_t handshake_len = 4;
++			if (hdr->msg_type == DHCPV6_MSG_REQUEST)
++				handshake_len += sizeof(struct dhcpv6_auth_reconfigure);
++
+ 			/* Status evaluation */
+ 			if (!assigned || iface->addr6_len == 0) {
+ 				/* Set error status */
+@@ -1253,13 +1258,9 @@
+ 				/* Send NOTONLINK status for the IA */
+ 				status = DHCPV6_STATUS_NOTONLINK;
+ 				assigned = false;
+-			}
+-
+-			/* Reconfigure Accept */
+-			if (accept_reconf && assigned && !first &&
+-				hdr->msg_type != DHCPV6_MSG_REBIND) {
+-
+-				size_t handshake_len = 4;
++			} else if (accept_reconf && assigned && !first &&
++				hdr->msg_type != DHCPV6_MSG_REBIND &&
++				buflen >= handshake_len) {
+ 				buf[0] = 0;
+ 				buf[1] = DHCPV6_OPT_RECONF_ACCEPT;
+ 				buf[2] = 0;

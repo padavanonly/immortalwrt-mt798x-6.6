@@ -1,0 +1,413 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] iwinfo: mtk: gate BE/EHT capability by chip and complete L1/devices HW IDs
+
+Only expose IWINFO_80211_BE and IWINFO_HTMODE_EHT* for Wi-Fi 7 chips (MT799* or mtk_hwifi);
+gate off EHT modes on Wi-Fi 6 chips (MT7981/MT7986/MT791*) using L1 profile, UCI phy, and sysfs.
+Complete mtk_get_hardware_id_from_l1profile() and devices.txt entries for MT7981/MT7986/MT7993/MT7996.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/devices.txt
++++ b/devices.txt
+@@ -188,8 +188,12 @@
+ 0x14c3 0x7628 0x14c3 0x0004    0      0  "MediaTek" "MT76x8"
+ 0x14c3 0x7650 0x14c3 0x7650    0      0  "MediaTek" "MT7610E"
+ 0x14c3 0x7662 0x14c3 0x7662    0      0  "MediaTek" "MT76x2E"
++0x14c3 0x7981 0x14c3 0x7981    0      0  "MediaTek" "MT7981"
++0x14c3 0x7986 0x14c3 0x7986    0      0  "MediaTek" "MT7986"
+ 0x14c3 0x7990 0x14c3 0x7990    0      0  "MediaTek" "MT7990"
+ 0x14c3 0x7992 0x14c3 0x7992    0      0  "MediaTek" "MT7992"
++0x14c3 0x7993 0x14c3 0x7993    0      0  "MediaTek" "MT7993"
++0x14c3 0x7996 0x14c3 0x7996    0      0  "MediaTek" "MT7996"
+ 0x14c3 0x7915 0x14c3 0x7915    0      0  "MediaTek" "MT7915E"
+ 0x14c3 0x7906 0x14c3 0x7906    0      0  "MediaTek" "MT7916AN"
+ 0x14c3 0x7925 0x1a3b 0x6002    0      0  "MediaTek" "MT7925E"
+--- a/iwinfo_mtk.c
++++ b/iwinfo_mtk.c
+@@ -1,5 +1,6 @@
+ #include <inttypes.h>
+ #include <stddef.h>
++#include <strings.h>
+ #include "iwinfo.h"
+ #include "iwinfo_wext.h"
+ #include "mtwifi.h"
+@@ -1693,6 +1694,227 @@
+ 	return 0;
+ }
+ 
++#ifndef MTK_HWIFI_SYSFS_PATH
++#define MTK_HWIFI_SYSFS_PATH "/sys/module/mtk_hwifi"
++#endif
++
++static int mtk_is_wifi7_chip_name(const char *chip)
++{
++	if (!chip || !*chip)
++		return -1;
++	if (!strncasecmp(chip, "MT799", 5))
++		return 1;
++	if (!strncasecmp(chip, "MT798", 5) || !strncasecmp(chip, "MT791", 5))
++		return 0;
++	return -1;
++}
++
++static int mtk_ifname_token_match(const char *list, const char *ifname, int exact_only)
++{
++	const char *p = list;
++	size_t iflen;
++
++	if (!list || !*list || !ifname || !*ifname)
++		return 0;
++
++	iflen = strlen(ifname);
++	while (*p) {
++		const char *sep = strchr(p, ';');
++		size_t tlen = sep ? (size_t)(sep - p) : strlen(p);
++
++		while (tlen > 0 && (*p == ' ' || *p == '\t')) {
++			p++;
++			tlen--;
++		}
++		while (tlen > 0 && (p[tlen - 1] == ' ' || p[tlen - 1] == '\t'))
++			tlen--;
++
++		if (tlen > 0) {
++			if (exact_only) {
++				if (tlen == iflen && !strncmp(p, ifname, tlen))
++					return 1;
++			} else if (iflen > tlen && !strncmp(p, ifname, tlen) &&
++				   isdigit((unsigned char)ifname[tlen])) {
++				return 1;
++			}
++		}
++
++		if (!sep)
++			break;
++		p = sep + 1;
++	}
++	return 0;
++}
++
++static void mtk_append_semi_list(char *dst, size_t dstsz, const char *src)
++{
++	size_t used;
++
++	if (!dst || !dstsz || !src || !*src)
++		return;
++	used = strlen(dst);
++	if (used > 0 && used + 1 < dstsz && dst[used - 1] != ';') {
++		dst[used++] = ';';
++		dst[used] = '\0';
++	}
++	if (used < dstsz - 1)
++		snprintf(dst + used, dstsz - used, "%s", src);
++}
++
++static void mtk_resolve_ifname_for_l1(const char *dev, char *ifname, size_t ifname_sz)
++{
++	struct uci_section *s;
++	const char *mapped_phy;
++
++	if (!ifname || !ifname_sz)
++		return;
++	ifname[0] = '\0';
++	if (!dev || !*dev)
++		return;
++
++	s = iwinfo_uci_get_radio(dev, "mtwifi");
++	if (s) {
++		mapped_phy = uci_lookup_option_string(uci_ctx, s, "phy");
++		if (mapped_phy && *mapped_phy) {
++			snprintf(ifname, ifname_sz, "%s", mapped_phy);
++			iwinfo_uci_free();
++			return;
++		}
++	}
++	iwinfo_uci_free();
++
++	if (mtk_dev2phy(dev, ifname, ifname_sz) != 0)
++		snprintf(ifname, ifname_sz, "%s", dev);
++}
++
++static int mtk_is_wifi7_dev(const char *dev)
++{
++	char chips[8][32];
++	char main_ifs[8][128];
++	char pfx_ifs[8][256];
++	char line[512];
++	char ifname[IFNAMSIZ];
++	FILE *fp;
++	int i, verdict;
++	int saw_zero = 0, saw_one = 0;
++
++	verdict = mtk_is_wifi7_chip_name(dev);
++	if (verdict >= 0)
++		return verdict;
++
++	memset(chips, 0, sizeof(chips));
++	memset(main_ifs, 0, sizeof(main_ifs));
++	memset(pfx_ifs, 0, sizeof(pfx_ifs));
++
++	mtk_resolve_ifname_for_l1(dev, ifname, sizeof(ifname));
++
++	fp = fopen(MTK_L1_PROFILE_PATH, "r");
++	if (fp) {
++		while (fgets(line, sizeof(line), fp)) {
++			char *eq, *k, *v, *end;
++			unsigned int idx = 0;
++			int consumed = 0;
++
++			line[strcspn(line, "\r\n")] = '\0';
++			eq = strchr(line, '=');
++			if (!eq)
++				continue;
++			*eq = '\0';
++			k = line;
++			v = eq + 1;
++
++			while (*k == ' ' || *k == '\t')
++				k++;
++			if (!*k || *k == '#')
++				continue;
++			end = k + strlen(k);
++			while (end > k && (end[-1] == ' ' || end[-1] == '\t'))
++				*--end = '\0';
++
++			while (*v == ' ' || *v == '\t')
++				v++;
++			end = v + strlen(v);
++			while (end > v && (end[-1] == ' ' || end[-1] == '\t'))
++				*--end = '\0';
++			if (!*v)
++				continue;
++
++			if (sscanf(k, "INDEX%u%n", &idx, &consumed) != 1 || idx >= 8)
++				continue;
++			k += consumed;
++
++			if (*k == '\0') {
++				snprintf(chips[idx], sizeof(chips[idx]), "%s", v);
++			} else if (!strcmp(k, "_main_ifname")) {
++				mtk_append_semi_list(main_ifs[idx], sizeof(main_ifs[idx]), v);
++			} else if (!strcmp(k, "_ext_ifname") || !strcmp(k, "_apcli_ifname") ||
++				   !strcmp(k, "_wds_ifname") || !strcmp(k, "_mesh_ifname")) {
++				mtk_append_semi_list(pfx_ifs[idx], sizeof(pfx_ifs[idx]), v);
++			}
++		}
++		fclose(fp);
++
++		for (i = 0; i < 8; i++) {
++			verdict = mtk_is_wifi7_chip_name(chips[i]);
++			if (verdict < 0)
++				continue;
++			if (verdict == 0)
++				saw_zero = 1;
++			else
++				saw_one = 1;
++			if (ifname[0] &&
++			    (mtk_ifname_token_match(main_ifs[i], ifname, 1) ||
++			     mtk_ifname_token_match(pfx_ifs[i], ifname, 0)))
++				return verdict;
++		}
++
++		if (saw_zero && !saw_one)
++			return 0;
++		if (saw_one && !saw_zero)
++			return 1;
++		verdict = mtk_is_wifi7_chip_name(chips[0]);
++		if (verdict >= 0)
++			return verdict;
++	}
++
++	return (access(MTK_HWIFI_SYSFS_PATH, F_OK) == 0) ? 1 : 0;
++}
++
++static int mtk_hwmodes_for_band_2g(int is_wifi7)
++{
++	return IWINFO_80211_N | IWINFO_80211_AX | (is_wifi7 ? IWINFO_80211_BE : 0);
++}
++
++static int mtk_hwmodes_for_band_5g(int is_wifi7)
++{
++	return IWINFO_80211_AC | IWINFO_80211_AX | (is_wifi7 ? IWINFO_80211_BE : 0);
++}
++
++static int mtk_hwmodes_for_band_6g(int is_wifi7)
++{
++	return IWINFO_80211_AX | (is_wifi7 ? IWINFO_80211_BE : 0);
++}
++
++static int mtk_htmodes_for_band_2g(int is_wifi7)
++{
++	return IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 |
++	       IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 |
++	       (is_wifi7 ? (IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40) : 0);
++}
++
++static int mtk_htmodes_for_band_5g(int is_wifi7)
++{
++	return IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160 |
++	       IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160 |
++	       (is_wifi7 ? (IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160) : 0);
++}
++
++static int mtk_htmodes_for_band_6g(int is_wifi7)
++{
++	return IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160 |
++	       (is_wifi7 ? (IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160 | IWINFO_HTMODE_EHT320) : 0);
++}
++
+ static int mtk_get_hwmodelist(const char *dev, int *buf)
+ {
+ 	char ifname[IFNAMSIZ];
+@@ -1701,6 +1923,7 @@
+ 	enum mtk_config_band band;
+ 	size_t i, count;
+ 	int len = 0;
++	int is_wifi7 = mtk_is_wifi7_dev(dev);
+ 
+ 	*buf = 0;
+ 
+@@ -1708,11 +1931,11 @@
+ 	band = mtk_get_config_band(dev);
+ 	if (band != MTK_CONFIG_BAND_NONE) {
+ 		if (band == MTK_CONFIG_BAND_2G)
+-			*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
++			*buf = mtk_hwmodes_for_band_2g(is_wifi7);
+ 		else if (band == MTK_CONFIG_BAND_5G)
+-			*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
++			*buf = mtk_hwmodes_for_band_5g(is_wifi7);
+ 		else if (band == MTK_CONFIG_BAND_6G)
+-			*buf = (IWINFO_80211_AX | IWINFO_80211_BE);
++			*buf = mtk_hwmodes_for_band_6g(is_wifi7);
+ 		return 0;
+ 	}
+ 
+@@ -1728,11 +1951,11 @@
+ 			e = &((struct iwinfo_freqlist_entry *)chans)[i];
+ 			uint8_t entry_band = e->band ? e->band : mtk_freq_band(e->mhz);
+ 			if (entry_band == iwinfo_ghz2band(2))
+-				*buf |= (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
++				*buf |= mtk_hwmodes_for_band_2g(is_wifi7);
+ 			else if (entry_band == iwinfo_ghz2band(5))
+-				*buf |= (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
++				*buf |= mtk_hwmodes_for_band_5g(is_wifi7);
+ 			else if (entry_band == iwinfo_ghz2band(6))
+-				*buf |= (IWINFO_80211_AX | IWINFO_80211_BE);
++				*buf |= mtk_hwmodes_for_band_6g(is_wifi7);
+ 		}
+ 
+ 		return 0;
+@@ -1749,6 +1972,7 @@
+ 	enum mtk_config_band band;
+ 	size_t i, count;
+ 	int len = 0;
++	int is_wifi7 = mtk_is_wifi7_dev(dev);
+ 
+ 	*buf = 0;
+ 
+@@ -1756,14 +1980,11 @@
+ 	band = mtk_get_config_band(dev);
+ 	if (band != MTK_CONFIG_BAND_NONE) {
+ 		if (band == MTK_CONFIG_BAND_2G)
+-			*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
++			*buf = mtk_htmodes_for_band_2g(is_wifi7);
+ 		else if (band == MTK_CONFIG_BAND_5G)
+-			*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
+-			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+-			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
++			*buf = mtk_htmodes_for_band_5g(is_wifi7);
+ 		else if (band == MTK_CONFIG_BAND_6G)
+-			*buf = (IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+-			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160 | IWINFO_HTMODE_EHT320);
++			*buf = mtk_htmodes_for_band_6g(is_wifi7);
+ 		return 0;
+ 	}
+ 
+@@ -1779,11 +2000,11 @@
+ 			e = &((struct iwinfo_freqlist_entry *)chans)[i];
+ 			uint8_t entry_band = e->band ? e->band : mtk_freq_band(e->mhz);
+ 			if (entry_band == iwinfo_ghz2band(2))
+-				*buf |= (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
++				*buf |= mtk_htmodes_for_band_2g(is_wifi7);
+ 			else if (entry_band == iwinfo_ghz2band(5))
+-				*buf |= (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
++				*buf |= mtk_htmodes_for_band_5g(is_wifi7);
+ 			else if (entry_band == iwinfo_ghz2band(6))
+-				*buf |= (IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160 | IWINFO_HTMODE_EHT320);
++				*buf |= mtk_htmodes_for_band_6g(is_wifi7);
+ 		}
+ 
+ 		return 0;
+@@ -1979,12 +2200,15 @@
+ 
+ 	while (fgets(buf, sizeof(buf), fp))
+ 	{
+-		key = strtok(buf, " =\n");
+-		val = strtok(NULL, "\n");
++		key = strtok(buf, " =\r\n");
++		val = strtok(NULL, "\r\n");
+ 		
+ 		if (!key || !val || !*key || *key == '#')
+ 			continue;
+ 
++		while (*val == ' ' || *val == '\t')
++			val++;
++
+ 		if (!strcmp(key, attr))
+ 		{
+ 			//printf("l1profile key=%s, val=%s\n", key, val);
+@@ -2000,32 +2224,35 @@
+ 
+ static int mtk_get_hardware_id_from_l1profile(struct iwinfo_hardware_id *id)
+ {
++	static const struct {
++		const char *chip;
++		uint16_t device_id;
++	} l1_chips[] = {
++		{ "MT7981", 0x7981 },
++		{ "MT7986", 0x7986 },
++		{ "MT7990", 0x7990 },
++		{ "MT7992", 0x7992 },
++		{ "MT7993", 0x7993 },
++		{ "MT7996", 0x7996 },
++	};
+ 	const char *attr = "INDEX0";
+ 	char buf[16] = {0};
++	size_t i;
+ 
+ 	if (mtk_get_l1profile_attr(attr, buf, sizeof(buf)) < 0)
+ 		return -1;
+-	
+-	if (!strcmp(buf, "MT7981")) {
+-		id->vendor_id = 0x14c3;
+-		id->device_id = 0x7981;
+-		id->subsystem_vendor_id = id->vendor_id;
+-		id->subsystem_device_id = id->device_id;
+-	} else if (!strcmp(buf, "MT7992")) {
+-		id->vendor_id = 0x14c3;
+-		id->device_id = 0x7992;
+-		id->subsystem_vendor_id = id->vendor_id;
+-		id->subsystem_device_id = id->device_id;
+-	} else if (!strcmp(buf, "MT7990")) {
+-		id->vendor_id = 0x14c3;
+-		id->device_id = 0x7990;
+-		id->subsystem_vendor_id = id->vendor_id;
+-		id->subsystem_device_id = id->device_id;
+-	} else {
+-		return -1;
++
++	for (i = 0; i < sizeof(l1_chips) / sizeof(l1_chips[0]); i++) {
++		if (!strcmp(buf, l1_chips[i].chip)) {
++			id->vendor_id = 0x14c3;
++			id->device_id = l1_chips[i].device_id;
++			id->subsystem_vendor_id = id->vendor_id;
++			id->subsystem_device_id = id->device_id;
++			return 0;
++		}
+ 	}
+ 
+-	return 0;
++	return -1;
+ }
+ 
+ static int mtk_get_hardware_id(const char *dev, char *buf)

@@ -32,6 +32,12 @@ TARGET_CPPFLAGS := \
 	-I$(PKG_BUILD_DIR) \
 	$(TARGET_CPPFLAGS) \
 
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/. $(PKG_BUILD_DIR)/
+	$(Build/Patch)
+endef
+
 define Build/Compile
 	CFLAGS="$(TARGET_CPPFLAGS) $(TARGET_CFLAGS)" \
 	$(MAKE) -C $(PKG_BUILD_DIR) \

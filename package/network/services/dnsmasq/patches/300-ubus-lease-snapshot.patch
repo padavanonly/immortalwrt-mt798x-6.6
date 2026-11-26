@@ -1,0 +1,304 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] dnsmasq: expose ubus lease_snapshot method for EQoS IPv4 reconciliation
+
+Expose active DHCPv4 leases via ubus lease_snapshot so fw4/nftables EQoS rules reconcile hostnames and MAC bindings atomically.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/src/dnsmasq.h
++++ b/src/dnsmasq.h
+@@ -1619,6 +1619,13 @@
+ struct dhcp_lease *lease_find_by_addr(struct in_addr addr);
+ struct in_addr lease_find_max_addr(struct dhcp_context *context);
+ void lease_prune(struct dhcp_lease *target, time_t now);
++/* Walk in-memory IPv4 leases; callback gets a borrowed six-byte Ethernet address. */
++typedef int (*lease_snapshot_cb)(struct in_addr addr, time_t expires,
++                                 const unsigned char *ether_addr, void *arg);
++u64 lease_snapshot_generation(void);
++int lease_snapshot_walk(lease_snapshot_cb callback, void *arg,
++                        unsigned int *lease_count,
++                        unsigned int *unclassified_count);
+ void lease_update_from_configs(void);
+ int do_script_run(time_t now);
+ void rerun_scripts(void);
+--- a/src/lease.c
++++ b/src/lease.c
+@@ -19,6 +19,17 @@
+ 
+ static struct dhcp_lease *leases = NULL, *old_leases = NULL;
+ static int dns_dirty, file_dirty, leases_left;
++static u64 lease_snapshot_gen;
++
++static void lease_snapshot_changed(void)
++{
++  lease_snapshot_gen++;
++}
++
++u64 lease_snapshot_generation(void)
++{
++  return lease_snapshot_gen;
++}
+ 
+ static int read_leases(time_t now, FILE *leasestream)
+ {
+@@ -566,6 +577,8 @@
+ 	  daemon->metrics[lease->addr.s_addr ? METRIC_LEASES_PRUNED_4 : METRIC_LEASES_PRUNED_6]++;
+ 
+  	  *up = lease->next; /* unlink */
++	  if (lease->addr.s_addr)
++	    lease_snapshot_changed();
+ 	  
+ 	  /* Put on old_leases list 'till we
+ 	     can run the script */
+@@ -580,6 +593,45 @@
+ } 
+ 	
+   
++int lease_snapshot_walk(lease_snapshot_cb callback, void *arg,
++                        unsigned int *lease_count,
++                        unsigned int *unclassified_count)
++{
++  struct dhcp_lease *lease;
++  unsigned int count = 0, unclassified = 0;
++
++  if (!lease_count || !unclassified_count)
++    return -1;
++
++  for (lease = leases; lease; lease = lease->next)
++    {
++      const unsigned char *ether_addr = NULL;
++
++#ifdef HAVE_DHCP6
++      if (lease->flags & (LEASE_TA | LEASE_NA))
++        continue;
++#endif
++      if (!lease->addr.s_addr)
++        continue;
++
++      count++;
++      if (lease->hwaddr_type == ARPHRD_ETHER && lease->hwaddr_len == 6)
++        ether_addr = lease->hwaddr;
++      else
++        {
++          unclassified++;
++          continue;
++        }
++
++      if (callback && callback(lease->addr, lease->expires, ether_addr, arg))
++        return -1;
++    }
++
++  *lease_count = count;
++  *unclassified_count = unclassified;
++  return 0;
++}
++
+ struct dhcp_lease *lease_find_by_client(unsigned char *hwaddr, int hw_len, int hw_type,
+ 					unsigned char *clid, int clid_len)
+ {
+@@ -787,6 +839,7 @@
+   if (lease)
+     {
+       lease->addr = addr;
++      lease_snapshot_changed();
+       daemon->metrics[METRIC_LEASES_ALLOCATED_4]++;
+     }
+   
+@@ -833,6 +886,8 @@
+   if (exp != lease->expires)
+     {
+       dns_dirty = 1;
++      if (lease->addr.s_addr)
++        lease_snapshot_changed();
+       lease->expires = exp;
+ #ifndef HAVE_BROKEN_RTC
+       lease->flags |= LEASE_AUX_CHANGED | LEASE_EXP_CHANGED;
+@@ -877,6 +932,8 @@
+       hw_type != lease->hwaddr_type || 
+       (hw_len != 0 && memcmp(lease->hwaddr, hwaddr, hw_len) != 0))
+     {
++      if (lease->addr.s_addr)
++        lease_snapshot_changed();
+       if (hw_len != 0)
+ 	memcpy(lease->hwaddr, hwaddr, hw_len);
+       lease->hwaddr_len = hw_len;
+--- a/src/ubus.c
++++ b/src/ubus.c
+@@ -26,6 +26,25 @@
+ static int ubus_handle_metrics(struct ubus_context *ctx, struct ubus_object *obj,
+ 			       struct ubus_request_data *req, const char *method,
+ 			       struct blob_attr *msg);
++#ifdef HAVE_DHCP
++enum {
++  LEASE_SNAPSHOT_NOW_EPOCH,
++  LEASE_SNAPSHOT_METADATA_ONLY,
++};
++static const struct blobmsg_policy lease_snapshot_policy[] = {
++  [LEASE_SNAPSHOT_NOW_EPOCH] = {
++    .name = "now_epoch",
++    .type = BLOBMSG_TYPE_UNSPEC
++  },
++  [LEASE_SNAPSHOT_METADATA_ONLY] = {
++    .name = "metadata_only",
++    .type = BLOBMSG_TYPE_UNSPEC
++  }
++};
++static int ubus_handle_lease_snapshot(struct ubus_context *ctx, struct ubus_object *obj,
++				      struct ubus_request_data *req, const char *method,
++				      struct blob_attr *msg);
++#endif
+ 
+ #ifdef HAVE_CONNTRACK
+ enum {
+@@ -56,6 +75,9 @@
+ 
+ static const struct ubus_method ubus_object_methods[] = {
+   UBUS_METHOD_NOARG("metrics", ubus_handle_metrics),
++#ifdef HAVE_DHCP
++  UBUS_METHOD("lease_snapshot", ubus_handle_lease_snapshot, lease_snapshot_policy),
++#endif
+ #ifdef HAVE_CONNTRACK
+   UBUS_METHOD("set_connmark_allowlist", ubus_handle_set_connmark_allowlist, set_connmark_allowlist_policy),
+ #endif
+@@ -225,6 +247,141 @@
+   CHECK(ubus_send_reply(ctx, req, b.head));
+   return UBUS_STATUS_OK;
+ }
++
++#ifdef HAVE_DHCP
++struct lease_snapshot_reply {
++  struct blob_buf *buf;
++};
++
++static int ubus_lease_snapshot_decode_epoch(struct blob_attr *attr, u64 *epoch)
++{
++  time_t checked_time;
++  u64 value;
++
++  if (!attr || !epoch)
++    return -1;
++
++  switch (blobmsg_type(attr))
++    {
++    case BLOBMSG_TYPE_INT32:
++      value = blobmsg_get_u32(attr);
++      break;
++    case BLOBMSG_TYPE_INT64:
++      value = blobmsg_get_u64(attr);
++      break;
++    default:
++      return -1;
++    }
++
++  checked_time = (time_t)value;
++  if (checked_time < 0 || (u64)checked_time != value)
++    return -1;
++
++  *epoch = value;
++  return 0;
++}
++
++static int ubus_lease_snapshot_add(struct in_addr addr, time_t expires,
++				   const unsigned char *ether_addr, void *arg)
++{
++  struct lease_snapshot_reply *reply = arg;
++  char address[INET_ADDRSTRLEN], mac[18];
++  int mac_len;
++  void *entry;
++
++  if (!inet_ntop(AF_INET, &addr, address, sizeof(address)))
++    return -1;
++
++  entry = blobmsg_open_table(reply->buf, NULL);
++  if (!entry)
++    return -1;
++
++  if (blobmsg_add_string(reply->buf, "address", address) ||
++      blobmsg_add_u64(reply->buf, "expires_epoch", (u64)expires))
++    return -1;
++
++  mac_len = snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x",
++		     ether_addr[0], ether_addr[1], ether_addr[2],
++		     ether_addr[3], ether_addr[4], ether_addr[5]);
++  if (mac_len < 0 || mac_len >= (int)sizeof(mac) ||
++      blobmsg_add_string(reply->buf, "mac", mac))
++    return -1;
++
++  blobmsg_close_table(reply->buf, entry);
++  return 0;
++}
++
++static int ubus_handle_lease_snapshot(struct ubus_context *ctx, struct ubus_object *obj,
++				      struct ubus_request_data *req, const char *method,
++				      struct blob_attr *msg)
++{
++  struct blob_attr *tb[countof(lease_snapshot_policy)];
++  struct blob_buf reply = {};
++  struct lease_snapshot_reply record_reply = { .buf = &reply };
++  u64 now_epoch;
++  unsigned int lease_count, unclassified_count;
++  int metadata_only = 0;
++  void *leases = NULL;
++
++  (void)method;
++
++  if (!msg ||
++      blobmsg_parse(lease_snapshot_policy, countof(lease_snapshot_policy),
++		    tb, blob_data(msg), blob_len(msg)) ||
++      ubus_lease_snapshot_decode_epoch(tb[LEASE_SNAPSHOT_NOW_EPOCH], &now_epoch))
++    return UBUS_STATUS_INVALID_ARGUMENT;
++
++  if (tb[LEASE_SNAPSHOT_METADATA_ONLY])
++    {
++      if (blobmsg_type(tb[LEASE_SNAPSHOT_METADATA_ONLY]) != BLOBMSG_TYPE_BOOL)
++        return UBUS_STATUS_INVALID_ARGUMENT;
++      metadata_only = blobmsg_get_bool(tb[LEASE_SNAPSHOT_METADATA_ONLY]);
++    }
++
++  if (blob_buf_init(&reply, BLOBMSG_TYPE_TABLE))
++    {
++      blob_buf_free(&reply);
++      return UBUS_STATUS_UNKNOWN_ERROR;
++    }
++
++  if (!obj || !obj->name ||
++      blobmsg_add_string(&reply, "schema", "eqos-dnsmasq-leases/v1") ||
++      blobmsg_add_string(&reply, "instance", obj->name) ||
++      blobmsg_add_u32(&reply, "pid", (u32)getpid()) ||
++      blobmsg_add_u64(&reply, "generation", lease_snapshot_generation()) ||
++      blobmsg_add_u64(&reply, "snapshot_now_epoch", now_epoch) ||
++      blobmsg_add_u8(&reply, "metadata_only", metadata_only))
++    goto error;
++
++  if (!metadata_only)
++    {
++      leases = blobmsg_open_array(&reply, "records");
++      if (!leases)
++	goto error;
++    }
++
++  if (lease_snapshot_walk(metadata_only ? NULL : ubus_lease_snapshot_add,
++			  metadata_only ? NULL : &record_reply,
++			  &lease_count, &unclassified_count))
++    goto error;
++
++  if (leases)
++    blobmsg_close_array(&reply, leases);
++
++  if (blobmsg_add_u32(&reply, "record_count", lease_count) ||
++      blobmsg_add_u32(&reply, "unclassified_count", unclassified_count) ||
++      blobmsg_add_u8(&reply, "complete", 1) ||
++      ubus_send_reply(ctx, req, reply.head))
++    goto error;
++
++  blob_buf_free(&reply);
++  return UBUS_STATUS_OK;
++
++ error:
++  blob_buf_free(&reply);
++  return UBUS_STATUS_UNKNOWN_ERROR;
++}
++#endif
+ 
+ #ifdef HAVE_CONNTRACK
+ static int ubus_handle_set_connmark_allowlist(struct ubus_context *ctx, struct ubus_object *obj,

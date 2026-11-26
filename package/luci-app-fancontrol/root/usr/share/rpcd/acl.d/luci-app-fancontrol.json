@@ -1,26 +1,19 @@
 {
 	"luci-app-fancontrol": {
-		"description": "Fan Control",
+		"description": "Grant ubus access for unified fan control",
 		"read": {
-			"uci": [
-				"fancontrol"
-			],
-			"file": {
-				"/sys/class/thermal/*/*": [
-					"read"
-				],
-				"/sys/class/hwmon/*/pwm*": [
-					"read"
+			"ubus": {
+				"luci.fancontrol": [
+					"getStatus"
 				]
 			}
 		},
 		"write": {
-			"uci": [
-				"fancontrol"
-			],
-			"file": {
-				"/sys/class/hwmon/*/pwm*": [
-					"write"
+			"ubus": {
+				"luci.fancontrol": [
+					"setMode",
+					"setTempSource",
+					"applyConfig"
 				]
 			}
 		}

@@ -1,0 +1,200 @@
+--- a/iwinfo_mtk.c
++++ b/iwinfo_mtk.c
+@@ -336,78 +336,139 @@
+ 	return 0;
+ }
+ 
+-static void fill_rate_info(HTTRANSMIT_SETTING HTSetting, struct iwinfo_rate_entry *re,
+-	unsigned int mcs, unsigned int nss)
+-{
++static void fill_rate_info(HTTRANSMIT_SETTING HTSetting,
++	struct iwinfo_rate_entry *re, unsigned int mcs, unsigned int nss)
++{
++	enum { RATE_UNKNOWN, RATE_LEGACY, RATE_HE, RATE_EHT } family = RATE_UNKNOWN;
+ 	unsigned long DataRate = 0;
++	unsigned int table_mcs = mcs;
+ 	uint8_t mode = HTSetting.field.MODE;
+ 	uint8_t bw = HTSetting.field.BW;
+ 	uint8_t short_gi = HTSetting.field.ShortGI;
+ 	uint8_t dcm = HTSetting.field.MCS & 0x10 ? 1 : 0;
++	uint8_t table_bw = 0;
++	int width_valid = 1;
+ 
+ 	re->is_eht = 0;
+ 	re->is_he = 0;
+ 	re->is_vht = 0;
+ 	re->is_ht = 0;
+-
+-	if (mode >= MODE_HTMIX && mode <= MODE_VHT)
+-	{
+-		if (short_gi)
++	re->is_short_gi = 0;
++	re->is_40mhz = 0;
++	re->he_gi = 0;
++	re->he_dcm = 0;
++	re->eht_gi = 0;
++	re->eht_dcm = 0;
++	re->mhz_hi = 0;
++	re->mhz = 0;
++	re->rate = 0;
++
++	switch (mode) {
++	case MODE_CCK:
++	case MODE_OFDM:
++	case MODE_HTMIX:
++	case MODE_HTGREENFIELD:
++	case MODE_VHT:
++		family = RATE_LEGACY;
++		break;
++	case MODE_HE:
++	case MODE_HE_24G:
++	case MODE_HE_SU:
++	case MODE_HE_EXT_SU:
++	case MODE_HE_TRIG:
++	case MODE_HE_MU:
++		family = RATE_HE;
++		break;
++	case MODE_EHT:
++	case MODE_EHT_ER_SU:
++	case MODE_EHT_TB:
++	case MODE_EHT_MU:
++		family = RATE_EHT;
++		break;
++	default:
++		family = RATE_UNKNOWN;
++		break;
++	}
++
++	if (family == RATE_UNKNOWN) {
++		re->rate = 0;
++		return;
++	}
++
++	if (family == RATE_LEGACY) {
++		if (mode >= MODE_HTMIX && mode <= MODE_VHT && short_gi)
+ 			re->is_short_gi = 1;
+-	}
+-
+-	if (mode >= MODE_HE && mode < MODE_UNKNOWN) {
+-		if (mode == MODE_EHT || mode == MODE_EHT_ER_SU || mode == MODE_EHT_TB || mode == MODE_EHT_MU) {
+-			re->is_eht = 1;
+-			re->eht_gi = short_gi;
+-			re->eht_dcm = dcm;
+-		} else {
+-			re->is_he = 1;
+-			re->he_gi = short_gi;
+-			re->he_dcm = dcm;
++		if (mode == MODE_VHT)
++			re->is_vht = 1;
++		else if (mode >= MODE_HTMIX && mode <= MODE_HTGREENFIELD)
++			re->is_ht = 1;
++
++		switch (bw) {
++		case BW_20: re->mhz = 20; break;
++		case BW_40: re->mhz = 40; break;
++		case BW_80: re->mhz = 80; break;
++		case BW_160: re->mhz = 160; break;
++		case BW_320: re->mhz_hi = 320 / 256, re->mhz = 320 % 256; break;
++		default: re->mhz = 20; break;
+ 		}
+-	} else if (mode == MODE_VHT) {
+-		re->is_vht = 1;
+-	} else if (mode >= MODE_HTMIX && mode <= MODE_HTGREENFIELD) {
+-		re->is_ht = 1;
+-	}
+-
+-	switch (bw) {
+-		case BW_20:
+-			re->mhz = 20;
++		re->is_40mhz = (re->mhz == 40);
++		getRate(HTSetting, &DataRate);
++		re->rate = (uint32_t)(DataRate * 1000);
++		return;
++	}
++
++	if (family == RATE_HE) {
++		re->is_he = 1;
++		re->he_gi = short_gi;
++		re->he_dcm = dcm;
++		switch (bw) {
++		case BW_20: re->mhz = 20; table_bw = 0; break;
++		case BW_40: re->mhz = 40; table_bw = 1; break;
++		case BW_80: re->mhz = 80; table_bw = 2; break;
++		case BW_160: re->mhz = 160; table_bw = 3; break;
++		default: width_valid = 0; break;
++		}
++	} else {
++		re->is_eht = 1;
++		re->eht_gi = short_gi;
++		re->eht_dcm = dcm;
++		switch (bw) {
++		case BW_20: re->mhz = 20; table_bw = 0; break;
++		case BW_40: re->mhz = 40; table_bw = 1; break;
++		case BW_80: re->mhz = 80; table_bw = 2; break;
++		case BW_160: re->mhz = 160; table_bw = 3; break;
++		case BW_320:
++			re->mhz_hi = 320 / 256;
++			re->mhz = 320 % 256;
++			table_bw = 4;
+ 			break;
+-		case BW_40:
+-			re->mhz = 40;
+-			break;
+-		case BW_80:
+-			re->mhz = 80;
+-			break;
+-		case BW_160:
+-			re->mhz = 160;
+-			break;
+-		case BW_320:
+-			re->mhz_hi = 320 / 256, re->mhz = 320 % 256;
+-			break;
+-		default:
+-			re->mhz = 20;
+-			break;
+-	}
+-
+-	re->is_40mhz = (re->mhz == 40);
+-
+-	if (mode >= MODE_HE && mode < MODE_UNKNOWN) {
+-		if (mode == MODE_EHT || mode == MODE_EHT_ER_SU || mode == MODE_EHT_TB || mode == MODE_EHT_MU) {
+-			get_rate_eht((mcs & 0xf), bw, nss, 0, &DataRate);
+-		} else {
+-			get_rate_he((mcs & 0xf), bw, nss, 0, &DataRate);
++		default: width_valid = 0; break;
+ 		}
+-		if (short_gi == 1)
+-			DataRate = (DataRate * 967) >> 10;
+-		else if (short_gi == 2)
+-			DataRate = (DataRate * 870) >> 10;
+-	} else {
+-		getRate(HTSetting, &DataRate);
+-	}
++	}
++
++	if (!width_valid) {
++		re->mhz_hi = 0;
++		re->mhz = 0;
++	}
++	re->is_40mhz = (re->mhz_hi * 256 + re->mhz == 40);
++
++	if (!width_valid || nss < 1 || nss > 4 || short_gi > 2 ||
++	    (family == RATE_HE && table_mcs >= 12) ||
++	    (family == RATE_EHT && table_mcs >= 16)) {
++		re->rate = 0;
++		return;
++	}
++
++	if (family == RATE_EHT)
++		get_rate_eht(table_mcs, table_bw, nss, 0, &DataRate);
++	else
++		get_rate_he(table_mcs, table_bw, nss, 0, &DataRate);
++
++	if (short_gi == 1)
++		DataRate = (DataRate * 967) >> 10;
++	else if (short_gi == 2)
++		DataRate = (DataRate * 870) >> 10;
++
+ 	re->rate = (uint32_t)(DataRate * 1000);
+ }
+ 

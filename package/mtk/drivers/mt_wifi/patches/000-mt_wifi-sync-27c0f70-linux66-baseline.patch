@@ -1,0 +1,480 @@
+--- a/mt_wifi/chips/mt7981_dbg.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/chips/mt7981_dbg.c	2025-06-20 06:01:44.000000000 +0800
+@@ -4567,7 +4567,7 @@
+ 	RTMP_STRING *msg;
+ 	UCHAR fileName[64];
+ 	struct file *file_w;
+-	mm_segment_t orig_fs;
++	// mm_segment_t orig_fs;
+ 	UINT32 addr = 0;
+ 	UINT32 end_addr = 0;
+ 	UINT32 macVal = 0;
+@@ -4580,8 +4580,8 @@
+ 
+ 	NdisZeroMemory(msg, 4);
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	// orig_fs = get_fs();
++	// set_fs(KERNEL_DS);
+ 
+ 	while (COREDUMP_QUEUE_INFO[i].Name != NULL) {
+ 		snprintf(fileName, sizeof(fileName), "/etc/%s.bin", COREDUMP_QUEUE_INFO[i].Name);
+@@ -4626,7 +4626,7 @@
+ 	}
+ 
+ done:
+-	set_fs(orig_fs);
++	// set_fs(orig_fs);
+ 	os_free_mem(msg);
+ 
+ 	return TRUE;
+--- a/mt_wifi/chips/mt7986_dbg.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/chips/mt7986_dbg.c	2025-06-20 06:01:44.000000000 +0800
+@@ -4788,7 +4788,7 @@
+ 	RTMP_STRING *msg;
+ 	UCHAR fileName[64];
+ 	struct file *file_w;
+-	mm_segment_t orig_fs;
++	//mm_segment_t orig_fs;
+ 	UINT32 addr = 0;
+ 	UINT32 end_addr = 0;
+ 	UINT32 macVal = 0;
+@@ -4802,8 +4802,8 @@
+ 
+ 	NdisZeroMemory(msg, 4);
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	//orig_fs = get_fs();
++	//set_fs(KERNEL_DS);
+ 
+ 	while (COREDUMP_QUEUE_INFO[i].Name != NULL) {
+ 		ret = snprintf(fileName, sizeof(fileName), "/etc/%s.bin", COREDUMP_QUEUE_INFO[i].Name);
+@@ -4852,7 +4852,7 @@
+ 	}
+ 
+ done:
+-	set_fs(orig_fs);
++	//set_fs(orig_fs);
+ 	os_free_mem(msg);
+ 
+ 	return TRUE;
+--- a/mt_wifi/embedded/ap/ap_cfg.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/ap/ap_cfg.c	2025-06-20 06:01:44.000000000 +0800
+@@ -17273,7 +17273,7 @@
+ {
+ 	UCHAR fileName[64];
+ 	struct file *file_w;
+-	mm_segment_t orig_fs;
++	// mm_segment_t orig_fs;
+ 	UINT32 startaddr = 0,  endaddr = 0, addr = 0;
+ 	UINT32 macVal = 0;
+ 	UINT Idx;/* enable load from bin */
+@@ -17314,8 +17314,8 @@
+ 		endaddr = 0xE00D7FFF;
+ 	}
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	// orig_fs = get_fs();
++	// set_fs(KERNEL_DS);
+ 	/* open file */
+ 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
+ 
+@@ -17355,7 +17355,7 @@
+ 	}
+ 
+ done:
+-	set_fs(orig_fs);
++	// set_fs(orig_fs);
+ 
+ 	return TRUE;
+ }
+--- a/mt_wifi/embedded/ap/ap_mlme.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/ap/ap_mlme.c	2025-06-20 06:01:44.000000000 +0800
+@@ -26,7 +26,7 @@
+  */
+ 
+ #include "rt_config.h"
+-#include <stdarg.h>
++#include <linux/stdarg.h>
+ 
+ #ifdef IXIA_C50_MODE
+ #ifdef MT7986
+--- a/mt_wifi/embedded/common/hif_pci.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/common/hif_pci.c	2025-06-20 06:01:44.000000000 +0800
+@@ -1855,7 +1855,7 @@
+ #if defined(CONFIG_WIFI_PAGE_ALLOC_SKB)
+ 			if (drop_scatter == FALSE) {
+ 				dma_sync_single_for_cpu((struct device *)(((POS_COOKIE)(pAd->OS_Cookie))->pDev),
+-										(dma_addr_t)pCurRxD->SDP0, rx_ring->RxBufferSize, PCI_DMA_FROMDEVICE);
++										(dma_addr_t)pCurRxD->SDP0, rx_ring->RxBufferSize, DMA_FROM_DEVICE);
+ 				memcpy((cp_skb_pkt + buf_idx), cur_alloc_va, pCurRxD->SDL0);
+ 				buf_idx += pCurRxD->SDL0;
+ 			}
+@@ -2059,7 +2059,7 @@
+ 		}
+ 
+ 		dma_sync_single_for_cpu((struct device *)(((POS_COOKIE)(pAd->OS_Cookie))->pDev),
+-								(dma_addr_t)pRxD->SDP0, rx_ring->RxBufferSize, PCI_DMA_FROMDEVICE);
++								(dma_addr_t)pRxD->SDP0, rx_ring->RxBufferSize, DMA_FROM_DEVICE);
+ 
+ 		RTMP_DCACHE_FLUSH(cur_alloc_pa, pRxCell->DmaBuf.AllocSize);
+ 
+--- a/mt_wifi/embedded/common/mlme.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/common/mlme.c	2025-06-20 06:01:44.000000000 +0800
+@@ -25,7 +25,7 @@
+ */
+ 
+ #include "rt_config.h"
+-#include <stdarg.h>
++#include <linux/stdarg.h>
+ #ifdef DOT11R_FT_SUPPORT
+ #include "ft.h"
+ #endif /* DOT11R_FT_SUPPORT */
+--- a/mt_wifi/embedded/common/rt_os_util.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/common/rt_os_util.c	2025-06-20 06:01:44.000000000 +0800
+@@ -261,7 +261,7 @@
+ UINT32 MtRandom32(VOID)
+ {
+ #if (LINUX_VERSION_CODE  >= KERNEL_VERSION(3, 8, 0))
+-	return prandom_u32();
++	return get_random_u32();
+ #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0) */
+ 	return random32();
+ #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0) */
+--- a/mt_wifi/embedded/common/wdev.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/common/wdev.c	2025-06-20 06:01:44.000000000 +0800
+@@ -609,8 +609,7 @@
+ 				 __func__, wdev->wdev_idx, MAC2STR(wdev->if_addr)));
+ 
+ 		if (wdev->if_dev) {
+-			NdisMoveMemory(RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev),
+-						   wdev->if_addr, MAC_ADDR_LEN);
++			dev_addr_set(wdev->if_dev,wdev->if_addr);
+ 		}
+ 
+ 		COPY_MAC_ADDR(wdev->bssid, wdev->if_addr);
+@@ -623,7 +622,7 @@
+ 				__func__, wdev->wdev_idx, MAC2STR(wdev->if_addr)));
+ 
+ 		if (wdev->if_dev)
+-			NdisMoveMemory(RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev), wdev->if_addr, MAC_ADDR_LEN);
++			dev_addr_set(wdev->if_dev, wdev->if_addr);
+ 		break;
+ #endif
+ 	default:
+--- a/mt_wifi/embedded/security/bn_lib.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/security/bn_lib.c	2025-06-20 06:01:44.000000000 +0800
+@@ -6399,7 +6399,7 @@
+ {
+ 	unsigned char *buf = NULL;
+ 	int ret = 0, bit, bytes, mask;
+-	time_t tim;
++	ktime_t tim;
+ 	UINT32 i;
+ 
+ 	if (bits == 0) {
+--- a/mt_wifi/embedded/sta/sta.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/embedded/sta/sta.c	2025-06-20 06:01:44.000000000 +0800
+@@ -570,8 +570,7 @@
+ #ifdef IWCOMMAND_CFG80211_SUPPORT
+ 		AsicSetWdevIfAddr(pAd, wdev, OPMODE_STA);
+ 		if (wdev->if_dev) {
+-			NdisMoveMemory(RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev),
+-				wdev->if_addr, MAC_ADDR_LEN);
++			dev_addr_set(wdev->if_dev,wdev->if_addr);
+ 		}
+ #endif /* IWCOMMAND_CFG80211_SUPPORT */
+ 
+--- a/mt_wifi/include/os/rt_linux.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/include/os/rt_linux.h	2025-06-20 06:01:44.000000000 +0800
+@@ -39,7 +39,6 @@
+ #include <linux/ctype.h>
+ #include <linux/vmalloc.h>
+ 
+-
+ #include <linux/wireless.h>
+ #include <net/iw_handler.h>
+ #if defined(CONFIG_TSO_SUPPORT) || defined(CONFIG_CSO_SUPPORT)
+@@ -366,7 +365,7 @@
+ typedef struct _OS_FS_INFO_ {
+ 	int				fsuid;
+ 	int				fsgid;
+-	mm_segment_t	fs;
++	// mm_segment_t	fs;
+ } OS_FS_INFO;
+ 
+ typedef struct _RTMP_OS_FD {
+@@ -723,14 +722,14 @@
+ #if (KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE)
+ #define MTWF_PRINT	printk
+ #else
+-#define  printk(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
++#define  mt_printk(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
+ #define MTWF_PRINT	pr_cont
+ #endif
+ #ifdef DBG_ENHANCE
+ /* Mapping Wi-Fi driver log to syslog level */
+ #define MTWF_PRINT_DBG_LVL_OFF		pr_crit
+ #define MTWF_PRINT_DBG_LVL_ERROR	pr_err
+-#define MTWF_PRINT_DBG_LVL_WARN		pr_warning
++#define MTWF_PRINT_DBG_LVL_WARN		pr_warn
+ #define MTWF_PRINT_DBG_LVL_NOTICE	pr_notice
+ #define MTWF_PRINT_DBG_LVL_INFO		pr_info
+ #define MTWF_PRINT_DBG_LVL_DEBUG	pr_info
+@@ -741,7 +740,7 @@
+ #define ASSERT(x)                                                               \
+ 	{                                                                               \
+ 		if (!(x)) {                                                                   \
+-			printk(KERN_WARNING __FILE__ ":%d assert " #x "failed\n", __LINE__);    \
++			mt_printk(KERN_WARNING __FILE__ ":%d assert " #x "failed\n", __LINE__);    \
+ 			dump_stack();\
+ 			/* panic("Unexpected error occurs!\n");					*/\
+ 		}                                                                           \
+--- a/mt_wifi/include/os/rt_os.h	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/include/os/rt_os.h	2025-06-20 06:01:44.000000000 +0800
+@@ -33,7 +33,7 @@
+ #define _RT_OS_H_
+ 
+ /* SIOCDEVPRIVATE and SIOCIWFIRSTPRIV always exist in sockios.h and wireless.h until latest kernel v5.6*/
+-#if (KERNEL_VERSION(5, 6, 0) > LINUX_VERSION_CODE)
++#if (KERNEL_VERSION(7, 6, 0) > LINUX_VERSION_CODE)
+ 
+ #ifdef LINUX
+ #if WIRELESS_EXT <= 11
+--- a/mt_wifi/mcu/fwdl_mt.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/mcu/fwdl_mt.c	2025-06-20 06:01:44.000000000 +0800
+@@ -788,7 +788,7 @@
+ 			"emi_phy_addr = 0x%08x, emi_phy_addr_size = 0x%08x\n",
+ 			pChipCap->emi_phy_addr, pChipCap->emi_phy_addr_size);
+ 
+-	vir_addr = ioremap_nocache(pChipCap->emi_phy_addr, pChipCap->emi_phy_addr_size);
++	vir_addr = ioremap(pChipCap->emi_phy_addr, pChipCap->emi_phy_addr_size);
+ 	if (vir_addr != 0) {
+ 		/* parsing and find download emi payload */
+ 		for (i = 0; i < target->num_of_region; i++) {
+--- a/mt_wifi/os/linux/ap_ioctl.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/ap_ioctl.c	2025-06-20 06:01:44.000000000 +0800
+@@ -577,8 +577,8 @@
+ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for ap/sta */
+ {
+ 	struct net_device *net_dev;
++	struct iwreq	*wrqin = (struct iwreq *) data_obj;
+ 	VOID			*pAd = NULL;
+-    struct iwreq	*wrqin = (struct iwreq *) data_obj;
+ 	RTMP_IOCTL_INPUT_STRUCT rt_wrq, *wrq = &rt_wrq;
+ 	INT				Status = NDIS_STATUS_SUCCESS;
+ 	USHORT			subcmd;
+@@ -1010,6 +1010,5 @@
+ 		if (wrq->u.data.length != org_len)
+ 			wrqin->u.data.length = wrq->u.data.length;
+ 	}
+-
+ 	return Status;
+ }
+--- a/mt_wifi/os/linux/rbus_prop_dev.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/rbus_prop_dev.c	2025-06-20 06:01:44.000000000 +0800
+@@ -89,12 +89,12 @@
+ 
+ 	MTWF_DBG(pAd, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_INFO, "===> rt2880_probe\n");
+ 
+-	if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
++	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
+ 		/*
+ 		 * pci_set_consistent_dma_mask() will always be able to set the same
+ 		 * or a smaller mask as pci_set_dma_mask()
+ 		 */
+-		pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
++		dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+ 	} else {
+ 		MTWF_DBG(pAd, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
+ 				 "set DMA mask failed!errno=%d\n", rv);
+--- a/mt_wifi/os/linux/rt_linux.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/rt_linux.c	2025-06-20 06:01:44.000000000 +0800
+@@ -1080,10 +1080,10 @@
+ 		/* pOSFSInfo->fsgid = (int)(current_fsgid()); */
+ #endif
+ #endif
+-		pOSFSInfo->fs = get_fs();
+-		set_fs(KERNEL_DS);
++		// pOSFSInfo->fs = get_fs();
++		// set_fs(KERNEL_DS);
+ 	} else {
+-		set_fs(pOSFSInfo->fs);
++		// set_fs(pOSFSInfo->fs);
+ #if (KERNEL_VERSION(2, 6, 29) > LINUX_VERSION_CODE)
+ 		current->fsuid = pOSFSInfo->fsuid;
+ 		current->fsgid = pOSFSInfo->fsgid;
+@@ -1687,7 +1687,7 @@
+ 		}
+ 	}
+ #endif /* CONFIG_STA_SUPPORT */
+-	os_move_mem(net_dev->dev_addr, pMacAddr, 6);
++	dev_addr_set(net_dev, pMacAddr);
+ 	return 0;
+ }
+ 
+@@ -2021,8 +2021,7 @@
+ 
+ #endif /* CONFIG_WIRELESS_EXT */
+ 		/* copy the net device mac address to the net_device structure. */
+-		os_move_mem(pNetDev->dev_addr, &pDevOpHook->devAddr[0],
+-					MAC_ADDR_LEN);
++		dev_addr_set(pNetDev, &pDevOpHook->devAddr[0]);
+ 		rtnl_locked = pDevOpHook->needProtcted;
+ 	}
+ 
+@@ -2222,7 +2221,7 @@
+ {
+ 	struct file *file_w;
+ 	RTMP_STRING *fileName = "MacDump.txt";
+-	mm_segment_t orig_fs;
++	// mm_segment_t orig_fs;
+ 	RTMP_STRING *msg;
+ 	UINT32 macAddr = 0, macValue = 0;
+ 	INT ret;
+@@ -2232,8 +2231,8 @@
+ 	if (!msg)
+ 		return;
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	// orig_fs = get_fs();
++	// set_fs(KERNEL_DS);
+ 	/* open file */
+ 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
+ 
+@@ -2282,7 +2281,7 @@
+ 		filp_close(file_w, NULL);
+ 	}
+ 
+-	set_fs(orig_fs);
++	// set_fs(orig_fs);
+ 	os_free_mem(msg);
+ }
+ 
+@@ -2295,7 +2294,7 @@
+ {
+ 	struct file *file_w;
+ 	RTMP_STRING *fileName = "EEPROMDump.txt";
+-	mm_segment_t orig_fs;
++	// mm_segment_t orig_fs;
+ 	RTMP_STRING *msg;
+ 	USHORT eepAddr = 0;
+ 	USHORT eepValue;
+@@ -2306,8 +2305,8 @@
+ 	if (!msg)
+ 		return;
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	// orig_fs = get_fs();
++	// set_fs(KERNEL_DS);
+ 	/* open file */
+ 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
+ 
+@@ -2357,7 +2356,7 @@
+ 		filp_close(file_w, NULL);
+ 	}
+ 
+-	set_fs(orig_fs);
++	// set_fs(orig_fs);
+ 	os_free_mem(msg);
+ }
+ 
+@@ -2369,10 +2368,10 @@
+ {
+ 	struct file *file_w;
+ 	RTMP_STRING *fileName = "RFDump.txt";
+-	mm_segment_t orig_fs;
++	// mm_segment_t orig_fs;
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	// orig_fs = get_fs();
++	// set_fs(KERNEL_DS);
+ 	/* open file */
+ 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
+ 
+@@ -2403,7 +2402,7 @@
+ 		filp_close(file_w, NULL);
+ 	}
+ 
+-	set_fs(orig_fs);
++	// set_fs(orig_fs);
+ }
+ 
+ 
+@@ -5643,8 +5642,7 @@
+ 			if (skb->head) {
+ 				p = virt_to_head_page(skb->head);
+ 				page_size = PAGE_SIZE << compound_order(p);
+-				printk("%s(): index:%d, page:%p ,rfcnt:%d, page size:%zu, order:%u, dtor:%u\n", __func__, k++, p,
+-					OS_PAGE_REF(p), page_size, (unsigned int) compound_order(p), (unsigned int) p->compound_dtor);
++				printk("%s(): index:%d, page:%p ,rfcnt:%d, page size:%zu, order:%u\n", __func__, k++, p,OS_PAGE_REF(p), page_size, (unsigned int) compound_order(p));
+ 			}
+ 			skb = skb->next;
+ 		}
+--- a/mt_wifi/os/linux/rt_main_dev.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/rt_main_dev.c	2025-06-20 06:01:44.000000000 +0800
+@@ -50,11 +50,8 @@
+ MODULE_PARM_DESC(mac, "rt_wifi: wireless mac addr");
+ MODULE_PARM_DESC(mode, "rt_wifi: wireless operation mode");
+ 
+-#if !defined(CONFIG_PROPRIETARY_DRIVER) || defined(CONFIG_DBG_OOM)
+ MODULE_LICENSE("GPL");
+-#else
+-MODULE_LICENSE("Proprietary");
+-#endif
++
+ 
+ #ifdef OS_ABL_SUPPORT
+ RTMP_DRV_ABL_OPS RtmpDrvOps, *pRtmpDrvOps = &RtmpDrvOps;
+@@ -85,7 +82,7 @@
+ 	NdisZeroMemory(&req, sizeof(req));
+ 	rt28xx_ioctl(dev, (struct ifreq *)&req, SIOCGIWRATE);
+ 	cmd->speed = req.u.bitrate.value/1000000; /* The speed is Mbit/s */
+-
++	printk("DBG2:: SIOCGIWRATE called, Rate = %lu",req.u.bitrate.value);
+ 	return 0;
+ }
+ 
+--- a/mt_wifi/os/linux/rt_rbus_pci_util.c	2022-11-27 21:58:55.000000000 +0800
++++ b/mt_wifi/os/linux/rt_rbus_pci_util.c	2025-06-20 06:01:44.000000000 +0800
+@@ -159,7 +159,7 @@
+ 	}
+ 
+ 	if (pkt) {
+-		*pa = dma_map_single(pdev, *va, size, PCI_DMA_FROMDEVICE);
++		*pa = dma_map_single(pdev, *va, size, DMA_FROM_DEVICE);
+ 		 if (dma_mapping_error(pdev, *pa)) {
+ 			MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR, "!!!!dma_mapping_error(pdev, *pa)!!!!\n");
+ 			switch (rx_ring->buf_type) {
+@@ -231,10 +231,10 @@
+ 	struct device *pdev = (struct device *)pDev;
+ 
+ 	if (direction == RTMP_PCI_DMA_TODEVICE)
+-		direction = PCI_DMA_TODEVICE;
++		direction = DMA_TO_DEVICE;
+ 
+ 	if (direction == RTMP_PCI_DMA_FROMDEVICE)
+-		direction = PCI_DMA_FROMDEVICE;
++		direction = DMA_FROM_DEVICE;
+ 
+ 	/*
+ 	 *	------ Porting Information ------
+@@ -264,10 +264,10 @@
+ 	struct device *pdev = (struct device *)pDev;
+ 
+ 	if (direction == RTMP_PCI_DMA_TODEVICE)
+-		direction = PCI_DMA_TODEVICE;
++		direction = DMA_TO_DEVICE;
+ 
+ 	if (direction == RTMP_PCI_DMA_FROMDEVICE)
+-		direction = PCI_DMA_FROMDEVICE;
++		direction = DMA_FROM_DEVICE;
+ 
+ 	if (size > 0)
+ 		dma_unmap_single(pdev, DmaAddr, size, direction);

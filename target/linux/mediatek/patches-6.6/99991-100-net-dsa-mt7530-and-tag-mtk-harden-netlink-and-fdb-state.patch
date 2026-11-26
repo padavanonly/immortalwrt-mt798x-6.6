@@ -1,0 +1,164 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: dsa: mt7530: harden netlink mutex, FDB aging, and tag bounds
+
+Balance mt7530 netlink mutex locking, fix teardown/init order, retain
+non-zero FDB aging counts, and bound tag_mtk TX metadata.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -800,13 +800,15 @@
+ 	struct mt7530_priv *priv = ds->priv;
+ 	unsigned int secs = msecs / 1000;
+ 	unsigned int age_count;
+-	const unsigned int age_unit = 1;
++	const unsigned int age_unit = secs < 4 ? 0 : 1;
+ 
+-	/* Applied timer is (AGE_CNT + 1) * (AGE_UNIT + 1) seconds, and force AGE_UNIT to 1 sec */
+-	if (secs < 1 || secs > (AGE_CNT_MAX + 1) * 2)
++	/* AGE_CNT=0 disables ageing. Use the one-second unit below four
++	 * seconds; retain MediaTek's two-second unit for longer periods.
++	 */
++	if (secs < 2 || secs > (AGE_CNT_MAX + 1) * 2)
+ 		return -ERANGE;
+ 
+-	age_count = (secs / 2) - 1;
++	age_count = secs / (age_unit + 1) - 1;
+ 
+ 	mt7530_write(priv, MT7530_AAC, AGE_CNT(age_count) | AGE_UNIT(age_unit));
+ 
+@@ -2316,7 +2318,7 @@
+ 	ds->assisted_learning_on_cpu_port = true;
+ 	ds->mtu_enforcement_ingress = true;
+ 	ds->ageing_time_min = 2 * 1000;
+-	ds->ageing_time_max = (AGE_CNT_MAX + 1) * (AGE_UNIT_MAX + 1) * 1000;
++	ds->ageing_time_max = (AGE_CNT_MAX + 1) * 2 * 1000;
+ 
+ 	if (priv->id == ID_MT7530) {
+ 		regulator_set_voltage(priv->core_pwr, 1000000, 1000000);
+@@ -2509,7 +2511,7 @@
+ 	ds->assisted_learning_on_cpu_port = true;
+ 	ds->mtu_enforcement_ingress = true;
+ 	ds->ageing_time_min = 2 * 1000;
+-	ds->ageing_time_max = (AGE_CNT_MAX + 1) * (AGE_UNIT_MAX + 1) * 1000;
++	ds->ageing_time_max = (AGE_CNT_MAX + 1) * 2 * 1000;
+ 
+ 	mt753x_trap_frames(priv);
+ 
+--- a/drivers/net/dsa/mt7530-mdio.c
++++ b/drivers/net/dsa/mt7530-mdio.c
+@@ -250,8 +250,8 @@
+ 				ret);
+ 	}
+ 
+-	mt7530_remove_common(priv);
+ 	mt7530_nl_exit();
++	mt7530_remove_common(priv);
+ 
+ 	for (i = 0; i < 2; ++i)
+ 		mtk_pcs_lynxi_destroy(priv->ports[5 + i].sgmii_pcs);
+--- a/drivers/net/dsa/mt7530-mmio.c
++++ b/drivers/net/dsa/mt7530-mmio.c
+@@ -81,10 +81,10 @@
+ {
+ 	struct mt7530_priv *priv = platform_get_drvdata(pdev);
+ 
++	mt7530_nl_exit();
++
+ 	if (priv)
+ 		mt7530_remove_common(priv);
+-
+-	mt7530_nl_exit();
+ }
+ 
+ static void mt7988_shutdown(struct platform_device *pdev)
+--- a/drivers/net/dsa/mt7530_nl.c
++++ b/drivers/net/dsa/mt7530_nl.c
+@@ -28,12 +28,12 @@
+ 
+ static DEFINE_MUTEX(mt7530_devs_lock);
+ 
+-void mt7530_put(void)
++static void mt7530_put(void)
+ {
+ 	mutex_unlock(&mt7530_devs_lock);
+ }
+ 
+-void mt7530_lock(void)
++static void mt7530_lock(void)
+ {
+ 	mutex_lock(&mt7530_devs_lock);
+ }
+@@ -149,8 +149,10 @@
+ 	devad = mt7530_nl_get_s32(info, MT7530_ATTR_TYPE_DEVAD, -1);
+ 	reg = mt7530_nl_get_s32(info, MT7530_ATTR_TYPE_REG, -1);
+ 
+-	if (reg < 0)
++	if (reg < 0) {
++		ret = -EINVAL;
+ 		goto err;
++	}
+ 
+ 	ret = mt7530_nl_prepare_reply(info, MT7530_CMD_READ, &rep_skb);
+ 	if (ret < 0)
+@@ -192,11 +194,10 @@
+ 	devad = mt7530_nl_get_s32(info, MT7530_ATTR_TYPE_DEVAD, -1);
+ 	reg = mt7530_nl_get_s32(info, MT7530_ATTR_TYPE_REG, -1);
+ 
+-	if (mt7530_nl_get_u32(info, MT7530_ATTR_TYPE_VAL, &value))
+-		goto err;
+-
+-	if (reg < 0)
++	if (mt7530_nl_get_u32(info, MT7530_ATTR_TYPE_VAL, &value) || reg < 0) {
++		ret = -EINVAL;
+ 		goto err;
++	}
+ 
+ 	ret = mt7530_nl_prepare_reply(info, MT7530_CMD_WRITE, &rep_skb);
+ 	if (ret < 0)
+@@ -282,8 +283,12 @@
+ 		return -EINVAL;
+ 	}
+ 
++	mt7530_lock();
++	if (!sw_priv) {
++		mt7530_put();
++		return -ENODEV;
++	}
+ 	ret = cmditem->process(info);
+-
+ 	mt7530_put();
+ 
+ 	return ret;
+@@ -298,14 +303,17 @@
+ 	sw_priv = *priv;
+ 	ret = genl_register_family(&mt7530_nl_family);
+ 	if (ret) {
++		sw_priv = NULL;
+ 		return ret;
+ 	}
+ 
+ 	return 0;
+ }
+ 
+-void mt7530_nl_exit()
++void mt7530_nl_exit(void)
+ {
++	mt7530_lock();
+ 	sw_priv = NULL;
++	mt7530_put();
+ 	genl_unregister_family(&mt7530_nl_family);
+ }
+--- a/net/dsa/tag_mtk.c
++++ b/net/dsa/tag_mtk.c
+@@ -34,7 +34,8 @@
+ 	 * corrupted. With tags enabled, we need to make sure that packets are
+ 	 * at least 68 bytes (including FCS and tag).
+ 	 */
+-	eth_skb_pad(skb);
++	if (__skb_put_padto(skb, ETH_ZLEN, false))
++		return NULL;
+ 
+ 	/* Build the special tag after the MAC Source Address. If VLAN header
+ 	 * is present, it's required that VLAN header and special tag is

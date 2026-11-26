@@ -7,11 +7,9 @@ Subject: [PATCH] net: pcs: mtk-lynxi: add 1000BASEX autoneg
  drivers/net/pcs/pcs-mtk-lynxi.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/net/pcs/pcs-mtk-lynxi.c b/drivers/net/pcs/pcs-mtk-lynxi.c
-index 8e48588..f5259d4 100644
 --- a/drivers/net/pcs/pcs-mtk-lynxi.c
 +++ b/drivers/net/pcs/pcs-mtk-lynxi.c
-@@ -205,10 +205,10 @@ static int mtk_pcs_lynxi_config(struct phylink_pcs *pcs, unsigned int neg_mode,
+@@ -205,10 +205,10 @@ static int mtk_pcs_lynxi_config(struct p
  		sgm_mode |= SGMII_REMOTE_FAULT_DIS;
  
  	if (neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED) {
@@ -24,6 +22,3 @@ index 8e48588..f5259d4 100644
  	}
  
  	if (mpcs->interface != interface || mpcs->neg_mode != neg_mode) {
--- 
-2.45.2
-

@@ -1,0 +1,12 @@
+diff -Naur a/qmi_wwan_q.c b/qmi_wwan_q.c
+--- a/qmi_wwan_q.c
++++ b/qmi_wwan_q.c
+@@ -1458,7 +1458,7 @@
+ 	char name[IFNAMSIZ];
+ 	int use_qca_nss = !!nss_cb;
+ 
+-	sprintf(name, "%s_%d", real_dev->name, offset_id + 1);
++	snprintf(name, sizeof(name), "%.11s_%u", real_dev->name, (unsigned int)(offset_id + 1));
+ #ifdef NET_NAME_UNKNOWN
+ 	qmap_net = alloc_netdev(sizeof(struct qmap_priv), name,
+ 				NET_NAME_UNKNOWN, rmnet_usb_ether_setup);

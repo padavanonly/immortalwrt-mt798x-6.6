@@ -1,0 +1,32 @@
+--- a/lib/mbsedit.c
++++ b/lib/mbsedit.c
+@@ -215,7 +215,7 @@ int mbs_edit_remove(struct mbs_editor *e
+ 
+ int mbs_edit_insert(struct mbs_editor *edit, wint_t c)
+ {
+-	size_t n, ncells;
++	size_t n, ncells = 0;
+ 
+ 	if (edit->cur_bytes + MB_CUR_MAX > edit->max_bytes)
+ 		return 1;
+--- a/libblkid/src/superblocks/btrfs.c
++++ b/libblkid/src/superblocks/btrfs.c
+@@ -175,7 +175,7 @@ static int sb_log_offset(blkid_probe pr,
+ 	struct blk_zone *zones;
+ 	int ret;
+ 	int i;
+-	uint64_t wp;
++	uint64_t wp = 0;
+ 
+ 
+ 	zone_size_sector = pr->zone_size >> SECTOR_SHIFT;
+--- a/libfdisk/src/dos.c
++++ b/libfdisk/src/dos.c
+@@ -716,7 +716,7 @@ static int dos_set_disklabel_id(struct f
+ static int dos_set_disklabel_id(struct fdisk_context *cxt, const char *str)
+ {
+ 	char *buf = NULL;
+-	unsigned int id, old;
++	unsigned int id = 0, old;
+ 	struct fdisk_dos_label *l;
+ 	int rc = 0;

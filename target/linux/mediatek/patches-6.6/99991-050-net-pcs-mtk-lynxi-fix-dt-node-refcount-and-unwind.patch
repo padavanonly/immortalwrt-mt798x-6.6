@@ -1,0 +1,90 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: pcs: mtk: fix DT node refcount leaks and probe unwind
+
+Balance of_node refcounts and release resources cleanly in MediaTek LYNXI/USXGMII PCS drivers.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/pcs/pcs-mtk-lynxi.c   | 26 ++++++++++++++++++--------
+ drivers/net/pcs/pcs-mtk-usxgmii.c |  2 +-
+ 2 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/pcs/pcs-mtk-lynxi.c b/drivers/net/pcs/pcs-mtk-lynxi.c
+index c6c6195..0ab6a27 100644
+--- a/drivers/net/pcs/pcs-mtk-lynxi.c
++++ b/drivers/net/pcs/pcs-mtk-lynxi.c
+@@ -495,7 +495,7 @@ static int mtk_pcs_lynxi_probe(struct platform_device *pdev)
+ 	if (of_property_read_bool(np->parent, "mediatek,phya_trx_ck"))
+ 		flags |= MTK_SGMII_FLAG_PHYA_TRX_CK;
+ 
+-	if (of_parse_phandle(np->parent, "resets", 0)) {
++	if (of_property_present(np->parent, "resets")) {
+ 		mpcs->rstc = of_reset_control_get_shared(np->parent, NULL);
+ 		if (IS_ERR(mpcs->rstc))
+ 			return PTR_ERR(mpcs->rstc);
+@@ -504,28 +504,38 @@ static int mtk_pcs_lynxi_probe(struct platform_device *pdev)
+ 
+ 	reset_control_deassert(mpcs->rstc);
+ 	mpcs->sgmii_sel = devm_clk_get_enabled(dev, "sgmii_sel");
+-	if (IS_ERR(mpcs->sgmii_sel))
++	if (IS_ERR(mpcs->sgmii_sel)) {
++		reset_control_put(mpcs->rstc);
+ 		return PTR_ERR(mpcs->sgmii_sel);
++	}
+ 
+ 	mpcs->sgmii_rx = devm_clk_get(dev, "sgmii_rx");
+-	if (IS_ERR(mpcs->sgmii_rx))
++	if (IS_ERR(mpcs->sgmii_rx)) {
++		reset_control_put(mpcs->rstc);
+ 		return PTR_ERR(mpcs->sgmii_rx);
++	}
+ 
+ 	mpcs->sgmii_tx = devm_clk_get(dev, "sgmii_tx");
+-	if (IS_ERR(mpcs->sgmii_tx))
++	if (IS_ERR(mpcs->sgmii_tx)) {
++		reset_control_put(mpcs->rstc);
+ 		return PTR_ERR(mpcs->sgmii_tx);
++	}
+ 
+-	if (of_parse_phandle(dev->of_node, "phys", 0)) {
++	if (of_property_present(dev->of_node, "phys")) {
+ 		mpcs->xfi_tphy = devm_of_phy_get(mpcs->dev, dev->of_node, NULL);
+-		if (IS_ERR(mpcs->xfi_tphy))
++		if (IS_ERR(mpcs->xfi_tphy)) {
++			reset_control_put(mpcs->rstc);
+ 			return PTR_ERR(mpcs->xfi_tphy);
++		}
+ 	} else
+ 		mpcs->xfi_tphy = NULL;
+ 
+ 	pcs = mtk_pcs_lynxi_init(dev, regmap, (uintptr_t)of_device_get_match_data(dev),
+ 				 flags, mpcs);
+-	if (IS_ERR(pcs))
++	if (IS_ERR(pcs)) {
++		reset_control_put(mpcs->rstc);
+ 		return PTR_ERR(pcs);
++	}
+ 
+ 	regmap_set_bits(mpcs->regmap, SGMSYS_QPHY_PWR_STATE_CTRL, SGMII_PHYA_PWD);
+ 
+@@ -547,7 +557,7 @@ static int mtk_pcs_lynxi_remove(struct platform_device *pdev)
+ 	list_for_each_entry_safe(cur, tmp, &mtk_pcs_lynxi_instances, node)
+ 		if (cur->dev == dev) {
+ 			list_del(&cur->node);
+-			kfree(cur);
++			reset_control_put(cur->rstc);
+ 			break;
+ 		}
+ 	mutex_unlock(&instance_mutex);
+diff --git a/drivers/net/pcs/pcs-mtk-usxgmii.c b/drivers/net/pcs/pcs-mtk-usxgmii.c
+index 5a80b89..6cc17ba 100644
+--- a/drivers/net/pcs/pcs-mtk-usxgmii.c
++++ b/drivers/net/pcs/pcs-mtk-usxgmii.c
+@@ -373,7 +373,7 @@ static int mtk_usxgmii_probe(struct platform_device *pdev)
+ 	if (IS_ERR(mpcs->base))
+ 		return PTR_ERR(mpcs->base);
+ 
+-	if (of_property_read_bool(np->parent, "mediatek,pnswap"))
++	if (of_property_read_bool(np, "mediatek,pnswap"))
+ 		mpcs->polarity = USXGMII_PN_SWAP_TX | USXGMII_PN_SWAP_RX;
+ 	else if (of_property_read_bool(np, "mediatek,pnswap-tx"))
+ 		mpcs->polarity = USXGMII_PN_SWAP_TX;

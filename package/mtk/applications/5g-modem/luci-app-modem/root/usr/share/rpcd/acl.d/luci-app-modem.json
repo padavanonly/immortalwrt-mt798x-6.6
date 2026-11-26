@@ -1,11 +1,46 @@
 {
 	"luci-app-modem": {
-		"description": "Grant UCI access for luci-app-modem",
+		"description": "Grant least-privilege ubus and UCI access for luci-app-modem",
 		"read": {
-			"uci": [ "modem" ]
+			"ubus": {
+				"luci.modem": [
+					"getModemInfo",
+					"getATPort",
+					"getModems",
+					"getDialLogInfo",
+					"getStatus",
+					"getModeInfo",
+					"getNetworkPreferInfo",
+					"getSelfTestInfo",
+					"getQuickCommands",
+					"getPluginInfo"
+				],
+				"network.interface.*": [
+					"status"
+				]
+			},
+			"uci": [
+				"modem",
+				"custom_at_commands",
+				"network"
+			]
 		},
 		"write": {
-			"uci": [ "modem" ]
+			"ubus": {
+				"luci.modem": [
+					"cleanDialLog",
+					"setMode",
+					"setNetworkPrefer",
+					"setBandPrefer",
+					"sendATCommand",
+					"modemScan"
+				]
+			},
+			"uci": [
+				"modem",
+				"custom_at_commands",
+				"network"
+			]
 		}
 	}
 }

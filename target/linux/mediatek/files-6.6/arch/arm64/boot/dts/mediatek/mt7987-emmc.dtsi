@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: (GPL-2.0-only OR MIT) */
+
+#include "mt7987-pinctrl.dtsi"
+
+/ {
+	reg_3p3v: regulator-3p3v {
+		compatible = "regulator-fixed";
+		regulator-name = "fixed-3.3V";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};	
+};
+
+/* Disable spi1 node since MSDC and spi1 share pins on MT7987. */
+&spi1 {
+	status = "disabled";
+};
+
+&mmc0 {
+	pinctrl-names = "default", "state_uhs";
+                        pinctrl-0 = <&mmc_pins_default>;
+                        pinctrl-1 = <&mmc_pins_uhs>;
+                        bus-width = <8>;
+                        max-frequency = <48000000>;
+                        cap-mmc-highspeed;
+                        vmmc-supply = <&reg_3p3v>;
+                        non-removable;
+                        status = "okay";
+
+	card@0 {
+		compatible = "mmc-card";
+		reg = <0>;
+
+		block {
+			compatible = "block-device";
+
+			partitions {
+				block-partition-factory {
+					partname = "factory";
+
+					nvmem-layout {
+						compatible = "fixed-layout";
+						#address-cells = <1>;
+						#size-cells = <1>;
+
+						eeprom_factory_0: eeprom@0 {
+							reg = <0x0 0x1000>;
+						};
+
+						macaddr_factory_24: macaddr@24 {
+							compatible = "mac-base";
+							reg = <0x24 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
+
+						macaddr_factory_2a: macaddr@2a {
+                                                        compatible = "mac-base";
+                                                        reg = <0x2a 0x6>;
+                                                        #nvmem-cell-cells = <1>;
+                                                };
+					};
+				};
+			};
+		};
+	};
+};

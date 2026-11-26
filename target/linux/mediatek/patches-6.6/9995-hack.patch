@@ -1,0 +1,28 @@
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -52,7 +52,8 @@
+ obj-$(CONFIG_AIROHA_AN8801_PHY)	+= an8801.o
+ obj-$(CONFIG_AIROHA_EN8801SC_PHY)   += en8801sc.o
+ obj-$(CONFIG_AIR_AN8855_PHY)		+= air_an8855.o
+-obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811h.o
++air_en8811-y := air_en8811h_main.o air_en8811h_api.o
++obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811.o
+ obj-$(CONFIG_AMD_PHY)		+= amd.o
+ obj-$(CONFIG_AQUANTIA_PHY)	+= aquantia/
+ ifdef CONFIG_AX88796B_RUST_PHY
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -2488,5 +2488,13 @@ static const struct usb_device_id option
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x2df3, 0x9d03, 0xff) },			/* LongSung M5710 */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1402, 0xff) },			/* GosunCn GM800 (Download mode) */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1403, 0xff) },			/* GosunCn GM800 (rmnet, old) */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1404, 0xff) },			/* GosunCn GM500 RNDIS */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1405, 0xff) },			/* GosunCn GM500 MBIM */
+ 	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1406, 0xff) },			/* GosunCn GM500 ECM/NCM */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1421, 0xff) },			/* GosunCn GM800 (rmnet) */
++	{ USB_DEVICE_INTERFACE_CLASS(0x305a, 0x1422, 0xff) },			/* GosunCn GM800 (EAP) */
++	{ USB_DEVICE(0x2077, 0x2001) }, /* T&W RNDIS */
++	{ USB_DEVICE(0x2077, 0x2004) }, /* T&W QMI */
++	{ USB_DEVICE(0x2077, 0x2007) }, /* T&W MBIM */
++	{ USB_DEVICE(0x2077, 0x2008) }, /* T&W ECM */
+ 	{ USB_DEVICE(0x33f8, 0x0104),						/* Rolling RW101-GL (laptop RMNET) */

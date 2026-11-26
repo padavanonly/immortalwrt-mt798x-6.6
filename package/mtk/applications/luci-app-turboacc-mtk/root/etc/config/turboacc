@@ -1,2 +1,7 @@
 config turboacc 'config'
-
+	option fastpath 'mediatek_hnat'
+	option fastpath_mh_eth_hnat '1'
+	option fastpath_mh_eth_hnat_v6 '1'
+	option fastpath_mh_eth_hnat_bind_rate '5'
+	option fastpath_mh_sw_fallback '1'
+	option fullcone '1'

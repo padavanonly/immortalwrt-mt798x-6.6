@@ -9,9 +9,8 @@ mediatek_setup_interfaces()
 
 	case $board in
 	abt,asr3000|\
-	cmcc,rax3000m*|\
+	cmcc,rax3000m|\
 	cmcc,rax3000me|\
-	cmcc,xr30*|\
 	h3c,magic-nx30-pro|\
 	h3c,magic-nx30-pro-nmbm|\
 	imou,lc-hx3001|\
@@ -20,10 +19,9 @@ mediatek_setup_interfaces()
 	nokia,ea0326gmp|\
 	mercusys,mr80x-v3|\
 	routerich,ax3000-v1|\
-	ruijie,rg-x60-new*|\
-	umi,uax3000e|\
+	ruijie,rg-x60|\
 	zbtlink,zbt-z8103ax|\
-	zbtlink,zbt-z8103ax-c*)
+	zbtlink,zbt-z8103ax-c)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" eth1
 		;;
 	acelink,ew-7886cax)
@@ -39,13 +37,6 @@ mediatek_setup_interfaces()
 	arcadyan,mozart)
 		ucidef_set_interfaces_lan_wan "lan0 eth1" eth2
 		;;
-	airpi,ap3000m)
-		ucidef_set_interfaces_lan_wan eth0 eth1
-		;;
-	huasifei,wh3000-pro|\
-	*Airpi*)
-                ucidef_set_interfaces_lan "eth0 eth1"
-		;;
 	asus,rt-ax52|\
 	asus,rt-ax59u|\
 	cetron,ct3003|\
@@ -56,32 +47,31 @@ mediatek_setup_interfaces()
 	cudy,wr3000-v1|\
 	jcg,q30-pro|\
 	keenetic,kn3811|\
-	netis,nx32u|\
 	livinet,zr-3020|\
 	livinet,zr-3020-ubootmod|\
 	qihoo,360t7|\
-	tplink,wma301*|\
-	*philips,hy3000*|\
-	sl,3000-emmc|\
-	bt,r320|\
 	routerich,ax3000|\
-	routerich,ax3000-ubootmod)
+	routerich,ax3000-ubootmod|\
+	tplink,tl-7dr7250-v1)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
 		;;
 	asus,tuf-ax4200|\
+	iptime,ax3000sm|\
+	iptime,ax7800m-6e|\
 	jdcloud,re-cp-03|\
 	mediatek,mt7981-rfb|\
 	netcore,n60|\
 	netcore,n60-pro|\
-	ruijie,ew-6000gx-pro*|\
-	ruijie,rg-x60-pro*|\
+	ruijie,rg-x60-pro|\
 	unielec,u7981-01*|\
+	wavlink,wl-wn536ax6-a|\
 	zbtlink,zbt-z8102ax|\
-	nradio,c8-668gl|\
+	zbtlink,zbt-z8102ax-v2|\
 	zyxel,ex5601-t0-stock|\
 	zyxel,ex5601-t0-ubootmod)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" eth1
 		;;
+	asus,tuf-ax4200q|\
 	asus,tuf-ax6000|\
 	glinet,gl-mt6000|\
 	tplink,tl-xdr4288|\
@@ -94,7 +84,8 @@ mediatek_setup_interfaces()
 		;;
 	bananapi,bpi-r3-mini|\
 	edgecore,eap111|\
-	huasifei,wh3000-emmc)
+	huasifei,wh3000-emmc|\
+	huasifei,wh3000-pro)
 		ucidef_set_interfaces_lan_wan eth0 eth1
 		;;
 	bananapi,bpi-r4|\
@@ -108,23 +99,24 @@ mediatek_setup_interfaces()
 	cudy,ap3000-v1|\
 	cudy,re3000-v1|\
 	netgear,wax220|\
+	openfi,6c|\
 	ubnt,unifi-6-plus|\
 	wavlink,wl-wn573hx3|\
 	zyxel,nwa50ax-pro)
 		ucidef_set_interface_lan "eth0"
 		;;
 	cudy,m3000-v1|\
+	cudy,tr3000-256mb-v1|\
 	cudy,tr3000-v1|\
 	cudy,tr3000-v1-ubootmod|\
-	cudy,tr3000-v1-256mb|\
 	glinet,gl-mt2500|\
+	glinet,gl-mt2500-airoha|\
 	glinet,gl-mt3000|\
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
 	openembed,som7981|\
-	openwrt,one|\
-	openfi,6c*)
-		ucidef_set_interfaces_lan_wan "eth1" eth0
+	openwrt,one)
+		ucidef_set_interfaces_lan_wan eth1 eth0
 		;;
 	dlink,aquila-pro-ai-m30-a1|\
 	dlink,aquila-pro-ai-m60-a1)
@@ -150,38 +142,27 @@ mediatek_setup_interfaces()
 	mercusys,mr90x-v1-ubi)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2" eth1
 		;;
-	mediatek,7981r128|\
 	tplink,tl-xdr6086|\
 	wavlink,wl-wn586x3)
 		ucidef_set_interfaces_lan_wan "lan1 lan2" eth1
 		;;
-	supergateway,s20p)
-		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4 lan5 lan6" eth1
+	tplink,archer-ax80-v1)
+		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3" eth1
 		;;
 	tplink,re6000xd)
 		ucidef_set_interface_lan "lan1 lan2 eth1"
 		;;
-	wirelesstag,zx7981pd|\
-	wirelesstag,zx7981pd-ubootmod)
-		ucidef_set_interfaces_lan_wan "lan1 lan2" wan
-		;;
-	wirelesstag,zx7981pg)
-		ucidef_set_interfaces_lan_wan "lan1 lan2" wan
+	tplink,tl-7dr7230-v1|\
+	tplink,tl-7dr7230-v2)
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" wan
 		;;
 	xiaomi,mi-router-ax3000t|\
-	xiaomi,mi-router-ax3000t-mtkuboot|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,mi-router-wr30u-stock|\
 	xiaomi,mi-router-wr30u-ubootmod|\
 	xiaomi,redmi-router-ax6000-stock|\
 	xiaomi,redmi-router-ax6000-ubootmod)
 		ucidef_set_interfaces_lan_wan "lan2 lan3 lan4" wan
-		;;
-	yvr,x6)
-		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
-		;;
-	bt,rb300)
-		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3" wan
 		;;
 	*)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" wan
@@ -195,22 +176,13 @@ mediatek_setup_macs()
 	local lan_mac=""
 	local wan_mac=""
 	local label_mac=""
-	local b0dat="$(l1dat if2dat ra0)"
-	local b1dat="$(l1dat if2dat rax0)"
+
 	case $board in
-	airpi,ap3000m)
-		lan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
-		wan_mac=$(macaddr_add "$lan_mac" 1)
-		;;
 	acer,predator-w6|\
 	acer,predator-w6d|\
 	acer,vero-w6m)
 		wan_mac=$(mmc_get_mac_ascii u-boot-env WANMAC)
 		lan_mac=$(mmc_get_mac_ascii u-boot-env LANMAC)
-		;;
-	cudy,tr3000-v1)
-		wan_mac=$(mtd_get_mac_binary bdinfo 0xde00)
-                lan_mac=$(macaddr_add "$wan_mac" 1)
 		;;
 	bananapi,bpi-r3|\
 	bananapi,bpi-r3-mini|\
@@ -230,6 +202,7 @@ mediatek_setup_macs()
 		wan_mac=$(macaddr_add "$lan_mac" 1)
 		;;
 	mercusys,mr90x-v1|\
+	tplink,archer-ax80-v1|\
 	tplink,re6000xd)
 		label_mac=$(get_mac_binary "/tmp/tp_data/default-mac" 0)
 		lan_mac=$label_mac
@@ -238,44 +211,12 @@ mediatek_setup_macs()
 		lan_mac=$(mtd_get_mac_ascii u-boot-env mac)
 		label_mac=$lan_mac
 		;;
-	nradio,c8-668gl)
-		lan_mac=$(mmc_get_mac_ascii bdinfo "fac_mac ")
-		wan_mac=$(macaddr_add "$lan_mac" 2)
-		label_mac=$lan_mac
-		;;
 	qihoo,360t7)
 		lan_mac=$(mtd_get_mac_ascii factory lanMac)
 		wan_mac=$(macaddr_add "$lan_mac" 1)
 		label_mac=$wan_mac
 		;;
-	ruijie,ew-6000gx-pro*|\
-	ruijie,rg-x60*)
-		label_mac=$(mtd_get_mac_ascii product_info ethaddr)
-		wan_mac=$label_mac
-		lan_mac=$(macaddr_add "$label_mac" 1)
-		;;
-	yvr,x6)
-		wan_mac=$(mtd_get_mac_ascii Factory_info MAC)
-		lan_mac=$(macaddr_add $wan_mac 1)
-		label_mac=$lan_mac
-		;;
-	sl,3000-emmc)
- 		lan_mac=$(mmc_get_mac_binary factory 0x04)		
- 		wan_mac=$(macaddr_add "$lan_mac" -2)
- 		label_mac=$lan_mac
- 		;;
-	philips,hy3000)
-		lan_mac=$(mmc_get_mac_binary factory 0x74)
-		wan_mac=$(macaddr factory $lan_mac 1)
-		label_mac=$wan_mac
-		;;
-    sn,r1)
-		lan_mac=$(mmc_get_mac_binary factory 0x2a)
-		wan_mac=$(mmc_get_mac_binary factory 0x24)
-		label_mac=$wan_mac
-		;;
 	xiaomi,mi-router-ax3000t|\
-	xiaomi,mi-router-ax3000t-mtkuboot|\
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,mi-router-wr30u-stock|\
 	xiaomi,mi-router-wr30u-ubootmod|\
@@ -284,47 +225,10 @@ mediatek_setup_macs()
 		wan_mac=$(mtd_get_mac_ascii Bdata ethaddr_wan)
 		label_mac=$wan_mac
 		;;
-	umi,uax3000e)
-		lan_mac=$(mmc_get_mac_binary factory 0x2A)
-		wan_mac=$(mmc_get_mac_binary factory 0x04)
-		;;
 	yuncore,ax835)
 		label_mac=$(mtd_get_mac_binary "Factory" 0x4)
 		;;
-	openfi,6c*)
-		lan_mac=$(macaddr_add $(cat /sys/class/net/eth1/address) 1)
-		;;
-	wirelesstag,zx7981pd|\
-	wirelesstag,zx7981pd-ubootmod)
-		label_mac=$(mtd_get_mac_binary wtinfo 10)
-		lan_mac=$label_mac
-		wan_mac=$(macaddr_add "$label_mac" 1)
-		;;
-	mediatek,7981r128)
-		local label_mac=$(mtd_get_mac_binary Factory 0x4)
-		lan_mac=$(macaddr_add $label_mac 1)
-		wan_mac=$(macaddr_add $label_mac -1)
-		;;
 	esac
-
-	if [ -n "$label_mac" ]; then
-		base_mac="$label_mac"
-	elif [ -n "$wan_mac" ]; then
-		base_mac="$wan_mac"
-	elif [ -n "$lan_mac" ]; then
-		base_mac="$lan_mac"
-	else
-		base_mac=$(cat /sys/class/net/eth0/address)
-	fi
-
-	if [ -f ${b0dat} ] && ! grep -q "MacAddress=" ${b0dat}; then
-			local b0mac="$(macaddr_add "$base_mac" 3)"
-			echo "MacAddress=$b0mac" >> ${b0dat}
-		fi
-	if [ -f ${b1dat} ] && ! grep -q "MacAddress=" ${b1dat}; then
-			local b1mac="$(macaddr_add "$base_mac" 4)"
-			echo "MacAddress=$b1mac" >> ${b1dat}
-	fi
 
 	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" $lan_mac
 	[ -n "$wan_mac" ] && ucidef_set_interface_macaddr "wan" $wan_mac

@@ -1,0 +1,237 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-cpe\n"
+"Language: zh_Hans\n"
+
+msgid "-- Please choose --"
+msgstr "-- 请选择 --"
+
+msgid "APN"
+msgstr "接入点 APN"
+
+msgid "AT Command Terminal"
+msgstr "AT命令终端"
+
+msgid "AT Command Tool"
+msgstr "AT命令工具"
+
+msgid "AT Command: "
+msgstr "AT命令 : "
+
+msgid "AT Tool"
+msgstr "AT工具"
+
+msgid "AT command error"
+msgstr "AT命令执行错误"
+
+msgid "Abnormal number"
+msgstr "异常次数"
+
+msgid "Advanced Settings"
+msgstr "高级设置"
+
+msgid "Authentication Type"
+msgstr "认证类型"
+
+msgid "Automatic operation upon startup ooo"
+msgstr "开机自动启动：勾选"
+
+msgid "Band: "
+msgstr "频段 Band : "
+
+msgid "CSQ: "
+msgstr "CSQ : "
+
+msgid "Carrier: "
+msgstr "运营商 : "
+
+msgid "Cell ID: "
+msgstr "Cell ID : "
+
+msgid "Cell Station Information"
+msgstr "基站信息"
+
+msgid "Cellular Module / SIM Card Information"
+msgstr "通信模块/SIM卡信息"
+
+msgid "Cellular Network Type: "
+msgstr "蜂窝网络类型 : "
+
+msgid "Channel: "
+msgstr "频点 Channel : "
+
+msgid "Clear"
+msgstr "清除"
+
+msgid "Connection Status Monitor: "
+msgstr "连接状态监控 : "
+
+msgid "Disable"
+msgstr "禁用"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "FMFM650-CN Settings"
+msgstr "FMFM650-CN 设置"
+
+msgid "GPS Location"
+msgstr "GPS 定位"
+
+msgid "General Information"
+msgstr "综合信息"
+
+msgid "General Setup"
+msgstr "基本设置"
+
+msgid "ICCID: "
+msgstr "ICCID : "
+
+msgid "IMEI: "
+msgstr "IMEI : "
+
+msgid "IMSI: "
+msgstr "IMSI : "
+
+msgid "Incorrect PIN to unlock SIM card"
+msgstr "解锁SIM卡的Pin不正确"
+
+msgid "Invalid SIM card"
+msgstr "无效SIM卡"
+
+msgid "Latitude: "
+msgstr "纬度 : "
+
+msgid "Lock Band List"
+msgstr "锁定频段列表"
+
+msgid "Longitude: "
+msgstr "经度 : "
+
+msgid "MCC / MNC: "
+msgstr "MCC / MNC : "
+
+msgid "Manufacturer: "
+msgstr "制造商 : "
+
+msgid "Maximum QoS Level: "
+msgstr "最大Qos级别 Maximum Qos : "
+
+msgid "Mobile Data"
+msgstr "移动数据"
+
+msgid "Mobile Network"
+msgstr "模块设置"
+
+msgid "Modem Port: "
+msgstr "模块端口 : "
+
+msgid "Modem Server For OpenWrt"
+msgstr "4G/5G模块管理"
+
+msgid "Modem Settings"
+msgstr "模块设置"
+
+msgid "Modem device"
+msgstr "调制解调器设备"
+
+msgid "Modem: "
+msgstr "模块 : "
+
+msgid "Network Diagnostics"
+msgstr "网络诊断"
+
+msgid "Network exception handling: check the network connection in a loop for 5 seconds. If the Ping IP address is not successful, After the network exceeds the abnormal number, restart and search the registered network again."
+msgstr "网络异常处理：循环检查网络连接5秒。如果Ping IP地址不成功，则在网络超过异常数量后，重新启动并搜索已注册的网络。"
+
+msgid "PAP/CHAP Password"
+msgstr "PAP/CHAP 密码"
+
+msgid "PAP/CHAP Username"
+msgstr "PAP/CHAP 用户名"
+
+msgid "PIN Code"
+msgstr "PIN 码"
+
+msgid "PdpType"
+msgstr "IP获取方式"
+
+msgid "Physical Cell ID (PCI): "
+msgstr "物理小区标识 PCI : "
+
+msgid "Ping IP address"
+msgstr "Ping IP地址"
+
+msgid "Please enter an AT command!"
+msgstr "请输入AT命令!"
+
+msgid "Please note that not all 5G modems are supported by this plugin."
+msgstr "请注意该插件所有功能并无适配所有5G模块，不用妄想冷门模块插上就能用(有能力者自行适配)"
+
+msgid "Received Signal Strength Indicator (RSSI): "
+msgstr "信号接收强度 RSSI : "
+
+msgid "Reference Signal Received Power (RSRP): "
+msgstr "参考信号接收功率 RSRP : "
+
+msgid "Reference Signal Received Quality (RSRQ): "
+msgstr "参考信号接收质量 RSRQ : "
+
+msgid "SIM Card Number: "
+msgstr "SIM卡号码 : "
+
+msgid "SIM Settings"
+msgstr "SIM 配置 (联通ANP:3gnet)  (电信APN:ctnet)  (移动APN:cmnet)  (广电APN:cbnet) "
+
+msgid "SIM Warning"
+msgstr "SIM警告"
+
+msgid "SIM card is locked and no SIM PIN is configured in profile!"
+msgstr "SIM卡已锁定，个人资料中未输入SIM Pin！！"
+
+msgid "SIM card is not locked. Invalid SIM card"
+msgstr "SIM卡未锁定.错误的SIM卡"
+
+msgid "Send"
+msgstr "发送"
+
+msgid "Server Type"
+msgstr "服务类型"
+
+msgid "Set tyyUSB port"
+msgstr "AT 模块端口配置 (全模块指定端口)"
+
+msgid "Signal Status"
+msgstr "信号状态"
+
+msgid "Signal Status / Modem Information"
+msgstr "信号状态/模块信息"
+
+msgid "Signal Strength: "
+msgstr "信号强度 : "
+
+msgid "Signal-to-Noise Ratio (SINR): "
+msgstr "信噪比 SINR : "
+
+msgid "TAC: "
+msgstr "TAC : "
+
+msgid "Temperature: "
+msgstr "温度 : "
+
+msgid "Tools"
+msgstr "拨号工具"
+
+msgid "Update Time: "
+msgstr "更新时间 : "
+
+msgid "[1]Automatic start upon startup: Check</br>[2] FMFMFM650-CN module default ECM (36) mode. If not, please modify it, otherwise dialing cannot proceed normally</br>"
+msgstr "【1】 开机自动启动：勾选 </br> 【2】 FMFM650-CN 模块默认 ECM (36)模式如果不是请修改 否则不能正常进行拨号 </br>"
+
+msgid "eNB ID: "
+msgstr "eNB ID : "
+
+msgid "tyyUSB port"
+msgstr "ttyUSB 配置ID"
+

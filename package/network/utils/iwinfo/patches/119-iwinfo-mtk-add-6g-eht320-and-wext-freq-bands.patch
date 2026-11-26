@@ -1,0 +1,272 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] iwinfo: mtk: add 6GHz EHT320 capabilities and fix WEXT
+ frequency band reporting
+
+Fix WEXT frequency units and band reporting, and expose 6 GHz / EHT320 bandwidth capabilities.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ iwinfo_mtk.c | 183 ++++++++++++++++++++++++++++++++++++++-------------
+ 1 file changed, 138 insertions(+), 45 deletions(-)
+
+diff --git a/iwinfo_mtk.c b/iwinfo_mtk.c
+index 21f41c3..ce78aa9 100644
+--- a/iwinfo_mtk.c
++++ b/iwinfo_mtk.c
+@@ -90,6 +90,7 @@ enum mtk_config_band {
+ 	MTK_CONFIG_BAND_OTHER,
+ 	MTK_CONFIG_BAND_2G,
+ 	MTK_CONFIG_BAND_5G,
++	MTK_CONFIG_BAND_6G,
+ };
+ 
+ static enum mtk_config_band mtk_get_config_band(const char *dev)
+@@ -110,6 +111,8 @@ static enum mtk_config_band mtk_get_config_band(const char *dev)
+ 		result = MTK_CONFIG_BAND_2G;
+ 	else if (!strcmp(band, "5g"))
+ 		result = MTK_CONFIG_BAND_5G;
++	else if (!strcmp(band, "6g"))
++		result = MTK_CONFIG_BAND_6G;
+ 	else
+ 		result = MTK_CONFIG_BAND_OTHER;
+ 
+@@ -1200,41 +1203,124 @@ out:
+ 	return ret;
+ }
+ 
+-static int mtk_get_freqlist_by_ifname(const char *ifname, char *buf, int *len)
++static int mtk_wext_freq_to_mhz(const struct iw_freq *freq, uint32_t *mhz)
++{
++	int64_t value;
++	int exponent;
++
++	if (!freq || !mhz)
++		return -1;
++
++	value = freq->m;
++	exponent = freq->e;
++	if (value <= 0 || exponent < 0 || exponent > 9)
++		return -1;
++
++	while (exponent < 6) {
++		if (value % 10)
++			return -1;
++		value /= 10;
++		exponent++;
++	}
++
++	while (exponent > 6) {
++		if (value > UINT32_MAX / 10)
++			return -1;
++		value *= 10;
++		exponent--;
++	}
++
++	if (value <= 0 || value > UINT32_MAX)
++		return -1;
++
++	*mhz = (uint32_t)value;
++	return 0;
++}
++
++static uint8_t mtk_freq_band(uint32_t mhz)
++{
++	/* Match frequencies emitted by the selected Vendor channel_to_frequency(). */
++	if ((mhz >= 2412 && mhz <= 2472 && (mhz - 2407) % 5 == 0) ||
++	    mhz == 2484)
++		return iwinfo_ghz2band(2);
++	if ((mhz >= 4910 && mhz <= 4980 && (mhz - 4000) % 5 == 0) ||
++	    (mhz >= 5005 && mhz <= 5905 && (mhz - 5000) % 5 == 0))
++		return iwinfo_ghz2band(5);
++	/* Channel 2 is the 5935 MHz exception; other 6 GHz values use 5950 + 5*channel. */
++	if (mhz == 5935 ||
++	    (mhz >= 5955 && mhz <= 7115 && (mhz - 5950) % 5 == 0))
++		return iwinfo_ghz2band(6);
++
++	return 0;
++}
++
++static int mtk_build_freqlist(const struct iw_range *range, size_t range_len,
++			      char *buf, size_t buf_len, int *len)
+ {
+-	struct iwreq wrq;
+-	struct iw_range range;
+ 	struct iwinfo_freqlist_entry entry;
+-	int i, bl;
++	size_t count, capacity, required_len, i;
+ 
+-	if (!mtk_is_ifup(ifname))
++	if (!len)
+ 		return -1;
++	*len = 0;
+ 
+-	wrq.u.data.pointer = (caddr_t) &range;
+-	wrq.u.data.length  = sizeof(struct iw_range);
+-	wrq.u.data.flags   = 0;
++	if (!range || !buf ||
++	    range_len < offsetof(struct iw_range, num_frequency) +
++			 sizeof(range->num_frequency) ||
++	    range_len > sizeof(*range))
++		return -1;
+ 
+-	if (mtk_ioctl(ifname, SIOCGIWRANGE, &wrq) >= 0)
+-	{
+-		bl = 0;
++	count = range->num_frequency;
++	capacity = buf_len / sizeof(entry);
++	if (count > IW_MAX_FREQUENCIES || count > capacity)
++		return -1;
+ 
+-		for (i = 0; i < range.num_frequency; i++)
+-		{
+-			/* MTK range data does not provide iwinfo band or flag fields. */
+-			memset(&entry, 0, sizeof(entry));
+-			entry.mhz        = range.freq[i].m;
+-			entry.channel    = range.freq[i].i;
+-			entry.restricted = 0;
+-
+-			memcpy(&buf[bl], &entry, sizeof(struct iwinfo_freqlist_entry));
+-			bl += sizeof(struct iwinfo_freqlist_entry);
+-		}
++	required_len = offsetof(struct iw_range, freq) +
++		       count * sizeof(range->freq[0]);
++	if (required_len > range_len)
++		return -1;
+ 
+-		*len = bl;
+-		return 0;
++	for (i = 0; i < count; i++) {
++		memset(&entry, 0, sizeof(entry));
++		if (mtk_wext_freq_to_mhz(&range->freq[i], &entry.mhz))
++			return -1;
++
++		entry.band = mtk_freq_band(entry.mhz);
++		if (!entry.band)
++			return -1;
++		entry.channel = range->freq[i].i;
++		entry.restricted = 0;
++
++		memcpy(buf + i * sizeof(entry), &entry, sizeof(entry));
+ 	}
+ 
+-	return -1;
++	*len = (int)(count * sizeof(entry));
++	return 0;
++}
++
++static int mtk_get_freqlist_by_ifname(const char *ifname, char *buf, int *len)
++{
++	struct iwreq wrq;
++	struct iw_range range;
++
++	if (!len)
++		return -1;
++	*len = 0;
++
++	if (!ifname || !*ifname || !buf || !mtk_is_ifup(ifname))
++		return -1;
++
++	memset(&wrq, 0, sizeof(wrq));
++	memset(&range, 0, sizeof(range));
++	wrq.u.data.pointer = (caddr_t)&range;
++	wrq.u.data.length = sizeof(range);
++	wrq.u.data.flags = 0;
++
++	if (mtk_ioctl(ifname, SIOCGIWRANGE, &wrq) < 0)
++		return -1;
++
++	return mtk_build_freqlist(&range, wrq.u.data.length, buf,
++				  IWINFO_BUFSIZE, len);
+ }
+ 
+ static int mtk_get_freqlist(const char *dev, char *buf, int *len)
+@@ -1289,6 +1375,7 @@ static int mtk_get_hwmodelist(const char *dev, int *buf)
+ 	char chans[IWINFO_BUFSIZE] = { 0 };
+ 	struct iwinfo_freqlist_entry *e = NULL;
+ 	enum mtk_config_band band;
++	size_t i, count;
+ 	int len = 0;
+ 
+ 	*buf = 0;
+@@ -1300,6 +1387,8 @@ static int mtk_get_hwmodelist(const char *dev, int *buf)
+ 			*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
+ 		else if (band == MTK_CONFIG_BAND_5G)
+ 			*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
++		else if (band == MTK_CONFIG_BAND_6G)
++			*buf = (IWINFO_80211_AX | IWINFO_80211_BE);
+ 		return 0;
+ 	}
+ 
+@@ -1309,16 +1398,17 @@ static int mtk_get_hwmodelist(const char *dev, int *buf)
+ 
+ 	if (!mtk_get_freqlist_by_ifname(ifname, chans, &len))
+ 	{
+-		for (e = (struct iwinfo_freqlist_entry *)chans; e->channel; e++ )
++		count = (size_t)len / sizeof(*e);
++		for (i = 0; i < count; i++)
+ 		{
+-			if (e->channel <= 14 ) //2.4Ghz
+-			{
+-				*buf = (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
+-			}
+-			else //5Ghz
+-			{
+-				*buf = (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
+-			}
++			e = &((struct iwinfo_freqlist_entry *)chans)[i];
++			uint8_t entry_band = e->band ? e->band : mtk_freq_band(e->mhz);
++			if (entry_band == iwinfo_ghz2band(2))
++				*buf |= (IWINFO_80211_N | IWINFO_80211_AX | IWINFO_80211_BE);
++			else if (entry_band == iwinfo_ghz2band(5))
++				*buf |= (IWINFO_80211_AC | IWINFO_80211_AX | IWINFO_80211_BE);
++			else if (entry_band == iwinfo_ghz2band(6))
++				*buf |= (IWINFO_80211_AX | IWINFO_80211_BE);
+ 		}
+ 
+ 		return 0;
+@@ -1333,6 +1423,7 @@ static int mtk_get_htmodelist(const char *dev, int *buf)
+ 	char chans[IWINFO_BUFSIZE] = { 0 };
+ 	struct iwinfo_freqlist_entry *e = NULL;
+ 	enum mtk_config_band band;
++	size_t i, count;
+ 	int len = 0;
+ 
+ 	*buf = 0;
+@@ -1346,6 +1437,9 @@ static int mtk_get_htmodelist(const char *dev, int *buf)
+ 			*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
+ 			| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+ 			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
++		else if (band == MTK_CONFIG_BAND_6G)
++			*buf = (IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
++			| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160 | IWINFO_HTMODE_EHT320);
+ 		return 0;
+ 	}
+ 
+@@ -1355,18 +1449,17 @@ static int mtk_get_htmodelist(const char *dev, int *buf)
+ 
+ 	if (!mtk_get_freqlist_by_ifname(ifname, chans, &len))
+ 	{
+-		for (e = (struct iwinfo_freqlist_entry *)chans; e->channel; e++ )
++		count = (size_t)len / sizeof(*e);
++		for (i = 0; i < count; i++)
+ 		{
+-			if (e->channel <= 14 ) //2.4Ghz
+-			{
+-				*buf = (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
+-			}
+-			else //5Ghz
+-			{
+-				*buf = (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160
+-				| IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160
+-				| IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
+-			}
++			e = &((struct iwinfo_freqlist_entry *)chans)[i];
++			uint8_t entry_band = e->band ? e->band : mtk_freq_band(e->mhz);
++			if (entry_band == iwinfo_ghz2band(2))
++				*buf |= (IWINFO_HTMODE_HT20 | IWINFO_HTMODE_HT40 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40);
++			else if (entry_band == iwinfo_ghz2band(5))
++				*buf |= (IWINFO_HTMODE_VHT20 | IWINFO_HTMODE_VHT40 | IWINFO_HTMODE_VHT80 | IWINFO_HTMODE_VHT160 | IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160);
++			else if (entry_band == iwinfo_ghz2band(6))
++				*buf |= (IWINFO_HTMODE_HE20 | IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80 | IWINFO_HTMODE_HE160 | IWINFO_HTMODE_EHT20 | IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80 | IWINFO_HTMODE_EHT160 | IWINFO_HTMODE_EHT320);
+ 		}
+ 
+ 		return 0;

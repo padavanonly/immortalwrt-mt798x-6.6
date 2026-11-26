@@ -17,4 +17,52 @@ echo "log-facility=/dev/null" >> "/etc/dnsmasq.conf"
 
 ln -sf "/sbin/ip" "/usr/bin/ip"
 
+. /etc/openwrt_release
+
+case "$DISTRIB_TARGET" in
+"bcm4908"/*|\
+"bcm53xx"/*|\
+"ramips/mt7621"|\
+"x86"/*)
+	if ! uci -q get system.@imm_init[0].packet_steering > "/dev/null"; then
+	uci -q batch <<-EOF
+		set network.globals="globals"
+		set network.@globals[0].packet_steering="1"
+		commit network
+
+		set system.@imm_init[0].packet_steering="1"
+		commit system
+	EOF
+	fi
+	;;
+"mediatek"/*)
+	if ! uci -q get system.@imm_init[0].packet_steering_all_cpus > "/dev/null"; then
+		cur_ps="$(uci -q get network.@globals[0].packet_steering)"
+		if [ -z "$cur_ps" ] || [ "$cur_ps" = "1" ]; then
+			uci -q batch <<-EOF
+				set network.globals="globals"
+				set network.@globals[0].packet_steering="2"
+				commit network
+			EOF
+		fi
+		uci -q batch <<-EOF
+			set system.@imm_init[0].packet_steering="1"
+			set system.@imm_init[0].packet_steering_all_cpus="1"
+			commit system
+		EOF
+	fi
+	;;
+esac
+
+idx=0
+while uci -q get "network.@device[$idx]" > "/dev/null"; do
+	if [ "$(uci -q get "network.@device[$idx].name")" = "hnat" ]; then
+		if [ "$(uci -q get "network.@device[$idx].learning")" != "0" ]; then
+			uci -q set "network.@device[$idx].learning=0"
+			uci -q commit network
+		fi
+	fi
+	idx=$((idx + 1))
+done
+
 exit 0

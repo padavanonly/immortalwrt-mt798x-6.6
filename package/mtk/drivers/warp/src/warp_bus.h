@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -32,8 +32,8 @@ struct warp_cputracer {
 };
 
 struct warp_bus {
-	unsigned long base_addr;
 	u8 warp_num;
+	void **base_addr;
 	u32 *pcie_base;
 	u32 *pcie_ints;
 	u32 *pcie_intm;
@@ -55,18 +55,6 @@ enum {
 int bus_config_init(struct warp_bus *bus);
 int bus_config_exit(struct warp_bus *bus);
 
-
-#define ADDR_MIRROR_BASE 0
-
-#define ATC0_MAP	(ADDR_MIRROR_BASE + 0x0)
-#define ATC1_MAP	(ADDR_MIRROR_BASE + 0x4)
-#define WED0_MAP	(ADDR_MIRROR_BASE + 0x8)
-#define WED1_MAP	(ADDR_MIRROR_BASE + 0xC)
-
-#define ATC_FLD_REMAP_EN		0
-#define ATC_FLD_REMAP			1
-#define ATC_FLD_ADDR_REMAP	12
-
 #define CPU_TRACER_BASE 0
 
 #define CPU_TRACER_CFG	(CPU_TRACER_BASE + 0x0)
@@ -74,8 +62,6 @@ int bus_config_exit(struct warp_bus *bus);
 #define CPU_TRACER_WP_MASK (CPU_TRACER_BASE + 0x10)
 #define CPU_TRACER_TO_TIME (CPU_TRACER_BASE + 0x4)
 #define CPU_TRACER_CR_TIME (CPU_TRACER_BASE + 0x8)
-
-
 
 #define CPU_TRACER_CON_BUS_DBG_EN      0
 #define CPU_TRACER_CON_TIMEOUT_EN      1
@@ -89,9 +75,5 @@ int bus_config_exit(struct warp_bus *bus);
 #define CPU_TRACER_CON_IRQ_AR_STA      8
 #define CPU_TRACER_CON_IRQ_AW_STA      9
 #define CPU_TRACER_CON_IRQ_WP_STA      10
-
-/*default usage, should get from pcie device*/
-#define WPDMA_BASE_ADDR0 0x20004000
-#define WPDMA_BASE_ADDR1 0x20104000
 
 #endif /*_WARP_BUS_*/

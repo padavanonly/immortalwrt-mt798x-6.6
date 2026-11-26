@@ -15,10 +15,13 @@ endef
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./src/* $(PKG_BUILD_DIR)/
+	$(Build/Patch)
 endef
 
 define Build/Compile
 	$(MAKE) -C "$(PKG_BUILD_DIR)" \
+		CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS)" \
+		LDFLAGS="$(TARGET_LDFLAGS)" \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		CROSS_COMPILE="$(TARGET_CROSS)" \
 		ARCH="$(LINUX_KARCH)" \

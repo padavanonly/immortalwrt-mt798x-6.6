@@ -127,9 +127,29 @@ sub update_index($)
 	-d "./feeds/$name.tmp" or mkdir "./feeds/$name.tmp" or return 1;
 	-d "./feeds/$name.tmp/info" or mkdir "./feeds/$name.tmp/info" or return 1;
 
-	system("$mk -s prepare-mk OPENWRT_BUILD= TMP_DIR=\"$ENV{TOPDIR}/feeds/$name.tmp\"");
-	system("$mk -s -f include/scan.mk IS_TTY=1 SCAN_TARGET=\"packageinfo\" SCAN_DIR=\"feeds/$name\" SCAN_NAME=\"package\" SCAN_DEPTH=5 SCAN_EXTRA=\"\" TMP_DIR=\"$ENV{TOPDIR}/feeds/$name.tmp\"");
-	system("$mk -s -f include/scan.mk IS_TTY=1 SCAN_TARGET=\"targetinfo\" SCAN_DIR=\"feeds/$name\" SCAN_NAME=\"target\" SCAN_DEPTH=5 SCAN_EXTRA=\"\" SCAN_MAKEOPTS=\"TARGET_BUILD=1\" TMP_DIR=\"$ENV{TOPDIR}/feeds/$name.tmp\"");
+	my $is_tty;
+	if (defined $ENV{IS_TTY}) {
+		$is_tty = $ENV{IS_TTY} eq '1' ? 1 : 0;
+	} elsif (defined $ENV{MAKE_TERMOUT}) {
+		$is_tty = length($ENV{MAKE_TERMOUT}) ? 1 : 0;
+	} else {
+		$is_tty = 1;
+	}
+
+	{
+		local $ENV{IS_TTY} = $is_tty;
+		local $ENV{MAKE_TERMOUT} = $is_tty ? '1' : '';
+
+		system("$mk -s prepare-mk OPENWRT_BUILD= TMP_DIR=\"$ENV{TOPDIR}/feeds/$name.tmp\"");
+		system($mk, '-s', '-f', 'include/scan.mk', "IS_TTY=$is_tty",
+			'SCAN_TARGET=packageinfo', "SCAN_DIR=feeds/$name", 'SCAN_NAME=package',
+			'SCAN_DEPTH=5', 'SCAN_EXTRA=', "TMP_DIR=$ENV{TOPDIR}/feeds/$name.tmp");
+		system($mk, '-s', '-f', 'include/scan.mk', "IS_TTY=$is_tty",
+			'SCAN_TARGET=targetinfo', "SCAN_DIR=feeds/$name", 'SCAN_NAME=target',
+			'SCAN_DEPTH=5', 'SCAN_EXTRA=', 'SCAN_MAKEOPTS=TARGET_BUILD=1',
+			"TMP_DIR=$ENV{TOPDIR}/feeds/$name.tmp");
+	}
+
 	system("ln -sf $name.tmp/.packageinfo ./feeds/$name.index");
 	system("ln -sf $name.tmp/.targetinfo ./feeds/$name.targetindex");
 
@@ -881,13 +901,16 @@ sub update {
 }
 
 sub feed_config() {
+	my %official_distfeeds = map { $_ => 1 } qw(packages luci routing telephony video);
+
 	foreach my $feed (@feeds) {
 		my $installed = (-f "feeds/$feed->[1].index");
+		my $default_y = $installed && $official_distfeeds{$feed->[1]};
 
 		printf "\tconfig FEED_%s\n", $feed->[1];
 		printf "\t\ttristate \"Enable feed %s\"\n", $feed->[1];
 		printf "\t\tdepends on PER_FEED_REPO\n";
-		printf "\t\tdefault y\n" if $installed;
+		printf "\t\tdefault y\n" if $default_y;
 		printf "\t\thelp\n";
 		printf "\t\t Enable the \\\"%s\\\" feed in opkg distfeeds.conf and apk repositories.\n", $feed->[1];
 		printf "\t\t Say M to add the feed commented out.\n";

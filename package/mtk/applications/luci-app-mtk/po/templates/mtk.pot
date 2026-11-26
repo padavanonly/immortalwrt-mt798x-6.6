@@ -1,0 +1,519 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8
+"
+
+msgid "Auto"
+msgstr ""
+
+msgid "Disable"
+msgstr ""
+
+msgid "US"
+msgstr ""
+
+msgid "JP"
+msgstr ""
+
+msgid "FR"
+msgstr ""
+
+msgid "IE"
+msgstr ""
+
+msgid "CN"
+msgstr ""
+
+msgid "NONE"
+msgstr ""
+
+msgid "Short"
+msgstr ""
+
+msgid "long"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Mandatory"
+msgstr ""
+
+msgid "Always On"
+msgstr ""
+
+msgid "Always Off"
+msgstr ""
+
+msgid "Tempature"
+msgstr ""
+
+msgid "Tx Power"
+msgstr ""
+
+msgid "Driver version"
+msgstr ""
+
+msgid "Current Band"
+msgstr ""
+
+msgid "Work mode"
+msgstr ""
+
+msgid "CONFIG"
+msgstr ""
+
+msgid "RELOAD"
+msgstr ""
+
+msgid "ADD"
+msgstr ""
+
+msgid "RECONNECT"
+msgstr ""
+
+msgid "DISABLE"
+msgstr ""
+
+msgid "ENABLE"
+msgstr ""
+
+msgid "REMOVE"
+msgstr ""
+
+msgid "Station List"
+msgstr ""
+
+msgid "Interface"
+msgstr ""
+
+msgid "MAC-Address"
+msgstr ""
+
+msgid "Signal"
+msgstr ""
+
+msgid "TX Rate"
+msgstr ""
+
+msgid "Rx Rate"
+msgstr ""
+
+msgid "Connected Time"
+msgstr ""
+
+msgid "Channel"
+msgstr ""
+
+msgid "Security Mode"
+msgstr ""
+
+msgid "Action"
+msgstr ""
+
+msgid "Choose This"
+msgstr ""
+
+msgid "40MHz HT Ext Channel"
+msgstr ""
+
+msgid "80MHz Second VHT Channel"
+msgstr ""
+
+msgid "Type"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "DISCONNECT"
+msgstr ""
+
+msgid "Connected"
+msgstr ""
+
+msgid "Disconnected"
+msgstr ""
+
+msgid "FATAL ERROR: Incorrect Profile Settings"
+msgstr ""
+
+msgid "Error: value not present in dat file"
+msgstr ""
+
+msgid "Wireless is disabled or not associated"
+msgstr ""
+
+msgid "Processing request."
+msgstr ""
+
+msgid "need reload to apply changes"
+msgstr ""
+
+msgid "Click here"
+msgstr ""
+
+msgid "to apply changes"
+msgstr ""
+
+msgid "Wireless Mode"
+msgstr ""
+
+msgid "Chip Configurations"
+msgstr ""
+
+msgid "Device Configuration"
+msgstr ""
+
+msgid "Interface Configurations"
+msgstr ""
+
+msgid "ApCli Configurations"
+msgstr ""
+
+msgid "Loading connection information of"
+msgstr ""
+
+msgid "ApCli Available Wireless Networks"
+msgstr ""
+
+msgid "ApCli Connection Configurations"
+msgstr ""
+
+msgid "Decline BA Request"
+msgstr ""
+
+msgid "Reverse Direction Grant (RDG)"
+msgstr ""
+
+msgid "BA Win size"
+msgstr ""
+
+msgid "HT Disallow TKIP"
+msgstr ""
+
+msgid "Wi-Fi HWNAT"
+msgstr ""
+
+msgid "E2pAccessMode"
+msgstr ""
+
+msgid "Beacon Interval"
+msgstr ""
+
+msgid "Data Beacon Rate (DTIM)"
+msgstr ""
+
+msgid "BG Protection Mode"
+msgstr ""
+
+msgid "Short Preamble"
+msgstr ""
+
+msgid "TX Burst"
+msgstr ""
+
+msgid "Short Slot"
+msgstr ""
+
+msgid "Channel Auto"
+msgstr ""
+
+msgid "BSS color"
+msgstr ""
+
+msgid "TWT Support"
+msgstr ""
+
+msgid "Country Code"
+msgstr ""
+
+msgid "Country Region"
+msgstr ""
+
+msgid "Channel BandWidth"
+msgstr ""
+
+msgid "TX Stream"
+msgstr ""
+
+msgid "RX Stream"
+msgstr ""
+
+msgid "TX Power"
+msgstr ""
+
+msgid "DFS"
+msgstr ""
+
+msgid "Beam Forming and MIMO Setting"
+msgstr ""
+
+msgid "Spatial Reuse"
+msgstr ""
+
+msgid "Auth Mode"
+msgstr ""
+
+msgid "Encryption"
+msgstr ""
+
+msgid "Key Renewal Interval"
+msgstr ""
+
+msgid "Key"
+msgstr ""
+
+msgid "MFPC"
+msgstr ""
+
+msgid "MFPR"
+msgstr ""
+
+msgid "Hidden SSID"
+msgstr ""
+
+msgid "AP Isolation"
+msgstr ""
+
+msgid "WMM Capable"
+msgstr ""
+
+msgid "Fixed TX Rate"
+msgstr ""
+
+msgid "HT STBC"
+msgstr ""
+
+msgid "HT LDPC"
+msgstr ""
+
+msgid "VHT STBC"
+msgstr ""
+
+msgid "VHT LDPC"
+msgstr ""
+
+msgid "DLS Capable"
+msgstr ""
+
+msgid "802.11k RRM"
+msgstr ""
+
+msgid "802.11r FT"
+msgstr ""
+
+msgid "APSD Capable"
+msgstr ""
+
+msgid "Fragment Threshold"
+msgstr ""
+
+msgid "RTS Threshold"
+msgstr ""
+
+msgid "VHT Short GI"
+msgstr ""
+
+msgid "VHT BW Signaling"
+msgstr ""
+
+msgid "Dynamic"
+msgstr ""
+
+msgid "HT Protection"
+msgstr ""
+
+msgid "HT Guard Interval"
+msgstr ""
+
+msgid "HT Operating Mode"
+msgstr ""
+
+msgid "HT Mixed Mode"
+msgstr ""
+
+msgid "HT Green Field"
+msgstr ""
+
+msgid "Auto Block ACK"
+msgstr ""
+
+msgid "Access Control"
+msgstr ""
+
+msgid "Access Policy"
+msgstr ""
+
+msgid "Access control MAC address list"
+msgstr ""
+
+msgid "White List"
+msgstr ""
+
+msgid "Black List"
+msgstr ""
+
+msgid "Basic Settings"
+msgstr ""
+
+msgid "HE Settings"
+msgstr ""
+
+msgid "DL OFDMA"
+msgstr ""
+
+msgid "UL OFDMA"
+msgstr ""
+
+msgid "DL MU-MIMO"
+msgstr ""
+
+msgid "UL MU-MIMO"
+msgstr ""
+
+msgid "Scan Wireless Network"
+msgstr ""
+
+msgid "ApClient Mode"
+msgstr ""
+
+msgid "APClient/Repeater Mode."
+msgstr ""
+
+msgid "MAC Repeater Mode"
+msgstr ""
+
+msgid "Root AP SSID"
+msgstr ""
+
+msgid "Root AP Channel"
+msgstr ""
+
+msgid "Root AP Authentication Mode"
+msgstr ""
+
+msgid "Root AP Encryption"
+msgstr ""
+
+msgid "Root AP WPA Key"
+msgstr ""
+
+msgid "ApCli MFPC"
+msgstr ""
+
+msgid "ApCli MFPR"
+msgstr ""
+
+msgid "ApCli MFPSHA256"
+msgstr ""
+
+msgid "WEP Default Key"
+msgstr ""
+
+msgid "Root AP WEP Key"
+msgstr ""
+
+msgid "Length"
+msgstr ""
+
+msgid "WEP Key"
+msgstr ""
+
+msgid "WEP Key Type"
+msgstr ""
+
+msgid "PMK Cache Period"
+msgstr ""
+
+msgid "WEP for 8021X"
+msgstr ""
+
+msgid "Pre-Authentication"
+msgstr ""
+
+msgid "Radius Server IP"
+msgstr ""
+
+msgid "Radius Server Port"
+msgstr ""
+
+msgid "Radius Key"
+msgstr ""
+
+msgid "Radius Session Timeout"
+msgstr ""
+
+msgid "Radius Idle Timeout"
+msgstr ""
+
+msgid "MFPSHA256"
+msgstr ""
+
+msgid "Please wait while the settings are being applied."
+msgstr ""
+
+msgid "Please wait while the request is being processed."
+msgstr ""
+
+msgid "No wireless device found!"
+msgstr ""
+
+msgid "Please input a valid radius server port number."
+msgstr ""
+
+msgid "The radius shared secret contains invalid characters."
+msgstr ""
+
+msgid "Please input a valid session timeout number or u may have left it empty."
+msgstr ""
+
+msgid "Radius session time out is empty."
+msgstr ""
+
+msgid "Please input a valid idle timeout number or u may have left it empty."
+msgstr ""
+
+msgid "Radius idle time out is empty."
+msgstr ""
+
+msgid "IGMP Snooping"
+msgstr ""
+
+msgid "Security"
+msgstr ""
+
+msgid "Restore Profile to Factory Settings"
+msgstr ""
+
+msgid "Are you sure to RELOAD"
+msgstr ""
+
+msgid "Are you sure to DISABLE"
+msgstr ""
+
+msgid "Are you sure to REMOVE"
+msgstr ""
+
+msgid "Are you sure to RECONNECT"
+msgstr ""
+
+msgid "Are you sure to DISCONNECT"
+msgstr ""
+
+msgid "Are you sure to ADD wireless interface?"
+msgstr ""
+
+msgid "Enable wireless device"
+msgstr ""
+
+msgid "Wireless device is disabled"
+msgstr ""
+
+msgid "Kick STA Threshold"
+msgstr ""
+
+msgid "STA Assoc Threshold"
+msgstr ""
+
+msgid "Loading"
+msgstr ""

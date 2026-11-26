@@ -7,11 +7,9 @@ Subject: [PATCH] net: phy: sfp: add some checksum fail SFP war
  drivers/net/phy/sfp.c | 38 ++++++++++++++++++++++++++++++++++++--
  1 file changed, 36 insertions(+), 2 deletions(-)
 
-diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
-index c761c10..3b9c52b 100644
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
-@@ -325,6 +325,28 @@ static bool sfp_module_supported(const struct sfp_eeprom_id *id)
+@@ -332,6 +332,28 @@ static bool sfp_module_supported(const s
  	    !memcmp(id->base.vendor_pn, "UF-INSTANT      ", 16))
  		return true;
  
@@ -40,7 +38,7 @@ index c761c10..3b9c52b 100644
  	return false;
  }
  
-@@ -2218,7 +2240,7 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+@@ -2245,7 +2267,7 @@ static int sfp_sm_mod_probe(struct sfp *
  	struct sfp_eeprom_id id;
  	bool cotsworks_sfbg;
  	unsigned int mask;
@@ -49,7 +47,7 @@ index c761c10..3b9c52b 100644
  	u8 check;
  	int ret;
  
-@@ -2273,6 +2295,18 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+@@ -2309,6 +2331,18 @@ static int sfp_sm_mod_probe(struct sfp *
  	cotsworks = !memcmp(id.base.vendor_name, "COTSWORKS       ", 16);
  	cotsworks_sfbg = !memcmp(id.base.vendor_pn, "SFBG", 4);
  
@@ -68,7 +66,7 @@ index c761c10..3b9c52b 100644
  	/* Cotsworks SFF module EEPROM do not always have valid phys_id,
  	 * phys_ext_id, and connector bytes.  Rewrite SFF EEPROM bytes if
  	 * Cotsworks PN matches and bytes are not correct.
-@@ -2286,7 +2320,7 @@ static int sfp_sm_mod_probe(struct sfp *sfp, bool report)
+@@ -2322,7 +2356,7 @@ static int sfp_sm_mod_probe(struct sfp *
  	/* Validate the checksum over the base structure */
  	check = sfp_check(&id.base, sizeof(id.base) - 1);
  	if (check != id.base.cc_base) {
@@ -77,6 +75,3 @@ index c761c10..3b9c52b 100644
  			dev_warn(sfp->dev,
  				 "EEPROM base structure checksum failure (0x%02x != 0x%02x)\n",
  				 check, id.base.cc_base);
--- 
-2.45.2
-

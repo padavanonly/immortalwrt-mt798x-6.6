@@ -1,0 +1,23 @@
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -48,6 +48,7 @@ static void option_release(struct usb_se
+ static void option_instat_callback(struct urb *urb);
+ 
+ /* Vendor and product IDs */
++#define TDTECH_VENDOR_ID			0x3466
+ #define OPTION_VENDOR_ID			0x0AF0
+ #define OPTION_PRODUCT_COLT			0x5000
+ #define OPTION_PRODUCT_RICOLA			0x6000
+@@ -639,6 +640,12 @@ static void option_instat_callback(struc
+ 
+ 
+ static const struct usb_device_id option_ids[] = {
++	{ USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, 0xff, 0x06, 0x10) },
++	{ USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, 0xff, 0x06, 0x12) },
++	{ USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, 0xff, 0x06, 0x13) },
++	{ USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, 0xff, 0x06, 0x14) },
++	{ USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, 0xff, 0x06, 0x1B) },
++	{ USB_VENDOR_AND_INTERFACE_INFO(TDTECH_VENDOR_ID, 0xff, 0x06, 0x1C) },
+ 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_COLT) },
+ 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA) },
+ 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA_LIGHT) },

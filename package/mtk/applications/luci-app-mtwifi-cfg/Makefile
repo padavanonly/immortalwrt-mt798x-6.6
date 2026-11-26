@@ -6,11 +6,12 @@
 
 include $(TOPDIR)/rules.mk
 
-LUCI_TITLE:=LuCI support for mtwifi-cfg
-LUCI_DEPENDS:=+mtwifi-cfg
+LUCI_TITLE:=LuCI wireless integration for MediaTek mtwifi
+LUCI_DEPENDS:=@!TARGET_mediatek_filogic +mtwifi-cfg +luci-mod-network
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=1
+PKG_RELEASE:=13
 
 include $(TOPDIR)/feeds/luci/luci.mk
 

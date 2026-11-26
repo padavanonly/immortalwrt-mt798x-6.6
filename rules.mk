@@ -251,7 +251,7 @@ ifndef DUMP
 endif
 
 TARGET_LINKER?=bfd
-TARGET_LDFLAGS+= -fuse-ld=$(TARGET_LINKER)
+TARGET_LDFLAGS+= -fuse-ld=$(TARGET_LINKER) -Wl,-O1
 
 TARGET_PATH_PKG:=$(STAGING_DIR)/host/bin:$(STAGING_DIR_HOSTPKG)/bin:$(TARGET_PATH)
 
@@ -344,7 +344,6 @@ ifneq ($(CONFIG_CCACHE),)
   HOSTCXX:= ccache $(HOSTCXX)
   export CCACHE_BASEDIR:=$(TOPDIR)
   export CCACHE_DIR:=$(if $(call qstrip,$(CONFIG_CCACHE_DIR)),$(call qstrip,$(CONFIG_CCACHE_DIR)),$(TOPDIR)/.ccache)
-  export CCACHE_COMPILERCHECK:=%compiler% -dumpmachine; %compiler% -dumpversion
 endif
 
 TARGET_CONFIGURE_OPTS = \

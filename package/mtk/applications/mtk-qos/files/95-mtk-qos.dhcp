@@ -1,0 +1,16 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+case "$ACTION" in
+	add|update) ;;
+	*) exit 0 ;;
+esac
+
+UCI_BIN="${MTK_QOS_UCI_BIN:-uci}"
+UCI_DIR="${MTK_QOS_UCI_DIR:-/etc/config}"
+QOS_BIN="${MTK_QOS_BIN:-/usr/sbin/mtk-qos}"
+
+[ "$("$UCI_BIN" -c "$UCI_DIR" -q get mtk_qos.global.enabled 2>/dev/null)" = "1" ] || exit 0
+[ "$("$UCI_BIN" -c "$UCI_DIR" -q get mtk_qos.global.eqos_enabled 2>/dev/null)" = "1" ] || exit 0
+"$UCI_BIN" -c "$UCI_DIR" -q show mtk_qos 2>/dev/null | grep -q '=device$' || exit 0
+"$QOS_BIN" sync >/dev/null 2>&1 || true

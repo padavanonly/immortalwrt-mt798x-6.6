@@ -21,7 +21,14 @@ PKG_KCONFIG:= \
 	third_card_name \
 	WIFI_NORMAL_SETTING \
 	WIFI_QUICK_SETTING \
-	MTK_WIFI_SKU_TYPE
+	MTK_WIFI_SKU_TYPE \
+	MTK_WIFI7_CHIP_MT7990 \
+	MTK_WIFI7_CHIP_MT7992 \
+	MTK_WIFI7_CHIP_MT7993 \
+	MTK_WIFI7_UNIFIED_COMMAND \
+	MTK_WIFI7_SKU_TYPE \
+	MTK_WIFI7_PROFILING_SUPPORT \
+	MTK_WIFI7_2ADIE_TRIBAND
 
 PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)))
 
@@ -31,10 +38,11 @@ define Package/wifi-profile
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
   SUBMENU:=Drivers
-  DEPENDS:=+wifi-dats
-  TITLE:=MTK WiFi setup scripts
+  DEPENDS:=@!(TARGET_mediatek_filogic||TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73) +wifi-dats
+  TITLE:=MTK WiFi setup scripts (legacy Lua)
   VERSION:=$(PKG_RELEASE)
   MENU:=1
+  VARIANT:=custom
 endef
 
 define Package/wifi-profile/description
@@ -64,13 +72,61 @@ define Package/wifi-dats
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
   SUBMENU:=Drivers
+  DEPENDS:=@(TARGET_mediatek_filogic_mtwifi||TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73)
   TITLE:=MTK WiFi l1 & l2 dat files
   VERSION:=$(PKG_RELEASE)
   MENU:=1
+  VARIANT:=custom
+  DEFAULT_VARIANT:=1
 endef
 
 define Package/wifi-dats/description
   This package install wifi l1 and l2 dat files.
+endef
+
+define Package/wifi-dats-mt7981
+$(call Package/wifi-dats)
+  TITLE+= (MT7981)
+  DEPENDS:=@TARGET_mediatek_filogic_mtwifi
+  VARIANT:=mt7981
+  DEFAULT_VARIANT:=
+  CONFLICTS:=wifi-dats wifi-dats-mt7986 wifi-dats-mt7986-ax4200
+endef
+
+define Package/wifi-dats-mt7986
+$(call Package/wifi-dats)
+  TITLE+= (MT7986)
+  DEPENDS:=@TARGET_mediatek_filogic_mtwifi
+  VARIANT:=mt7986
+  DEFAULT_VARIANT:=
+  CONFLICTS:=wifi-dats wifi-dats-mt7981 wifi-dats-mt7986-ax4200
+endef
+
+define Package/wifi-dats-mt7986-ax4200
+$(call Package/wifi-dats)
+  TITLE+= (MT7986 AX4200)
+  DEPENDS:=@TARGET_mediatek_filogic_mtwifi
+  VARIANT:=mt7986-ax4200
+  DEFAULT_VARIANT:=
+  CONFLICTS:=wifi-dats wifi-dats-mt7981 wifi-dats-mt7986
+endef
+
+define Package/wifi-dats-mt7992
+$(call Package/wifi-dats)
+  TITLE+= (MT7992)
+  DEPENDS:=@(TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73)
+  VARIANT:=mt7992
+  DEFAULT_VARIANT:=
+  CONFLICTS:=wifi-dats wifi-dats-mt7990
+endef
+
+define Package/wifi-dats-mt7990
+$(call Package/wifi-dats)
+  TITLE+= (MT7990)
+  DEPENDS:=@(TARGET_mediatek_filogic_hwifi||TARGET_mediatek_filogic_hwifi_a73)
+  VARIANT:=mt7990
+  DEFAULT_VARIANT:=
+  CONFLICTS:=wifi-dats wifi-dats-mt7992
 endef
 
 define Package/wifi-dats/config
@@ -82,34 +138,53 @@ if PACKAGE_wifi-dats
 	if first_card
 	config first_card_name
 		string "1st card name"
-		default "MT7981"
+		default "MT7986" if TARGET_mediatek_filogic_mtwifi && MTK_FIRST_IF_MT7986
+		default "MT7981" if TARGET_mediatek_filogic_mtwifi
+		default "MT7990" if MTK_WIFI7_CHIP_MT7990
+		default "MT7992" if MTK_WIFI7_CHIP_MT7992
+		default "MT7993" if MTK_WIFI7_CHIP_MT7993
 	endif
 
 	menuconfig second_card
 		bool "2nd card"
+		default y if MTK_WIFI7_CHIP_MT7992 || MTK_WIFI7_CHIP_MT7990
 		default n
 
 	if second_card
 	config second_card_name
 		string "2nd card name"
-		default "MT7981"
+		default "MT7981" if TARGET_mediatek_filogic_mtwifi
+		default "MT7990" if MTK_WIFI7_CHIP_MT7990
+		default "MT7992" if MTK_WIFI7_CHIP_MT7992
+		default "MT7993" if MTK_WIFI7_CHIP_MT7993
 	endif
 
 	menuconfig third_card
 		bool "3rd card"
+		default y if MTK_WIFI7_CHIP_MT7990
 		default n
 
 	if third_card
 	config third_card_name
 		string "3rd card name"
-		default "MT7981"
+		default "MT7981" if TARGET_mediatek_filogic_mtwifi
+		default "MT7990" if MTK_WIFI7_CHIP_MT7990
 	endif
+
+	config MTK_WIFI7_PROFILING_SUPPORT
+		bool "wifi7 profiling dat files"
+		default n
 endif
 endef
 
 define Package/wifi-dats/conffiles
 /etc/wireless/
 endef
+Package/wifi-dats-mt7981/conffiles=$(Package/wifi-dats/conffiles)
+Package/wifi-dats-mt7986/conffiles=$(Package/wifi-dats/conffiles)
+Package/wifi-dats-mt7986-ax4200/conffiles=$(Package/wifi-dats/conffiles)
+Package/wifi-dats-mt7992/conffiles=$(Package/wifi-dats/conffiles)
+Package/wifi-dats-mt7990/conffiles=$(Package/wifi-dats/conffiles)
 
 define Build/Compile
 endef
@@ -128,6 +203,53 @@ endef
 
 define Package/wifi-dats/install
 	$(INSTALL_DIR) $(1)/etc/wireless/mediatek/
+
+ifneq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT),y)
+	# Example combination Eagle.
+	if [ "$$(CONFIG_first_card_name)" = "MT7990" -o "$$(CONFIG_second_card_name)" = "MT7990" ] ; then \
+		$(INSTALL_DATA) ./files/mt7990/* $(1)/etc/wireless/mediatek/; \
+		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE19000" ] ; then \
+			sed -i "s/MT7990_EEPROM_iFEM233.bin/MT7990_EEPROM.bin/" $(1)/etc/wireless/mediatek/l1profile.dat; \
+		elif [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE13000_255" ] ; then \
+			sed -i "s/MT7990_EEPROM_iFEM233.bin/MT7990_EEPROM_255_eFEM.bin/" $(1)/etc/wireless/mediatek/l1profile.dat; \
+			$(CP) ./files/mt7990/mt7990.b1.5g.dat $(1)/etc/wireless/mediatek/mt7990.b1.dat; \
+			$(CP) ./files/mt7990/mt7990.b2.5g.dat $(1)/etc/wireless/mediatek/mt7990.b2.dat; \
+		fi; \
+		if [ "$$(CONFIG_MTK_WIFI7_2ADIE_TRIBAND)" = "y" ] ; then \
+			sed -i 's/DfsZeroWait=0/DfsZeroWait=1/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+			sed -i 's/DfsDedicatedZeroWait=1/DfsDedicatedZeroWait=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+			sed -i 's/DfsZeroWaitDefault=1/DfsZeroWaitDefault=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+			sed -i '/DfsZeroWaitDefault/a\DfsNopExpireSetChPolicy=0' $(1)/etc/wireless/mediatek/mt7990.b1.dat ; \
+		fi; \
+	fi
+
+	# Example combination Kite.
+	if [ "$$(CONFIG_first_card_name)" = "MT7992" -o "$$(CONFIG_second_card_name)" = "MT7992" ] ; then \
+		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE3600SDB" ] ; then \
+			$(INSTALL_DATA) ./files/mt7992/BE3600SBD/* $(1)/etc/wireless/mediatek/; \
+			cp $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile_3.dat ; \
+			sed -i "s/mt7992.1.dat/mt7992.1_3.dat/" $(1)/etc/wireless/l1profile_3.dat; \
+			sed -i "s/EEPROM_offset="0x0"/EEPROM_offset="0x4000"/" $(1)/etc/wireless/l1profile_3.dat; \
+			cp $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile_2.dat ; \
+			sed -i "s/mt7992.1.dat/mt7992.1_2.dat/" $(1)/etc/wireless/l1profile_2.dat; \
+			sed -i "s/EEPROM_offset="0x0"/EEPROM_offset="0x2000"/" $(1)/etc/wireless/l1profile_2.dat; \
+			cp $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile_1.dat ; \
+			sed -i "s/mt7992.1.dat/mt7992.1_1.dat/" $(1)/etc/wireless/l1profile_1.dat; \
+		else \
+			$(INSTALL_DATA) ./files/mt7992/*.dat $(1)/etc/wireless/mediatek/; \
+		fi; \
+	fi
+
+	# Example combination Griffin.
+	if [ "$$(CONFIG_first_card_name)" = "MT7993" -o "$$(CONFIG_second_card_name)" = "MT7993" ] ; then \
+		$(INSTALL_DATA) ./files/mt7993/* $(1)/etc/wireless/mediatek/; \
+		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE3600_26" ] ; then \
+			sed -i "s/mt7993.b1.dat/mt7993.b2.dat/" $(1)/etc/wireless/mediatek/mt7993.1.dat ; \
+		fi; \
+	fi
+endif
+
+	# Wi-Fi 6 profiles (MT7986 / MT7981).
 	if [ "$$(CONFIG_first_card_name)" = "MT7986" -o "$$(CONFIG_second_card_name)" = "MT7986" ] ; then \
 		if [ "$$(CONFIG_MTK_WIFI_SKU_TYPE)" = "AX4200" ] ; then \
 			$(INSTALL_DATA) ./files/mt7986-ax4200/* $(1)/etc/wireless/mediatek/; \
@@ -145,5 +267,51 @@ define Package/wifi-dats/install
 	fi
 endef
 
+define wifi_dats_install_dir
+	$(INSTALL_DIR) $(1)/etc/wireless/mediatek/
+	$(INSTALL_DATA) ./files/$(2)/* $(1)/etc/wireless/mediatek/
+	if [ -f "$(1)/etc/wireless/mediatek/l1profile.dat" ]; then \
+		mv $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile.dat ; \
+	fi
+endef
+
+define Package/wifi-dats-mt7981/install
+	$(call wifi_dats_install_dir,$(1),mt7981)
+endef
+
+define Package/wifi-dats-mt7986/install
+	$(call wifi_dats_install_dir,$(1),mt7986)
+endef
+
+define Package/wifi-dats-mt7986-ax4200/install
+	$(call wifi_dats_install_dir,$(1),mt7986-ax4200)
+endef
+
+define Package/wifi-dats-mt7992/install
+	$(INSTALL_DIR) $(1)/etc/wireless/mediatek/
+	$(INSTALL_DATA) ./files/mt7992/*.dat $(1)/etc/wireless/mediatek/
+	if [ -f "$(1)/etc/wireless/mediatek/l1profile.dat" ]; then \
+		mv $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile.dat ; \
+	fi
+endef
+
+define Package/wifi-dats-mt7990/install
+	$(INSTALL_DIR) $(1)/etc/wireless/mediatek/
+	$(INSTALL_DATA) ./files/mt7990/* $(1)/etc/wireless/mediatek/
+	sed -i "s/MT7990_EEPROM_iFEM233.bin/MT7990_EEPROM.bin/" $(1)/etc/wireless/mediatek/l1profile.dat
+	sed -i 's/DfsZeroWait=0/DfsZeroWait=1/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat
+	sed -i 's/DfsDedicatedZeroWait=1/DfsDedicatedZeroWait=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat
+	sed -i 's/DfsZeroWaitDefault=1/DfsZeroWaitDefault=0/g' $(1)/etc/wireless/mediatek/mt7990.b1.dat
+	sed -i '/DfsZeroWaitDefault/a\DfsNopExpireSetChPolicy=0' $(1)/etc/wireless/mediatek/mt7990.b1.dat
+	if [ -f "$(1)/etc/wireless/mediatek/l1profile.dat" ]; then \
+		mv $(1)/etc/wireless/mediatek/l1profile.dat $(1)/etc/wireless/l1profile.dat ; \
+	fi
+endef
+
 $(eval $(call BuildPackage,wifi-dats))
+$(eval $(call BuildPackage,wifi-dats-mt7981))
+$(eval $(call BuildPackage,wifi-dats-mt7986))
+$(eval $(call BuildPackage,wifi-dats-mt7986-ax4200))
+$(eval $(call BuildPackage,wifi-dats-mt7992))
+$(eval $(call BuildPackage,wifi-dats-mt7990))
 $(eval $(call BuildPackage,wifi-profile))

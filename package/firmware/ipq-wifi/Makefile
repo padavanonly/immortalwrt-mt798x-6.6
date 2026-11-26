@@ -6,9 +6,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=$(PROJECT_GIT)/project/firmware/qca-wireless.git
-PKG_SOURCE_DATE:=2025-05-30
-PKG_SOURCE_VERSION:=fde3d2a7ce59be389224304049a4a5b9ca49a45e
-PKG_MIRROR_HASH:=2e149366118192d4976baf42ac23d22ef32e477feb111d2756a2411278b6cf46
+PKG_SOURCE_DATE:=2025-10-22
+PKG_SOURCE_VERSION:=ec6831a43ff066c9873e7c41fd6f68354bb67b4a
+PKG_MIRROR_HASH:=33a26f90fd450e9dc2b2d5ae9c137ffcd57ef62dac277d63c5d5f6f5a1262a2f
 PKG_FLAGS:=nonshared
 
 include $(INCLUDE_DIR)/package.mk
@@ -37,6 +37,7 @@ ALLWIFIBOARDS:= \
 	dynalink_dl-wrx36 \
 	edgecore_eap102 \
 	edimax_cax1800 \
+	linksys_homewrk \
 	linksys_mx4200 \
 	linksys_mx5300 \
 	linksys_mx8500 \
@@ -54,8 +55,12 @@ ALLWIFIBOARDS:= \
 	skspruce_wia3300-20 \
 	spectrum_sax1v1k \
 	tplink_eap660hd-v1 \
+	tplink_archer-c59-v1 \
 	tplink_archer-c6-v2 \
+	tplink_archer-c60-v1 \
+	tplink_archer-c60-v2 \
 	wallys_dr40x9 \
+	xiaomi_aiot-ac2350 \
 	xiaomi_ax3600 \
 	xiaomi_ax9000 \
 	yyets_le1 \
@@ -96,6 +101,8 @@ define ipq-wifi-install-one
     $(call ipq-wifi-install-one-to,$(1),$(2),QCA9887/hw1.0),\
   $(if $(filter $(suffix $(1)),.QCA9984 .qca9984),\
     $(call ipq-wifi-install-one-to,$(1),$(2),QCA9984/hw1.0),\
+  $(if $(filter $(suffix $(1)),.QCA9988 .qca9988),\
+    $(call ipq-wifi-install-one-to,$(1),$(2),QCA9984/hw1.0),\
   $(if $(filter $(suffix $(1)),.QCA99X0 .qca99x0),\
     $(call ipq-wifi-install-one-to,$(1),$(2),QCA99X0/hw2.0),\
   $(if $(filter $(suffix $(1)),.IPQ6018 .ipq6018),\
@@ -105,7 +112,7 @@ define ipq-wifi-install-one
   $(if $(filter $(suffix $(1)),.QCN9074 .qcn9074),\
     $(call ipq-wifi-install-ath11-one-to,$(1),$(2),QCN9074/hw1.0),\
     $(error Unrecognized board-file suffix '$(suffix $(1))' for '$(1)')\
-  ))))))))
+  )))))))))
 
 endef
 # Blank line required at end of above define due to foreach context
@@ -165,6 +172,7 @@ $(eval $(call generate-ipq-wifi-package,compex_wpq873,Compex WPQ-873))
 $(eval $(call generate-ipq-wifi-package,dynalink_dl-wrx36,Dynalink DL-WRX36))
 $(eval $(call generate-ipq-wifi-package,edgecore_eap102,Edgecore EAP102))
 $(eval $(call generate-ipq-wifi-package,edimax_cax1800,Edimax CAX1800))
+$(eval $(call generate-ipq-wifi-package,linksys_homewrk,Linksys HomeWRK))
 $(eval $(call generate-ipq-wifi-package,linksys_mx4200,Linksys MX4200))
 $(eval $(call generate-ipq-wifi-package,linksys_mx5300,Linksys MX5300))
 $(eval $(call generate-ipq-wifi-package,linksys_mx8500,Linksys MX8500))
@@ -182,8 +190,12 @@ $(eval $(call generate-ipq-wifi-package,redmi_ax6,Redmi AX6))
 $(eval $(call generate-ipq-wifi-package,skspruce_wia3300-20,SKSpruce WIA3300-20))
 $(eval $(call generate-ipq-wifi-package,spectrum_sax1v1k,Spectrum SAX1V1K))
 $(eval $(call generate-ipq-wifi-package,tplink_eap660hd-v1,TP-Link EAP660 HD v1))
+$(eval $(call generate-ipq-wifi-package,tplink_archer-c59-v1,TP-Link Archer C59 V1))
 $(eval $(call generate-ipq-wifi-package,tplink_archer-c6-v2,TP-Link Archer C6 V2))
+$(eval $(call generate-ipq-wifi-package,tplink_archer-c60-v1,TP-Link Archer C60 V1))
+$(eval $(call generate-ipq-wifi-package,tplink_archer-c60-v2,TP-Link Archer C60 V2))
 $(eval $(call generate-ipq-wifi-package,wallys_dr40x9,Wallys DR40X9))
+$(eval $(call generate-ipq-wifi-package,xiaomi_aiot-ac2350,Xiaomi AIoT AC2350))
 $(eval $(call generate-ipq-wifi-package,xiaomi_ax3600,Xiaomi AX3600))
 $(eval $(call generate-ipq-wifi-package,xiaomi_ax9000,Xiaomi AX9000))
 $(eval $(call generate-ipq-wifi-package,yyets_le1,YYeTs LE1))

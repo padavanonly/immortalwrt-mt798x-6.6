@@ -28,35 +28,20 @@ msgstr "U-APSD 省电模式"
 msgid "Kick low RSSI station threshold"
 msgstr "弱信号剔除阈值"
 
-
 msgid "Station associate threshold"
 msgstr "弱信号接入阈值"
 
-msgid "802.11V roam steering threshold"
-msgstr "802.11V漫游引导阈值"
-
-
-msgid "802.11V roam target bssid"
-msgstr "802.11V漫游引导目标BSSID"
-
-
-msgid "only supports mt_wifi driver"
-msgstr "仅支持MTK闭源驱动，漫游域相关参数自动生成无需设置.确认路由器自身lan ip均在同一网段"
-
 msgid "Wireless HWNAT"
 msgstr "无线硬件加速"
-
-msgid "Band Steering"
-msgstr "引导已连接的强信号双频2.4G设备至5G频段"
-
-msgid "WAPP related services (wapp/bs20)"
-msgstr "WAPP 相关服务（wapp/bs20）"
 
 msgid "Wireless configuration error"
 msgstr "无线网络设置错误"
 
 msgid "At least one MBSSID needs to be reserved"
 msgstr "至少需要保留1个MBSSID"
+
+msgid "Enable MLO"
+msgstr "启用MLO"
 
 msgid "MAC Address"
 msgstr "MAC 地址"
@@ -72,3 +57,147 @@ msgstr "覆盖默认 MAC 地址 - 可用地址的范围可能受限于驱动"
 
 msgid "Enables The 802.11k standard provides information to discover the best available access point"
 msgstr "启用 802.11k 自动寻找发现最佳可用接入点的信息"
+
+msgid "Rate unavailable"
+msgstr "速率不可用"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "6 GHz band only supports WPA3-SAE or OWE."
+msgstr "6 GHz 频段仅支持 WPA3-SAE 或 OWE。"
+
+msgid "802.11k"
+msgstr "802.11k"
+
+msgid "802.11v"
+msgstr "802.11v"
+
+msgid "BSS Transition Management"
+msgstr "BSS 转换管理"
+
+msgid "Default %d"
+msgstr "默认 %d"
+
+msgid "Distance to farthest network member in meters."
+msgstr "到最远网络成员的距离（米）。"
+
+msgid "Enable beacon report via radio measurements"
+msgstr "启用无线电测量的信标报告"
+
+msgid "Enable neighbor report via radio measurements"
+msgstr "启用无线电测量的邻居报告"
+
+msgid "Enables 802.11v allows client devices to exchange information about the network topology,tating overall improvement of the wireless network."
+msgstr "启用 802.11v 允许客户端设备交换网络拓扑信息，从而促进无线网络的整体改善。"
+
+msgid "List of R0KHs in the same Mobility Domain. <br />Format: MAC-address,NAS-Identifier,128-bit key as hex string. <br />This list is used to map R0KH-ID (NAS Identifier) to a destination MAC address when requesting PMK-R1 key from the R0KH that the STA used during the Initial Mobility Domain Association."
+msgstr "同一移动域中的 R0KH 列表。<br />格式：MAC 地址,NAS 标识符,128 位十六进制密钥。<br />此列表用于在初始移动域关联期间从 STA 使用的 R0KH 请求 PMK-R1 密钥时，将 R0KH-ID（NAS 标识符）映射到目标 MAC 地址。"
+
+msgid "Local time zone as specified in 8.3 of IEEE Std 1003.1-2004"
+msgstr "IEEE Std 1003.1-2004 8.3 中规定的本地时区"
+
+msgid "MU-MIMO"
+msgstr "MU-MIMO"
+
+msgid "Maximum number of enabled AP interfaces per radio is %d."
+msgstr "每个射频最多允许启用的 AP 接口数为 %d。"
+
+msgid "Maximum number of multiple SSIDs is %d."
+msgstr "最大多 SSID 数量为 %d。"
+
+msgid "MediaTek Wireless"
+msgstr "联发科无线"
+
+msgid "Please delete the existing MBSSID and try again."
+msgstr "请删除已有的 MBSSID 后重试。"
+
+msgid "Please disable or remove an existing AP network before adding another active network."
+msgstr "在添加另一个活动网络之前，请禁用或删除已有的 AP 网络。"
+
+msgid "RSSI threshold for joining"
+msgstr "关联加入 RSSI 阈值"
+
+msgid "Radius-Accounting-Port"
+msgstr "Radius 计费端口"
+
+msgid "Radius-Accounting-Secret"
+msgstr "Radius 计费密钥"
+
+msgid "Radius-Accounting-Server"
+msgstr "Radius 计费服务器"
+
+msgid "Radius-Authentication-Port"
+msgstr "Radius 认证端口"
+
+msgid "Radius-Authentication-Secret"
+msgstr "Radius 认证密钥"
+
+msgid "Radius-Authentication-Server"
+msgstr "Radius 认证服务器"
+
+msgid "Time advertisement"
+msgstr "时间播发"
+
+msgid "Too many enabled AP interfaces on %s (%d > %d)."
+msgstr "%s 上启用的 AP 接口过多（%d > %d）。"
+
+msgid "UTC time at which the TSF timer is 0"
+msgstr "TSF 计时器为 0 时的 UTC 时间"
+
+msgid "Unable to add more active AP Networks"
+msgstr "无法添加更多活动 AP 网络"
+
+msgid "WPA3/OWE does not support TKIP cipher."
+msgstr "WPA3/OWE 不支持 TKIP 加密算法。"
+
+msgid "WPA1 does not support GCMP-256 cipher."
+msgstr "WPA1 不支持 GCMP-256 加密算法。"
+
+msgid "Enable DFS"
+msgstr "启用 DFS"
+
+msgid "ITWT"
+msgstr "ITWT"
+
+msgid "BTWT"
+msgstr "BTWT"
+
+msgid "ITWT + BTWT"
+msgstr "ITWT + BTWT"
+
+msgid "%"
+msgstr "%"
+
+msgid "Default (3600s)"
+msgstr "默认（3600 秒）"
+
+msgid "Disable"
+msgstr "禁用"
+
+msgid "Seconds (10-86400; 0 to disable; default 3600)"
+msgstr "秒（10-86400；0 表示禁用；默认 3600）"
+
+msgid "Group Key Rekey Interval"
+msgstr "组密钥重协商间隔 (Group Rekey)"
+
+msgid "Wireless"
+msgstr "无线"
+
+msgid "extended sleep mode for stations"
+msgstr "工作站扩展睡眠模式"
+
+msgid "IGMP/MLD Snooping"
+msgstr "IGMP/MLD 组播监听 (WA 硬件 M2U)"
+
+msgid "Enable WA hardware multicast-to-unicast conversion for subscribed clients (mDNS, SSDP, and IPv6 ND remain flooded)."
+msgstr "启用 WA 固件硬件组播转单播加速（已订阅客户端独享高速单播帧，mDNS/SSDP/IPv6 ND 仍保持泛洪发现）。"
+
+msgid "Multicast Rate"
+msgstr "组播发送速率"
+
+msgid "Minimum OFDM rate for non-snooped wireless multicast frames."
+msgstr "未走硬件 M2U 的无线组播/广播帧所使用的 OFDM 最低基准速率。"
+
+msgid "Driver default"
+msgstr "驱动默认"

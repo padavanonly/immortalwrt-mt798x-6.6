@@ -1,0 +1,57 @@
+From f0eae81baca39cf83b351fa62fc54c8041455ede Mon Sep 17 00:00:00 2001
+From: Rex Lu <rex.lu@mediatek.com>
+Date: Fri, 12 Jun 2026 13:55:18 +0800
+Subject: [PATCH] refactor txbm reset flow
+
+add realloc txbm buff pool after wed txbm reset.
+without this patch, tx performance may decrease due to tx buff pool exist wrong data after SER
+
+Signed-off-by: Rex Lu <rex.lu@mediatek.com>
+---
+ drivers/net/ethernet/mediatek/mtk_wed.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_wed.c b/drivers/net/ethernet/mediatek/mtk_wed.c
+index 0c2bb61..d26d3d6 100644
+--- a/drivers/net/ethernet/mediatek/mtk_wed.c
++++ b/drivers/net/ethernet/mediatek/mtk_wed.c
+@@ -2182,21 +2182,32 @@ mtk_wed_reset_dma(struct mtk_wed_device *dev)
+ 
+ 	/* 3. reset WED TX BM */
+ 	wed_clr(dev, MTK_WED_CTRL, MTK_WED_CTRL_WED_TX_FREE_AGENT_EN);
++	mtk_wed_poll_busy(dev, MTK_WED_CTRL,
++			  MTK_WED_CTRL_WED_TX_FREE_AGENT_BUSY);
+ 
+ 	for (i = 0; i < 100; i++) {
+-		if (mtk_wed_is_v1(dev->hw))
++		if (mtk_wed_is_v1(dev->hw)) {
+ 			val = FIELD_GET(MTK_WED_TX_BM_INTF_TKFIFO_FDEP,
+ 					wed_r32(dev, MTK_WED_TX_BM_INTF));
+-		else
++			if (val == 0x40)
++				break;
++		} else {
+ 			val = FIELD_GET(MTK_WED_TX_TKID_INTF_TKFIFO_FDEP,
+ 					wed_r32(dev, MTK_WED_TX_TKID_INTF));
+-		if (val == 0x40)
+-			break;
++			if (val == 0x200)
++				break;
++		}
+ 	}
+ 
+ 	mtk_wed_reset(dev, MTK_WED_RESET_TX_FREE_AGENT);
+ 	wed_clr(dev, MTK_WED_CTRL, MTK_WED_CTRL_WED_TX_BM_EN);
+ 	mtk_wed_reset(dev, MTK_WED_RESET_TX_BM);
++	mtk_wed_poll_busy(dev, MTK_WED_CTRL, MTK_WED_CTRL_WED_TX_BM_BUSY);
++
++	if (mtk_wed_is_v3_or_greater(dev->hw)) {
++		mtk_wed_free_tx_buffer(dev);
++		mtk_wed_tx_buffer_alloc(dev);
++	}
+ 
+ 	/* 4. reset WED WPDMA tx */
+ 	mtk_wed_wpdma_tx_reset(dev);
+-- 
+2.45.2
+

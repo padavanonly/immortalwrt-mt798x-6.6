@@ -1,0 +1,32 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] quectel_QMI_WWAN: advertise NETIF_F_RXCSUM when QMAPv5 CSUM offload is active
+
+Expose NETIF_F_RXCSUM in hw_features/features on QMAPv5 virtual and parent
+netdevs matching the enabled RMNET_MAP_HEADER_TYPE_CSUM_OFFLOAD RX path.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/qmi_wwan_q.c
++++ b/qmi_wwan_q.c
+@@ -1511,6 +1511,10 @@
+ 
+ 	qmap_net->hw_features |= (real_dev->hw_features & NETIF_F_SG);
+ 	qmap_net->features |= (real_dev->features & NETIF_F_SG);
++	if (pDev->qmap_version == 9) {
++		qmap_net->hw_features |= NETIF_F_RXCSUM;
++		qmap_net->features |= NETIF_F_RXCSUM;
++	}
+ 
+ 	err = register_netdev(qmap_net);
+ 	if (err)
+@@ -2387,6 +2391,10 @@
+ 
+ 			if (pQmapDev->qmap_mode) {
+ 				pQmapDev->qmap_version = qmap_version;
++				if (pQmapDev->qmap_version == 9) {
++					dev->net->hw_features |= NETIF_F_RXCSUM;
++					dev->net->features |= NETIF_F_RXCSUM;
++				}
+ 				pQmapDev->qmap_size = qmap_size*1024;
+ 				dev->rx_urb_size = pQmapDev->qmap_size;
+ 				//for these modules, if send packet before qmi_start_network, or cause host PC crash, or cause modules crash

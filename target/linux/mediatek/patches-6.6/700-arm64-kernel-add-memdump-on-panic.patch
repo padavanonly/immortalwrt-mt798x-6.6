@@ -1,4 +1,4 @@
---- a/arch/arm64/include/asm/memdump.h
+--- /dev/null
 +++ b/arch/arm64/include/asm/memdump.h
 @@ -0,0 +1,16 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
@@ -36,7 +36,7 @@
 +
  # for cleaning
  subdir- += vdso vdso32
---- a/arch/arm64/kernel/memdump.c
+--- /dev/null
 +++ b/arch/arm64/kernel/memdump.c
 @@ -0,0 +1,201 @@
 +// SPDX-License-Identifier: GPL-2.0-only

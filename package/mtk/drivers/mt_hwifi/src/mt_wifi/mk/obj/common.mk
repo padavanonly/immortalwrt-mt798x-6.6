@@ -1,0 +1,9 @@
+include $(TOP_DIR)/common/rules.mk
+include $(TOP_DIR)/common/bss_mngr/rules.mk
+include $(TOP_DIR)/common/dbg_txcmd/rules.mk
+include $(TOP_DIR)/common/fsm/rules.mk
+include $(TOP_DIR)/common/mgmt/rules.mk
+include $(TOP_DIR)/common/security/rules.mk
+include $(TOP_DIR)/common/security/pmf/rules.mk
+include $(TOP_DIR)/common/security/wpa3/rules.mk
+include $(TOP_DIR)/common/performance/rules.mk

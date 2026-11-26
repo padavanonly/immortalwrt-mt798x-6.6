@@ -1,0 +1,744 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] iwinfo: mtk: fix scan band/mhz/ht_operation, center_chan1, and resilient pagination
+
+Set band, mhz, and ht_chan_info on MTK scanlist entries so rpcd and LuCI Channel Analysis do not drop scanned APs, implement mtk_get_center_chan1 and band-aware 6 GHz frequency resolution, accept enterprise/SAE/WEP security modes, skip corrupted rows without aborting scans, and handle multi-page BSS table shrinkage cleanly.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+diff -uN -p -r /tmp/iwinfo-test/orig-tree/iwinfo_mtk.c /tmp/iwinfo-test/src-tree/iwinfo_mtk.c
+--- a/iwinfo_mtk.c	2026-11-23 13:30:04.534140740 +0800
++++ b/iwinfo_mtk.c	2026-11-23 13:32:34.888832763 +0800
+@@ -121,6 +121,176 @@ out:
+ 	return result;
+ }
+ 
++static int mtk_get_freqlist_by_ifname(const char *ifname, char *buf, int *len);
++static uint8_t mtk_freq_band(uint32_t mhz);
++
++static enum mtk_config_band mtk_detect_device_band(const char *dev, const char *ifname)
++{
++	char chans[IWINFO_BUFSIZE] = { 0 };
++	struct iwinfo_freqlist_entry *e;
++	enum mtk_config_band band;
++	uint8_t entry_band;
++	int len = 0;
++
++	band = mtk_get_config_band(dev);
++	if (band == MTK_CONFIG_BAND_2G ||
++	    band == MTK_CONFIG_BAND_5G ||
++	    band == MTK_CONFIG_BAND_6G)
++		return band;
++
++	if (ifname && *ifname &&
++	    !mtk_get_freqlist_by_ifname(ifname, chans, &len) &&
++	    len >= (int)sizeof(*e)) {
++		e = (struct iwinfo_freqlist_entry *)chans;
++		entry_band = e->band ? e->band : mtk_freq_band(e->mhz);
++		if (entry_band == iwinfo_ghz2band(2))
++			return MTK_CONFIG_BAND_2G;
++		if (entry_band == iwinfo_ghz2band(5))
++			return MTK_CONFIG_BAND_5G;
++		if (entry_band == iwinfo_ghz2band(6))
++			return MTK_CONFIG_BAND_6G;
++	}
++
++	return MTK_CONFIG_BAND_NONE;
++}
++
++static int mtk_channel_to_mhz_band(enum mtk_config_band cfg_band, int channel,
++				     uint32_t *mhz_out, uint8_t *band_out)
++{
++	uint32_t mhz;
++	uint8_t band;
++
++	if (channel <= 0)
++		return -1;
++
++	if (cfg_band == MTK_CONFIG_BAND_6G) {
++		if (channel == 2)
++			mhz = 5935;
++		else if (channel <= 233)
++			mhz = (uint32_t)(5950 + channel * 5);
++		else
++			return -1;
++		band = iwinfo_ghz2band(6);
++	} else if (cfg_band == MTK_CONFIG_BAND_2G ||
++		   (cfg_band != MTK_CONFIG_BAND_5G && channel <= 14)) {
++		if (channel == 14)
++			mhz = 2484;
++		else if (channel < 14)
++			mhz = (uint32_t)(2407 + channel * 5);
++		else
++			return -1;
++		band = iwinfo_ghz2band(2);
++	} else {
++		if (channel >= 182 && channel <= 196)
++			mhz = (uint32_t)(4000 + channel * 5);
++		else if (channel <= 181)
++			mhz = (uint32_t)(5000 + channel * 5);
++		else
++			return -1;
++		band = iwinfo_ghz2band(5);
++	}
++
++	if (mhz_out)
++		*mhz_out = mhz;
++	if (band_out)
++		*band_out = band;
++	return 0;
++}
++
++static int mtk_compute_center_chan1(enum mtk_config_band band, int channel,
++				    unsigned char bw, unsigned char ext_cha)
++{
++	if (channel <= 0)
++		return -1;
++
++	if (band != MTK_CONFIG_BAND_2G &&
++	    band != MTK_CONFIG_BAND_5G &&
++	    band != MTK_CONFIG_BAND_6G)
++		band = (channel <= 14) ? MTK_CONFIG_BAND_2G : MTK_CONFIG_BAND_5G;
++
++	switch (bw) {
++	case BW_40:
++		if (ext_cha == EXTCHA_ABOVE)
++			return channel + 2;
++		if (ext_cha == EXTCHA_BELOW && channel > 2)
++			return channel - 2;
++		if (band == MTK_CONFIG_BAND_2G) {
++			if (channel <= 7)
++				return channel + 2;
++			if (channel > 2)
++				return channel - 2;
++			return channel;
++		}
++		if (band == MTK_CONFIG_BAND_5G) {
++			if (channel >= 36 && channel <= 64)
++				return ((channel - 36) / 8) * 8 + 38;
++			if (channel >= 100 && channel <= 144)
++				return ((channel - 100) / 8) * 8 + 102;
++			if (channel >= 149 && channel <= 177)
++				return ((channel - 149) / 8) * 8 + 151;
++			return channel;
++		}
++		if (channel >= 1 && channel <= 229 && channel != 2)
++			return ((channel - 1) / 8) * 8 + 3;
++		return channel;
++	case BW_80:
++	case BW_8080:
++		if (band == MTK_CONFIG_BAND_5G) {
++			if (channel >= 36 && channel <= 48)
++				return 42;
++			if (channel >= 52 && channel <= 64)
++				return 58;
++			if (channel >= 100 && channel <= 112)
++				return 106;
++			if (channel >= 116 && channel <= 128)
++				return 122;
++			if (channel >= 132 && channel <= 144)
++				return 138;
++			if (channel >= 149 && channel <= 161)
++				return 155;
++			if (channel >= 165 && channel <= 177)
++				return 171;
++			return channel;
++		}
++		if (band == MTK_CONFIG_BAND_6G &&
++		    channel >= 1 && channel <= 221 && channel != 2)
++			return ((channel - 1) / 16) * 16 + 7;
++		return channel;
++	case BW_160:
++		if (band == MTK_CONFIG_BAND_5G) {
++			if (channel >= 36 && channel <= 64)
++				return 50;
++			if (channel >= 100 && channel <= 128)
++				return 114;
++			if (channel >= 149 && channel <= 177)
++				return 163;
++			return channel;
++		}
++		if (band == MTK_CONFIG_BAND_6G &&
++		    channel >= 1 && channel <= 221 && channel != 2)
++			return ((channel - 1) / 32) * 32 + 15;
++		return channel;
++	case BW_320:
++		if (band == MTK_CONFIG_BAND_6G) {
++			if (channel >= 1 && channel <= 61 && channel != 2)
++				return 31;
++			if (channel >= 65 && channel <= 125)
++				return 95;
++			if (channel >= 129 && channel <= 189)
++				return 159;
++			if (channel >= 193 && channel <= 221)
++				return 191;
++		}
++		return channel;
++	case BW_20:
++	case BW_10:
++	case BW_5:
++	case BW_20_242TONE:
++	default:
++		return channel;
++	}
++}
++
+ static void mtk_close(void)
+ {
+ 	iwinfo_close();
+@@ -254,8 +424,50 @@ static int mtk_get_channel(const char *d
+ 
+ static int mtk_get_center_chan1(const char *dev, int *buf)
+ {
+-	/* Not Supported */
+-	return -1;
++	struct iwreq wrq = {};
++	char ifname[IFNAMSIZ];
++	unsigned char bw = BW_20;
++	unsigned char ext_cha = EXTCHA_NONE;
++	enum mtk_config_band band;
++	int channel;
++	int center;
++
++	if (!buf || mtk_dev2phy(dev, ifname, sizeof(ifname)))
++		return -1;
++
++	if (!mtk_is_ifup(ifname))
++		return -1;
++
++	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) < 0)
++		return -1;
++
++	channel = wrq.u.freq.m;
++	if (channel <= 0)
++		return -1;
++
++	memset(&wrq, 0, sizeof(wrq));
++	wrq.u.data.length = sizeof(bw);
++	wrq.u.data.pointer = &bw;
++	wrq.u.data.flags = OID_802_11_BW;
++	if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) < 0 ||
++	    wrq.u.data.length != sizeof(bw))
++		bw = BW_20;
++
++	memset(&wrq, 0, sizeof(wrq));
++	wrq.u.data.length = sizeof(ext_cha);
++	wrq.u.data.pointer = &ext_cha;
++	wrq.u.data.flags = OID_802_11_EXTENSION_CHANNEL;
++	if (mtk_ioctl(ifname, RT_PRIV_IOCTL, &wrq) < 0 ||
++	    wrq.u.data.length != sizeof(ext_cha))
++		ext_cha = EXTCHA_NONE;
++
++	band = mtk_detect_device_band(dev, ifname);
++	center = mtk_compute_center_chan1(band, channel, bw, ext_cha);
++	if (center <= 0)
++		return -1;
++
++	*buf = center;
++	return 0;
+ }
+ 
+ static int mtk_get_center_chan2(const char *dev, int *buf)
+@@ -266,36 +478,24 @@ static int mtk_get_center_chan2(const ch
+ 
+ static int mtk_get_frequency(const char *dev, int *buf)
+ {
+-	int channel;
+-	struct iwreq wrq;
++	struct iwreq wrq = {};
+ 	char ifname[IFNAMSIZ];
++	enum mtk_config_band band;
++	uint32_t mhz = 0;
+ 
+-	if (mtk_dev2phy(dev, ifname, sizeof(ifname)))
++	if (!buf || mtk_dev2phy(dev, ifname, sizeof(ifname)))
+ 		return -1;
+ 
+-	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) >= 0)
+-	{
+-		channel = wrq.u.freq.m;
+-
+-		if (channel <= 0)
++	if (mtk_ioctl(ifname, SIOCGIWFREQ, &wrq) >= 0) {
++		band = mtk_detect_device_band(dev, ifname);
++		if (mtk_channel_to_mhz_band(band, wrq.u.freq.m, &mhz, NULL))
+ 			return -1;
+ 
+-		if (channel > 14) {
+-			if (channel >= 182 && channel <= 196)
+-				*buf = 4000 + channel * 5;
+-			else
+-				*buf = 5000 + channel * 5;
+-		} else if (channel == 14) {
+-			*buf = 2484;
+-		} else {
+-			*buf = 2407 + channel * 5;
+-		}
+-
++		*buf = (int)mhz;
+ 		return 0;
+ 	}
+ 
+ 	return -1;
+-	
+ }
+ 
+ static int mtk_get_txpower(const char *dev, int *buf)
+@@ -912,14 +1112,125 @@ static int mtk_scanlist_parse_bssid(cons
+ 	return 0;
+ }
+ 
++static int mtk_scanlist_has_duplicate(const char *buf, size_t output_len,
++				      const uint8_t mac[6], uint8_t channel)
++{
++	const struct iwinfo_scanlist_entry *cur;
++	size_t off;
++
++	for (off = 0; off + sizeof(*cur) <= output_len; off += sizeof(*cur)) {
++		cur = (const struct iwinfo_scanlist_entry *)(buf + off);
++		if (cur->channel == channel && memcmp(cur->mac, mac, 6) == 0)
++			return 1;
++	}
++
++	return 0;
++}
++
++static void mtk_scanlist_parse_crypto(const char *security,
++				      struct iwinfo_crypto_entry *crypto)
++{
++	if (!strcmp(security, "OPEN/NONE") || !strcmp(security, "UNKNOW/NONE"))
++		return;
++
++	if (strstr(security, "PSK") || strstr(security, "OWE") ||
++	    strstr(security, "SAE") || strstr(security, "WPA") ||
++	    strstr(security, "DPP") || strstr(security, "WEP") ||
++	    strstr(security, "SHARED")) {
++		crypto->enabled = true;
++	} else {
++		return;
++	}
++
++	if (strstr(security, "WPA1") || strstr(security, "WPAPSK") ||
++	    !strncmp(security, "WPA/", 4))
++		crypto->wpa_version |= 1 << 0;
++
++	if (strstr(security, "WPA2"))
++		crypto->wpa_version |= 1 << 1;
++
++	if (strstr(security, "WPA3") || strstr(security, "SAE") ||
++	    strstr(security, "OWE") || strstr(security, "DPP"))
++		crypto->wpa_version |= 1 << 2;
++
++	if (crypto->wpa_version) {
++		if (strstr(security, "PSK"))
++			crypto->auth_suites |= IWINFO_KMGMT_PSK;
++		if (strstr(security, "SAE") || strstr(security, "WPA3PSK"))
++			crypto->auth_suites |= IWINFO_KMGMT_SAE;
++		if (strstr(security, "OWE"))
++			crypto->auth_suites |= IWINFO_KMGMT_OWE;
++		if (!(crypto->auth_suites &
++		      (IWINFO_KMGMT_PSK | IWINFO_KMGMT_SAE | IWINFO_KMGMT_OWE)))
++			crypto->auth_suites |= IWINFO_KMGMT_8021x;
++	} else if (strstr(security, "WEP") || strstr(security, "SHARED")) {
++		crypto->auth_algs |= IWINFO_AUTH_OPEN;
++		if (strstr(security, "SHARED") || strstr(security, "WEPAUTO"))
++			crypto->auth_algs |= IWINFO_AUTH_SHARED;
++		crypto->pair_ciphers |= IWINFO_CIPHER_WEP40 | IWINFO_CIPHER_WEP104;
++	}
++
++	if (strstr(security, "AES"))
++		crypto->pair_ciphers |= IWINFO_CIPHER_CCMP;
++
++	if (strstr(security, "CCMP256"))
++		crypto->pair_ciphers |= IWINFO_CIPHER_CCMP256;
++
++	if (strstr(security, "TKIP"))
++		crypto->pair_ciphers |= IWINFO_CIPHER_TKIP;
++
++	if (strstr(security, "GCMP128"))
++		crypto->pair_ciphers |= IWINFO_CIPHER_GCMP;
++
++	if (strstr(security, "GCMP256"))
++		crypto->pair_ciphers |= IWINFO_CIPHER_GCMP256;
++}
++
++static void mtk_scanlist_fill_ht_info(const char *row,
++				      const size_t row_offsets[SCAN_DATA_MAX],
++				      uint8_t channel,
++				      struct iwinfo_scanlist_ht_chan_entry *ht)
++{
++	char wmode[24];
++	size_t wmode_len;
++	const char *extch = row + row_offsets[SCAN_DATA_EXTCH];
++
++	if (!memcmp(extch, "ABOVE", 5)) {
++		ht->primary_chan = channel;
++		ht->secondary_chan_off = 1;
++		ht->chan_width = 1;
++		return;
++	}
++
++	if (!memcmp(extch, "BELOW", 5)) {
++		ht->primary_chan = channel;
++		ht->secondary_chan_off = 3;
++		ht->chan_width = 1;
++		return;
++	}
++
++	wmode_len = row_offsets[SCAN_DATA_EXTCH] - 1 - row_offsets[SCAN_DATA_WMODE];
++	if (wmode_len >= sizeof(wmode))
++		wmode_len = sizeof(wmode) - 1;
++	memcpy(wmode, row + row_offsets[SCAN_DATA_WMODE], wmode_len);
++	wmode[wmode_len] = '\0';
++
++	if (strstr(wmode, "/n") || strstr(wmode, "ac") ||
++	    strstr(wmode, "ax") || strstr(wmode, "be")) {
++		ht->primary_chan = channel;
++		ht->secondary_chan_off = 0;
++		ht->chan_width = 0;
++	}
++}
++
+ static int mtk_scanlist_parse_page(char *data, size_t data_len,
+-				   int requested_index, int expected_total,
++				   int requested_index,
++				   enum mtk_config_band radio_band,
+ 				   char *buf, size_t output_cap,
+ 				   size_t *output_len, int *total_out,
+ 				   int *next_index)
+ {
+ 	struct iwinfo_scanlist_entry *entry;
+-	struct iwinfo_crypto_entry *crypto;
+ 	char security[MTK_SCANLIST_SECURITY_MAX + 1];
+ 	char *total_line;
+ 	char *line_end;
+@@ -934,17 +1245,19 @@ static int mtk_scanlist_parse_page(char
+ 	size_t security_len;
+ 	size_t ssid_len;
+ 	size_t ssid_field_len;
+-	size_t expected_row;
++	size_t last_row_index = (size_t)requested_index;
+ 	unsigned long parsed;
+ 	unsigned long row_index;
+ 	unsigned long channel;
+ 	unsigned long signal;
+ 	unsigned long quality;
+ 	unsigned long ssid_length;
++	uint32_t entry_mhz;
++	uint8_t entry_band;
+ 	uint8_t mac[6];
+ 	int total;
+ 	int is_infrastructure;
+-	int supported_security;
++	int saw_any_row = 0;
+ 
+ 	if (data_len < 2 || data[0] != '\n' || data[data_len - 1] != '\n')
+ 		return -1;
+@@ -962,11 +1275,17 @@ static int mtk_scanlist_parse_page(char
+ 		return -1;
+ 
+ 	total = (int)parsed;
+-	if (total <= 0 || total > MTK_SCANLIST_MAX_BSS ||
+-	    (expected_total >= 0 && total != expected_total) ||
+-	    requested_index < 0 || requested_index >= total)
++	if (total <= 0 || total > MTK_SCANLIST_MAX_BSS || requested_index < 0)
+ 		return -1;
+ 
++	if (requested_index >= total) {
++		if (requested_index == 0)
++			return -1;
++		*total_out = total;
++		*next_index = total;
++		return 0;
++	}
++
+ 	header = line_end + 1;
+ 	line_end = memchr(header, '\n', (size_t)((data + data_len) - header));
+ 	if (!line_end)
+@@ -976,7 +1295,6 @@ static int mtk_scanlist_parse_page(char
+ 	if (mtk_scanlist_header_offsets(header, header_len, offsets))
+ 		return -1;
+ 
+-	expected_row = (size_t)requested_index;
+ 	row = line_end + 1;
+ 	while (row < data + data_len) {
+ 		if (*output_len == output_cap)
+@@ -984,7 +1302,7 @@ static int mtk_scanlist_parse_page(char
+ 
+ 		row_end = memchr(row, '\n', (size_t)((data + data_len) - row));
+ 		if (!row_end)
+-			return -1;
++			break;
+ 
+ 		row_len = (size_t)(row_end - row);
+ 		if (row_len == 0 ||
+@@ -994,12 +1312,16 @@ static int mtk_scanlist_parse_page(char
+ 					     offsets[SCAN_DATA_BSSID] - offsets[SCAN_DATA_SSID]) ||
+ 		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_BSSID],
+ 					     offsets[SCAN_DATA_SECURITY] - offsets[SCAN_DATA_BSSID]) ||
+-		    mtk_scanlist_row_offsets(row, row_len, offsets, row_offsets))
+-			return -1;
++		    mtk_scanlist_row_offsets(row, row_len, offsets, row_offsets)) {
++			row = row_end + 1;
++			continue;
++		}
+ 
+ 		if (mtk_scanlist_parse_uint(row, 4, MTK_SCANLIST_MAX_BSS - 1,
+ 					    &row_index) ||
+-		    row_index != expected_row || row_index >= (unsigned long)total ||
++		    row_index < (unsigned long)requested_index ||
++		    row_index >= (unsigned long)total ||
++		    (saw_any_row && row_index <= last_row_index) ||
+ 		    mtk_scanlist_parse_uint(row + offsets[SCAN_DATA_CH], 4,
+ 					    UINT8_MAX, &channel) ||
+ 		    mtk_scanlist_parse_uint(row + row_offsets[SCAN_DATA_RSSI],
+@@ -1009,107 +1331,90 @@ static int mtk_scanlist_parse_page(char
+ 					    row_offsets[SCAN_DATA_WMODE] - row_offsets[SCAN_DATA_SIG],
+ 					    100, &quality) ||
+ 		    mtk_scanlist_parse_uint(row + row_offsets[SCAN_DATA_SSID_LEN], 8,
+-					    IWINFO_ESSID_MAX_SIZE, &ssid_length))
+-			return -1;
++					    IWINFO_ESSID_MAX_SIZE, &ssid_length)) {
++			row = row_end + 1;
++			continue;
++		}
+ 
+ 		if (mtk_scanlist_parse_bssid(row + offsets[SCAN_DATA_BSSID],
+ 					     offsets[SCAN_DATA_SECURITY] - offsets[SCAN_DATA_BSSID],
+-					     mac))
+-			return -1;
++					     mac)) {
++			row = row_end + 1;
++			continue;
++		}
+ 
+ 		ssid_field_len = offsets[SCAN_DATA_BSSID] - offsets[SCAN_DATA_SSID];
+ 		ssid_len = (size_t)ssid_length;
+ 		if (ssid_len > ssid_field_len ||
+-		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_SSID], ssid_len))
+-			return -1;
++		    !mtk_scanlist_field_fits(row_len, offsets[SCAN_DATA_SSID], ssid_len)) {
++			row = row_end + 1;
++			continue;
++		}
+ 
+ 		security_len = row_offsets[SCAN_DATA_RSSI] - offsets[SCAN_DATA_SECURITY];
+ 		while (security_len > 0 && row[offsets[SCAN_DATA_SECURITY] + security_len - 1] == ' ')
+ 			security_len--;
+-		if (security_len == 0 || security_len >= sizeof(security))
+-			return -1;
++		if (security_len == 0 || security_len >= sizeof(security)) {
++			row = row_end + 1;
++			continue;
++		}
+ 		memcpy(security, row + offsets[SCAN_DATA_SECURITY], security_len);
+ 		security[security_len] = '\0';
+ 
+ 		if (row[row_offsets[SCAN_DATA_NT]] == 'I' &&
+ 		    row[row_offsets[SCAN_DATA_NT] + 1] == 'n' &&
+-		    row[row_offsets[SCAN_DATA_NT] + 2] == ' ')
++		    row[row_offsets[SCAN_DATA_NT] + 2] == ' ') {
+ 			is_infrastructure = 1;
+-		else if (row[row_offsets[SCAN_DATA_NT]] == 'A' &&
+-			 row[row_offsets[SCAN_DATA_NT] + 1] == 'd' &&
+-			 row[row_offsets[SCAN_DATA_NT] + 2] == ' ')
++		} else if (row[row_offsets[SCAN_DATA_NT]] == 'A' &&
++			   row[row_offsets[SCAN_DATA_NT] + 1] == 'd' &&
++			   row[row_offsets[SCAN_DATA_NT] + 2] == ' ') {
+ 			is_infrastructure = 0;
+-		else
+-			return -1;
++		} else {
++			row = row_end + 1;
++			continue;
++		}
+ 
+-		supported_security = strstr(security, "PSK") ||
+-			strstr(security, "OPEN") || strstr(security, "OWE");
+-		if (is_infrastructure && supported_security &&
++		last_row_index = row_index;
++		saw_any_row = 1;
++
++		if (is_infrastructure &&
++		    !mtk_channel_to_mhz_band(radio_band, (int)channel,
++					      &entry_mhz, &entry_band) &&
++		    !mtk_scanlist_has_duplicate(buf, *output_len, mac,
++						 (uint8_t)channel) &&
+ 		    *output_len <= output_cap &&
+ 		    output_cap - *output_len >= sizeof(*entry)) {
++			if (signal > 255)
++				signal = 255;
++			else if (signal < 128)
++				signal = 128;
++
+ 			entry = (struct iwinfo_scanlist_entry *)(buf + *output_len);
+ 			memset(entry, 0, sizeof(*entry));
+-			crypto = &entry->crypto;
+ 			memcpy(entry->mac, mac, sizeof(mac));
++			entry->band = entry_band;
+ 			entry->channel = (uint8_t)channel;
++			entry->mhz = entry_mhz;
+ 			entry->signal = (uint8_t)signal;
+ 			entry->quality = (uint8_t)quality;
+ 			entry->quality_max = 100;
+ 			entry->mode = IWINFO_OPMODE_MASTER;
+ 
+-			if (strstr(security, "PSK") || strstr(security, "OWE")) {
+-				crypto->enabled = true;
+-
+-				if (strstr(security, "WPAPSK")) {
+-					crypto->wpa_version |= 1 << 0;
+-					crypto->auth_suites |= IWINFO_KMGMT_PSK;
+-				}
+-
+-				if (strstr(security, "WPA2PSK")) {
+-					crypto->wpa_version |= 1 << 1;
+-					crypto->auth_suites |= IWINFO_KMGMT_PSK;
+-				}
+-
+-				if (strstr(security, "WPA3PSK")) {
+-					crypto->wpa_version |= 1 << 2;
+-					crypto->auth_suites |= IWINFO_KMGMT_SAE;
+-				}
+-
+-				if (strstr(security, "OWE")) {
+-					crypto->wpa_version |= 1 << 2;
+-					crypto->auth_suites |= IWINFO_KMGMT_OWE;
+-				}
+-
+-				if (strstr(security, "AES"))
+-					crypto->pair_ciphers |= IWINFO_CIPHER_CCMP;
+-
+-				if (strstr(security, "CCMP256"))
+-					crypto->pair_ciphers |= IWINFO_CIPHER_CCMP256;
+-
+-				if (strstr(security, "TKIP"))
+-					crypto->pair_ciphers |= IWINFO_CIPHER_TKIP;
+-
+-				if (strstr(security, "GCMP128"))
+-					crypto->pair_ciphers |= IWINFO_CIPHER_GCMP;
+-
+-				if (strstr(security, "GCMP256"))
+-					crypto->pair_ciphers |= IWINFO_CIPHER_GCMP256;
+-			}
++			mtk_scanlist_fill_ht_info(row, row_offsets,
++						  (uint8_t)channel,
++						  &entry->ht_chan_info);
++			mtk_scanlist_parse_crypto(security, &entry->crypto);
+ 
+ 			memcpy(entry->ssid, row + offsets[SCAN_DATA_SSID], ssid_len);
+ 			entry->ssid[ssid_len] = '\0';
+ 			*output_len += sizeof(*entry);
+ 		}
+ 
+-		expected_row++;
+ 		row = row_end + 1;
+ 	}
+ 
+-	if (expected_row == (size_t)requested_index)
+-		return -1;
+-
+ 	*total_out = total;
+-	*next_index = (int)expected_row;
++	*next_index = saw_any_row ? (int)(last_row_index + 1) : total;
+ 	return 0;
+ }
+ 
+@@ -1124,6 +1429,7 @@ static int mtk_get_scanlist(const char *
+ 	size_t entry_cap = output_cap / sizeof(struct iwinfo_scanlist_entry);
+ 	size_t response_len;
+ 	size_t page_count = 0;
++	enum mtk_config_band radio_band;
+ 	char ifname[IFNAMSIZ];
+ 	int requested_index = 0;
+ 	int total = -1;
+@@ -1141,6 +1447,8 @@ static int mtk_get_scanlist(const char *
+ 	if (!data)
+ 		return -1;
+ 
++	radio_band = mtk_detect_device_band(dev, ifname);
++
+ 	scan_wrq.u.data.pointer = scan_cmd;
+ 	scan_wrq.u.data.length = (uint16_t)(sizeof("SiteSurvey=") - 1);
+ 	if (mtk_ioctl(ifname, RTPRIV_IOCTL_SET, &scan_wrq) < 0)
+@@ -1154,16 +1462,29 @@ static int mtk_get_scanlist(const char *
+ 
+ 		memset(data, 0, data_len + 1);
+ 		if (mtk_get_scanlist_dump(ifname, requested_index, data, data_len,
+-					  &response_len) < 0)
++					  &response_len) < 0) {
++			if (requested_index > 0 && output_len > 0) {
++				*len = (int)output_len;
++				ret = 0;
++			}
+ 			goto out;
++		}
+ 
+ 		if (response_len > data_len || response_len == 0)
+ 			goto out;
+ 
+ 		if (response_len == sizeof("No BssInfo\n") - 1 &&
+ 		    !memcmp(data, "No BssInfo\n", sizeof("No BssInfo\n") - 1)) {
+-			if (requested_index != 0)
+-				goto out;
++			if (requested_index > 0)
++				*len = (int)output_len;
++			ret = 0;
++			goto out;
++		}
++
++		if (requested_index > 0 &&
++		    response_len >= sizeof("BssInfo Idx(") - 1 &&
++		    !memcmp(data, "BssInfo Idx(", sizeof("BssInfo Idx(") - 1)) {
++			*len = (int)output_len;
+ 			ret = 0;
+ 			goto out;
+ 		}
+@@ -1173,23 +1494,26 @@ static int mtk_get_scanlist(const char *
+ 			goto out;
+ 
+ 		if (mtk_scanlist_parse_page(data, response_len, requested_index,
+-					    total, buf, output_cap, &output_len,
+-					    &page_total, &next_index))
++					    radio_band, buf, output_cap,
++					    &output_len, &page_total,
++					    &next_index))
+ 			goto out;
+ 
+-		if (total < 0)
+-			total = page_total;
+-		else if (page_total != total)
+-			goto out;
++		total = page_total;
+ 
+-		if (output_len == output_cap) {
++		if (output_len == output_cap || next_index >= total) {
+ 			*len = (int)output_len;
+ 			ret = 0;
+ 			goto out;
+ 		}
+ 
+-		if (next_index <= requested_index || next_index > total)
++		if (next_index <= requested_index) {
++			if (output_len > 0) {
++				*len = (int)output_len;
++				ret = 0;
++			}
+ 			goto out;
++		}
+ 
+ 		requested_index = next_index;
+ 	}
+diff -uN -p -r /tmp/iwinfo-test/orig-tree/mtwifi.h /tmp/iwinfo-test/src-tree/mtwifi.h
+--- a/mtwifi.h	2026-09-22 12:11:23.172018007 +0800
++++ b/mtwifi.h	2026-11-23 13:31:13.808308705 +0800
+@@ -81,6 +81,11 @@ struct channel_list_basic {
+ #define RTPRIV_IOCTL_GET_DRIVER_INFO        (SIOCIWFIRSTPRIV + 0x1D)
+ #define OID_802_11_COUNTRYCODE				0x1907
+ #define OID_802_11_BW						0x1903
++#define OID_802_11_EXTENSION_CHANNEL		0x1904
++
++#define EXTCHA_NONE				0
++#define EXTCHA_ABOVE				1
++#define EXTCHA_BELOW				3
+ #define OID_GET_CHAN_LIST					0x0998
+ #define OID_GET_WIRELESS_BAND				0x09B4
+ #define OID_GET_CHANNEL_LIST					0x09C0

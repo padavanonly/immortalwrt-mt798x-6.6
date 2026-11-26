@@ -13,8 +13,6 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  drivers/net/phy/sfp.c | 6 +++---
  1 file changed, 3 insertions(+), 3 deletions(-)
 
-diff --git a/drivers/net/phy/sfp.c b/drivers/net/phy/sfp.c
-index 305689e..7227213 100644
 --- a/drivers/net/phy/sfp.c
 +++ b/drivers/net/phy/sfp.c
 @@ -156,7 +156,7 @@ static const char *gpio_names[] = {
@@ -26,7 +24,7 @@ index 305689e..7227213 100644
  	GPIOD_IN,
  	GPIOD_IN,
  	GPIOD_ASIS,
-@@ -546,7 +546,7 @@ static unsigned int sfp_gpio_get_state(struct sfp *sfp)
+@@ -569,7 +569,7 @@ static unsigned int sfp_gpio_get_state(s
  	unsigned int i, state, v;
  
  	for (i = state = 0; i < GPIO_MAX; i++) {
@@ -35,7 +33,7 @@ index 305689e..7227213 100644
  			continue;
  
  		v = gpiod_get_value_cansleep(sfp->gpio[i]);
-@@ -3042,7 +3042,7 @@ static int sfp_probe(struct platform_device *pdev)
+@@ -3096,7 +3096,7 @@ static int sfp_probe(struct platform_dev
  	}
  
  	for (i = 0; i < GPIO_MAX; i++) {
@@ -44,6 +42,3 @@ index 305689e..7227213 100644
  			continue;
  
  		sfp->gpio_irq[i] = gpiod_to_irq(sfp->gpio[i]);
--- 
-2.45.2
-

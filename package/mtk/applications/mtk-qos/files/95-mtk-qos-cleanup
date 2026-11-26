@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+[ -x /etc/init.d/mtk_npu_sqm ] && {
+	/etc/init.d/mtk_npu_sqm disable >/dev/null 2>&1 || true
+	/etc/init.d/mtk_npu_sqm stop >/dev/null 2>&1 || true
+}
+
+if [ -f /etc/config/mtk_npu_sqm ] && [ -f /etc/config/mtk_qos ]; then
+	old_dl="$(uci -q get mtk_npu_sqm.global.download)"
+	old_ul="$(uci -q get mtk_npu_sqm.global.upload)"
+	old_sch="$(uci -q get mtk_npu_sqm.global.scheduler)"
+	[ -n "$old_dl" ] && [ "$old_dl" != "0" ] && uci -q set "mtk_qos.global.download_kbps=$old_dl"
+	[ -n "$old_ul" ] && [ "$old_ul" != "0" ] && uci -q set "mtk_qos.global.upload_kbps=$old_ul"
+	[ -n "$old_sch" ] && uci -q set "mtk_qos.global.scheduler=$old_sch"
+	uci -q commit mtk_qos
+	rm -f /etc/config/mtk_npu_sqm
+fi
+
+rm -rf /www/luci-static/resources/view/network/mtk-npu-sqm.js \
+       /usr/libexec/rpcd/luci.mtk_npu_sqm \
+       /usr/share/luci/menu.d/luci-app-mtk-npu-sqm.json \
+       /usr/share/rpcd/acl.d/luci-app-mtk-npu-sqm.json \
+       /usr/share/ucitrack/luci-app-mtk-npu-sqm.json \
+       /usr/sbin/mtk-npu-sqm \
+       /etc/init.d/mtk_npu_sqm \
+       /etc/hotplug.d/iface/95-mtk-npu-sqm
+exit 0

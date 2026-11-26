@@ -257,3 +257,6 @@ msgstr ""
 #: htdocs/luci-static/resources/view/wrtbwmon/details.js:176
 msgid "ipv6"
 msgstr ""
+
+msgid "Unable to load the customized hostname file: "
+msgstr ""

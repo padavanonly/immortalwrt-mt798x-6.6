@@ -51,6 +51,12 @@ qihoo,360t7|\
 routerich,ax3000-ubootmod|\
 ruijie,ew-6000gx-pro-ubootmod|\
 ruijie,rg-x60-new-ubootmod|\
+tplink,tl-7dr7230-rev1.0-sp2|\
+tplink,tl-7dr7230-v1|\
+tplink,tl-7dr7230-v2|\
+tplink,tl-7dr7250-v1|\
+tplink,tl-7dr7299-v1|\
+tplink,tl-7dr7299-v1-dsa|\
 tplink,tl-xdr4288|\
 tplink,tl-xdr6086|\
 tplink,tl-xdr6088|\
@@ -65,6 +71,7 @@ acer,predator-w6|\
 acer,predator-w6d|\
 acer,vero-w6m|\
 glinet,gl-mt2500|\
+glinet,gl-mt2500-airoha|\
 glinet,gl-mt6000|\
 glinet,gl-x3000|\
 glinet,gl-xe3000|\

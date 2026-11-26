@@ -1,20 +1,17 @@
+# Copyright (C) 2010-2026 Jo-Philipp Wich <jo@mein.io>
 #
-# Copyright (C) 2010-2015 Jo-Philipp Wich <jo@mein.io>
-#
-# This is free software, licensed under the GNU General Public License v2.
-# See /LICENSE for more information.
-#
+# SPDX-License-Identifier: GPL-2.0-only
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=uhttpd
-PKG_RELEASE:=4
+PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=$(PROJECT_GIT)/project/uhttpd.git
-PKG_SOURCE_DATE:=2025-07-06
-PKG_SOURCE_VERSION:=7e64e8bad2415cec0a6d9770ec379db54273c7a7
-PKG_MIRROR_HASH:=61a7ad046f31f229f6a8620b890e448c5df397391edb5f7bd2a84446486eaff4
+PKG_SOURCE_DATE:=2026-11-05
+PKG_SOURCE_VERSION:=93b05e0b65d91c23c5aa8fdde378df1f174ec71d
+PKG_MIRROR_HASH:=8305c6d4c63aa3c8f6471c55256a378dd9ee3b2898e0b3c096540ba4ec23f2db
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
 PKG_LICENSE:=ISC
 

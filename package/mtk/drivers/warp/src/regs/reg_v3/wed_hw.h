@@ -1,16 +1,16 @@
 #ifndef __wed0_REGS_H__
 #define __wed0_REGS_H__
 
-#include "common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef unsigned int UINT32;
 
 #ifndef REG_BASE_C_MODULE
 // ----------------- wed0 Bit Field Definitions -------------------
-
 #define REG_FLD(width, shift) (shift)
+
 #define PACKING
 typedef unsigned int FIELD;
 
@@ -128,7 +128,10 @@ typedef PACKING union
         FIELD MI2_OUTSTD_EXTEND_EN      : 1;
         FIELD MI2_LOCK_ERR_FLAG         : 1;
         FIELD MI2_CTRL_UPD              : 1;
-        FIELD rsv_28                    : 4;
+        FIELD MI3_QOS_ON                : 1;
+        FIELD MI3_OUTSTD_EXTEND_EN      : 1;
+        FIELD MI3_LOCK_ERR_FLAG         : 1;
+        FIELD MI3_CTRL_UPD              : 1;
     } Bits;
     UINT32 Raw;
 } REG_WED_AXI_CTRL, *PREG_WED_AXI_CTRL;
@@ -138,7 +141,13 @@ typedef PACKING union
     PACKING struct
     {
         FIELD COHERENT_WAIT_MAXIMUM     : 8;
-        FIELD rsv_8                     : 24;
+        FIELD rsv_8                     : 16;
+        FIELD GLO_AWULTRA               : 2;
+        FIELD rsv_26                    : 1;
+        FIELD GLO_AWULTRA_FORCE         : 1;
+        FIELD GLO_ARULTRA               : 2;
+        FIELD rsv_30                    : 1;
+        FIELD GLO_ARULTRA_FORCE         : 1;
     } Bits;
     UINT32 Raw;
 } REG_WED_CTRL2, *PREG_WED_CTRL2;
@@ -147,35 +156,28 @@ typedef PACKING union
 {
     PACKING struct
     {
-        FIELD TF_LEN_ERR                : 1;
-        FIELD TF_TKID_WO_PYLD           : 1;
+        FIELD rsv_0                     : 2;
         FIELD TX_DIDX_FIN0              : 1;
         FIELD TX_DIDX_FIN1              : 1;
-        FIELD TF_TKID_FIFO_INVLD        : 1;
-        FIELD rsv_5                     : 3;
+        FIELD rsv_4                     : 4;
         FIELD TX_BM_LTH                 : 1;
         FIELD TX_BM_HTH                 : 1;
         FIELD TX_TKID_LTH               : 1;
         FIELD TX_TKID_HTH               : 1;
-        FIELD RX_BM_FREE_AT_EMPTY       : 1;
-        FIELD RX_BM_DMAD_RD_ERR         : 1;
+        FIELD RX_PG_BM_L_BUF            : 1;
+        FIELD RX_PG_BM_H_BUF            : 1;
+        FIELD RX_BM_L_BUF               : 1;
+        FIELD RX_BM_H_BUF               : 1;
         FIELD RX_DIDX_FIN0              : 1;
         FIELD RX_DIDX_FIN1              : 1;
-        FIELD RX_DRV_R_RESP_ERR         : 1;
-        FIELD RX_DRV_W_RESP_ERR         : 1;
         FIELD RX_DRV_COHERENT           : 1;
-        FIELD RX_DRV_INTI_WDMA_ENABLED  : 1;
-        FIELD RX_DRV_BM_DMAD_COHERENT   : 1;
-        FIELD RX_DRV_BM_DMAD_ERROR      : 1;
-        FIELD TX_DMA_R_RESP_ERR         : 1;
-        FIELD TX_DMA_W_RESP_ERR         : 1;
+        FIELD rsv_19                    : 5;
         FIELD RX_DRV_DMAD_RECYCLE       : 1;
-        FIELD RX_DRV_GET_BM_DMAD_SKIP   : 1;
-        FIELD WPDMA_RX_D_DRV_ERR        : 1;
+        FIELD rsv_25                    : 2;
         FIELD MID_RDY                   : 1;
         FIELD BUS_MON                   : 1;
-        FIELD RX_ROUTE_QM_ERR           : 1;
-        FIELD MID_TAKE_IDX_ERR          : 1;
+        FIELD rsv_29                    : 1;
+        FIELD ERR_MON                   : 1;
         FIELD FDBK_LEAVE_FULL           : 1;
     } Bits;
     UINT32 Raw;
@@ -269,6 +271,42 @@ typedef PACKING union
     } Bits;
     UINT32 Raw;
 } REG_WED_IRQ_MON, *PREG_WED_IRQ_MON;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD TF_LEN_ERR                : 1;
+        FIELD TF_TKID_WO_PYLD           : 1;
+        FIELD TX_TKID_FREE_ALREADY_FREE : 1;
+        FIELD rsv_3                     : 1;
+        FIELD TF_TKID_FIFO_INVLD        : 1;
+        FIELD rsv_5                     : 2;
+        FIELD TX_PAO_ERR                : 1;
+        FIELD rsv_8                     : 2;
+        FIELD TX_BM_FREE_AT_EMPTY       : 1;
+        FIELD TX_BM_DMAD_RD_ERR         : 1;
+        FIELD RX_BM_FREE_AT_EMPTY       : 1;
+        FIELD RX_BM_DMAD_RD_ERR         : 1;
+        FIELD rsv_14                    : 2;
+        FIELD RX_DRV_R_RESP_ERR         : 1;
+        FIELD RX_DRV_W_RESP_ERR         : 1;
+        FIELD rsv_18                    : 1;
+        FIELD RX_DRV_INTI_WDMA_ENABLED  : 1;
+        FIELD RX_DRV_BM_DMAD_COHERENT   : 1;
+        FIELD RX_DRV_BM_DMAD_ERROR      : 1;
+        FIELD TX_DMA_R_RESP_ERR         : 1;
+        FIELD TX_DMA_W_RESP_ERR         : 1;
+        FIELD rsv_24                    : 1;
+        FIELD RX_DRV_GET_BM_DMAD_SKIP   : 1;
+        FIELD WPDMA_RX_D_DRV_ERR        : 1;
+        FIELD rsv_27                    : 2;
+        FIELD RX_ROUTE_QM_ERR           : 1;
+        FIELD MID_TAKE_IDX_ERR          : 1;
+        FIELD rsv_31                    : 1;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_ERR_MON, *PREG_WED_ERR_MON;
 
 typedef PACKING union
 {
@@ -516,9 +554,11 @@ typedef PACKING union
     PACKING struct
     {
         FIELD VLD_GRP_NUM               : 8;
-        FIELD rsv_8                     : 8;
-        FIELD RSV_GRP_NUM               : 8;
+        FIELD rsv_8                     : 4;
         FIELD VB_PGSEL                  : 1;
+        FIELD rsv_13                    : 3;
+        FIELD RSV_GRP_NUM               : 8;
+        FIELD rsv_24                    : 1;
         FIELD FORCE_DRAM                : 1;
         FIELD FREE_WAIT                 : 1;
         FIELD FREE_FORMAT               : 1;
@@ -578,8 +618,9 @@ typedef PACKING union
 {
     PACKING struct
     {
+        FIELD FREE_NUM                  : 16;
         FIELD FSM                       : 12;
-        FIELD rsv_12                    : 20;
+        FIELD rsv_28                    : 4;
     } Bits;
     UINT32 Raw;
 } REG_WED_TX_TKID_STS, *PREG_WED_TX_TKID_STS;
@@ -927,6 +968,15 @@ typedef PACKING union
 {
     PACKING struct
     {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_PG_BM_TO_RRO_RX_D_DRV_DMAD_MIB, *PREG_WED_RX_PG_BM_TO_RRO_RX_D_DRV_DMAD_MIB;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
         FIELD rsv_0                     : 16;
         FIELD MAX_DIV                   : 4;
         FIELD rsv_20                    : 4;
@@ -1083,7 +1133,9 @@ typedef PACKING union
         FIELD BIG_ENDIAN                : 1;
         FIELD DESC_32B_E                : 1;
         FIELD WCOMPLETE_SEL             : 1;
-        FIELD rsv_10                    : 19;
+        FIELD rsv_10                    : 1;
+        FIELD RX_DMA_BURST_CFG          : 2;
+        FIELD rsv_13                    : 16;
         FIELD BYTE_SWAP                 : 1;
         FIELD CSR_CLKGATE_BYP           : 1;
         FIELD rsv_31                    : 1;
@@ -1626,8 +1678,10 @@ typedef PACKING union
         FIELD RX_DRV_RING1_PKT_PROC     : 1;
         FIELD RX_DRV_RING0_CRX_SYNC     : 1;
         FIELD RX_DRV_RING1_CRX_SYNC     : 1;
-        FIELD RSV0                      : 8;
-        FIELD RX_DRV_EVENT_PKT_FMT_VER  : 3;
+        FIELD RSV0                      : 4;
+        FIELD RX_DRV_EVENT_PKT_FMT_VER  : 4;
+        FIELD RSV2                      : 2;
+        FIELD RX_DRV_UNS_VER_FORCE_4    : 1;
         FIELD RX_DRV_UNSUPPORT_FMT_BYP  : 1;
         FIELD RX_DRV_EVENT_PKT_FMT_CHK  : 1;
         FIELD RX_DDONE2_WR              : 1;
@@ -1662,6 +1716,33 @@ typedef PACKING union
 {
     PACKING struct
     {
+        FIELD TX_WR_BND_4KB_BST         : 1;
+        FIELD TX_RD_BND_4KB_BST         : 1;
+        FIELD rsv_2                     : 14;
+        FIELD RX_WR_BND_4KB_BST         : 1;
+        FIELD RX_RD_BND_4KB_BST         : 1;
+        FIELD rsv_18                    : 14;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_BUS_CFG, *PREG_WED_WPDMA_BUS_CFG;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD rsv_0                     : 8;
+        FIELD RING_LOWTH                : 8;
+        FIELD MAX_PTIME                 : 8;
+        FIELD MAX_PIDX                  : 7;
+        FIELD EN                        : 1;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_TX_DLY_CIDX, *PREG_WED_WPDMA_TX_DLY_CIDX;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
         FIELD SDL1_MAX                  : 14;
         FIELD rsv_14                    : 17;
         FIELD SDL1_FIXED                : 1;
@@ -1678,10 +1759,17 @@ typedef PACKING union
         FIELD rsv_2                     : 6;
         FIELD RX_DONE0                  : 1;
         FIELD RX_DONE1                  : 1;
-        FIELD rsv_10                    : 6;
+        FIELD rsv_10                    : 2;
+        FIELD RRO_RX_INT0               : 1;
+        FIELD RRO_RX_INT1               : 1;
+        FIELD rsv_14                    : 2;
         FIELD TX_FREE_DONE0             : 1;
         FIELD TX_FREE_DONE1             : 1;
-        FIELD rsv_18                    : 14;
+        FIELD rsv_18                    : 6;
+        FIELD MSDU_PG_INT0              : 1;
+        FIELD MSDU_PG_INT1              : 1;
+        FIELD MSDU_PG_INT2              : 1;
+        FIELD rsv_27                    : 5;
     } Bits;
     UINT32 Raw;
 } REG_WED_WPDMA_FORCE_PROC, *PREG_WED_WPDMA_FORCE_PROC;
@@ -1733,7 +1821,12 @@ typedef PACKING union
         FIELD rsv_2                     : 6;
         FIELD RX_DONE_INT0              : 1;
         FIELD RX_DONE_INT1              : 1;
-        FIELD rsv_10                    : 6;
+        FIELD RRO_RX_INT0               : 1;
+        FIELD RRO_RX_INT1               : 1;
+        FIELD MSDU_PG_INT0              : 1;
+        FIELD MSDU_PG_INT1              : 1;
+        FIELD MSDU_PG_INT2              : 1;
+        FIELD rsv_15                    : 1;
         FIELD TX_FREE_DONE_INT0         : 1;
         FIELD TX_FREE_DONE_INT1         : 1;
         FIELD rsv_18                    : 14;
@@ -2104,7 +2197,7 @@ typedef PACKING union
     {
         FIELD CPU_IDX                   : 12;
         FIELD rsv_12                    : 4;
-        FIELD RLS_IDX                   : 12;
+        FIELD CPU_IDX_INT               : 12;
         FIELD rsv_28                    : 4;
     } Bits;
     UINT32 Raw;
@@ -2115,7 +2208,9 @@ typedef PACKING union
     PACKING struct
     {
         FIELD DMA_IDX_MIRO              : 12;
-        FIELD rsv_12                    : 20;
+        FIELD rsv_12                    : 4;
+        FIELD RLS_IDX                   : 12;
+        FIELD rsv_28                    : 4;
     } Bits;
     UINT32 Raw;
 } REG_WED_WPDMA_TX0_CTRL3, *PREG_WED_WPDMA_TX0_CTRL3;
@@ -2147,7 +2242,7 @@ typedef PACKING union
     {
         FIELD CPU_IDX                   : 12;
         FIELD rsv_12                    : 4;
-        FIELD RLS_IDX                   : 12;
+        FIELD CPU_IDX_INT               : 12;
         FIELD rsv_28                    : 4;
     } Bits;
     UINT32 Raw;
@@ -2158,10 +2253,300 @@ typedef PACKING union
     PACKING struct
     {
         FIELD DMA_IDX_MIRO              : 12;
-        FIELD rsv_12                    : 20;
+        FIELD rsv_12                    : 4;
+        FIELD RLS_IDX                   : 12;
+        FIELD rsv_28                    : 4;
     } Bits;
     UINT32 Raw;
 } REG_WED_WPDMA_TX1_CTRL3, *PREG_WED_WPDMA_TX1_CTRL3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_MON_R0_WRAP, *PREG_RRO_RX_D_DRV_MON_R0_WRAP;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_MON_R1_WRAP, *PREG_RRO_RX_D_DRV_MON_R1_WRAP;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_MON_R2_WRAP, *PREG_RRO_RX_D_DRV_MON_R2_WRAP;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_MON0, *PREG_RRO_RX_D_DRV_MON0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_MON1, *PREG_RRO_RX_D_DRV_MON1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_MON2, *PREG_RRO_RX_D_DRV_MON2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_ERR_COMP0, *PREG_RRO_RX_D_DRV_ERR_COMP0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_ERR_COMP1, *PREG_RRO_RX_D_DRV_ERR_COMP1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_ERR_COMP2, *PREG_RRO_RX_D_DRV_ERR_COMP2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_ERR_COMP3, *PREG_RRO_RX_D_DRV_ERR_COMP3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD WADDR                     : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_LEAGLE_START, *PREG_RRO_RX_D_DRV_LEAGLE_START;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD WADDR                     : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_LEAGLE_END, *PREG_RRO_RX_D_DRV_LEAGLE_END;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_MON_R0_WRAP, *PREG_RRO_RX_PG_DRV_MON_R0_WRAP;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_MON_R1_WRAP, *PREG_RRO_RX_PG_DRV_MON_R1_WRAP;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_MON_R2_WRAP, *PREG_RRO_RX_PG_DRV_MON_R2_WRAP;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_MON0, *PREG_RRO_RX_PG_DRV_MON0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_MON1, *PREG_RRO_RX_PG_DRV_MON1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_MON2, *PREG_RRO_RX_PG_DRV_MON2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_ERR_COMP0, *PREG_RRO_RX_PG_DRV_ERR_COMP0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_ERR_COMP1, *PREG_RRO_RX_PG_DRV_ERR_COMP1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_ERR_COMP2, *PREG_RRO_RX_PG_DRV_ERR_COMP2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD DATA                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_ERR_COMP3, *PREG_RRO_RX_PG_DRV_ERR_COMP3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD WADDR                     : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_LEAGLE_START, *PREG_RRO_RX_PG_DRV_LEAGLE_START;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD WADDR                     : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_LEAGLE_END, *PREG_RRO_RX_PG_DRV_LEAGLE_END;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD BASE                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_ERR_SWITCH_ADDR, *PREG_RRO_RX_D_DRV_ERR_SWITCH_ADDR;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD BASE                      : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_ERR_SWITCH_ADDR, *PREG_RRO_RX_PG_DRV_ERR_SWITCH_ADDR;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_IN_MIB, *PREG_RRO_RX_D_DRV_IN_MIB;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_OU_MIB, *PREG_RRO_RX_D_DRV_OU_MIB;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_D_DRV_DESC_MIB, *PREG_RRO_RX_D_DRV_DESC_MIB;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_IN_MIB, *PREG_RRO_RX_PG_DRV_IN_MIB;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_OU_MIB, *PREG_RRO_RX_PG_DRV_OU_MIB;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_RRO_RX_PG_DRV_DESC_MIB, *PREG_RRO_RX_PG_DRV_DESC_MIB;
 
 typedef PACKING union
 {
@@ -2406,7 +2791,9 @@ typedef PACKING union
         FIELD rsv_0                     : 16;
         FIELD CRX_IDX0                  : 1;
         FIELD CRX_IDX1                  : 1;
-        FIELD rsv_18                    : 6;
+        FIELD rsv_18                    : 2;
+        FIELD DRX_IDX_ALL               : 1;
+        FIELD rsv_21                    : 3;
         FIELD DRV_IDX0                  : 1;
         FIELD DRV_IDX1                  : 1;
         FIELD rsv_26                    : 6;
@@ -2670,6 +3057,20 @@ typedef PACKING union
 {
     PACKING struct
     {
+        FIELD CIDX_DLY_THRES_EN         : 1;
+        FIELD rsv_1                     : 1;
+        FIELD CIDX_DLY_CNT_CLR          : 2;
+        FIELD rsv_4                     : 4;
+        FIELD CIDX_DLY_CNT_MAX          : 8;
+        FIELD CIDX_DLY_THRES            : 16;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_CIDX_WR_CFG, *PREG_WED_WPDMA_RX_D_CIDX_WR_CFG;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
         FIELD ADDRESS                   : 32;
     } Bits;
     UINT32 Raw;
@@ -2703,6 +3104,66 @@ typedef PACKING union
     } Bits;
     UINT32 Raw;
 } REG_WED_WPDMA_RX_D_RING1_CFG_ADDR_H, *PREG_WED_WPDMA_RX_D_RING1_CFG_ADDR_H;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ENABLE                    : 1;
+        FIELD ERR                       : 1;
+        FIELD ERR_CLR                   : 1;
+        FIELD rsv_3                     : 29;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_AW_RAN_DBG0, *PREG_WED_WPDMA_RX_D_AW_RAN_DBG0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ADDR_MAX_31_0             : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_AW_RAN_DBG1, *PREG_WED_WPDMA_RX_D_AW_RAN_DBG1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ADDR_MIN_31_0             : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_AW_RAN_DBG2, *PREG_WED_WPDMA_RX_D_AW_RAN_DBG2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ADDR_MAX_47_32            : 16;
+        FIELD ADDR_MIN_47_32            : 16;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_AW_RAN_DBG3, *PREG_WED_WPDMA_RX_D_AW_RAN_DBG3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ERR_ADDR_31_0             : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_AW_RAN_DBG4, *PREG_WED_WPDMA_RX_D_AW_RAN_DBG4;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ERR_ADDR_47_16            : 16;
+        FIELD ERR_LEN                   : 4;
+        FIELD rsv_20                    : 12;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WPDMA_RX_D_AW_RAN_DBG5, *PREG_WED_WPDMA_RX_D_AW_RAN_DBG5;
 
 typedef PACKING union
 {
@@ -2876,7 +3337,11 @@ typedef PACKING union
         FIELD RX1_SIDX_OW               : 1;
         FIELD RX0_SIDX_CLR              : 1;
         FIELD RX1_SIDX_CLR              : 1;
-        FIELD rsv_26                    : 6;
+        FIELD DDONE2_EN                 : 1;
+        FIELD DDONE2_BUSY               : 1;
+        FIELD DDONE2_CLR_MET            : 1;
+        FIELD DDONE2_CLR                : 1;
+        FIELD rsv_30                    : 2;
     } Bits;
     UINT32 Raw;
 } REG_WED_WDMA_RX_PREF_CFG, *PREG_WED_WDMA_RX_PREF_CFG;
@@ -2925,6 +3390,20 @@ typedef PACKING union
 {
     PACKING struct
     {
+        FIELD CIDX_DLY_THRES_EN         : 1;
+        FIELD rsv_1                     : 1;
+        FIELD CIDX_DLY_CNT_CLR          : 2;
+        FIELD rsv_4                     : 4;
+        FIELD CIDX_DLY_CNT_MAX          : 8;
+        FIELD CIDX_DLY_THRES            : 16;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_WDMA_RX_CIDX_WR_CFG, *PREG_WED_WDMA_RX_CIDX_WR_CFG;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
         FIELD TX_RING_NUM               : 8;
         FIELD RX_RING_NUM               : 8;
         FIELD BASE_PTR_WIDTH            : 8;
@@ -2947,7 +3426,8 @@ typedef PACKING union
         FIELD BIG_ENDIAN                : 1;
         FIELD TX_DDONE_CHK_LAST         : 1;
         FIELD LS_CHK_BYP                : 1;
-        FIELD RSV0                      : 3;
+        FIELD RXDRV_DDONE2_CHK          : 1;
+        FIELD TX_DRV_BURST_CFG          : 2;
         FIELD RXDRV_DISABLED_FSM_AUTO_IDLE : 1;
         FIELD DISABLE_IRQ_HANDLE_PROC   : 1;
         FIELD DISABLE_DMAD_HANDLE_PROC  : 1;
@@ -2964,7 +3444,7 @@ typedef PACKING union
         FIELD RST_INIT_COMPLETE_FLAG    : 1;
         FIELD DYNAMIC_SKIP_DMAD_CNT_SRC : 1;
         FIELD DYNAMIC_SKIP_DMAD_THRES_REACH_METHOD : 1;
-        FIELD rsv_29                    : 1;
+        FIELD TX_DRV_DTX_DLY_DIS        : 1;
         FIELD RXDRV_CLKGATE_BYP         : 1;
         FIELD rsv_31                    : 1;
     } Bits;
@@ -2980,7 +3460,8 @@ typedef PACKING union
         FIELD CRX_IDX1                  : 1;
         FIELD CTX_IDX0                  : 1;
         FIELD CTX_IDX1                  : 1;
-        FIELD rsv_20                    : 4;
+        FIELD DRX_IDX_ALL               : 1;
+        FIELD rsv_21                    : 3;
         FIELD DRV_IDX0                  : 1;
         FIELD DRV_IDX1                  : 1;
         FIELD rsv_26                    : 6;
@@ -3204,10 +3685,10 @@ typedef PACKING union
 {
     PACKING struct
     {
-        FIELD ENABLE                    : 8;
-        FIELD rsv_8                     : 8;
-        FIELD STATUS                    : 12;
-        FIELD rsv_28                    : 3;
+        FIELD ENABLE                    : 9;
+        FIELD rsv_9                     : 7;
+        FIELD STATUS                    : 13;
+        FIELD rsv_29                    : 2;
         FIELD CG_DIS                    : 1;
     } Bits;
     UINT32 Raw;
@@ -3252,7 +3733,8 @@ typedef PACKING union
     PACKING struct
     {
         FIELD P2Q_CNT                   : 11;
-        FIELD rsv_11                    : 2;
+        FIELD rsv_11                    : 1;
+        FIELD P2Q_GFFDIS                : 1;
         FIELD P2Q_CLEAR                 : 1;
         FIELD P2Q_FULL                  : 1;
         FIELD P2Q_EMPTY                 : 1;
@@ -3320,7 +3802,8 @@ typedef PACKING union
         FIELD DMAD_CLR_PPE_FLD          : 2;
         FIELD DMAD_MOD_EN               : 7;
         FIELD DMAD_MOD_METHOD           : 1;
-        FIELD rsv_28                    : 4;
+        FIELD HOST_RING_SRC             : 2;
+        FIELD rsv_30                    : 2;
     } Bits;
     UINT32 Raw;
 } REG_WED_RTQM_IGRS0_CFG0, *PREG_WED_RTQM_IGRS0_CFG0;
@@ -3438,7 +3921,8 @@ typedef PACKING union
         FIELD DMAD_CLR_PPE_FLD          : 2;
         FIELD DMAD_MOD_EN               : 7;
         FIELD DMAD_MOD_METHOD           : 1;
-        FIELD rsv_28                    : 4;
+        FIELD HOST_RING_SRC             : 2;
+        FIELD rsv_30                    : 2;
     } Bits;
     UINT32 Raw;
 } REG_WED_RTQM_IGRS1_CFG0, *PREG_WED_RTQM_IGRS1_CFG0;
@@ -3556,7 +4040,8 @@ typedef PACKING union
         FIELD DMAD_CLR_PPE_FLD          : 2;
         FIELD DMAD_MOD_EN               : 7;
         FIELD DMAD_MOD_METHOD           : 1;
-        FIELD rsv_28                    : 4;
+        FIELD HOST_RING_SRC             : 2;
+        FIELD rsv_30                    : 2;
     } Bits;
     UINT32 Raw;
 } REG_WED_RTQM_IGRS2_CFG0, *PREG_WED_RTQM_IGRS2_CFG0;
@@ -3674,7 +4159,8 @@ typedef PACKING union
         FIELD DMAD_CLR_PPE_FLD          : 2;
         FIELD DMAD_MOD_EN               : 7;
         FIELD DMAD_MOD_METHOD           : 1;
-        FIELD rsv_28                    : 4;
+        FIELD HOST_RING_SRC             : 2;
+        FIELD rsv_30                    : 2;
     } Bits;
     UINT32 Raw;
 } REG_WED_RTQM_IGRS3_CFG0, *PREG_WED_RTQM_IGRS3_CFG0;
@@ -3985,7 +4471,23 @@ typedef PACKING union
         FIELD IGRS3_FIFO_R_ERR          : 1;
         FIELD ENQ_ERR                   : 1;
         FIELD DEQ_ERR                   : 1;
-        FIELD rsv_10                    : 22;
+        FIELD PFDBK_FIFO_W_ERR          : 1;
+        FIELD PFDBK_FIFO_R_ERR          : 1;
+        FIELD PFDBK_AGE_FIFO_W_ERR      : 1;
+        FIELD PFDBK_AGE_FIFO_R_ERR      : 1;
+        FIELD QFREE_SRCH_FIFO_W_ERR     : 1;
+        FIELD QFREE_SRCH_FIFO_R_ERR     : 1;
+        FIELD AGE_SRCH_FIFO_W_ERR       : 1;
+        FIELD AGE_SRCH_FIFO_R_ERR       : 1;
+        FIELD RRO_ITF_FIFO_W_ERR        : 1;
+        FIELD PN_ITF_FIFO_W_ERR         : 1;
+        FIELD CR_ITF_FIFO_W_ERR         : 1;
+        FIELD Q2BM_ITF_FIFO_R_ERR       : 1;
+        FIELD Q2H0_ITF_FIFO_W_ERR       : 1;
+        FIELD Q2H1_ITF_FIFO_W_ERR       : 1;
+        FIELD PFDBK_ITF_FIFO_R_ERR      : 1;
+        FIELD Q2N_ITF_FIFO_W_ERR        : 1;
+        FIELD rsv_26                    : 6;
     } Bits;
     UINT32 Raw;
 } REG_WED_RTQM_ERR_STS, *PREG_WED_RTQM_ERR_STS;
@@ -4178,9 +4680,13 @@ typedef PACKING union
         FIELD DBG_MON_SEL               : 8;
         FIELD DBG_ENQ_WR                : 1;
         FIELD DBG_ENQ_VLD               : 1;
-        FIELD rsv_10                    : 2;
         FIELD PPE_FDBK_DROP             : 1;
-        FIELD rsv_13                    : 19;
+        FIELD rsv_11                    : 1;
+        FIELD ENQ_DDONE_CTRL            : 2;
+        FIELD ENQ_DDONE_DW1_CTRL        : 2;
+        FIELD ENQ_DDONE_DW2_CTRL        : 2;
+        FIELD ENQ_DDONE2_CTRL           : 2;
+        FIELD rsv_20                    : 12;
     } Bits;
     UINT32 Raw;
 } REG_WED_RTQM_DBG_CFG, *PREG_WED_RTQM_DBG_CFG;
@@ -4364,7 +4870,10 @@ typedef PACKING union
 {
     PACKING struct
     {
-        FIELD rsv_0                     : 8;
+        FIELD FSM                       : 2;
+        FIELD FSM_FORCE_IDLE            : 1;
+        FIELD FLUSH_EN                  : 1;
+        FIELD rsv_4                     : 4;
         FIELD DFDBK_CSRN                : 5;
         FIELD rsv_13                    : 3;
         FIELD DFDBK_PPE_ENTRY           : 15;
@@ -4386,6 +4895,73 @@ typedef PACKING union
     } Bits;
     UINT32 Raw;
 } REG_WED_RROQM_MIOD_CFG, *PREG_WED_RROQM_MIOD_CFG;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD AGE_TIME                  : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RTQM_AGE_CFG1, *PREG_WED_RTQM_AGE_CFG1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD rsv_0                     : 1;
+        FIELD PREF_0_CLEAR              : 1;
+        FIELD PREF_0_FULL               : 1;
+        FIELD PREF_0_EMPTY              : 1;
+        FIELD rsv_4                     : 1;
+        FIELD PREF_1_CLEAR              : 1;
+        FIELD PREF_1_FULL               : 1;
+        FIELD PREF_1_EMPTY              : 1;
+        FIELD rsv_8                     : 1;
+        FIELD PREF_2_CLEAR              : 1;
+        FIELD PREF_2_FULL               : 1;
+        FIELD PREF_2_EMPTY              : 1;
+        FIELD rsv_12                    : 1;
+        FIELD PREF_3_CLEAR              : 1;
+        FIELD PREF_3_FULL               : 1;
+        FIELD PREF_3_EMPTY              : 1;
+        FIELD rsv_16                    : 1;
+        FIELD PREF_4_CLEAR              : 1;
+        FIELD PREF_4_FULL               : 1;
+        FIELD PREF_4_EMPTY              : 1;
+        FIELD rsv_20                    : 1;
+        FIELD PREF_5_CLEAR              : 1;
+        FIELD PREF_5_FULL               : 1;
+        FIELD PREF_5_EMPTY              : 1;
+        FIELD rsv_24                    : 1;
+        FIELD PREF_6_CLEAR              : 1;
+        FIELD PREF_6_FULL               : 1;
+        FIELD PREF_6_EMPTY              : 1;
+        FIELD rsv_28                    : 1;
+        FIELD PREF_7_CLEAR              : 1;
+        FIELD PREF_7_FULL               : 1;
+        FIELD PREF_7_EMPTY              : 1;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RTQM_AGE_FIFO_CFG, *PREG_WED_RTQM_AGE_FIFO_CFG;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RTQM_AGE_PKT_CNT, *PREG_WED_RTQM_AGE_PKT_CNT;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD CNT                       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RTQM_PFDBK_CNT, *PREG_WED_RTQM_PFDBK_CNT;
 
 typedef PACKING union
 {
@@ -4813,7 +5389,8 @@ typedef PACKING union
 {
     PACKING struct
     {
-        FIELD MAX_CNT                   : 12;
+        FIELD rsv_0                     : 4;
+        FIELD MAX_CNT_11_4              : 8;
         FIELD rsv_12                    : 4;
         FIELD RRO_IND_CMD_BASE_M        : 4;
         FIELD rsv_20                    : 12;
@@ -4857,9 +5434,11 @@ typedef PACKING union
     PACKING struct
     {
         FIELD PARTICULAR_SE_ID_ADDR_BASE_M : 4;
-        FIELD rsv_4                     : 12;
+        FIELD rsv_4                     : 4;
+        FIELD CLR_ADDR_ELEM_WSTRB       : 8;
         FIELD PREFETCH_ADDR_ELEM_FREE_CNT : 4;
-        FIELD rsv_20                    : 12;
+        FIELD rsv_20                    : 10;
+        FIELD CLR_ADDR_ELEM_AXI_OP      : 2;
     } Bits;
     UINT32 Raw;
 } REG_ADDR_ELEM_CONF_1, *PREG_ADDR_ELEM_CONF_1;
@@ -5009,11 +5588,14 @@ typedef PACKING union
         FIELD R0_INT_FLAG               : 1;
         FIELD R1_INT_FLAG               : 1;
         FIELD R2_INT_FLAG               : 1;
-        FIELD rsv_19                    : 1;
+        FIELD FORCE_IDLE_WHEN_DRV_ERROR : 1;
         FIELD INIT_COMPLETE_FLAG        : 1;
         FIELD POLL_FLAG                 : 1;
         FIELD BUSY_FLAG                 : 1;
-        FIELD rsv_23                    : 4;
+        FIELD ERR_LAT_OPT               : 1;
+        FIELD DMAD_DBG_EN               : 1;
+        FIELD DRV_DBG_CLR               : 1;
+        FIELD DRV_CLR                   : 1;
         FIELD INIT_FLAG_CLR             : 1;
         FIELD FORCE_RETURN_IDLE         : 1;
         FIELD FORCE_IDLE_WHEN_DRV_DISABLE : 1;
@@ -5120,7 +5702,8 @@ typedef PACKING union
         FIELD CPU_IDX                   : 12;
         FIELD rsv_12                    : 4;
         FIELD DMA_IDX_MIRO              : 12;
-        FIELD rsv_28                    : 4;
+        FIELD rsv_28                    : 3;
+        FIELD BURST_MODE_DISABLE        : 1;
     } Bits;
     UINT32 Raw;
 } REG_RRO_MSDU_PG_2_CTRL2, *PREG_RRO_MSDU_PG_2_CTRL2;
@@ -5240,11 +5823,15 @@ typedef PACKING union
         FIELD POLL_CYCLE                : 8;
         FIELD R0_INT_FLAG               : 1;
         FIELD R1_INT_FLAG               : 1;
-        FIELD rsv_18                    : 2;
+        FIELD BURST_MODE_DISABLE        : 1;
+        FIELD FORCE_IDLE_WHEN_DRV_ERROR : 1;
         FIELD INIT_COMPLETE_FLAG        : 1;
         FIELD POLL_FLAG                 : 1;
         FIELD BUSY_FLAG                 : 1;
-        FIELD rsv_23                    : 4;
+        FIELD ERR_LAT_OPT               : 1;
+        FIELD DMAD_DBG_EN               : 1;
+        FIELD DRV_DBG_CLR               : 1;
+        FIELD DRV_CLR                   : 1;
         FIELD INIT_FLAG_CLR             : 1;
         FIELD FORCE_RETURN_IDLE         : 1;
         FIELD FORCE_IDLE_WHEN_DRV_DISABLE : 1;
@@ -5436,15 +6023,6 @@ typedef PACKING union
 {
     PACKING struct
     {
-        FIELD ADDRESS                   : 32;
-    } Bits;
-    UINT32 Raw;
-} REG_WED_WPDMA_RX_D_RING_CFG_ADDR_1, *PREG_WED_WPDMA_RX_D_RING_CFG_ADDR_1;
-
-typedef PACKING union
-{
-    PACKING struct
-    {
         FIELD RRO_PG_DONE_EN0           : 1;
         FIELD RRO_PG_DONE_CLR0          : 1;
         FIELD RRO_PG_DONE_TRIG0         : 5;
@@ -5467,7 +6045,7 @@ typedef PACKING union
     {
         FIELD RX_IND_CMD_BUSY           : 1;
         FIELD RX_ADDR_ELEM_BUSY         : 1;
-        FIELD RX_MSDU_INFO_PAGE_BUSY    : 1;
+        FIELD RX_MSDU_INFO_PG_BUSY      : 1;
         FIELD RX_PN_CHK_BUSY            : 1;
         FIELD rsv_4                     : 4;
         FIELD FETCH_IND_CMD_CS          : 2;
@@ -5547,6 +6125,290 @@ typedef PACKING union
     UINT32 Raw;
 } REG_WED_RRO_RX_DBG4, *PREG_WED_RRO_RX_DBG4;
 
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD total_ind_cmd_cnt         : 28;
+        FIELD rsv_28                    : 1;
+        FIELD dbg_cnt_rdclr_en          : 1;
+        FIELD all_dbg_cnt_rst           : 1;
+        FIELD dbg_cnt_en                : 1;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT0, *PREG_WED_RX_IND_CMD_CNT0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch1_cnt        : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT1, *PREG_WED_RX_IND_CMD_CNT1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch2_cnt        : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT2, *PREG_WED_RX_IND_CMD_CNT2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch3_cnt        : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT3, *PREG_WED_RX_IND_CMD_CNT3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch4_cnt        : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT4, *PREG_WED_RX_IND_CMD_CNT4;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch5_cnt        : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT5, *PREG_WED_RX_IND_CMD_CNT5;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch6_cnt        : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT6, *PREG_WED_RX_IND_CMD_CNT6;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch7_cnt        : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT7, *PREG_WED_RX_IND_CMD_CNT7;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD ind_cmd_fetch8_cnt        : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT8, *PREG_WED_RX_IND_CMD_CNT8;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD magic_cnt_fail_cnt        : 16;
+        FIELD rsv_16                    : 16;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_CNT9, *PREG_WED_RX_IND_CMD_CNT9;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD total_addr_elem_cnt       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_CNT0, *PREG_WED_RX_ADDR_ELEM_CNT0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD total_sig_fail_cnt        : 16;
+        FIELD total_1st_sig_fail_cnt    : 16;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_CNT1, *PREG_WED_RX_ADDR_ELEM_CNT1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD clr_addr_cnt              : 20;
+        FIELD rsv_20                    : 12;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_CNT2, *PREG_WED_RX_ADDR_ELEM_CNT2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD acksn_cnt                 : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_CNT3, *PREG_WED_RX_ADDR_ELEM_CNT3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD acksn_last_cnt            : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_CNT4, *PREG_WED_RX_ADDR_ELEM_CNT4;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD pg_cnt1_cnt               : 28;
+        FIELD rsv_28                    : 4;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_MSDU_PG_CNT1, *PREG_WED_RX_MSDU_PG_CNT1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD pg_cnt2_cnt               : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_MSDU_PG_CNT2, *PREG_WED_RX_MSDU_PG_CNT2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD pg_cnt3_cnt               : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_MSDU_PG_CNT3, *PREG_WED_RX_MSDU_PG_CNT3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD pg_cnt4_cnt               : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_MSDU_PG_CNT4, *PREG_WED_RX_MSDU_PG_CNT4;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD pg_cnt5_cnt               : 24;
+        FIELD rsv_24                    : 8;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_MSDU_PG_CNT5, *PREG_WED_RX_MSDU_PG_CNT5;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD pn_chk_fail_cnt           : 16;
+        FIELD rsv_16                    : 16;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_PN_CHK_CNT0, *PREG_WED_RX_PN_CHK_CNT0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD araddr_reg                : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_IND_CMD_AXI0, *PREG_WED_RX_IND_CMD_AXI0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD araddr_reg                : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_AXI0, *PREG_WED_RX_ADDR_ELEM_AXI0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD awaddr_reg                : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_AXI1, *PREG_WED_RX_ADDR_ELEM_AXI1;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD awaddr_clr_addr_lat       : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_AXI2, *PREG_WED_RX_ADDR_ELEM_AXI2;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD wdata0                    : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_AXI3, *PREG_WED_RX_ADDR_ELEM_AXI3;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD wdata1                    : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_ADDR_ELEM_AXI4, *PREG_WED_RX_ADDR_ELEM_AXI4;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD araddr_reg                : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_WED_RX_MSDU_PG_AXI0, *PREG_WED_RX_MSDU_PG_AXI0;
+
+typedef PACKING union
+{
+    PACKING struct
+    {
+        FIELD value                     : 32;
+    } Bits;
+    UINT32 Raw;
+} REG_DONT_USE_BEHIND_THIS_ADDR, *PREG_DONT_USE_BEHIND_THIS_ADDR;
+
 // ----------------- wed0  Grouping Definitions -------------------
 // ----------------- wed0 Register Definition -------------------
 typedef volatile PACKING struct
@@ -5570,7 +6432,8 @@ typedef volatile PACKING struct
     REG_WED_EX_INT_STA_POST_MSK2    WED_EX_INT_STA_POST_MSK2; // 0048
     REG_WED_EX_INT_STA_POST_MSK3    WED_EX_INT_STA_POST_MSK3; // 004C
     REG_WED_IRQ_MON                 WED_IRQ_MON;      // 0050
-    UINT32                          rsv_0054[3];      // 0054..005C
+    REG_WED_ERR_MON                 WED_ERR_MON;      // 0054
+    UINT32                          rsv_0058[2];      // 0058..005C
     REG_WED_ST                      WED_ST;           // 0060
     REG_WED_WPDMA_ST                WED_WPDMA_ST;     // 0064
     REG_WED_WDMA_ST                 WED_WDMA_ST;      // 0068
@@ -5639,7 +6502,7 @@ typedef volatile PACKING struct
     REG_WED_RX_BM_TO_WPDMA_RX_D_DRV_DMAD_MIB WED_RX_BM_TO_WPDMA_RX_D_DRV_DMAD_MIB; // 01CC
     REG_WED_TX_TKID_TO_TX_BM_FREE_SKBID_MIB WED_TX_TKID_TO_TX_BM_FREE_SKBID_MIB; // 01D0
     REG_WED_TX_TKID_TO_TX_BM_FREE_DMAD_MIB WED_TX_TKID_TO_TX_BM_FREE_DMAD_MIB; // 01D4
-    UINT32                          rsv_01D8;         // 01D8
+    REG_WED_RX_PG_BM_TO_RRO_RX_D_DRV_DMAD_MIB WED_RX_PG_BM_TO_RRO_RX_D_DRV_DMAD_MIB; // 01D8
     REG_WED_PMTR_CTRL               WED_PMTR_CTRL;    // 01DC
     REG_WED_PMTR_TGT                WED_PMTR_TGT;     // 01E0
     REG_WED_PMTR_TGT_ST             WED_PMTR_TGT_ST;  // 01E4
@@ -5719,7 +6582,8 @@ typedef volatile PACKING struct
     REG_WED_WPDMA_INT_TRIG          WED_WPDMA_INT_TRIG; // 0504
     REG_WED_WPDMA_GLO_CFG           WED_WPDMA_GLO_CFG; // 0508
     REG_WED_WPDMA_RST_IDX           WED_WPDMA_RST_IDX; // 050C
-    UINT32                          rsv_0510[2];      // 0510..0514
+    REG_WED_WPDMA_BUS_CFG           WED_WPDMA_BUS_CFG; // 0510
+    REG_WED_WPDMA_TX_DLY_CIDX       WED_WPDMA_TX_DLY_CIDX; // 0514
     REG_WED_WPDMA_CTRL              WED_WPDMA_CTRL;   // 0518
     REG_WED_WPDMA_FORCE_PROC        WED_WPDMA_FORCE_PROC; // 051C
     REG_WED_WPDMA_INT_CTRL          WED_WPDMA_INT_CTRL; // 0520
@@ -5774,7 +6638,40 @@ typedef volatile PACKING struct
     REG_WED_WPDMA_TX1_CTRL1         WED_WPDMA_TX1_CTRL1; // 0614
     REG_WED_WPDMA_TX1_CTRL2         WED_WPDMA_TX1_CTRL2; // 0618
     REG_WED_WPDMA_TX1_CTRL3         WED_WPDMA_TX1_CTRL3; // 061C
-    UINT32                          rsv_0620[56];     // 0620..06FC
+    UINT32                          rsv_0620[8];      // 0620..063C
+    REG_RRO_RX_D_DRV_MON_R0_WRAP    RRO_RX_D_DRV_MON_R0_WRAP; // 0640
+    REG_RRO_RX_D_DRV_MON_R1_WRAP    RRO_RX_D_DRV_MON_R1_WRAP; // 0644
+    REG_RRO_RX_D_DRV_MON_R2_WRAP    RRO_RX_D_DRV_MON_R2_WRAP; // 0648
+    REG_RRO_RX_D_DRV_MON0           RRO_RX_D_DRV_MON0; // 064C
+    REG_RRO_RX_D_DRV_MON1           RRO_RX_D_DRV_MON1; // 0650
+    REG_RRO_RX_D_DRV_MON2           RRO_RX_D_DRV_MON2; // 0654
+    REG_RRO_RX_D_DRV_ERR_COMP0      RRO_RX_D_DRV_ERR_COMP0; // 0658
+    REG_RRO_RX_D_DRV_ERR_COMP1      RRO_RX_D_DRV_ERR_COMP1; // 065C
+    REG_RRO_RX_D_DRV_ERR_COMP2      RRO_RX_D_DRV_ERR_COMP2; // 0660
+    REG_RRO_RX_D_DRV_ERR_COMP3      RRO_RX_D_DRV_ERR_COMP3; // 0664
+    REG_RRO_RX_D_DRV_LEAGLE_START   RRO_RX_D_DRV_LEAGLE_START; // 0668
+    REG_RRO_RX_D_DRV_LEAGLE_END     RRO_RX_D_DRV_LEAGLE_END; // 066C
+    REG_RRO_RX_PG_DRV_MON_R0_WRAP   RRO_RX_PG_DRV_MON_R0_WRAP; // 0670
+    REG_RRO_RX_PG_DRV_MON_R1_WRAP   RRO_RX_PG_DRV_MON_R1_WRAP; // 0674
+    REG_RRO_RX_PG_DRV_MON_R2_WRAP   RRO_RX_PG_DRV_MON_R2_WRAP; // 0678
+    REG_RRO_RX_PG_DRV_MON0          RRO_RX_PG_DRV_MON0; // 067C
+    REG_RRO_RX_PG_DRV_MON1          RRO_RX_PG_DRV_MON1; // 0680
+    REG_RRO_RX_PG_DRV_MON2          RRO_RX_PG_DRV_MON2; // 0684
+    REG_RRO_RX_PG_DRV_ERR_COMP0     RRO_RX_PG_DRV_ERR_COMP0; // 0688
+    REG_RRO_RX_PG_DRV_ERR_COMP1     RRO_RX_PG_DRV_ERR_COMP1; // 068C
+    REG_RRO_RX_PG_DRV_ERR_COMP2     RRO_RX_PG_DRV_ERR_COMP2; // 0690
+    REG_RRO_RX_PG_DRV_ERR_COMP3     RRO_RX_PG_DRV_ERR_COMP3; // 0694
+    REG_RRO_RX_PG_DRV_LEAGLE_START  RRO_RX_PG_DRV_LEAGLE_START; // 0698
+    REG_RRO_RX_PG_DRV_LEAGLE_END    RRO_RX_PG_DRV_LEAGLE_END; // 069C
+    REG_RRO_RX_D_DRV_ERR_SWITCH_ADDR RRO_RX_D_DRV_ERR_SWITCH_ADDR; // 06A0
+    REG_RRO_RX_PG_DRV_ERR_SWITCH_ADDR RRO_RX_PG_DRV_ERR_SWITCH_ADDR; // 06A4
+    REG_RRO_RX_D_DRV_IN_MIB         RRO_RX_D_DRV_IN_MIB; // 06A8
+    REG_RRO_RX_D_DRV_OU_MIB         RRO_RX_D_DRV_OU_MIB; // 06AC
+    REG_RRO_RX_D_DRV_DESC_MIB       RRO_RX_D_DRV_DESC_MIB; // 06B0
+    REG_RRO_RX_PG_DRV_IN_MIB        RRO_RX_PG_DRV_IN_MIB; // 06B4
+    REG_RRO_RX_PG_DRV_OU_MIB        RRO_RX_PG_DRV_OU_MIB; // 06B8
+    REG_RRO_RX_PG_DRV_DESC_MIB      RRO_RX_PG_DRV_DESC_MIB; // 06BC
+    UINT32                          rsv_06C0[16];     // 06C0..06FC
     REG_WED_WPDMA_RX0_CTRL0         WED_WPDMA_RX0_CTRL0; // 0700
     REG_WED_WPDMA_RX0_CTRL1         WED_WPDMA_RX0_CTRL1; // 0704
     REG_WED_WPDMA_RX0_CTRL2         WED_WPDMA_RX0_CTRL2; // 0708
@@ -5819,12 +6716,19 @@ typedef volatile PACKING struct
     REG_WED_WPDMA_RX_D_PREF_RX0_SIDX WED_WPDMA_RX_D_PREF_RX0_SIDX; // 07B8
     REG_WED_WPDMA_RX_D_PREF_RX1_SIDX WED_WPDMA_RX_D_PREF_RX1_SIDX; // 07BC
     REG_WED_WPDMA_RX_D_PREF_FIFO_CFG WED_WPDMA_RX_D_PREF_FIFO_CFG; // 07C0
-    UINT32                          rsv_07C4[3];      // 07C4..07CC
+    UINT32                          rsv_07C4[2];      // 07C4..07C8
+    REG_WED_WPDMA_RX_D_CIDX_WR_CFG  WED_WPDMA_RX_D_CIDX_WR_CFG; // 07CC
     REG_WED_WPDMA_RX_D_RING0_CFG_ADDR WED_WPDMA_RX_D_RING0_CFG_ADDR; // 07D0
     REG_WED_WPDMA_RX_D_RING0_CFG_ADDR_H WED_WPDMA_RX_D_RING0_CFG_ADDR_H; // 07D4
     REG_WED_WPDMA_RX_D_RING1_CFG_ADDR WED_WPDMA_RX_D_RING1_CFG_ADDR; // 07D8
     REG_WED_WPDMA_RX_D_RING1_CFG_ADDR_H WED_WPDMA_RX_D_RING1_CFG_ADDR_H; // 07DC
-    UINT32                          rsv_07E0[8];      // 07E0..07FC
+    REG_WED_WPDMA_RX_D_AW_RAN_DBG0  WED_WPDMA_RX_D_AW_RAN_DBG0; // 07E0
+    REG_WED_WPDMA_RX_D_AW_RAN_DBG1  WED_WPDMA_RX_D_AW_RAN_DBG1; // 07E4
+    REG_WED_WPDMA_RX_D_AW_RAN_DBG2  WED_WPDMA_RX_D_AW_RAN_DBG2; // 07E8
+    REG_WED_WPDMA_RX_D_AW_RAN_DBG3  WED_WPDMA_RX_D_AW_RAN_DBG3; // 07EC
+    REG_WED_WPDMA_RX_D_AW_RAN_DBG4  WED_WPDMA_RX_D_AW_RAN_DBG4; // 07F0
+    REG_WED_WPDMA_RX_D_AW_RAN_DBG5  WED_WPDMA_RX_D_AW_RAN_DBG5; // 07F4
+    UINT32                          rsv_07F8[2];      // 07F8..07FC
     REG_WED_WDMA_TX0_BASE           WED_WDMA_TX0_BASE; // 0800
     REG_WED_WDMA_TX0_CNT            WED_WDMA_TX0_CNT; // 0804
     REG_WED_WDMA_TX0_CTX_IDX        WED_WDMA_TX0_CTX_IDX; // 0808
@@ -5847,7 +6751,8 @@ typedef volatile PACKING struct
     REG_WED_WDMA_RX_PREF_RX0_SIDX   WED_WDMA_RX_PREF_RX0_SIDX; // 0954
     REG_WED_WDMA_RX_PREF_RX1_SIDX   WED_WDMA_RX_PREF_RX1_SIDX; // 0958
     REG_WED_WDMA_RX_PREF_FIFO_CFG   WED_WDMA_RX_PREF_FIFO_CFG; // 095C
-    UINT32                          rsv_0960[40];     // 0960..09FC
+    REG_WED_WDMA_RX_CIDX_WR_CFG     WED_WDMA_RX_CIDX_WR_CFG; // 0960
+    UINT32                          rsv_0964[39];     // 0964..09FC
     REG_WED_WDMA_INFO               WED_WDMA_INFO;    // 0A00
     REG_WED_WDMA_GLO_CFG            WED_WDMA_GLO_CFG; // 0A04
     REG_WED_WDMA_RST_IDX            WED_WDMA_RST_IDX; // 0A08
@@ -5976,7 +6881,11 @@ typedef volatile PACKING struct
     REG_WED_RROQ_BASE_H             WED_RROQ_BASE_H;  // 0C84
     REG_WED_RTQM_AGE_CFG0           WED_RTQM_AGE_CFG0; // 0C88
     REG_WED_RROQM_MIOD_CFG          WED_RROQM_MIOD_CFG; // 0C8C
-    UINT32                          rsv_0C90[7];      // 0C90..0CA8
+    REG_WED_RTQM_AGE_CFG1           WED_RTQM_AGE_CFG1; // 0C90
+    REG_WED_RTQM_AGE_FIFO_CFG       WED_RTQM_AGE_FIFO_CFG; // 0C94
+    REG_WED_RTQM_AGE_PKT_CNT        WED_RTQM_AGE_PKT_CNT; // 0C98
+    REG_WED_RTQM_PFDBK_CNT          WED_RTQM_PFDBK_CNT; // 0C9C
+    UINT32                          rsv_0CA0[3];      // 0CA0..0CA8
     REG_WED_RROQM_FDBK_REC_CTRL     WED_RROQM_FDBK_REC_CTRL; // 0CAC
     REG_WED_RROQM_FDBK_REC0         WED_RROQM_FDBK_REC0; // 0CB0
     REG_WED_RROQM_FDBK_REC1         WED_RROQM_FDBK_REC1; // 0CB4
@@ -6080,7 +6989,7 @@ typedef volatile PACKING struct
     REG_RRO_PG_BM_ADD_PTR           RRO_PG_BM_ADD_PTR; // 0EE4
     REG_RRO_PG_BM_TOTAL_DMAD_IDX    RRO_PG_BM_TOTAL_DMAD_IDX; // 0EE8
     REG_WED_WPDMA_INT_CTRL_RRO_RX   WED_WPDMA_INT_CTRL_RRO_RX; // 0EEC
-    REG_WED_WPDMA_RX_D_RING_CFG_ADDR_1 WED_WPDMA_RX_D_RING_CFG_ADDR_1; // 0EF0
+    UINT32                          rsv_0EF0;         // 0EF0
     REG_WED_WPDMA_INT_CTRL_RRO_MSDU_PG WED_WPDMA_INT_CTRL_RRO_MSDU_PG; // 0EF4
     UINT32                          rsv_0EF8[2];      // 0EF8..0EFC
     REG_WED_RRO_RX_HW_STS           WED_RRO_RX_HW_STS; // 0F00
@@ -6089,6 +6998,37 @@ typedef volatile PACKING struct
     REG_WED_RRO_RX_DBG2             WED_RRO_RX_DBG2;  // 0F0C
     REG_WED_RRO_RX_DBG3             WED_RRO_RX_DBG3;  // 0F10
     REG_WED_RRO_RX_DBG4             WED_RRO_RX_DBG4;  // 0F14
+    UINT32                          rsv_0F18[2];      // 0F18..0F1C
+    REG_WED_RX_IND_CMD_CNT0         WED_RX_IND_CMD_CNT0; // 0F20
+    REG_WED_RX_IND_CMD_CNT1         WED_RX_IND_CMD_CNT1; // 0F24
+    REG_WED_RX_IND_CMD_CNT2         WED_RX_IND_CMD_CNT2; // 0F28
+    REG_WED_RX_IND_CMD_CNT3         WED_RX_IND_CMD_CNT3; // 0F2C
+    REG_WED_RX_IND_CMD_CNT4         WED_RX_IND_CMD_CNT4; // 0F30
+    REG_WED_RX_IND_CMD_CNT5         WED_RX_IND_CMD_CNT5; // 0F34
+    REG_WED_RX_IND_CMD_CNT6         WED_RX_IND_CMD_CNT6; // 0F38
+    REG_WED_RX_IND_CMD_CNT7         WED_RX_IND_CMD_CNT7; // 0F3C
+    REG_WED_RX_IND_CMD_CNT8         WED_RX_IND_CMD_CNT8; // 0F40
+    REG_WED_RX_IND_CMD_CNT9         WED_RX_IND_CMD_CNT9; // 0F44
+    REG_WED_RX_ADDR_ELEM_CNT0       WED_RX_ADDR_ELEM_CNT0; // 0F48
+    REG_WED_RX_ADDR_ELEM_CNT1       WED_RX_ADDR_ELEM_CNT1; // 0F4C
+    REG_WED_RX_ADDR_ELEM_CNT2       WED_RX_ADDR_ELEM_CNT2; // 0F50
+    REG_WED_RX_ADDR_ELEM_CNT3       WED_RX_ADDR_ELEM_CNT3; // 0F54
+    REG_WED_RX_ADDR_ELEM_CNT4       WED_RX_ADDR_ELEM_CNT4; // 0F58
+    REG_WED_RX_MSDU_PG_CNT1         WED_RX_MSDU_PG_CNT1; // 0F5C
+    REG_WED_RX_MSDU_PG_CNT2         WED_RX_MSDU_PG_CNT2; // 0F60
+    REG_WED_RX_MSDU_PG_CNT3         WED_RX_MSDU_PG_CNT3; // 0F64
+    REG_WED_RX_MSDU_PG_CNT4         WED_RX_MSDU_PG_CNT4; // 0F68
+    REG_WED_RX_MSDU_PG_CNT5         WED_RX_MSDU_PG_CNT5; // 0F6C
+    REG_WED_RX_PN_CHK_CNT0          WED_RX_PN_CHK_CNT0; // 0F70
+    REG_WED_RX_IND_CMD_AXI0         WED_RX_IND_CMD_AXI0; // 0F74
+    REG_WED_RX_ADDR_ELEM_AXI0       WED_RX_ADDR_ELEM_AXI0; // 0F78
+    REG_WED_RX_ADDR_ELEM_AXI1       WED_RX_ADDR_ELEM_AXI1; // 0F7C
+    REG_WED_RX_ADDR_ELEM_AXI2       WED_RX_ADDR_ELEM_AXI2; // 0F80
+    REG_WED_RX_ADDR_ELEM_AXI3       WED_RX_ADDR_ELEM_AXI3; // 0F84
+    REG_WED_RX_ADDR_ELEM_AXI4       WED_RX_ADDR_ELEM_AXI4; // 0F88
+    REG_WED_RX_MSDU_PG_AXI0         WED_RX_MSDU_PG_AXI0; // 0F8C
+    UINT32                          rsv_0F90[11];     // 0F90..0FB8
+    REG_DONT_USE_BEHIND_THIS_ADDR   DONT_USE_BEHIND_THIS_ADDR; // 0FBC
 }wed0_REGS, *Pwed0_REGS;
 
 // ---------- wed0 Enum Definitions      ----------
@@ -6111,6 +7051,7 @@ typedef volatile PACKING struct
 #define WED_EX_INT_STA_POST_MSK2                               0x00000048
 #define WED_EX_INT_STA_POST_MSK3                               0x0000004C
 #define WED_IRQ_MON                                            0x00000050
+#define WED_ERR_MON                                            0x00000054
 #define WED_ST                                                 0x00000060
 #define WED_WPDMA_ST                                           0x00000064
 #define WED_WDMA_ST                                            0x00000068
@@ -6173,6 +7114,7 @@ typedef volatile PACKING struct
 #define WED_RX_BM_TO_WPDMA_RX_D_DRV_DMAD_MIB                   0x000001CC
 #define WED_TX_TKID_TO_TX_BM_FREE_SKBID_MIB                    0x000001D0
 #define WED_TX_TKID_TO_TX_BM_FREE_DMAD_MIB                     0x000001D4
+#define WED_RX_PG_BM_TO_RRO_RX_D_DRV_DMAD_MIB                  0x000001D8
 #define WED_PMTR_CTRL                                          0x000001DC
 #define WED_PMTR_TGT                                           0x000001E0
 #define WED_PMTR_TGT_ST                                        0x000001E4
@@ -6240,6 +7182,8 @@ typedef volatile PACKING struct
 #define WED_WPDMA_INT_TRIG                                     0x00000504
 #define WED_WPDMA_GLO_CFG                                      0x00000508
 #define WED_WPDMA_RST_IDX                                      0x0000050C
+#define WED_WPDMA_BUS_CFG                                      0x00000510
+#define WED_WPDMA_TX_DLY_CIDX                                  0x00000514
 #define WED_WPDMA_CTRL                                         0x00000518
 #define WED_WPDMA_FORCE_PROC                                   0x0000051C
 #define WED_WPDMA_INT_CTRL                                     0x00000520
@@ -6286,6 +7230,38 @@ typedef volatile PACKING struct
 #define WED_WPDMA_TX1_CTRL1                                    0x00000614
 #define WED_WPDMA_TX1_CTRL2                                    0x00000618
 #define WED_WPDMA_TX1_CTRL3                                    0x0000061C
+#define RRO_RX_D_DRV_MON_R0_WRAP                               0x00000640
+#define RRO_RX_D_DRV_MON_R1_WRAP                               0x00000644
+#define RRO_RX_D_DRV_MON_R2_WRAP                               0x00000648
+#define RRO_RX_D_DRV_MON0                                      0x0000064C
+#define RRO_RX_D_DRV_MON1                                      0x00000650
+#define RRO_RX_D_DRV_MON2                                      0x00000654
+#define RRO_RX_D_DRV_ERR_COMP0                                 0x00000658
+#define RRO_RX_D_DRV_ERR_COMP1                                 0x0000065C
+#define RRO_RX_D_DRV_ERR_COMP2                                 0x00000660
+#define RRO_RX_D_DRV_ERR_COMP3                                 0x00000664
+#define RRO_RX_D_DRV_LEAGLE_START                              0x00000668
+#define RRO_RX_D_DRV_LEAGLE_END                                0x0000066C
+#define RRO_RX_PG_DRV_MON_R0_WRAP                              0x00000670
+#define RRO_RX_PG_DRV_MON_R1_WRAP                              0x00000674
+#define RRO_RX_PG_DRV_MON_R2_WRAP                              0x00000678
+#define RRO_RX_PG_DRV_MON0                                     0x0000067C
+#define RRO_RX_PG_DRV_MON1                                     0x00000680
+#define RRO_RX_PG_DRV_MON2                                     0x00000684
+#define RRO_RX_PG_DRV_ERR_COMP0                                0x00000688
+#define RRO_RX_PG_DRV_ERR_COMP1                                0x0000068C
+#define RRO_RX_PG_DRV_ERR_COMP2                                0x00000690
+#define RRO_RX_PG_DRV_ERR_COMP3                                0x00000694
+#define RRO_RX_PG_DRV_LEAGLE_START                             0x00000698
+#define RRO_RX_PG_DRV_LEAGLE_END                               0x0000069C
+#define RRO_RX_D_DRV_ERR_SWITCH_ADDR                           0x000006A0
+#define RRO_RX_PG_DRV_ERR_SWITCH_ADDR                          0x000006A4
+#define RRO_RX_D_DRV_IN_MIB                                    0x000006A8
+#define RRO_RX_D_DRV_OU_MIB                                    0x000006AC
+#define RRO_RX_D_DRV_DESC_MIB                                  0x000006B0
+#define RRO_RX_PG_DRV_IN_MIB                                   0x000006B4
+#define RRO_RX_PG_DRV_OU_MIB                                   0x000006B8
+#define RRO_RX_PG_DRV_DESC_MIB                                 0x000006BC
 #define WED_WPDMA_RX0_CTRL0                                    0x00000700
 #define WED_WPDMA_RX0_CTRL1                                    0x00000704
 #define WED_WPDMA_RX0_CTRL2                                    0x00000708
@@ -6328,10 +7304,17 @@ typedef volatile PACKING struct
 #define WED_WPDMA_RX_D_PREF_RX0_SIDX                           0x000007B8
 #define WED_WPDMA_RX_D_PREF_RX1_SIDX                           0x000007BC
 #define WED_WPDMA_RX_D_PREF_FIFO_CFG                           0x000007C0
+#define WED_WPDMA_RX_D_CIDX_WR_CFG                             0x000007CC
 #define WED_WPDMA_RX_D_RING0_CFG_ADDR                          0x000007D0
 #define WED_WPDMA_RX_D_RING0_CFG_ADDR_H                        0x000007D4
 #define WED_WPDMA_RX_D_RING1_CFG_ADDR                          0x000007D8
 #define WED_WPDMA_RX_D_RING1_CFG_ADDR_H                        0x000007DC
+#define WED_WPDMA_RX_D_AW_RAN_DBG0                             0x000007E0
+#define WED_WPDMA_RX_D_AW_RAN_DBG1                             0x000007E4
+#define WED_WPDMA_RX_D_AW_RAN_DBG2                             0x000007E8
+#define WED_WPDMA_RX_D_AW_RAN_DBG3                             0x000007EC
+#define WED_WPDMA_RX_D_AW_RAN_DBG4                             0x000007F0
+#define WED_WPDMA_RX_D_AW_RAN_DBG5                             0x000007F4
 #define WED_WDMA_TX0_BASE                                      0x00000800
 #define WED_WDMA_TX0_CNT                                       0x00000804
 #define WED_WDMA_TX0_CTX_IDX                                   0x00000808
@@ -6351,6 +7334,7 @@ typedef volatile PACKING struct
 #define WED_WDMA_RX_PREF_RX0_SIDX                              0x00000954
 #define WED_WDMA_RX_PREF_RX1_SIDX                              0x00000958
 #define WED_WDMA_RX_PREF_FIFO_CFG                              0x0000095C
+#define WED_WDMA_RX_CIDX_WR_CFG                                0x00000960
 #define WED_WDMA_INFO                                          0x00000A00
 #define WED_WDMA_GLO_CFG                                       0x00000A04
 #define WED_WDMA_RST_IDX                                       0x00000A08
@@ -6473,6 +7457,10 @@ typedef volatile PACKING struct
 #define WED_RROQ_BASE_H                                        0x00000C84
 #define WED_RTQM_AGE_CFG0                                      0x00000C88
 #define WED_RROQM_MIOD_CFG                                     0x00000C8C
+#define WED_RTQM_AGE_CFG1                                      0x00000C90
+#define WED_RTQM_AGE_FIFO_CFG                                  0x00000C94
+#define WED_RTQM_AGE_PKT_CNT                                   0x00000C98
+#define WED_RTQM_PFDBK_CNT                                     0x00000C9C
 #define WED_RROQM_FDBK_REC_CTRL                                0x00000CAC
 #define WED_RROQM_FDBK_REC0                                    0x00000CB0
 #define WED_RROQM_FDBK_REC1                                    0x00000CB4
@@ -6566,7 +7554,6 @@ typedef volatile PACKING struct
 #define RRO_PG_BM_ADD_PTR                                      0x00000EE4
 #define RRO_PG_BM_TOTAL_DMAD_IDX                               0x00000EE8
 #define WED_WPDMA_INT_CTRL_RRO_RX                              0x00000EEC
-#define WED_WPDMA_RX_D_RING_CFG_ADDR_1                         0x00000EF0
 #define WED_WPDMA_INT_CTRL_RRO_MSDU_PG                         0x00000EF4
 #define WED_RRO_RX_HW_STS                                      0x00000F00
 #define WED_RRO_RX_DBG0                                        0x00000F04
@@ -6574,6 +7561,35 @@ typedef volatile PACKING struct
 #define WED_RRO_RX_DBG2                                        0x00000F0C
 #define WED_RRO_RX_DBG3                                        0x00000F10
 #define WED_RRO_RX_DBG4                                        0x00000F14
+#define WED_RX_IND_CMD_CNT0                                    0x00000F20
+#define WED_RX_IND_CMD_CNT1                                    0x00000F24
+#define WED_RX_IND_CMD_CNT2                                    0x00000F28
+#define WED_RX_IND_CMD_CNT3                                    0x00000F2C
+#define WED_RX_IND_CMD_CNT4                                    0x00000F30
+#define WED_RX_IND_CMD_CNT5                                    0x00000F34
+#define WED_RX_IND_CMD_CNT6                                    0x00000F38
+#define WED_RX_IND_CMD_CNT7                                    0x00000F3C
+#define WED_RX_IND_CMD_CNT8                                    0x00000F40
+#define WED_RX_IND_CMD_CNT9                                    0x00000F44
+#define WED_RX_ADDR_ELEM_CNT0                                  0x00000F48
+#define WED_RX_ADDR_ELEM_CNT1                                  0x00000F4C
+#define WED_RX_ADDR_ELEM_CNT2                                  0x00000F50
+#define WED_RX_ADDR_ELEM_CNT3                                  0x00000F54
+#define WED_RX_ADDR_ELEM_CNT4                                  0x00000F58
+#define WED_RX_MSDU_PG_CNT1                                    0x00000F5C
+#define WED_RX_MSDU_PG_CNT2                                    0x00000F60
+#define WED_RX_MSDU_PG_CNT3                                    0x00000F64
+#define WED_RX_MSDU_PG_CNT4                                    0x00000F68
+#define WED_RX_MSDU_PG_CNT5                                    0x00000F6C
+#define WED_RX_PN_CHK_CNT0                                     0x00000F70
+#define WED_RX_IND_CMD_AXI0                                    0x00000F74
+#define WED_RX_ADDR_ELEM_AXI0                                  0x00000F78
+#define WED_RX_ADDR_ELEM_AXI1                                  0x00000F7C
+#define WED_RX_ADDR_ELEM_AXI2                                  0x00000F80
+#define WED_RX_ADDR_ELEM_AXI3                                  0x00000F84
+#define WED_RX_ADDR_ELEM_AXI4                                  0x00000F88
+#define WED_RX_MSDU_PG_AXI0                                    0x00000F8C
+#define DONT_USE_BEHIND_THIS_ADDR                              0x00000FBC
 
 #endif
 
@@ -6631,6 +7647,10 @@ typedef volatile PACKING struct
 #define WED_CTRL_FLD_WPDMA_INT_AGT_BUSY                        REG_FLD(1, 1)
 #define WED_CTRL_FLD_WPDMA_INT_AGT_EN                          REG_FLD(1, 0)
 
+#define WED_AXI_CTRL_FLD_MI3_CTRL_UPD                          REG_FLD(1, 31)
+#define WED_AXI_CTRL_FLD_MI3_LOCK_ERR_FLAG                     REG_FLD(1, 30)
+#define WED_AXI_CTRL_FLD_MI3_OUTSTD_EXTEND_EN                  REG_FLD(1, 29)
+#define WED_AXI_CTRL_FLD_MI3_QOS_ON                            REG_FLD(1, 28)
 #define WED_AXI_CTRL_FLD_MI2_CTRL_UPD                          REG_FLD(1, 27)
 #define WED_AXI_CTRL_FLD_MI2_LOCK_ERR_FLAG                     REG_FLD(1, 26)
 #define WED_AXI_CTRL_FLD_MI2_OUTSTD_EXTEND_EN                  REG_FLD(1, 25)
@@ -6651,37 +7671,30 @@ typedef volatile PACKING struct
 #define WED_AXI_CTRL_FLD_W_BUSY                                REG_FLD(1, 1)
 #define WED_AXI_CTRL_FLD_CSR_CG_DISABLE                        REG_FLD(1, 0)
 
+#define WED_CTRL2_FLD_GLO_ARULTRA_FORCE                        REG_FLD(1, 31)
+#define WED_CTRL2_FLD_GLO_ARULTRA                              REG_FLD(2, 28)
+#define WED_CTRL2_FLD_GLO_AWULTRA_FORCE                        REG_FLD(1, 27)
+#define WED_CTRL2_FLD_GLO_AWULTRA                              REG_FLD(2, 24)
 #define WED_CTRL2_FLD_COHERENT_WAIT_MAXIMUM                    REG_FLD(8, 0)
 
 #define WED_EX_INT_STA_FLD_FDBK_LEAVE_FULL                     REG_FLD(1, 31)
-#define WED_EX_INT_STA_FLD_MID_TAKE_IDX_ERR                    REG_FLD(1, 30)
-#define WED_EX_INT_STA_FLD_RX_ROUTE_QM_ERR                     REG_FLD(1, 29)
+#define WED_EX_INT_STA_FLD_ERR_MON                             REG_FLD(1, 30)
 #define WED_EX_INT_STA_FLD_BUS_MON                             REG_FLD(1, 28)
 #define WED_EX_INT_STA_FLD_MID_RDY                             REG_FLD(1, 27)
-#define WED_EX_INT_STA_FLD_WPDMA_RX_D_DRV_ERR                  REG_FLD(1, 26)
-#define WED_EX_INT_STA_FLD_RX_DRV_GET_BM_DMAD_SKIP             REG_FLD(1, 25)
 #define WED_EX_INT_STA_FLD_RX_DRV_DMAD_RECYCLE                 REG_FLD(1, 24)
-#define WED_EX_INT_STA_FLD_TX_DMA_W_RESP_ERR                   REG_FLD(1, 23)
-#define WED_EX_INT_STA_FLD_TX_DMA_R_RESP_ERR                   REG_FLD(1, 22)
-#define WED_EX_INT_STA_FLD_RX_DRV_BM_DMAD_ERROR                REG_FLD(1, 21)
-#define WED_EX_INT_STA_FLD_RX_DRV_BM_DMAD_COHERENT             REG_FLD(1, 20)
-#define WED_EX_INT_STA_FLD_RX_DRV_INTI_WDMA_ENABLED            REG_FLD(1, 19)
 #define WED_EX_INT_STA_FLD_RX_DRV_COHERENT                     REG_FLD(1, 18)
-#define WED_EX_INT_STA_FLD_RX_DRV_W_RESP_ERR                   REG_FLD(1, 17)
-#define WED_EX_INT_STA_FLD_RX_DRV_R_RESP_ERR                   REG_FLD(1, 16)
-#define WED_EX_INT_STA_FLD_RX_DIDX_FIN1                        REG_FLD(1, 15)
-#define WED_EX_INT_STA_FLD_RX_DIDX_FIN0                        REG_FLD(1, 14)
-#define WED_EX_INT_STA_FLD_RX_BM_DMAD_RD_ERR                   REG_FLD(1, 13)
-#define WED_EX_INT_STA_FLD_RX_BM_FREE_AT_EMPTY                 REG_FLD(1, 12)
+#define WED_EX_INT_STA_FLD_RX_DIDX_FIN1                        REG_FLD(1, 17)
+#define WED_EX_INT_STA_FLD_RX_DIDX_FIN0                        REG_FLD(1, 16)
+#define WED_EX_INT_STA_FLD_RX_BM_H_BUF                         REG_FLD(1, 15)
+#define WED_EX_INT_STA_FLD_RX_BM_L_BUF                         REG_FLD(1, 14)
+#define WED_EX_INT_STA_FLD_RX_PG_BM_H_BUF                      REG_FLD(1, 13)
+#define WED_EX_INT_STA_FLD_RX_PG_BM_L_BUF                      REG_FLD(1, 12)
 #define WED_EX_INT_STA_FLD_TX_TKID_HTH                         REG_FLD(1, 11)
 #define WED_EX_INT_STA_FLD_TX_TKID_LTH                         REG_FLD(1, 10)
 #define WED_EX_INT_STA_FLD_TX_BM_HTH                           REG_FLD(1, 9)
 #define WED_EX_INT_STA_FLD_TX_BM_LTH                           REG_FLD(1, 8)
-#define WED_EX_INT_STA_FLD_TF_TKID_FIFO_INVLD                  REG_FLD(1, 4)
 #define WED_EX_INT_STA_FLD_TX_DIDX_FIN1                        REG_FLD(1, 3)
 #define WED_EX_INT_STA_FLD_TX_DIDX_FIN0                        REG_FLD(1, 2)
-#define WED_EX_INT_STA_FLD_TF_TKID_WO_PYLD                     REG_FLD(1, 1)
-#define WED_EX_INT_STA_FLD_TF_LEN_ERR                          REG_FLD(1, 0)
 
 #define WED_EX_INT_MSK_FLD_EN                                  REG_FLD(32, 0)
 
@@ -6704,6 +7717,27 @@ typedef volatile PACKING struct
 #define WED_IRQ_MON_FLD_WDMA_IRQ                               REG_FLD(3, 8)
 #define WED_IRQ_MON_FLD_PCIE_MSI_IRQ                           REG_FLD(3, 4)
 #define WED_IRQ_MON_FLD_PCIE_IRQ                               REG_FLD(3, 0)
+
+#define WED_ERR_MON_FLD_MID_TAKE_IDX_ERR                       REG_FLD(1, 30)
+#define WED_ERR_MON_FLD_RX_ROUTE_QM_ERR                        REG_FLD(1, 29)
+#define WED_ERR_MON_FLD_WPDMA_RX_D_DRV_ERR                     REG_FLD(1, 26)
+#define WED_ERR_MON_FLD_RX_DRV_GET_BM_DMAD_SKIP                REG_FLD(1, 25)
+#define WED_ERR_MON_FLD_TX_DMA_W_RESP_ERR                      REG_FLD(1, 23)
+#define WED_ERR_MON_FLD_TX_DMA_R_RESP_ERR                      REG_FLD(1, 22)
+#define WED_ERR_MON_FLD_RX_DRV_BM_DMAD_ERROR                   REG_FLD(1, 21)
+#define WED_ERR_MON_FLD_RX_DRV_BM_DMAD_COHERENT                REG_FLD(1, 20)
+#define WED_ERR_MON_FLD_RX_DRV_INTI_WDMA_ENABLED               REG_FLD(1, 19)
+#define WED_ERR_MON_FLD_RX_DRV_W_RESP_ERR                      REG_FLD(1, 17)
+#define WED_ERR_MON_FLD_RX_DRV_R_RESP_ERR                      REG_FLD(1, 16)
+#define WED_ERR_MON_FLD_RX_BM_DMAD_RD_ERR                      REG_FLD(1, 13)
+#define WED_ERR_MON_FLD_RX_BM_FREE_AT_EMPTY                    REG_FLD(1, 12)
+#define WED_ERR_MON_FLD_TX_BM_DMAD_RD_ERR                      REG_FLD(1, 11)
+#define WED_ERR_MON_FLD_TX_BM_FREE_AT_EMPTY                    REG_FLD(1, 10)
+#define WED_ERR_MON_FLD_TX_PAO_ERR                             REG_FLD(1, 7)
+#define WED_ERR_MON_FLD_TF_TKID_FIFO_INVLD                     REG_FLD(1, 4)
+#define WED_ERR_MON_FLD_TX_TKID_FREE_ALREADY_FREE              REG_FLD(1, 2)
+#define WED_ERR_MON_FLD_TF_TKID_WO_PYLD                        REG_FLD(1, 1)
+#define WED_ERR_MON_FLD_TF_LEN_ERR                             REG_FLD(1, 0)
 
 #define WED_ST_FLD_TX_ST                                       REG_FLD(8, 8)
 #define WED_ST_FLD_RX_ST                                       REG_FLD(8, 0)
@@ -6781,8 +7815,8 @@ typedef volatile PACKING struct
 #define WED_TX_TKID_CTRL_FLD_FREE_FORMAT                       REG_FLD(1, 27)
 #define WED_TX_TKID_CTRL_FLD_FREE_WAIT                         REG_FLD(1, 26)
 #define WED_TX_TKID_CTRL_FLD_FORCE_DRAM                        REG_FLD(1, 25)
-#define WED_TX_TKID_CTRL_FLD_VB_PGSEL                          REG_FLD(1, 24)
 #define WED_TX_TKID_CTRL_FLD_RSV_GRP_NUM                       REG_FLD(8, 16)
+#define WED_TX_TKID_CTRL_FLD_VB_PGSEL                          REG_FLD(1, 12)
 #define WED_TX_TKID_CTRL_FLD_VLD_GRP_NUM                       REG_FLD(8, 0)
 
 #define WED_TX_TKID_SPR_FLD_RSV_REG                            REG_FLD(32, 0)
@@ -6798,7 +7832,8 @@ typedef volatile PACKING struct
 #define WED_TX_TKID_DYN_TH_FLD_HI_GRP_NUM                      REG_FLD(8, 16)
 #define WED_TX_TKID_DYN_TH_FLD_LOW_GRP_NUM                     REG_FLD(8, 0)
 
-#define WED_TX_TKID_STS_FLD_FSM                                REG_FLD(12, 0)
+#define WED_TX_TKID_STS_FLD_FSM                                REG_FLD(12, 16)
+#define WED_TX_TKID_STS_FLD_FREE_NUM                           REG_FLD(16, 0)
 
 #define WED_TX_TKID_RECYC_FLD_START_GRP_IDX                    REG_FLD(8, 0)
 
@@ -6882,6 +7917,8 @@ typedef volatile PACKING struct
 
 #define WED_TX_TKID_TO_TX_BM_FREE_DMAD_MIB_FLD_CNT             REG_FLD(32, 0)
 
+#define WED_RX_PG_BM_TO_RRO_RX_D_DRV_DMAD_MIB_FLD_CNT          REG_FLD(32, 0)
+
 #define WED_PMTR_CTRL_FLD_EN                                   REG_FLD(1, 31)
 #define WED_PMTR_CTRL_FLD_ACC_DIV                              REG_FLD(4, 24)
 #define WED_PMTR_CTRL_FLD_MAX_DIV                              REG_FLD(4, 16)
@@ -6947,6 +7984,7 @@ typedef volatile PACKING struct
 
 #define WED_GLO_CFG_FLD_CSR_CLKGATE_BYP                        REG_FLD(1, 30)
 #define WED_GLO_CFG_FLD_BYTE_SWAP                              REG_FLD(1, 29)
+#define WED_GLO_CFG_FLD_RX_DMA_BURST_CFG                       REG_FLD(2, 11)
 #define WED_GLO_CFG_FLD_WCOMPLETE_SEL                          REG_FLD(1, 9)
 #define WED_GLO_CFG_FLD_DESC_32B_E                             REG_FLD(1, 8)
 #define WED_GLO_CFG_FLD_BIG_ENDIAN                             REG_FLD(1, 7)
@@ -7092,8 +8130,10 @@ typedef volatile PACKING struct
 #define WED_WPDMA_GLO_CFG_FLD_RX_DDONE2_WR                     REG_FLD(1, 21)
 #define WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_CHK         REG_FLD(1, 20)
 #define WED_WPDMA_GLO_CFG_FLD_RX_DRV_UNSUPPORT_FMT_BYP         REG_FLD(1, 19)
-#define WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_VER         REG_FLD(3, 16)
-#define WED_WPDMA_GLO_CFG_FLD_RSV0                             REG_FLD(8, 8)
+#define WED_WPDMA_GLO_CFG_FLD_RX_DRV_UNS_VER_FORCE_4           REG_FLD(1, 18)
+#define WED_WPDMA_GLO_CFG_FLD_RSV2                             REG_FLD(2, 16)
+#define WED_WPDMA_GLO_CFG_FLD_RX_DRV_EVENT_PKT_FMT_VER         REG_FLD(4, 12)
+#define WED_WPDMA_GLO_CFG_FLD_RSV0                             REG_FLD(4, 8)
 #define WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING1_CRX_SYNC            REG_FLD(1, 7)
 #define WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING0_CRX_SYNC            REG_FLD(1, 6)
 #define WED_WPDMA_GLO_CFG_FLD_RX_DRV_RING1_PKT_PROC            REG_FLD(1, 5)
@@ -7108,11 +8148,26 @@ typedef volatile PACKING struct
 #define WED_WPDMA_RST_IDX_FLD_CTX_IDX1                         REG_FLD(1, 1)
 #define WED_WPDMA_RST_IDX_FLD_CTX_IDX0                         REG_FLD(1, 0)
 
+#define WED_WPDMA_BUS_CFG_FLD_RX_RD_BND_4KB_BST                REG_FLD(1, 17)
+#define WED_WPDMA_BUS_CFG_FLD_RX_WR_BND_4KB_BST                REG_FLD(1, 16)
+#define WED_WPDMA_BUS_CFG_FLD_TX_RD_BND_4KB_BST                REG_FLD(1, 1)
+#define WED_WPDMA_BUS_CFG_FLD_TX_WR_BND_4KB_BST                REG_FLD(1, 0)
+
+#define WED_WPDMA_TX_DLY_CIDX_FLD_EN                           REG_FLD(1, 31)
+#define WED_WPDMA_TX_DLY_CIDX_FLD_MAX_PIDX                     REG_FLD(7, 24)
+#define WED_WPDMA_TX_DLY_CIDX_FLD_MAX_PTIME                    REG_FLD(8, 16)
+#define WED_WPDMA_TX_DLY_CIDX_FLD_RING_LOWTH                   REG_FLD(8, 8)
+
 #define WED_WPDMA_CTRL_FLD_SDL1_FIXED                          REG_FLD(1, 31)
 #define WED_WPDMA_CTRL_FLD_SDL1_MAX                            REG_FLD(14, 0)
 
+#define WED_WPDMA_FORCE_PROC_FLD_MSDU_PG_INT2                  REG_FLD(1, 26)
+#define WED_WPDMA_FORCE_PROC_FLD_MSDU_PG_INT1                  REG_FLD(1, 25)
+#define WED_WPDMA_FORCE_PROC_FLD_MSDU_PG_INT0                  REG_FLD(1, 24)
 #define WED_WPDMA_FORCE_PROC_FLD_TX_FREE_DONE1                 REG_FLD(1, 17)
 #define WED_WPDMA_FORCE_PROC_FLD_TX_FREE_DONE0                 REG_FLD(1, 16)
+#define WED_WPDMA_FORCE_PROC_FLD_RRO_RX_INT1                   REG_FLD(1, 13)
+#define WED_WPDMA_FORCE_PROC_FLD_RRO_RX_INT0                   REG_FLD(1, 12)
 #define WED_WPDMA_FORCE_PROC_FLD_RX_DONE1                      REG_FLD(1, 9)
 #define WED_WPDMA_FORCE_PROC_FLD_RX_DONE0                      REG_FLD(1, 8)
 #define WED_WPDMA_FORCE_PROC_FLD_TX_DONE1                      REG_FLD(1, 1)
@@ -7134,6 +8189,11 @@ typedef volatile PACKING struct
 
 #define WED_WPDMA_INT_MON_FLD_TX_FREE_DONE_INT1                REG_FLD(1, 17)
 #define WED_WPDMA_INT_MON_FLD_TX_FREE_DONE_INT0                REG_FLD(1, 16)
+#define WED_WPDMA_INT_MON_FLD_MSDU_PG_INT2                     REG_FLD(1, 14)
+#define WED_WPDMA_INT_MON_FLD_MSDU_PG_INT1                     REG_FLD(1, 13)
+#define WED_WPDMA_INT_MON_FLD_MSDU_PG_INT0                     REG_FLD(1, 12)
+#define WED_WPDMA_INT_MON_FLD_RRO_RX_INT1                      REG_FLD(1, 11)
+#define WED_WPDMA_INT_MON_FLD_RRO_RX_INT0                      REG_FLD(1, 10)
 #define WED_WPDMA_INT_MON_FLD_RX_DONE_INT1                     REG_FLD(1, 9)
 #define WED_WPDMA_INT_MON_FLD_RX_DONE_INT0                     REG_FLD(1, 8)
 #define WED_WPDMA_INT_MON_FLD_TX_DONE_INT1                     REG_FLD(1, 1)
@@ -7238,9 +8298,10 @@ typedef volatile PACKING struct
 #define WED_WPDMA_TX0_CTRL1_FLD_BASE_PTR_H                     REG_FLD(8, 16)
 #define WED_WPDMA_TX0_CTRL1_FLD_MAX_CNT                        REG_FLD(12, 0)
 
-#define WED_WPDMA_TX0_CTRL2_FLD_RLS_IDX                        REG_FLD(12, 16)
+#define WED_WPDMA_TX0_CTRL2_FLD_CPU_IDX_INT                    REG_FLD(12, 16)
 #define WED_WPDMA_TX0_CTRL2_FLD_CPU_IDX                        REG_FLD(12, 0)
 
+#define WED_WPDMA_TX0_CTRL3_FLD_RLS_IDX                        REG_FLD(12, 16)
 #define WED_WPDMA_TX0_CTRL3_FLD_DMA_IDX_MIRO                   REG_FLD(12, 0)
 
 #define WED_WPDMA_TX1_CTRL0_FLD_BASE_PTR                       REG_FLD(32, 0)
@@ -7248,10 +8309,75 @@ typedef volatile PACKING struct
 #define WED_WPDMA_TX1_CTRL1_FLD_BASE_PTR_H                     REG_FLD(8, 16)
 #define WED_WPDMA_TX1_CTRL1_FLD_MAX_CNT                        REG_FLD(12, 0)
 
-#define WED_WPDMA_TX1_CTRL2_FLD_RLS_IDX                        REG_FLD(12, 16)
+#define WED_WPDMA_TX1_CTRL2_FLD_CPU_IDX_INT                    REG_FLD(12, 16)
 #define WED_WPDMA_TX1_CTRL2_FLD_CPU_IDX                        REG_FLD(12, 0)
 
+#define WED_WPDMA_TX1_CTRL3_FLD_RLS_IDX                        REG_FLD(12, 16)
 #define WED_WPDMA_TX1_CTRL3_FLD_DMA_IDX_MIRO                   REG_FLD(12, 0)
+
+#define RRO_RX_D_DRV_MON_R0_WRAP_FLD_CNT                       REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_MON_R1_WRAP_FLD_CNT                       REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_MON_R2_WRAP_FLD_CNT                       REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_MON0_FLD_DATA                             REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_MON1_FLD_DATA                             REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_MON2_FLD_DATA                             REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_ERR_COMP0_FLD_DATA                        REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_ERR_COMP1_FLD_DATA                        REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_ERR_COMP2_FLD_DATA                        REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_ERR_COMP3_FLD_DATA                        REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_LEAGLE_START_FLD_WADDR                    REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_LEAGLE_END_FLD_WADDR                      REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_MON_R0_WRAP_FLD_CNT                      REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_MON_R1_WRAP_FLD_CNT                      REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_MON_R2_WRAP_FLD_CNT                      REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_MON0_FLD_DATA                            REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_MON1_FLD_DATA                            REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_MON2_FLD_DATA                            REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_ERR_COMP0_FLD_DATA                       REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_ERR_COMP1_FLD_DATA                       REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_ERR_COMP2_FLD_DATA                       REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_ERR_COMP3_FLD_DATA                       REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_LEAGLE_START_FLD_WADDR                   REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_LEAGLE_END_FLD_WADDR                     REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_ERR_SWITCH_ADDR_FLD_BASE                  REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_ERR_SWITCH_ADDR_FLD_BASE                 REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_IN_MIB_FLD_CNT                            REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_OU_MIB_FLD_CNT                            REG_FLD(32, 0)
+
+#define RRO_RX_D_DRV_DESC_MIB_FLD_CNT                          REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_IN_MIB_FLD_CNT                           REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_OU_MIB_FLD_CNT                           REG_FLD(32, 0)
+
+#define RRO_RX_PG_DRV_DESC_MIB_FLD_CNT                         REG_FLD(32, 0)
 
 #define WED_WPDMA_RX0_CTRL0_FLD_BASE_PTR                       REG_FLD(32, 0)
 
@@ -7304,6 +8430,7 @@ typedef volatile PACKING struct
 #define WED_WPDMA_RX_D_INFO_FLD_RX_RING_NUM                    REG_FLD(8, 8)
 
 #define WED_WPDMA_RX_D_GLO_CFG_FLD_RXD_READ_LEN                REG_FLD(8, 24)
+#define WED_WPDMA_RX_D_GLO_CFG_FLD_RXD_READ_LEN_MASK           GENMASK(31, 24)
 #define WED_WPDMA_RX_D_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_THRES_REACH_METHOD REG_FLD(1, 23)
 #define WED_WPDMA_RX_D_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_CNT_SRC   REG_FLD(1, 22)
 #define WED_WPDMA_RX_D_GLO_CFG_FLD_DYNAMIC_DMAD_RECYCLE        REG_FLD(1, 21)
@@ -7327,6 +8454,7 @@ typedef volatile PACKING struct
 
 #define WED_WPDMA_RX_D_RST_IDX_FLD_DRV_IDX1                    REG_FLD(1, 25)
 #define WED_WPDMA_RX_D_RST_IDX_FLD_DRV_IDX0                    REG_FLD(1, 24)
+#define WED_WPDMA_RX_D_RST_IDX_FLD_DRX_IDX_ALL                 REG_FLD(1, 20)
 #define WED_WPDMA_RX_D_RST_IDX_FLD_CRX_IDX1                    REG_FLD(1, 17)
 #define WED_WPDMA_RX_D_RST_IDX_FLD_CRX_IDX0                    REG_FLD(1, 16)
 
@@ -7414,6 +8542,11 @@ typedef volatile PACKING struct
 #define WED_WPDMA_RX_D_PREF_FIFO_CFG_FLD_RING0_FULL            REG_FLD(1, 1)
 #define WED_WPDMA_RX_D_PREF_FIFO_CFG_FLD_RING0_CLEAR           REG_FLD(1, 0)
 
+#define WED_WPDMA_RX_D_CIDX_WR_CFG_FLD_CIDX_DLY_THRES          REG_FLD(16, 16)
+#define WED_WPDMA_RX_D_CIDX_WR_CFG_FLD_CIDX_DLY_CNT_MAX        REG_FLD(8, 8)
+#define WED_WPDMA_RX_D_CIDX_WR_CFG_FLD_CIDX_DLY_CNT_CLR        REG_FLD(2, 2)
+#define WED_WPDMA_RX_D_CIDX_WR_CFG_FLD_CIDX_DLY_THRES_EN       REG_FLD(1, 0)
+
 #define WED_WPDMA_RX_D_RING0_CFG_ADDR_FLD_ADDRESS              REG_FLD(32, 0)
 
 #define WED_WPDMA_RX_D_RING0_CFG_ADDR_H_FLD_ADDRESS            REG_FLD(8, 0)
@@ -7421,6 +8554,22 @@ typedef volatile PACKING struct
 #define WED_WPDMA_RX_D_RING1_CFG_ADDR_FLD_ADDRESS              REG_FLD(32, 0)
 
 #define WED_WPDMA_RX_D_RING1_CFG_ADDR_H_FLD_ADDRESS            REG_FLD(8, 0)
+
+#define WED_WPDMA_RX_D_AW_RAN_DBG0_FLD_ERR_CLR                 REG_FLD(1, 2)
+#define WED_WPDMA_RX_D_AW_RAN_DBG0_FLD_ERR                     REG_FLD(1, 1)
+#define WED_WPDMA_RX_D_AW_RAN_DBG0_FLD_ENABLE                  REG_FLD(1, 0)
+
+#define WED_WPDMA_RX_D_AW_RAN_DBG1_FLD_ADDR_MAX_31_0           REG_FLD(32, 0)
+
+#define WED_WPDMA_RX_D_AW_RAN_DBG2_FLD_ADDR_MIN_31_0           REG_FLD(32, 0)
+
+#define WED_WPDMA_RX_D_AW_RAN_DBG3_FLD_ADDR_MIN_47_32          REG_FLD(16, 16)
+#define WED_WPDMA_RX_D_AW_RAN_DBG3_FLD_ADDR_MAX_47_32          REG_FLD(16, 0)
+
+#define WED_WPDMA_RX_D_AW_RAN_DBG4_FLD_ERR_ADDR_31_0           REG_FLD(32, 0)
+
+#define WED_WPDMA_RX_D_AW_RAN_DBG5_FLD_ERR_LEN                 REG_FLD(4, 16)
+#define WED_WPDMA_RX_D_AW_RAN_DBG5_FLD_ERR_ADDR_47_16          REG_FLD(16, 0)
 
 #define WED_WDMA_TX0_BASE_FLD_PTR                              REG_FLD(32, 0)
 
@@ -7460,6 +8609,10 @@ typedef volatile PACKING struct
 #define WED_WDMA_RX1_THRES_CFG_FLD_DRX_CRX_DISTANCE_THRES      REG_FLD(16, 16)
 #define WED_WDMA_RX1_THRES_CFG_FLD_WAIT_BM_CNT_MAX             REG_FLD(16, 0)
 
+#define WED_WDMA_RX_PREF_CFG_FLD_DDONE2_CLR                    REG_FLD(1, 29)
+#define WED_WDMA_RX_PREF_CFG_FLD_DDONE2_CLR_MET                REG_FLD(1, 28)
+#define WED_WDMA_RX_PREF_CFG_FLD_DDONE2_BUSY                   REG_FLD(1, 27)
+#define WED_WDMA_RX_PREF_CFG_FLD_DDONE2_EN                     REG_FLD(1, 26)
 #define WED_WDMA_RX_PREF_CFG_FLD_RX1_SIDX_CLR                  REG_FLD(1, 25)
 #define WED_WDMA_RX_PREF_CFG_FLD_RX0_SIDX_CLR                  REG_FLD(1, 24)
 #define WED_WDMA_RX_PREF_CFG_FLD_RX1_SIDX_OW                   REG_FLD(1, 23)
@@ -7493,12 +8646,18 @@ typedef volatile PACKING struct
 #define WED_WDMA_RX_PREF_FIFO_CFG_FLD_RING0_FULL               REG_FLD(1, 1)
 #define WED_WDMA_RX_PREF_FIFO_CFG_FLD_RING0_CLEAR              REG_FLD(1, 0)
 
+#define WED_WDMA_RX_CIDX_WR_CFG_FLD_CIDX_DLY_THRES             REG_FLD(16, 16)
+#define WED_WDMA_RX_CIDX_WR_CFG_FLD_CIDX_DLY_CNT_MAX           REG_FLD(8, 8)
+#define WED_WDMA_RX_CIDX_WR_CFG_FLD_CIDX_DLY_CNT_CLR           REG_FLD(2, 2)
+#define WED_WDMA_RX_CIDX_WR_CFG_FLD_CIDX_DLY_THRES_EN          REG_FLD(1, 0)
+
 #define WED_WDMA_INFO_FLD_INDEX_WIDTH                          REG_FLD(4, 24)
 #define WED_WDMA_INFO_FLD_BASE_PTR_WIDTH                       REG_FLD(8, 16)
 #define WED_WDMA_INFO_FLD_RX_RING_NUM                          REG_FLD(8, 8)
 #define WED_WDMA_INFO_FLD_TX_RING_NUM                          REG_FLD(8, 0)
 
 #define WED_WDMA_GLO_CFG_FLD_RXDRV_CLKGATE_BYP                 REG_FLD(1, 30)
+#define WED_WDMA_GLO_CFG_FLD_TX_DRV_DTX_DLY_DIS                REG_FLD(1, 29)
 #define WED_WDMA_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_THRES_REACH_METHOD REG_FLD(1, 28)
 #define WED_WDMA_GLO_CFG_FLD_DYNAMIC_SKIP_DMAD_CNT_SRC         REG_FLD(1, 27)
 #define WED_WDMA_GLO_CFG_FLD_RST_INIT_COMPLETE_FLAG            REG_FLD(1, 26)
@@ -7515,7 +8674,8 @@ typedef volatile PACKING struct
 #define WED_WDMA_GLO_CFG_FLD_DISABLE_DMAD_HANDLE_PROC          REG_FLD(1, 15)
 #define WED_WDMA_GLO_CFG_FLD_DISABLE_IRQ_HANDLE_PROC           REG_FLD(1, 14)
 #define WED_WDMA_GLO_CFG_FLD_RXDRV_DISABLED_FSM_AUTO_IDLE      REG_FLD(1, 13)
-#define WED_WDMA_GLO_CFG_FLD_RSV0                              REG_FLD(3, 10)
+#define WED_WDMA_GLO_CFG_FLD_TX_DRV_BURST_CFG                  REG_FLD(2, 11)
+#define WED_WDMA_GLO_CFG_FLD_RXDRV_DDONE2_CHK                  REG_FLD(1, 10)
 #define WED_WDMA_GLO_CFG_FLD_LS_CHK_BYP                        REG_FLD(1, 9)
 #define WED_WDMA_GLO_CFG_FLD_TX_DDONE_CHK_LAST                 REG_FLD(1, 8)
 #define WED_WDMA_GLO_CFG_FLD_BIG_ENDIAN                        REG_FLD(1, 7)
@@ -7528,6 +8688,7 @@ typedef volatile PACKING struct
 
 #define WED_WDMA_RST_IDX_FLD_DRV_IDX1                          REG_FLD(1, 25)
 #define WED_WDMA_RST_IDX_FLD_DRV_IDX0                          REG_FLD(1, 24)
+#define WED_WDMA_RST_IDX_FLD_DRX_IDX_ALL                       REG_FLD(1, 20)
 #define WED_WDMA_RST_IDX_FLD_CTX_IDX1                          REG_FLD(1, 19)
 #define WED_WDMA_RST_IDX_FLD_CTX_IDX0                          REG_FLD(1, 18)
 #define WED_WDMA_RST_IDX_FLD_CRX_IDX1                          REG_FLD(1, 17)
@@ -7595,8 +8756,8 @@ typedef volatile PACKING struct
 #define WED_WDMA_RX_COHERENT_MIB_FLD_CNT                       REG_FLD(32, 0)
 
 #define WED_RTQM_GLO_CFG_FLD_CG_DIS                            REG_FLD(1, 31)
-#define WED_RTQM_GLO_CFG_FLD_STATUS                            REG_FLD(12, 16)
-#define WED_RTQM_GLO_CFG_FLD_ENABLE                            REG_FLD(8, 0)
+#define WED_RTQM_GLO_CFG_FLD_STATUS                            REG_FLD(13, 16)
+#define WED_RTQM_GLO_CFG_FLD_ENABLE                            REG_FLD(9, 0)
 
 #define WED_RTQM_RST_FLD_RST                                   REG_FLD(12, 0)
 
@@ -7624,6 +8785,7 @@ typedef volatile PACKING struct
 #define WED_RTQM_PFDBK_FIFO_CFG_FLD_P2Q_EMPTY                  REG_FLD(1, 15)
 #define WED_RTQM_PFDBK_FIFO_CFG_FLD_P2Q_FULL                   REG_FLD(1, 14)
 #define WED_RTQM_PFDBK_FIFO_CFG_FLD_P2Q_CLEAR                  REG_FLD(1, 13)
+#define WED_RTQM_PFDBK_FIFO_CFG_FLD_P2Q_GFFDIS                 REG_FLD(1, 12)
 #define WED_RTQM_PFDBK_FIFO_CFG_FLD_P2Q_CNT                    REG_FLD(11, 0)
 
 #define WED_RTQM_PREF_FIFO_CFG_FLD_PREF_7_EMPTY                REG_FLD(1, 31)
@@ -7651,6 +8813,7 @@ typedef volatile PACKING struct
 #define WED_RTQM_PREF_FIFO_CFG_FLD_PREF_0_FULL                 REG_FLD(1, 2)
 #define WED_RTQM_PREF_FIFO_CFG_FLD_PREF_0_CLEAR                REG_FLD(1, 1)
 
+#define WED_RTQM_IGRS0_CFG0_FLD_HOST_RING_SRC                  REG_FLD(2, 28)
 #define WED_RTQM_IGRS0_CFG0_FLD_DMAD_MOD_METHOD                REG_FLD(1, 27)
 #define WED_RTQM_IGRS0_CFG0_FLD_DMAD_MOD_EN                    REG_FLD(7, 20)
 #define WED_RTQM_IGRS0_CFG0_FLD_DMAD_CLR_PPE_FLD               REG_FLD(2, 18)
@@ -7695,6 +8858,7 @@ typedef volatile PACKING struct
 #define WED_RTQM_IGRS0_DBG_FLD_CURR_DMAD_SOP_MON               REG_FLD(1, 1)
 #define WED_RTQM_IGRS0_DBG_FLD_CURR_DMAD_EOP_MON               REG_FLD(1, 0)
 
+#define WED_RTQM_IGRS1_CFG0_FLD_HOST_RING_SRC                  REG_FLD(2, 28)
 #define WED_RTQM_IGRS1_CFG0_FLD_DMAD_MOD_METHOD                REG_FLD(1, 27)
 #define WED_RTQM_IGRS1_CFG0_FLD_DMAD_MOD_EN                    REG_FLD(7, 20)
 #define WED_RTQM_IGRS1_CFG0_FLD_DMAD_CLR_PPE_FLD               REG_FLD(2, 18)
@@ -7739,6 +8903,7 @@ typedef volatile PACKING struct
 #define WED_RTQM_IGRS1_DBG_FLD_CURR_DMAD_SOP_MON               REG_FLD(1, 1)
 #define WED_RTQM_IGRS1_DBG_FLD_CURR_DMAD_EOP_MON               REG_FLD(1, 0)
 
+#define WED_RTQM_IGRS2_CFG0_FLD_HOST_RING_SRC                  REG_FLD(2, 28)
 #define WED_RTQM_IGRS2_CFG0_FLD_DMAD_MOD_METHOD                REG_FLD(1, 27)
 #define WED_RTQM_IGRS2_CFG0_FLD_DMAD_MOD_EN                    REG_FLD(7, 20)
 #define WED_RTQM_IGRS2_CFG0_FLD_DMAD_CLR_PPE_FLD               REG_FLD(2, 18)
@@ -7783,6 +8948,7 @@ typedef volatile PACKING struct
 #define WED_RTQM_IGRS2_DBG_FLD_CURR_DMAD_SOP_MON               REG_FLD(1, 1)
 #define WED_RTQM_IGRS2_DBG_FLD_CURR_DMAD_EOP_MON               REG_FLD(1, 0)
 
+#define WED_RTQM_IGRS3_CFG0_FLD_HOST_RING_SRC                  REG_FLD(2, 28)
 #define WED_RTQM_IGRS3_CFG0_FLD_DMAD_MOD_METHOD                REG_FLD(1, 27)
 #define WED_RTQM_IGRS3_CFG0_FLD_DMAD_MOD_EN                    REG_FLD(7, 20)
 #define WED_RTQM_IGRS3_CFG0_FLD_DMAD_CLR_PPE_FLD               REG_FLD(2, 18)
@@ -7906,6 +9072,22 @@ typedef volatile PACKING struct
 #define WED_RTQM_DEQ_DBG_FLD_CURR_DMAD_SOP_MON                 REG_FLD(1, 1)
 #define WED_RTQM_DEQ_DBG_FLD_CURR_DMAD_EOP_MON                 REG_FLD(1, 0)
 
+#define WED_RTQM_ERR_STS_FLD_Q2N_ITF_FIFO_W_ERR                REG_FLD(1, 25)
+#define WED_RTQM_ERR_STS_FLD_PFDBK_ITF_FIFO_R_ERR              REG_FLD(1, 24)
+#define WED_RTQM_ERR_STS_FLD_Q2H1_ITF_FIFO_W_ERR               REG_FLD(1, 23)
+#define WED_RTQM_ERR_STS_FLD_Q2H0_ITF_FIFO_W_ERR               REG_FLD(1, 22)
+#define WED_RTQM_ERR_STS_FLD_Q2BM_ITF_FIFO_R_ERR               REG_FLD(1, 21)
+#define WED_RTQM_ERR_STS_FLD_CR_ITF_FIFO_W_ERR                 REG_FLD(1, 20)
+#define WED_RTQM_ERR_STS_FLD_PN_ITF_FIFO_W_ERR                 REG_FLD(1, 19)
+#define WED_RTQM_ERR_STS_FLD_RRO_ITF_FIFO_W_ERR                REG_FLD(1, 18)
+#define WED_RTQM_ERR_STS_FLD_AGE_SRCH_FIFO_R_ERR               REG_FLD(1, 17)
+#define WED_RTQM_ERR_STS_FLD_AGE_SRCH_FIFO_W_ERR               REG_FLD(1, 16)
+#define WED_RTQM_ERR_STS_FLD_QFREE_SRCH_FIFO_R_ERR             REG_FLD(1, 15)
+#define WED_RTQM_ERR_STS_FLD_QFREE_SRCH_FIFO_W_ERR             REG_FLD(1, 14)
+#define WED_RTQM_ERR_STS_FLD_PFDBK_AGE_FIFO_R_ERR              REG_FLD(1, 13)
+#define WED_RTQM_ERR_STS_FLD_PFDBK_AGE_FIFO_W_ERR              REG_FLD(1, 12)
+#define WED_RTQM_ERR_STS_FLD_PFDBK_FIFO_R_ERR                  REG_FLD(1, 11)
+#define WED_RTQM_ERR_STS_FLD_PFDBK_FIFO_W_ERR                  REG_FLD(1, 10)
 #define WED_RTQM_ERR_STS_FLD_DEQ_ERR                           REG_FLD(1, 9)
 #define WED_RTQM_ERR_STS_FLD_ENQ_ERR                           REG_FLD(1, 8)
 #define WED_RTQM_ERR_STS_FLD_IGRS3_FIFO_R_ERR                  REG_FLD(1, 7)
@@ -7973,7 +9155,11 @@ typedef volatile PACKING struct
 
 #define WED_RTQM_QUEUE_CNT_FLD_CNT                             REG_FLD(32, 0)
 
-#define WED_RTQM_DBG_CFG_FLD_PPE_FDBK_DROP                     REG_FLD(1, 12)
+#define WED_RTQM_DBG_CFG_FLD_ENQ_DDONE2_CTRL                   REG_FLD(2, 18)
+#define WED_RTQM_DBG_CFG_FLD_ENQ_DDONE_DW2_CTRL                REG_FLD(2, 16)
+#define WED_RTQM_DBG_CFG_FLD_ENQ_DDONE_DW1_CTRL                REG_FLD(2, 14)
+#define WED_RTQM_DBG_CFG_FLD_ENQ_DDONE_CTRL                    REG_FLD(2, 12)
+#define WED_RTQM_DBG_CFG_FLD_PPE_FDBK_DROP                     REG_FLD(1, 10)
 #define WED_RTQM_DBG_CFG_FLD_DBG_ENQ_VLD                       REG_FLD(1, 9)
 #define WED_RTQM_DBG_CFG_FLD_DBG_ENQ_WR                        REG_FLD(1, 8)
 #define WED_RTQM_DBG_CFG_FLD_DBG_MON_SEL                       REG_FLD(8, 0)
@@ -8020,10 +9206,44 @@ typedef volatile PACKING struct
 #define WED_RTQM_AGE_CFG0_FLD_DFDBK_TO_HOST                    REG_FLD(1, 31)
 #define WED_RTQM_AGE_CFG0_FLD_DFDBK_PPE_ENTRY                  REG_FLD(15, 16)
 #define WED_RTQM_AGE_CFG0_FLD_DFDBK_CSRN                       REG_FLD(5, 8)
+#define WED_RTQM_AGE_CFG0_FLD_FLUSH_EN                         REG_FLD(1, 3)
+#define WED_RTQM_AGE_CFG0_FLD_FSM_FORCE_IDLE                   REG_FLD(1, 2)
+#define WED_RTQM_AGE_CFG0_FLD_FSM                              REG_FLD(2, 0)
 
 #define WED_RROQM_MIOD_CFG_FLD_MIOD_ENTRY_DW                   REG_FLD(7, 16)
 #define WED_RROQM_MIOD_CFG_FLD_MOD_DW                          REG_FLD(6, 8)
 #define WED_RROQM_MIOD_CFG_FLD_MID_DW                          REG_FLD(6, 0)
+
+#define WED_RTQM_AGE_CFG1_FLD_AGE_TIME                         REG_FLD(32, 0)
+
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_7_EMPTY                 REG_FLD(1, 31)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_7_FULL                  REG_FLD(1, 30)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_7_CLEAR                 REG_FLD(1, 29)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_6_EMPTY                 REG_FLD(1, 27)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_6_FULL                  REG_FLD(1, 26)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_6_CLEAR                 REG_FLD(1, 25)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_5_EMPTY                 REG_FLD(1, 23)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_5_FULL                  REG_FLD(1, 22)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_5_CLEAR                 REG_FLD(1, 21)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_4_EMPTY                 REG_FLD(1, 19)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_4_FULL                  REG_FLD(1, 18)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_4_CLEAR                 REG_FLD(1, 17)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_3_EMPTY                 REG_FLD(1, 15)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_3_FULL                  REG_FLD(1, 14)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_3_CLEAR                 REG_FLD(1, 13)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_2_EMPTY                 REG_FLD(1, 11)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_2_FULL                  REG_FLD(1, 10)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_2_CLEAR                 REG_FLD(1, 9)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_1_EMPTY                 REG_FLD(1, 7)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_1_FULL                  REG_FLD(1, 6)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_1_CLEAR                 REG_FLD(1, 5)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_0_EMPTY                 REG_FLD(1, 3)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_0_FULL                  REG_FLD(1, 2)
+#define WED_RTQM_AGE_FIFO_CFG_FLD_PREF_0_CLEAR                 REG_FLD(1, 1)
+
+#define WED_RTQM_AGE_PKT_CNT_FLD_CNT                           REG_FLD(32, 0)
+
+#define WED_RTQM_PFDBK_CNT_FLD_CNT                             REG_FLD(32, 0)
 
 #define WED_RROQM_FDBK_REC_CTRL_FLD_PAGE                       REG_FLD(2, 8)
 #define WED_RROQM_FDBK_REC_CTRL_FLD_CMD_EN                     REG_FLD(4, 0)
@@ -8146,7 +9366,7 @@ typedef volatile PACKING struct
 #define IND_CMD_0_CTRL_1_FLD_RRO_IND_CMD_BASE_L                REG_FLD(28, 4)
 
 #define IND_CMD_0_CTRL_2_FLD_RRO_IND_CMD_BASE_M                REG_FLD(4, 16)
-#define IND_CMD_0_CTRL_2_FLD_MAX_CNT                           REG_FLD(12, 0)
+#define IND_CMD_0_CTRL_2_FLD_MAX_CNT_11_4                      REG_FLD(8, 4)
 
 #define RRO_CONF_0_FLD_ACK_SN_BASE_0_L                         REG_FLD(32, 0)
 
@@ -8156,7 +9376,9 @@ typedef volatile PACKING struct
 
 #define ADDR_ELEM_CONF_0_FLD_PARTICULAR_SE_ID_ADDR_BASE_L      REG_FLD(32, 0)
 
+#define ADDR_ELEM_CONF_1_FLD_CLR_ADDR_ELEM_AXI_OP              REG_FLD(2, 30)
 #define ADDR_ELEM_CONF_1_FLD_PREFETCH_ADDR_ELEM_FREE_CNT       REG_FLD(4, 16)
+#define ADDR_ELEM_CONF_1_FLD_CLR_ADDR_ELEM_WSTRB               REG_FLD(8, 8)
 #define ADDR_ELEM_CONF_1_FLD_PARTICULAR_SE_ID_ADDR_BASE_M      REG_FLD(4, 0)
 
 #define ADDR_ELEM_BASE_TBL_CONF_FLD_WR                         REG_FLD(1, 31)
@@ -8202,9 +9424,14 @@ typedef volatile PACKING struct
 #define RRO_MSDU_PG_RING2_CFG1_FLD_FORCE_IDLE_WHEN_DRV_DISABLE REG_FLD(1, 29)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_FORCE_RETURN_IDLE           REG_FLD(1, 28)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_INIT_FLAG_CLR               REG_FLD(1, 27)
+#define RRO_MSDU_PG_RING2_CFG1_FLD_DRV_CLR                     REG_FLD(1, 26)
+#define RRO_MSDU_PG_RING2_CFG1_FLD_DRV_DBG_CLR                 REG_FLD(1, 25)
+#define RRO_MSDU_PG_RING2_CFG1_FLD_DMAD_DBG_EN                 REG_FLD(1, 24)
+#define RRO_MSDU_PG_RING2_CFG1_FLD_ERR_LAT_OPT                 REG_FLD(1, 23)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_BUSY_FLAG                   REG_FLD(1, 22)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_POLL_FLAG                   REG_FLD(1, 21)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_INIT_COMPLETE_FLAG          REG_FLD(1, 20)
+#define RRO_MSDU_PG_RING2_CFG1_FLD_FORCE_IDLE_WHEN_DRV_ERROR   REG_FLD(1, 19)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_R2_INT_FLAG                 REG_FLD(1, 18)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_R1_INT_FLAG                 REG_FLD(1, 17)
 #define RRO_MSDU_PG_RING2_CFG1_FLD_R0_INT_FLAG                 REG_FLD(1, 16)
@@ -8235,6 +9462,7 @@ typedef volatile PACKING struct
 #define RRO_MSDU_PG_2_CTRL1_FLD_BASE_PTR_M                     REG_FLD(8, 16)
 #define RRO_MSDU_PG_2_CTRL1_FLD_MAX_CNT                        REG_FLD(12, 0)
 
+#define RRO_MSDU_PG_2_CTRL2_FLD_BURST_MODE_DISABLE             REG_FLD(1, 31)
 #define RRO_MSDU_PG_2_CTRL2_FLD_DMA_IDX_MIRO                   REG_FLD(12, 16)
 #define RRO_MSDU_PG_2_CTRL2_FLD_CPU_IDX                        REG_FLD(12, 0)
 
@@ -8269,9 +9497,15 @@ typedef volatile PACKING struct
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_FORCE_IDLE_WHEN_DRV_DISABLE REG_FLD(1, 29)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_FORCE_RETURN_IDLE         REG_FLD(1, 28)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_INIT_FLAG_CLR             REG_FLD(1, 27)
+#define RRO_RX_D_RING_CFG_ADDR_2_FLD_DRV_CLR                   REG_FLD(1, 26)
+#define RRO_RX_D_RING_CFG_ADDR_2_FLD_DRV_DBG_CLR               REG_FLD(1, 25)
+#define RRO_RX_D_RING_CFG_ADDR_2_FLD_DMAD_DBG_EN               REG_FLD(1, 24)
+#define RRO_RX_D_RING_CFG_ADDR_2_FLD_ERR_LAT_OPT               REG_FLD(1, 23)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_BUSY_FLAG                 REG_FLD(1, 22)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_POLL_FLAG                 REG_FLD(1, 21)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_INIT_COMPLETE_FLAG        REG_FLD(1, 20)
+#define RRO_RX_D_RING_CFG_ADDR_2_FLD_FORCE_IDLE_WHEN_DRV_ERROR REG_FLD(1, 19)
+#define RRO_RX_D_RING_CFG_ADDR_2_FLD_BURST_MODE_DISABLE        REG_FLD(1, 18)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_R1_INT_FLAG               REG_FLD(1, 17)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_R0_INT_FLAG               REG_FLD(1, 16)
 #define RRO_RX_D_RING_CFG_ADDR_2_FLD_POLL_CYCLE                REG_FLD(8, 8)
@@ -8334,8 +9568,6 @@ typedef volatile PACKING struct
 #define WED_WPDMA_INT_CTRL_RRO_RX_FLD_RRO_RX_DONE_CLR0         REG_FLD(1, 1)
 #define WED_WPDMA_INT_CTRL_RRO_RX_FLD_RRO_RX_DONE_EN0          REG_FLD(1, 0)
 
-#define WED_WPDMA_RX_D_RING_CFG_ADDR_1_FLD_ADDRESS             REG_FLD(32, 0)
-
 #define WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_TRIG2   REG_FLD(5, 18)
 #define WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_CLR2    REG_FLD(1, 17)
 #define WED_WPDMA_INT_CTRL_RRO_MSDU_PG_FLD_RRO_PG_DONE_EN2     REG_FLD(1, 16)
@@ -8352,7 +9584,7 @@ typedef volatile PACKING struct
 #define WED_RRO_RX_HW_STS_FLD_IND2ADDR_ELEM_CS                 REG_FLD(3, 10)
 #define WED_RRO_RX_HW_STS_FLD_FETCH_IND_CMD_CS                 REG_FLD(2, 8)
 #define WED_RRO_RX_HW_STS_FLD_RX_PN_CHK_BUSY                   REG_FLD(1, 3)
-#define WED_RRO_RX_HW_STS_FLD_RX_MSDU_INFO_PAGE_BUSY           REG_FLD(1, 2)
+#define WED_RRO_RX_HW_STS_FLD_RX_MSDU_INFO_PG_BUSY             REG_FLD(1, 2)
 #define WED_RRO_RX_HW_STS_FLD_RX_ADDR_ELEM_BUSY                REG_FLD(1, 1)
 #define WED_RRO_RX_HW_STS_FLD_RX_IND_CMD_BUSY                  REG_FLD(1, 0)
 
@@ -8385,6 +9617,296 @@ typedef volatile PACKING struct
 #define WED_RRO_RX_DBG3_FLD_rx_msdu2rtqm_wdata                 REG_FLD(14, 16)
 
 #define WED_RRO_RX_DBG4_FLD_clr_addr_acksn_wdata               REG_FLD(32, 0)
+
+#define WED_RX_IND_CMD_CNT0_FLD_dbg_cnt_en                     REG_FLD(1, 31)
+#define WED_RX_IND_CMD_CNT0_FLD_all_dbg_cnt_rst                REG_FLD(1, 30)
+#define WED_RX_IND_CMD_CNT0_FLD_dbg_cnt_rdclr_en               REG_FLD(1, 29)
+#define WED_RX_IND_CMD_CNT0_FLD_total_ind_cmd_cnt              REG_FLD(28, 0)
+
+#define WED_RX_IND_CMD_CNT1_FLD_ind_cmd_fetch1_cnt             REG_FLD(28, 0)
+
+#define WED_RX_IND_CMD_CNT2_FLD_ind_cmd_fetch2_cnt             REG_FLD(28, 0)
+
+#define WED_RX_IND_CMD_CNT3_FLD_ind_cmd_fetch3_cnt             REG_FLD(28, 0)
+
+#define WED_RX_IND_CMD_CNT4_FLD_ind_cmd_fetch4_cnt             REG_FLD(28, 0)
+
+#define WED_RX_IND_CMD_CNT5_FLD_ind_cmd_fetch5_cnt             REG_FLD(24, 0)
+
+#define WED_RX_IND_CMD_CNT6_FLD_ind_cmd_fetch6_cnt             REG_FLD(24, 0)
+
+#define WED_RX_IND_CMD_CNT7_FLD_ind_cmd_fetch7_cnt             REG_FLD(24, 0)
+
+#define WED_RX_IND_CMD_CNT8_FLD_ind_cmd_fetch8_cnt             REG_FLD(24, 0)
+
+#define WED_RX_IND_CMD_CNT9_FLD_magic_cnt_fail_cnt             REG_FLD(16, 0)
+
+#define WED_RX_ADDR_ELEM_CNT0_FLD_total_addr_elem_cnt          REG_FLD(32, 0)
+
+#define WED_RX_ADDR_ELEM_CNT1_FLD_total_1st_sig_fail_cnt       REG_FLD(16, 16)
+#define WED_RX_ADDR_ELEM_CNT1_FLD_total_sig_fail_cnt           REG_FLD(16, 0)
+
+#define WED_RX_ADDR_ELEM_CNT2_FLD_clr_addr_cnt                 REG_FLD(20, 0)
+
+#define WED_RX_ADDR_ELEM_CNT3_FLD_acksn_cnt                    REG_FLD(28, 0)
+
+#define WED_RX_ADDR_ELEM_CNT4_FLD_acksn_last_cnt               REG_FLD(28, 0)
+
+#define WED_RX_MSDU_PG_CNT1_FLD_pg_cnt1_cnt                    REG_FLD(28, 0)
+
+#define WED_RX_MSDU_PG_CNT2_FLD_pg_cnt2_cnt                    REG_FLD(24, 0)
+
+#define WED_RX_MSDU_PG_CNT3_FLD_pg_cnt3_cnt                    REG_FLD(24, 0)
+
+#define WED_RX_MSDU_PG_CNT4_FLD_pg_cnt4_cnt                    REG_FLD(24, 0)
+
+#define WED_RX_MSDU_PG_CNT5_FLD_pg_cnt5_cnt                    REG_FLD(24, 0)
+
+#define WED_RX_PN_CHK_CNT0_FLD_pn_chk_fail_cnt                 REG_FLD(16, 0)
+
+#define WED_RX_IND_CMD_AXI0_FLD_araddr_reg                     REG_FLD(32, 0)
+
+#define WED_RX_ADDR_ELEM_AXI0_FLD_araddr_reg                   REG_FLD(32, 0)
+
+#define WED_RX_ADDR_ELEM_AXI1_FLD_awaddr_reg                   REG_FLD(32, 0)
+
+#define WED_RX_ADDR_ELEM_AXI2_FLD_awaddr_clr_addr_lat          REG_FLD(32, 0)
+
+#define WED_RX_ADDR_ELEM_AXI3_FLD_wdata0                       REG_FLD(32, 0)
+
+#define WED_RX_ADDR_ELEM_AXI4_FLD_wdata1                       REG_FLD(32, 0)
+
+#define WED_RX_MSDU_PG_AXI0_FLD_araddr_reg                     REG_FLD(32, 0)
+
+#define DONT_USE_BEHIND_THIS_ADDR_FLD_value                    REG_FLD(32, 0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

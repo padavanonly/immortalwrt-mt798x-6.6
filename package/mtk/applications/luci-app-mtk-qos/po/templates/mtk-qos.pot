@@ -1,0 +1,233 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "MTK NPU QoS"
+msgstr ""
+
+msgid "MediaTek NPU 4-Coprocessor Unified QoS"
+msgstr ""
+
+msgid "Simultaneous hardware EQoS per-host shaping, connection limiting, zero-copy L7 DPI classification, and 13-queue SQM via MT7987/MT7988 PCE + PPE + QDMA + WED across Wired WAN and 5G WWAN."
+msgstr ""
+
+msgid "Realtime 4-Coprocessor Status"
+msgstr ""
+
+msgid "Engine Mode"
+msgstr ""
+
+msgid "Bound WAN Interface(s)"
+msgstr ""
+
+msgid "Coprocessor Health"
+msgstr ""
+
+msgid "Downlink QDMA (Sch3 / Q33-63)"
+msgstr ""
+
+msgid "Uplink QDMA (Sch2 / Q1-31)"
+msgstr ""
+
+msgid "L7 Hardware DPI & EQoS Hits"
+msgstr ""
+
+msgid "Enabled"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "5G Cellular (WWAN EXT)"
+msgstr ""
+
+msgid "Dual-WAN (Wired + 5G)"
+msgstr ""
+
+msgid "Wired WAN (Ethernet / PPPoE)"
+msgstr ""
+
+msgid "Blocked (Legacy EQoS / mtkhqos active)"
+msgstr ""
+
+msgid "Active (4-Coprocessor Zero-CPU: PCE + PPE + QDMA + WED)"
+msgstr ""
+
+msgid "Active (Software CAKE Fallback)"
+msgstr ""
+
+msgid "Stopped"
+msgstr ""
+
+msgid "Bound"
+msgstr ""
+
+msgid "Loaded"
+msgstr ""
+
+msgid "Unloaded"
+msgstr ""
+
+msgid "PPE FOE QID Hardware Lock (MT7987)"
+msgstr ""
+
+msgid "Active"
+msgstr ""
+
+msgid "Inactive"
+msgstr ""
+
+msgid "Realtime"
+msgstr ""
+
+msgid "Flow-Fair"
+msgstr ""
+
+msgid "Video/QUIC"
+msgstr ""
+
+msgid "P2P/BT"
+msgstr ""
+
+msgid "EQoS Flows"
+msgstr ""
+
+msgid "Global & Coprocessor Policy"
+msgstr ""
+
+msgid "Coprocessor Engine"
+msgstr ""
+
+msgid "SQM & L7 DPI Classes"
+msgstr ""
+
+msgid "Enable Unified MTK QoS"
+msgstr ""
+
+msgid "WAN Topology Mode"
+msgstr ""
+
+msgid "Auto Detect (Wired WAN / 5G WWAN / Dual-WAN)"
+msgstr ""
+
+msgid "Wired Ethernet / PPPoE / DSA"
+msgstr ""
+
+msgid "5G Cellular QMI (wwan0_1)"
+msgstr ""
+
+msgid "Dual-WAN Active"
+msgstr ""
+
+msgid "Bound WAN Device"
+msgstr ""
+
+msgid "Auto Detect Active Default Routes"
+msgstr ""
+
+msgid "Total Download Bandwidth (kbit/s)"
+msgstr ""
+
+msgid "Recommended: 85-95% of measured line speed. Set 0 to only enforce per-host EQoS limits."
+msgstr ""
+
+msgid "Total Upload Bandwidth (kbit/s)"
+msgstr ""
+
+msgid "Link Layer Overhead (bytes)"
+msgstr ""
+
+msgid "Typical: 0 (Raw IP/Ethernet), 8 (PPPoE), 18 (Ethernet+FCS), 44 (VDSL/ATM)."
+msgstr ""
+
+msgid "QDMA Hardware Scheduler"
+msgstr ""
+
+msgid "WRR (Weighted Round Robin)"
+msgstr ""
+
+msgid "SP (Strict Priority)"
+msgstr ""
+
+msgid "Enable PCE Hardware L4/L7 Classifier"
+msgstr ""
+
+msgid "Enable Zero-Copy L7 DPI Engine"
+msgstr ""
+
+msgid "Enable SQM Fair & Prioritized Queueing"
+msgstr ""
+
+msgid "Realtime / Gaming / VoIP Floor (%)"
+msgstr ""
+
+msgid "Minimum guaranteed bandwidth on Q16/Q48 (weight 15) for DNS, NTP, SSH, STUN/WebRTC, ZeroTier, WireGuard, small UDP game packets, and EF/CS5-7 DSCP."
+msgstr ""
+
+msgid "Video / QUIC Streaming Ceiling (%)"
+msgstr ""
+
+msgid "Maximum share on Q30/Q62 (weight 6) for QUIC UDP/443 media and recognized streaming TLS SNI."
+msgstr ""
+
+msgid "P2P / BitTorrent Scavenger Ceiling (%)"
+msgstr ""
+
+msgid "Strict ceiling on Q31/Q63 (weight 1) for BitTorrent/DHT/eDonkey and CS1/LE bulk traffic."
+msgstr ""
+
+msgid "Prioritize Pure TCP Control / ACK Packets"
+msgstr ""
+
+msgid "Fallback CAKE DiffServ (only when HNAT=0)"
+msgstr ""
+
+msgid "Fallback CAKE ACK Filter (only when HNAT=0)"
+msgstr ""
+
+msgid "Enable Simultaneous Per-Host EQoS & Connection Limits"
+msgstr ""
+
+msgid "Per-Host Hardware EQoS Rules (Up to 15 Concurrent Hosts: UL Q1-15 / DL Q33-47)"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "IPv4 / IPv6 Address"
+msgstr ""
+
+msgid "MAC Address"
+msgstr ""
+
+msgid "Download Limit (kbit/s)"
+msgstr ""
+
+msgid "Upload Limit (kbit/s)"
+msgstr ""
+
+msgid "Max New Connections"
+msgstr ""
+
+msgid "Comment"
+msgstr ""
+
+msgid "Device note"
+msgstr ""
+
+msgid "Apply returned non-zero status"
+msgstr ""
+
+msgid "Configuration has been applied."
+msgstr ""
+
+msgid "Failed to apply configuration: %s"
+msgstr ""
+
+msgid "Last Apply"
+msgstr ""
+
+msgid "Success"
+msgstr ""
+
+msgid "Failed"
+msgstr ""

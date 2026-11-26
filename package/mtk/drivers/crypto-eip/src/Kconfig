@@ -1,0 +1,8 @@
+config MTK_CRYPTO_EIP_INLINE
+	tristate "Mediatek Crypto EIP Inline"
+	help
+	  Support for Mediatek driver to control inline crypto HW offload
+	  engine EIP197. The HW offload engine support IPsec ESP inline
+	  offload. Currently, it only support ESP Tunnel and transport mode.
+	  The driver cooperate XFRM offload framework with Mediatek HNAT
+	  driver to offload ESP protocol.

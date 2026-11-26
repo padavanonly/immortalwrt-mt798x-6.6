@@ -40,7 +40,9 @@
 *.pdb
 
 # Kernel Module Compile Results
-*.mod*
+*.mod
+*.mod.c
+!luci.modem
 *.cmd
 .tmp_versions/
 modules.order

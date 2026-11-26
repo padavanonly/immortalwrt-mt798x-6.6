@@ -1,0 +1,25 @@
+--- a/mt_wifi/embedded/common/ee_flash.c
++++ b/mt_wifi/embedded/common/ee_flash.c
+@@ -27,6 +27,14 @@
+ #include	"rt_config.h"
+ #include "hdev/hdev.h"
+ 
++#ifdef CONFIG_MTK_MT7986_NEW_FW
++int mt_mtd_write_nm_wifi(char *name, loff_t to, size_t len, const u_char *buf);
++int mt_mtd_read_nm_wifi(char *name, loff_t from, size_t len, u_char *buf);
++
++#define flash_read(_ctrl, _ptr, _offset, _len) mt_mtd_read_nm_wifi("Factory", _offset, (size_t)_len, _ptr)
++#define flash_write(_ctrl, _ptr, _offset, _len) mt_mtd_write_nm_wifi("Factory", _offset, (size_t)_len, _ptr)
++
++#else /* !CONFIG_MTK_MT7986_NEW_FW */
+ /*decision flash api by compiler flag*/
+ #ifdef CONFIG_PROPRIETARY_DRIVER
+ /*
+@@ -134,6 +142,7 @@
+ #endif /*CONFIG_PROPRIETERY_DRIVER*/
+ 
+ 
++#endif /* CONFIG_MTK_MT7986_NEW_FW */
+ void RtmpFlashRead(
+ 	void *hdev_ctrl,
+ 	UCHAR *p,

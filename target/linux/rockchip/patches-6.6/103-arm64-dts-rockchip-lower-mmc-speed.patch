@@ -22,7 +22,7 @@ Signed-off-by: David Bauer <mail@david-bauer.net>
  	status = "okay";
 --- a/arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts
 +++ b/arch/arm64/boot/dts/rockchip/rk3399-nanopi-r4s.dts
-@@ -119,6 +119,11 @@
+@@ -118,6 +118,11 @@
  	status = "disabled";
  };
  
@@ -34,6 +34,39 @@ Signed-off-by: David Bauer <mail@david-bauer.net>
  &u2phy0_host {
  	phy-supply = <&vdd_5v>;
  };
+--- a/arch/arm64/boot/dts/rockchip/rk3568-9tripod-x3568-v4.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3568-9tripod-x3568-v4.dts
+@@ -747,7 +747,7 @@
+ 	disable-wp;
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_det>;
+-	sd-uhs-sdr104;
++	sd-uhs-sdr50;
+ 	vmmc-supply = <&vcc3v3_sd>;
+ 	vqmmc-supply = <&vccio_sd>;
+ 	status = "okay";
+--- a/arch/arm64/boot/dts/rockchip/rk3568-photonicat.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3568-photonicat.dts
+@@ -433,7 +433,8 @@
+ /* eMMC */
+ &sdhci {
+ 	bus-width = <8>;
+-	max-frequency = <200000000>;
++	cap-mmc-highspeed;
++	max-frequency = <150000000>;
+ 	mmc-hs200-1_8v;
+ 	non-removable;
+ 	pinctrl-names = "default";
+@@ -467,7 +468,8 @@
+ 	non-removable;
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_cmd &sdmmc1_clk>;
+-	sd-uhs-sdr104;
++	sd-uhs-sdr25;
++	sd-uhs-sdr50;
+ 	vmmc-supply = <&vcc3v3_sys>;
+ 	vqmmc-supply = <&vcc_1v8>;
+ 	#address-cells = <1>;
 --- a/arch/arm64/boot/dts/rockchip/rk3588-armsom-sige7.dts
 +++ b/arch/arm64/boot/dts/rockchip/rk3588-armsom-sige7.dts
 @@ -346,7 +346,7 @@
@@ -66,9 +99,9 @@ Signed-off-by: David Bauer <mail@david-bauer.net>
  	vmmc-supply = <&vcc3v3_sd_s0>;
  	vqmmc-supply = <&vccio_sd_s0>;
  	status = "okay";
---- a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dts
-+++ b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dts
-@@ -418,7 +418,7 @@
+--- a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-5bp-5t.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-5bp-5t.dtsi
+@@ -451,7 +451,7 @@
  	cap-mmc-highspeed;
  	cap-sd-highspeed;
  	disable-wp;
@@ -79,7 +112,7 @@ Signed-off-by: David Bauer <mail@david-bauer.net>
  	status = "okay";
 --- a/arch/arm64/boot/dts/rockchip/rk3588s-rock-5a.dts
 +++ b/arch/arm64/boot/dts/rockchip/rk3588s-rock-5a.dts
-@@ -403,7 +403,7 @@
+@@ -454,7 +454,7 @@
  	max-frequency = <150000000>;
  	no-sdio;
  	no-mmc;

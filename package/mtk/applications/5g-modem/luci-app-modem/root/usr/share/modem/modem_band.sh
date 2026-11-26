@@ -1,11 +1,11 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 source "${SCRIPT_DIR}/modem_debug.sh"
 
-#初始化模组频段
+# Initialize modem bands
 init_modem_band()
 {
 	#2G
@@ -78,17 +78,17 @@ init_modem_band()
 	N79="-"
 }
 
-#获取模组数据信息
-# $1:AT串口
-# $2:制造商
-# $3:平台
-# $4:连接定义
+# Get modem data info
+# $1: AT serial port
+# $2: Manufacturer
+# $3: Platform
+# $4: Connection definition
 modem_band()
 {
-	#初始化模组频段
-    debug "初始化模组频段"
+	# Initialize modem bands
+    debug "Initializing modem band"
     init_modem_band
-    debug "初始化模组频段完成"
+    debug "Modem band initialization completed"
 }
 
 modem_band "$1" "$2" "$3" "$4"

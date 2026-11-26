@@ -1,0 +1,2469 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_hnat: harden PPD/WED WWAN offload and NETSYS v3 HQoS
+
+Preserve PPD bridge FDB mark and DT MAC classification, enable MT7987
+WED<->EXT WWAN offload, serialize QDMA queue window access, honor mtk-qos
+TCP ACK priority, skip non-ARP PDMA output from auto-PPPQ, skip marked
+external RX exceptions, recover NETSYS v3 HQoS PPE_BYPASS external RX,
+and relax ext-to-ge linearization.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_dbg.c        |   69 +-
+ drivers/net/ethernet/mediatek/mtk_eth_reset.h      |    9 +
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c        |  136 +-
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h        |   30 +
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.c      |    8 +
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.h      |   10 +
+ .../net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c  |  164 ++-
+ .../net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c  | 1398 +++++++++++++++++---
+ 8 files changed, 1604 insertions(+), 220 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+index 99da8e7df..9759483e7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+@@ -201,9 +201,13 @@ static ssize_t qdma_sched_show(struct file *file, char __user *user_buf,
+ 			 (scheduling == 1) ? "WRR" : "SP", max_rate);
+ 
+ 	for (i = 0; i < 64; i++) {
+-		mtk_w32(eth, (i / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
++		void __iomem *page_reg = eth->base + soc->reg_map->qdma.page;
++		struct mtk_qdma_page page;
++
++		mtk_qdma_select_page(&page, page_reg, i / MTK_QTX_PER_PAGE);
+ 		sch_reg = mtk_r32(eth, soc->reg_map->qdma.qtx_sch +
+ 				       (i % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++		mtk_qdma_restore_page(&page, page_reg);
+ 		if (mtk_is_netsys_v2_or_greater(eth))
+ 			scheduler = FIELD_GET(MTK_QTX_SCH_TX_SEL_V2, sch_reg);
+ 		else
+@@ -297,10 +301,14 @@ static ssize_t qdma_queue_show(struct file *file, char __user *user_buf,
+ {
+ 	struct mtk_eth *eth = g_eth;
+ 	const struct mtk_soc_data *soc = eth->soc;
++	void __iomem *page_reg = eth->base + soc->reg_map->qdma.page;
++	struct mtk_qdma_page page;
+ 	long id = (long)file->private_data;
+ 	char *buf;
+ 	unsigned int len = 0, buf_len = 1500;
+-	u32 qtx_sch, qtx_cfg;
++	u32 qtx_sch, qtx_cfg, packets = 0, drops = 0;
++	u32 ofs = (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET;
++	bool has_mib = mtk_is_netsys_v2_or_greater(eth);
+ 	int scheduler;
+ 	int min_rate_en, min_rate, min_rate_exp;
+ 	int max_rate_en, max_weight, max_rate, max_rate_exp;
+@@ -310,12 +318,23 @@ static ssize_t qdma_queue_show(struct file *file, char __user *user_buf,
+ 	if (!buf)
+ 		return -ENOMEM;
+ 
+-	mtk_w32(eth, (id / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
+-	qtx_cfg = mtk_r32(eth, soc->reg_map->qdma.qtx_cfg +
+-			       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
+-	qtx_sch = mtk_r32(eth, soc->reg_map->qdma.qtx_sch +
+-			       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
+-	if (mtk_is_netsys_v2_or_greater(eth))
++	mtk_qdma_select_page(&page, page_reg, id / MTK_QTX_PER_PAGE);
++	qtx_cfg = mtk_r32(eth, soc->reg_map->qdma.qtx_cfg + ofs);
++	qtx_sch = mtk_r32(eth, soc->reg_map->qdma.qtx_sch + ofs);
++	if (has_mib) {
++		u32 mib_if = soc->reg_map->qdma.qtx_mib_if;
++		u32 mib_prev = mtk_r32(eth, mib_if);
++
++		mtk_m32(eth, MTK_MIB_ON_QTX_CFG, MTK_MIB_ON_QTX_CFG, mib_if);
++		mtk_m32(eth, MTK_VQTX_MIB_EN, MTK_VQTX_MIB_EN, mib_if);
++		packets = mtk_r32(eth, soc->reg_map->qdma.qtx_cfg + ofs);
++		drops = mtk_r32(eth, soc->reg_map->qdma.qtx_sch + ofs);
++		mtk_m32(eth, MTK_MIB_ON_QTX_CFG, mib_prev & MTK_MIB_ON_QTX_CFG, mib_if);
++		mtk_m32(eth, MTK_VQTX_MIB_EN, mib_prev & MTK_VQTX_MIB_EN, mib_if);
++	}
++	mtk_qdma_restore_page(&page, page_reg);
++
++	if (has_mib)
+ 		scheduler = FIELD_GET(MTK_QTX_SCH_TX_SEL_V2, qtx_sch);
+ 	else
+ 		scheduler = FIELD_GET(MTK_QTX_SCH_TX_SEL, qtx_sch);
+@@ -347,22 +366,11 @@ static ssize_t qdma_queue_show(struct file *file, char __user *user_buf,
+ 			 "scheduler: %d\nhw resv: %d\nsw resv: %d\n", scheduler,
+ 			 (qtx_cfg >> 8) & 0xff, qtx_cfg & 0xff);
+ 
+-	if (mtk_is_netsys_v2_or_greater(eth)) {
+-		/* Switch to debug mode */
+-		mtk_m32(eth, MTK_MIB_ON_QTX_CFG, MTK_MIB_ON_QTX_CFG, soc->reg_map->qdma.qtx_mib_if);
+-		mtk_m32(eth, MTK_VQTX_MIB_EN, MTK_VQTX_MIB_EN, soc->reg_map->qdma.qtx_mib_if);
+-		qtx_cfg = mtk_r32(eth, soc->reg_map->qdma.qtx_cfg +
+-				       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
+-		qtx_sch = mtk_r32(eth, soc->reg_map->qdma.qtx_sch +
+-				       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++	if (has_mib) {
+ 		len += scnprintf(buf + len, buf_len - len,
+-				 "packet count: %u\n", qtx_cfg);
++				 "packet count: %u\n", packets);
+ 		len += scnprintf(buf + len, buf_len - len,
+-				 "packet drop: %u\n\n", qtx_sch);
+-
+-		/* Recover to normal mode */
+-		mtk_m32(eth, MTK_MIB_ON_QTX_CFG, 0, soc->reg_map->qdma.qtx_mib_if);
+-		mtk_m32(eth, MTK_VQTX_MIB_EN, 0, soc->reg_map->qdma.qtx_mib_if);
++				 "packet drop: %u\n\n", drops);
+ 	}
+ 
+ 	len += scnprintf(buf + len, buf_len - len,
+@@ -389,6 +397,8 @@ static ssize_t qdma_queue_write(struct file *file, const char __user *buf,
+ {
+ 	struct mtk_eth *eth = g_eth;
+ 	const struct mtk_soc_data *soc = eth->soc;
++	void __iomem *page_reg = eth->base + soc->reg_map->qdma.page;
++	struct mtk_qdma_page page;
+ 	long id = (long)file->private_data;
+ 	char line[64] = {0};
+ 	int max_enable, max_rate, max_exp = 0;
+@@ -397,9 +407,9 @@ static ssize_t qdma_queue_write(struct file *file, const char __user *buf,
+ 	int resv;
+ 	int scheduler;
+ 	size_t size;
+-	u32 qtx_sch = 0, qtx_cfg = 0;
++	u32 qtx_sch = 0, qtx_cfg;
++	u32 ofs = (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET;
+ 
+-	mtk_w32(eth, (id / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
+ 	if (length >= sizeof(line))
+ 		return -EINVAL;
+ 
+@@ -458,16 +468,15 @@ static ssize_t qdma_queue_write(struct file *file, const char __user *buf,
+ 		qtx_sch |= FIELD_PREP(MTK_QTX_SCH_MAX_RATE_MAN, max_rate);
+ 		qtx_sch |= FIELD_PREP(MTK_QTX_SCH_MAX_RATE_EXP, max_exp);
+ 	}
+-	mtk_w32(eth, qtx_sch, soc->reg_map->qdma.qtx_sch +
+-			      (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++	mtk_qdma_select_page(&page, page_reg, id / MTK_QTX_PER_PAGE);
++	mtk_w32(eth, qtx_sch, soc->reg_map->qdma.qtx_sch + ofs);
+ 
+-	qtx_cfg = mtk_r32(eth, soc->reg_map->qdma.qtx_cfg +
+-			       (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++	qtx_cfg = mtk_r32(eth, soc->reg_map->qdma.qtx_cfg + ofs);
+ 	qtx_cfg &= 0xffff0000;
+ 	qtx_cfg |= FIELD_PREP(MTK_QTX_CFG_HW_RESV, resv);
+ 	qtx_cfg |= FIELD_PREP(MTK_QTX_CFG_SW_RESV, resv);
+-	mtk_w32(eth, qtx_cfg, soc->reg_map->qdma.qtx_cfg +
+-			      (id % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++	mtk_w32(eth, qtx_cfg, soc->reg_map->qdma.qtx_cfg + ofs);
++	mtk_qdma_restore_page(&page, page_reg);
+ 
+ 	size = strlen(line);
+ 	*offset += size;
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_reset.h b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+index 53445b143..beab341f2 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+@@ -95,4 +95,13 @@ int mtk_eth_resume_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_mask);
+ int mtk_eth_quiesce_ppe_sync(u32 ppe_id);
+ int mtk_eth_resume_ppe_sync(u32 ppe_id);
+ void mtk_eth_set_pse_port_link_down(u32 port, bool link_down);
++
++struct sk_buff;
++
++typedef bool (*mtk_eth_hnat_hqos_ext_rxd_fn)(u32 rxd5);
++typedef bool (*mtk_eth_hnat_hqos_ext_skb_fn)(struct sk_buff *skb);
++
++void mtk_eth_hnat_register_hqos_ext_rx(mtk_eth_hnat_hqos_ext_rxd_fn rxd_fn,
++				       mtk_eth_hnat_hqos_ext_skb_fn skb_fn);
++void mtk_eth_hnat_unregister_hqos_ext_rx(void);
+ #endif		/* MTK_ETH_RESET_H */
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 54353ba7b..351979714 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -47,6 +47,29 @@
+ #endif
+ struct net_device *ppd_dev;
+ EXPORT_SYMBOL(ppd_dev);
++DEFINE_SPINLOCK(mtk_qdma_window_lock);
++EXPORT_SYMBOL_GPL(mtk_qdma_window_lock);
++
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
++static mtk_eth_hnat_hqos_ext_rxd_fn __rcu mtk_hnat_hqos_ext_rxd_cb;
++static mtk_eth_hnat_hqos_ext_skb_fn __rcu mtk_hnat_hqos_ext_skb_cb;
++
++void mtk_eth_hnat_register_hqos_ext_rx(mtk_eth_hnat_hqos_ext_rxd_fn rxd_fn,
++				       mtk_eth_hnat_hqos_ext_skb_fn skb_fn)
++{
++	rcu_assign_pointer(mtk_hnat_hqos_ext_rxd_cb, rxd_fn);
++	rcu_assign_pointer(mtk_hnat_hqos_ext_skb_cb, skb_fn);
++}
++EXPORT_SYMBOL_GPL(mtk_eth_hnat_register_hqos_ext_rx);
++
++void mtk_eth_hnat_unregister_hqos_ext_rx(void)
++{
++	RCU_INIT_POINTER(mtk_hnat_hqos_ext_rxd_cb, NULL);
++	RCU_INIT_POINTER(mtk_hnat_hqos_ext_skb_cb, NULL);
++}
++EXPORT_SYMBOL_GPL(mtk_eth_hnat_unregister_hqos_ext_rx);
++#endif
++
+ static int mtk_msg_level = -1;
+ module_param_named(msg_level, mtk_msg_level, int, 0);
+ MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
+@@ -1029,6 +1052,8 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+ 				int speed)
+ {
+ 	const struct mtk_soc_data *soc = eth->soc;
++	void __iomem *page_reg = eth->base + soc->reg_map->qdma.page;
++	struct mtk_qdma_page page;
+ 	u32 ofs, val;
+ 
+ 	if (!MTK_HAS_CAPS(soc->caps, MTK_QDMA))
+@@ -1139,9 +1164,10 @@ static void mtk_set_queue_speed(struct mtk_eth *eth, unsigned int idx,
+ 		eth->qdma_shaper.speed[idx] = speed;
+ 
+ out:
+-	mtk_w32(eth, (idx / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
+ 	ofs = MTK_QTX_OFFSET * (idx % MTK_QTX_PER_PAGE);
++	mtk_qdma_select_page(&page, page_reg, idx / MTK_QTX_PER_PAGE);
+ 	mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
++	mtk_qdma_restore_page(&page, page_reg);
+ }
+ 
+ static void mtk_gdm_mac_setup_eee(struct mtk_mac *mac, bool enable)
+@@ -1949,7 +1975,15 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
+ 	struct mtk_tx_buf *itx_buf, *tx_buf;
+ 	int i, n_desc = 1;
+ 	int queue = skb_get_queue_mapping(skb);
++	u16 dma_qid = queue;
+ 	int k = 0;
++	bool ext_ppe = txd_info.ext_ppe;
++
++	if (mtk_is_netsys_v3_or_greater(eth) && skb->mark > 0 &&
++	    skb->mark < 64 && (ext_ppe || skb->mark >= 32)) {
++		dma_qid = skb->mark;
++		txd_info.qid = dma_qid;
++	}
+ 
+ 	txq = netdev_get_tx_queue(dev, queue);
+ 	itxd = ring->next_free;
+@@ -2014,7 +2048,8 @@ static int mtk_tx_map(struct sk_buff *skb, struct net_device *dev,
+ 			memset(&txd_info, 0, sizeof(struct mtk_tx_dma_desc_info));
+ 			txd_info.size = min_t(unsigned int, frag_size,
+ 					      soc->tx.dma_max_len);
+-			txd_info.qid = queue;
++			txd_info.qid = dma_qid;
++			txd_info.ext_ppe = ext_ppe;
+ 			if (mtk_is_netsys_v3_or_greater(eth) &&
+ 			    unlikely(skb->inner_protocol == IPPROTO_ESP)) {
+ #if defined(CONFIG_NET_MEDIATEK_HNAT) || defined(CONFIG_NET_MEDIATEK_HNAT_MODULE)
+@@ -2664,6 +2699,10 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 		u32 hash, reason;
+ 		u64 addr64 = 0;
+ 		int mac = 0;
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
++		bool hqos_ext_candidate = false;
++		int orig_mac;
++#endif
+ 
+ 		idx = NEXT_DESP_IDX(ring->calc_idx, ring->dma_size);
+ 		rxd = ring->dma + idx * eth->soc->rx.desc_size;
+@@ -2695,12 +2734,31 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 			mac = RX_DMA_GET_SPORT(trxd.rxd4) - 1;
+ 		}
+ 
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
++		orig_mac = mac;
++#endif
+ 		if (mac == 4 ||
+ 		    (mtk_is_netsys_v3_or_greater(eth) &&
+ 		     FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5) ==
+ 		     MTK_PPE_CPU_REASON_HIT_BIND_FORCE_CPU)) {
+ 			sent_ppd = 1;
+ 			mac = 0;
++#if IS_ENABLED(CONFIG_NET_MEDIATEK_HNAT)
++		} else if (mtk_is_netsys_v3_or_greater(eth) &&
++			   FIELD_GET(MTK_RXD5_PPE_CPU_REASON, trxd.rxd5) ==
++			   MTK_PPE_CPU_REASON_PPE_BYPASS) {
++			mtk_eth_hnat_hqos_ext_rxd_fn rxd_fn;
++
++			rcu_read_lock();
++			rxd_fn = rcu_dereference(mtk_hnat_hqos_ext_rxd_cb);
++			if (rxd_fn && rxd_fn(trxd.rxd5)) {
++				hqos_ext_candidate = true;
++				if (mac < 0 || mac >= MTK_MAX_DEVS ||
++				    !eth->netdev[mac])
++					mac = 0;
++			}
++			rcu_read_unlock();
++#endif
+ 		}
+ 
+ 
+@@ -2864,6 +2922,26 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 	
+ 		
+ 
++		if (unlikely(hqos_ext_candidate)) {
++			mtk_eth_hnat_hqos_ext_skb_fn skb_fn;
++			bool matched = false;
++
++			rcu_read_lock();
++			skb_fn = rcu_dereference(mtk_hnat_hqos_ext_skb_cb);
++			if (skb_fn)
++				matched = skb_fn(skb);
++			rcu_read_unlock();
++
++			if (matched) {
++				skb_hnat_reason(skb) = HIT_BIND_FORCE_TO_CPU;
++				sent_ppd = 1;
++			} else if (orig_mac < 0 || orig_mac >= MTK_MAX_DEVS ||
++				   !eth->netdev[orig_mac]) {
++				kfree_skb(skb);
++				goto skip_rx;
++			}
++		}
++
+ 		if (skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU) {
+ 			trace_printk("[%s] reason=0x%x(force to CPU) from WAN to Ext\n",
+ 				     __func__, skb_hnat_reason(skb));
+@@ -2892,9 +2970,14 @@ static int mtk_poll_rx(struct napi_struct *napi, int budget,
+ 			skb->protocol = eth_hdr(skb)->h_proto;
+ 			skb->dev = ppd_dev;
+ 			skb->mark = 0x78681415;
++		} else if (!sent_ppd && eth->mac[mac]->is_ppd_dev) {
++			skb->mark = 0x78681415;
+ 		}
+ 		skb_record_rx_queue(skb, 0);
+-		napi_gro_receive(napi, skb);
++		if (sent_ppd)
++			netif_receive_skb(skb);
++		else
++			napi_gro_receive(napi, skb);
+ 
+ skip_rx:
+ 		ring->data[idx] = new_data;
+@@ -3243,6 +3326,8 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+ 	wmb();
+ 
+ 	if (MTK_HAS_CAPS(soc->caps, MTK_QDMA)) {
++		void __iomem *page_reg = eth->base + soc->reg_map->qdma.page;
++
+ 		mtk_w32(eth, ring->phys, soc->reg_map->qdma.ctx_ptr);
+ 		mtk_w32(eth, ring->phys, soc->reg_map->qdma.dtx_ptr);
+ 		mtk_w32(eth,
+@@ -3251,10 +3336,8 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+ 		mtk_w32(eth, ring->last_free_ptr, soc->reg_map->qdma.drx_ptr);
+ 
+ 		for (i = 0, ofs = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
+-			mtk_w32(eth, (i / MTK_QTX_PER_PAGE), soc->reg_map->qdma.page);
+-
+-			val = (QDMA_RES_THRES << 8) | QDMA_RES_THRES;
+-			mtk_w32(eth, val, soc->reg_map->qdma.qtx_cfg + ofs);
++			struct mtk_qdma_page page;
++			u32 cfg = (QDMA_RES_THRES << 8) | QDMA_RES_THRES;
+ 
+ 			val = MTK_QTX_SCH_MIN_RATE_EN |
+ 			      MTK_QTX_SCH_LEAKY_BUCKET_SIZE;
+@@ -3269,7 +3352,11 @@ static int mtk_tx_alloc(struct mtk_eth *eth)
+ 			}
+ 			if (mtk_is_netsys_v1(eth))
+ 				val |= MTK_QTX_SCH_LEAKY_BUCKET_EN;
++
++			mtk_qdma_select_page(&page, page_reg, i / MTK_QTX_PER_PAGE);
++			mtk_w32(eth, cfg, soc->reg_map->qdma.qtx_cfg + ofs);
+ 			mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
++			mtk_qdma_restore_page(&page, page_reg);
+ 			ofs = (ofs + MTK_QTX_OFFSET) % (MTK_QTX_OFFSET * MTK_QTX_PER_PAGE);
+ 		}
+ 		val = MTK_QDMA_TX_SCH_MAX_WFQ | (MTK_QDMA_TX_SCH_MAX_WFQ << 16);
+@@ -4997,17 +5084,29 @@ static void mtk_hw_dump_reg(struct mtk_eth *eth, char *name, u32 offset, u32 ran
+ static void mtk_hw_dump_all(struct mtk_eth *eth)
+ {
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+-	u32 id;
+ 
+ 	mtk_hw_dump_reg(eth, "FE", 0x0, 0x600);
+ 	mtk_hw_dump_reg(eth, "FE", 0x1400, 0x300);
+ 	mtk_hw_dump_reg(eth, "ADMA", reg_map->pdma.rx_ptr, 0x300);
+ 	if (MTK_HAS_CAPS(eth->soc->caps, MTK_QDMA)) {
++		void __iomem *page_reg = eth->base + reg_map->qdma.page;
++		u32 id;
++
+ 		for (id = 0; id < MTK_QDMA_NUM_QUEUES / MTK_QTX_PER_PAGE; id++) {
+-			mtk_w32(eth, id, reg_map->qdma.page);
+-			pr_info("\nQDMA PAGE:%x ", mtk_r32(eth, reg_map->qdma.page));
+-			mtk_hw_dump_reg(eth, "QDMA", reg_map->qdma.qtx_cfg, 0x100);
+-			mtk_w32(eth, 0, reg_map->qdma.page);
++			struct mtk_qdma_page page;
++			u32 regs[0x100 / sizeof(u32)];
++			unsigned int i;
++
++			mtk_qdma_select_page(&page, page_reg, id);
++			for (i = 0; i < ARRAY_SIZE(regs); i++)
++				regs[i] = mtk_r32(eth, reg_map->qdma.qtx_cfg + i * sizeof(u32));
++			mtk_qdma_restore_page(&page, page_reg);
++
++			pr_info("\nQDMA PAGE:%x\n", id);
++			for (i = 0; i < ARRAY_SIZE(regs); i += 4)
++				pr_info("0x%08x: %08x %08x %08x %08x\n",
++					reg_map->qdma.qtx_cfg + i * 4, regs[i],
++					regs[i + 1], regs[i + 2], regs[i + 3]);
+ 		}
+ 		mtk_hw_dump_reg(eth, "QDMA", reg_map->qdma.rx_ptr, 0x300);
+ 	}
+@@ -6799,19 +6898,21 @@ void mtk_save_qdma_cfg(struct mtk_eth *eth)
+ {
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+ 	struct mtk_qdma_params *params = &eth->qdma_params;
++	void __iomem *page_reg = eth->base + reg_map->qdma.page;
+ 	int i;
+ 
+ 	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
+-		mtk_w32(eth, (i / MTK_QTX_PER_PAGE), reg_map->qdma.page);
++		struct mtk_qdma_page page;
+ 
++		mtk_qdma_select_page(&page, page_reg, i / MTK_QTX_PER_PAGE);
+ 		params->qtx_cfg[i] =
+ 			mtk_r32(eth, reg_map->qdma.qtx_cfg +
+ 				(i % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
+ 		params->qtx_sch[i] =
+ 			mtk_r32(eth, reg_map->qdma.qtx_sch +
+ 				(i % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++		mtk_qdma_restore_page(&page, page_reg);
+ 	}
+-	mtk_w32(eth, 0, reg_map->qdma.page);
+ 
+ 	params->tx_sch[0] = mtk_r32(eth, reg_map->qdma.tx_sch_rate);
+ 	if (mtk_is_netsys_v2_or_greater(eth))
+@@ -6823,19 +6924,21 @@ void mtk_restore_qdma_cfg(struct mtk_eth *eth)
+ {
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+ 	struct mtk_qdma_params *params = &eth->qdma_params;
++	void __iomem *page_reg = eth->base + reg_map->qdma.page;
+ 	int i;
+ 
+ 	for (i = 0; i < MTK_QDMA_NUM_QUEUES; i++) {
+-		mtk_w32(eth, (i / MTK_QTX_PER_PAGE), reg_map->qdma.page);
++		struct mtk_qdma_page page;
+ 
++		mtk_qdma_select_page(&page, page_reg, i / MTK_QTX_PER_PAGE);
+ 		mtk_w32(eth, params->qtx_cfg[i],
+ 			reg_map->qdma.qtx_cfg +
+ 			(i % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
+ 		mtk_w32(eth, params->qtx_sch[i],
+ 			reg_map->qdma.qtx_sch +
+ 			(i % MTK_QTX_PER_PAGE) * MTK_QTX_OFFSET);
++		mtk_qdma_restore_page(&page, page_reg);
+ 	}
+-	mtk_w32(eth, 0, reg_map->qdma.page);
+ 
+ 	mtk_w32(eth, params->tx_sch[0], reg_map->qdma.tx_sch_rate);
+ 	if (mtk_is_netsys_v2_or_greater(eth))
+@@ -7827,6 +7930,7 @@ static int mtk_add_mac(struct mtk_eth *eth, struct device_node *np)
+ 	mac->id = id;
+ 	mac->hw = eth;
+ 	mac->of_node = np;
++	mac->is_ppd_dev = of_property_match_string(np, "label", "hnat") == 0;
+ 	pcs_np = of_parse_phandle(mac->of_node, "pcs-handle", 0);
+ 	if (pcs_np) {
+ 		mac->sgmii_pcs = mtk_pcs_lynxi_get(eth->dev, pcs_np);
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index b78a370b7..32c5bc821 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -11,6 +11,7 @@
+ 
+ #include <linux/dma-mapping.h>
+ #include <linux/netdevice.h>
++#include <linux/io.h>
+ #include <linux/of_net.h>
+ #include <linux/u64_stats_sync.h>
+ #include <linux/refcount.h>
+@@ -19,6 +20,7 @@
+ #include <linux/rhashtable.h>
+ #include <linux/dim.h>
+ #include <linux/bitfield.h>
++#include <linux/spinlock.h>
+ #include <net/page_pool/types.h>
+ #include <linux/bpf_trace.h>
+ #include "mtk_ppe.h"
+@@ -1830,6 +1832,7 @@ struct mtk_eth {
+  * @id:			The number of the MAC
+  * @interface:		Interface mode kept for detecting change in hw settings
+  * @of_node:		Our devicetree node
++ * @is_ppd_dev:		Whether this MAC is the HNAT pseudo-port
+  * @hw:			Backpointer to our main datastruture
+  * @hw_stats:		Packet statistics counter
+  */
+@@ -1837,6 +1840,7 @@ struct mtk_mac {
+ 	int				id;
+ 	phy_interface_t			interface;
+ 	u8				ppe_idx;
++	bool				is_ppd_dev;
+ 	int				speed;
+ 	struct device_node		*of_node;
+ 	struct phylink			*phylink;
+@@ -2046,6 +2050,32 @@ void mtk_w32(struct mtk_eth *eth, u32 val, unsigned reg);
+ u32 mtk_r32(struct mtk_eth *eth, unsigned reg);
+ u32 mtk_m32(struct mtk_eth *eth, u32 mask, u32 set, unsigned int reg);
+ 
++/* The Ethernet driver and Vendor HNAT map the same FE QDMA window. */
++extern spinlock_t mtk_qdma_window_lock;
++
++struct mtk_qdma_page {
++	unsigned long flags;
++	u32 prev;
++};
++
++static inline void mtk_qdma_select_page(struct mtk_qdma_page *page,
++					void __iomem *reg, u32 index)
++{
++	spin_lock_irqsave(&mtk_qdma_window_lock, page->flags);
++	page->prev = readl(reg);
++	writel((page->prev & ~GENMASK(3, 0)) |
++	       FIELD_PREP(GENMASK(3, 0), index), reg);
++}
++
++static inline void mtk_qdma_restore_page(struct mtk_qdma_page *page,
++					 void __iomem *reg)
++{
++	writel(page->prev, reg);
++	/* Complete the register writes before a different CPU selects a page. */
++	readl(reg);
++	spin_unlock_irqrestore(&mtk_qdma_window_lock, page->flags);
++}
++
+ static inline bool mtk_eth_has_ppe_id(struct mtk_eth *eth, u32 id)
+ {
+ 	if (!eth || id >= ARRAY_SIZE(eth->ppe_policy))
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+index ed01438ea..ff23381a2 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+@@ -1151,6 +1151,9 @@ static void hnat_clear_ext_hooks(void)
+ 	hnat_get_wdma_rx_port = NULL;
+ 	hnat_set_wdma_pse_port_state = NULL;
+ 	ppe_del_entry_by_mac = NULL;
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++	mtk_eth_hnat_unregister_hqos_ext_rx();
++#endif
+ }
+ 
+ int hnat_enable_hook(void)
+@@ -1195,6 +1198,11 @@ int hnat_enable_hook(void)
+ 	}
+ 
+ 	ppe_del_entry_by_mac = entry_delete_by_mac;
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++	if (hnat_priv->data->version == MTK_HNAT_V3)
++		mtk_eth_hnat_register_hqos_ext_rx(mtk_hnat_hqos_ext_rx_match_rxd,
++						  mtk_hnat_hqos_ext_rx_match_skb);
++#endif
+ 	hook_toggle = 1;
+ 
+ 	return 0;
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+index c4bd8b9bc..6b1892c48 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -1411,6 +1411,10 @@ void hnat_unregister_nf_hooks(void);
+ int whnat_adjust_nf_hooks(void);
+ int mtk_hqos_ptype_cb(struct sk_buff *skb, struct net_device *dev,
+ 		      struct packet_type *pt, struct net_device *unused);
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++bool mtk_hnat_hqos_ext_rx_match_rxd(u32 rxd5);
++bool mtk_hnat_hqos_ext_rx_match_skb(struct sk_buff *skb);
++#endif
+ int hnat_write_cache_line(u32 ppe_id, int line, u32 tag, u32 state, u32 *data);
+ extern int dbg_cpu_reason;
+ extern int debug_level;
+@@ -1422,6 +1426,9 @@ extern int hook_toggle;
+ extern int mape_toggle;
+ extern int qos_toggle;
+ extern int tnl_toggle;
++extern int sqm_toggle;
++extern int qos_dpi_toggle;
++extern bool qos_ack_prio;
+ extern bool (*mtk_crypto_offloadable)(struct sk_buff *skb);
+ extern int hnat_bind_crypto_entry(struct sk_buff *skb,
+ 				  const struct net_device *dev,
+@@ -1435,6 +1442,9 @@ void cr_set_field(void __iomem *reg, u32 field, u32 val);
+ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no);
+ int mtk_sw_nat_hook_rx(struct sk_buff *skb);
+ void foe_clear_all_bind_entries(void);
++void hnat_qos_invalidate_caches(void);
++void hnat_qos_get_dpi_stats(u64 *rt, u64 *fair, u64 *video, u64 *p2p, u64 *eqos);
++void hnat_qos_reset_dpi_stats(void);
+ void mtk_ppe_dev_register_hook(struct net_device *dev);
+ void mtk_ppe_dev_unregister_hook(struct net_device *dev);
+ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+index c44de2302..0cfde509a 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+@@ -33,6 +33,9 @@ int qos_dl_toggle = 1;
+ int qos_ul_toggle = 1;
+ int xlat_toggle;
+ int tnl_toggle = 1;
++int sqm_toggle;
++int qos_dpi_toggle = 1;
++bool qos_ack_prio = true;
+ struct hnat_desc headroom[DEF_ETRY_NUM];
+ unsigned int dbg_cpu_reason_cnt[MAX_CRSN_NUM];
+ 
+@@ -2803,12 +2806,14 @@ static int hnat_qos_toggle_open(struct inode *inode, struct file *file)
+ 	return single_open(file, hnat_qos_toggle_read, file->private_data);
+ }
+ 
+-void hnat_qos_shaper_ebl(u32 id, u32 enable)
++static void hnat_qos_program_shaper(u32 id, bool enable, bool set_resv)
+ {
+ 	struct mtk_hnat *h = hnat_priv;
+-	u32 cfg;
++	void __iomem *page_reg = h->fe_base + QDMA_PAGE;
++	struct mtk_qdma_page page;
++	u32 queue = id % NUM_OF_Q_PER_PAGE;
++	u32 cfg = 0;
+ 
+-	cr_set_field(h->fe_base + QDMA_PAGE, QTX_CFG_PAGE, (id / NUM_OF_Q_PER_PAGE));
+ 	if (enable) {
+ 		cfg = QTX_SCH_MIN_RATE_EN | QTX_SCH_MAX_RATE_EN;
+ 		cfg |= (1 << QTX_SCH_MIN_RATE_MAN_OFFSET) |
+@@ -2816,11 +2821,19 @@ void hnat_qos_shaper_ebl(u32 id, u32 enable)
+ 		       (25 << QTX_SCH_MAX_RATE_MAN_OFFSET) |
+ 		       (5 << QTX_SCH_MAX_RATE_EXP_OFFSET) |
+ 		       (4 << QTX_SCH_MAX_RATE_WGHT_OFFSET);
+-
+-		writel(cfg, h->fe_base + QTX_SCH(id % NUM_OF_Q_PER_PAGE));
+-	} else {
+-		writel(0, h->fe_base + QTX_SCH(id % NUM_OF_Q_PER_PAGE));
+ 	}
++
++	mtk_qdma_select_page(&page, page_reg, id / NUM_OF_Q_PER_PAGE);
++	writel(cfg, h->fe_base + QTX_SCH(queue));
++	if (set_resv)
++		writel((4 << QTX_CFG_HW_RESV_CNT_OFFSET) |
++		       (4 << QTX_CFG_SW_RESV_CNT_OFFSET), h->fe_base + QTX_CFG(queue));
++	mtk_qdma_restore_page(&page, page_reg);
++}
++
++void hnat_qos_shaper_ebl(u32 id, u32 enable)
++{
++	hnat_qos_program_shaper(id, enable, false);
+ }
+ 
+ static void hnat_qos_disable(void)
+@@ -2828,12 +2841,8 @@ static void hnat_qos_disable(void)
+ 	struct mtk_hnat *h = hnat_priv;
+ 	u32 id, cfg;
+ 
+-	for (id = 0; id < MAX_PPPQ_PORT_NUM; id++) {
+-		hnat_qos_shaper_ebl(id, 0);
+-		writel((4 << QTX_CFG_HW_RESV_CNT_OFFSET) |
+-		       (4 << QTX_CFG_SW_RESV_CNT_OFFSET),
+-		       h->fe_base + QTX_CFG(id % NUM_OF_Q_PER_PAGE));
+-	}
++	for (id = 0; id < MAX_PPPQ_PORT_NUM; id++)
++		hnat_qos_program_shaper(id, false, true);
+ 
+ 	cfg = (QDMA_TX_SCH_WFQ_EN) | (QDMA_TX_SCH_WFQ_EN << 16);
+ 	for (id = 0; id < h->data->num_of_sch; id += 2) {
+@@ -2849,16 +2858,8 @@ static void hnat_qos_pppq_enable(void)
+ 	struct mtk_hnat *h = hnat_priv;
+ 	u32 id, cfg;
+ 
+-	for (id = 0; id < MAX_PPPQ_PORT_NUM; id++) {
+-		if (hook_toggle)
+-			hnat_qos_shaper_ebl(id, 1);
+-		else
+-			hnat_qos_shaper_ebl(id, 0);
+-
+-		writel((4 << QTX_CFG_HW_RESV_CNT_OFFSET) |
+-		       (4 << QTX_CFG_SW_RESV_CNT_OFFSET),
+-		       h->fe_base + QTX_CFG(id % NUM_OF_Q_PER_PAGE));
+-	}
++	for (id = 0; id < MAX_PPPQ_PORT_NUM; id++)
++		hnat_qos_program_shaper(id, hook_toggle, true);
+ 
+ 	cfg = (QDMA_TX_SCH_WFQ_EN) | (QDMA_TX_SCH_WFQ_EN << 16);
+ 	for (id = 0; id < h->data->num_of_sch; id+= 2) {
+@@ -2942,6 +2943,118 @@ static const struct file_operations hnat_qos_toggle_fops = {
+ 	.release = single_release,
+ };
+ 
++static int hnat_sqm_toggle_read(struct seq_file *m, void *private)
++{
++	seq_printf(m,
++		   "enabled=%d dpi=%d ul_eqos=1..15 ul_sqm=16..31 dl_eqos=33..47 dl_sqm=48..63 qos_toggle=%d ul=%d dl=%d\n",
++		   sqm_toggle, qos_dpi_toggle, qos_toggle,
++		   qos_ul_toggle, qos_dl_toggle);
++	return 0;
++}
++
++static int hnat_sqm_toggle_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, hnat_sqm_toggle_read, file->private_data);
++}
++
++static ssize_t hnat_sqm_toggle_write(struct file *file, const char __user *buffer,
++				     size_t count, loff_t *data)
++{
++	char buf[16] = { 0 };
++	int len = count;
++	int next_val;
++
++	if (len <= 0 || len >= sizeof(buf))
++		return -EINVAL;
++	if (copy_from_user(buf, buffer, len))
++		return -EFAULT;
++	buf[len] = '\0';
++
++	if (buf[0] == '0')
++		next_val = 0;
++	else if (buf[0] == '1')
++		next_val = 1;
++	else
++		return -EINVAL;
++
++	if (sqm_toggle != next_val) {
++		sqm_toggle = next_val;
++		hnat_qos_invalidate_caches();
++		if (hook_toggle)
++			foe_clear_all_bind_entries();
++		pr_info("hnat sqm_toggle=%d\n", sqm_toggle);
++	}
++
++	return len;
++}
++
++static const struct file_operations hnat_sqm_toggle_fops = {
++	.open = hnat_sqm_toggle_open,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.write = hnat_sqm_toggle_write,
++	.release = single_release,
++};
++
++static int hnat_qos_dpi_read(struct seq_file *m, void *private)
++{
++	u64 rt = 0, fair = 0, video = 0, p2p = 0, eqos = 0;
++
++	hnat_qos_get_dpi_stats(&rt, &fair, &video, &p2p, &eqos);
++	seq_printf(m,
++		   "enabled=%d realtime_pkts=%llu fair_pkts=%llu video_pkts=%llu p2p_pkts=%llu eqos_flows=%llu\n",
++		   qos_dpi_toggle, rt, fair, video, p2p, eqos);
++	return 0;
++}
++
++static int hnat_qos_dpi_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, hnat_qos_dpi_read, file->private_data);
++}
++
++static ssize_t hnat_qos_dpi_write(struct file *file, const char __user *buffer,
++				  size_t count, loff_t *data)
++{
++	char buf[16] = { 0 };
++	int len = count;
++	int next_val;
++
++	if (len <= 0 || len >= sizeof(buf))
++		return -EINVAL;
++	if (copy_from_user(buf, buffer, len))
++		return -EFAULT;
++	buf[len] = '\0';
++
++	if (buf[0] == 'r' || buf[0] == 'R') {
++		hnat_qos_reset_dpi_stats();
++		return len;
++	} else if (buf[0] == '0') {
++		next_val = 0;
++	} else if (buf[0] == '1') {
++		next_val = 1;
++	} else {
++		return -EINVAL;
++	}
++
++	if (qos_dpi_toggle != next_val) {
++		qos_dpi_toggle = next_val;
++		hnat_qos_invalidate_caches();
++		if (hook_toggle)
++			foe_clear_all_bind_entries();
++		pr_info("hnat qos_dpi=%d\n", qos_dpi_toggle);
++	}
++
++	return len;
++}
++
++static const struct file_operations hnat_qos_dpi_fops = {
++	.open = hnat_qos_dpi_open,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.write = hnat_qos_dpi_write,
++	.release = single_release,
++};
++
+ static int hnat_version_read(struct seq_file *m, void *private)
+ {
+ 	pr_info("HNAT SW version : %s\nHNAT HW version : %d\n", HNAT_SW_VER, hnat_priv->data->version);
+@@ -3408,6 +3521,11 @@ int hnat_init_debugfs(struct mtk_hnat *h)
+ 			    &hnat_mape_toggle_fops);
+ 	debugfs_create_file("qos_toggle", 0444, root, h,
+ 			    &hnat_qos_toggle_fops);
++	debugfs_create_file("sqm_toggle", 0644, root, h,
++			    &hnat_sqm_toggle_fops);
++	debugfs_create_file("qos_dpi", 0644, root, h,
++			    &hnat_qos_dpi_fops);
++	debugfs_create_bool("qos_ack_prio", 0644, root, &qos_ack_prio);
+ 	debugfs_create_file("hnat_version", 0444, root, h,
+ 			    &hnat_version_fops);
+ 	debugfs_create_file("hnat_ppd_if", 0444, root, h,
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index 2abbf20ad..5e6ad1613 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -28,6 +28,8 @@
+ #include <net/netfilter/nf_conntrack_acct.h>
+ #include <linux/stddef.h>
+ #include <asm/unaligned.h>
++#include <linux/jhash.h>
++#include <linux/atomic.h>
+ 
+ #include "nf_hnat_mtk.h"
+ #include "hnat.h"
+@@ -464,6 +466,7 @@ void foe_clear_all_bind_entries(void)
+ 	}
+ 
+ 	/* clear HWNAT cache */
++	hnat_qos_invalidate_caches();
+ 	hnat_cache_ebl(1);
+ 
+ 	mod_timer(&hnat_priv->hnat_sma_build_entry_timer, jiffies + 3 * HZ);
+@@ -862,7 +865,7 @@ static void hnat_record_foe_nh_meta_locked(
+ 	if (!dst || !dst->dev || (dst->flags & DST_FAKE_RTABLE) || !dst->ops)
+ 		return;
+ 
+-	if (hnat_dev_is_rawip_ext(dst->dev))
++	if (hnat_dev_is_noarp_ext(dst->dev))
+ 		return;
+ 
+ 	proto = hnat_skb_has_eth_hdr(skb) ?
+@@ -1178,6 +1181,689 @@ static void fix_skb_packet_type(struct sk_buff *skb, struct net_device *dev,
+ 	}
+ }
+ 
++enum hnat_dpi_class {
++	HNAT_DPI_REALTIME = 0,
++	HNAT_DPI_FAIR = 1,
++	HNAT_DPI_VIDEO = 2,
++	HNAT_DPI_P2P = 3,
++};
++
++#define HNAT_DPI_CACHE_SIZE 512
++#define HNAT_EXT_DL_CACHE_SIZE 256
++#define HNAT_CACHE_SIG_MASK (~0xffULL)
++
++static atomic64_t hnat_dpi_flow_cache[HNAT_DPI_CACHE_SIZE];
++static atomic64_t hnat_ext_dl_qid_cache[HNAT_EXT_DL_CACHE_SIZE];
++
++static atomic64_t hnat_qos_rt_pkts = ATOMIC64_INIT(0);
++static atomic64_t hnat_qos_fair_pkts = ATOMIC64_INIT(0);
++static atomic64_t hnat_qos_video_pkts = ATOMIC64_INIT(0);
++static atomic64_t hnat_qos_p2p_pkts = ATOMIC64_INIT(0);
++static atomic64_t hnat_qos_eqos_flows = ATOMIC64_INIT(0);
++
++void hnat_qos_invalidate_caches(void)
++{
++	int i;
++
++	for (i = 0; i < HNAT_DPI_CACHE_SIZE; i++)
++		atomic64_set(&hnat_dpi_flow_cache[i], 0);
++	for (i = 0; i < HNAT_EXT_DL_CACHE_SIZE; i++)
++		atomic64_set(&hnat_ext_dl_qid_cache[i], 0);
++}
++
++void hnat_qos_get_dpi_stats(u64 *rt, u64 *fair, u64 *video, u64 *p2p, u64 *eqos)
++{
++	if (rt)
++		*rt = (u64)atomic64_read(&hnat_qos_rt_pkts);
++	if (fair)
++		*fair = (u64)atomic64_read(&hnat_qos_fair_pkts);
++	if (video)
++		*video = (u64)atomic64_read(&hnat_qos_video_pkts);
++	if (p2p)
++		*p2p = (u64)atomic64_read(&hnat_qos_p2p_pkts);
++	if (eqos)
++		*eqos = (u64)atomic64_read(&hnat_qos_eqos_flows);
++}
++
++void hnat_qos_reset_dpi_stats(void)
++{
++	atomic64_set(&hnat_qos_rt_pkts, 0);
++	atomic64_set(&hnat_qos_fair_pkts, 0);
++	atomic64_set(&hnat_qos_video_pkts, 0);
++	atomic64_set(&hnat_qos_p2p_pkts, 0);
++	atomic64_set(&hnat_qos_eqos_flows, 0);
++}
++
++static inline bool hnat_qos_is_wan_egress(const struct net_device *dev)
++{
++	return dev && (IS_WAN(dev) || IS_DSA_WAN(dev) ||
++		       (IS_EXT(dev) && !IS_WHNAT(dev)));
++}
++
++static inline bool hnat_qos_is_wan_ingress(const struct sk_buff *skb)
++{
++	return skb && (FROM_GE_WAN(skb) || FROM_GE_VIRTUAL(skb) || FROM_EXT(skb));
++}
++
++static inline bool hnat_qos_want_hqos(const struct net_device *dev,
++				      const struct sk_buff *skb, u32 qid)
++{
++	if (IS_PPPQ_MODE)
++		return IS_PPPQ_PATH(dev, skb) || qid >= MAX_PPPQ_PORT_NUM;
++	if (!IS_HQOS_MODE)
++		return false;
++	if (qid != 0)
++		return true;
++	return (IS_HQOS_UL_MODE && hnat_qos_is_wan_egress(dev)) ||
++	       (IS_HQOS_DL_MODE && IS_LAN_GRP(dev) && hnat_qos_is_wan_ingress(skb));
++}
++
++static bool hnat_qos_parse_l3(const struct sk_buff *skb,
++			      unsigned int *nh_off_out, __be16 *proto_out)
++{
++	unsigned int off;
++	__be16 proto;
++	int depth;
++
++	int nh_s;
++
++	if (!skb || skb->len < 1)
++		return false;
++
++	nh_s = skb_network_offset(skb);
++	if (nh_s >= 0 && (unsigned int)nh_s < skb->len &&
++	    (skb->protocol == htons(ETH_P_IP) ||
++	     skb->protocol == htons(ETH_P_IPV6))) {
++		*nh_off_out = (unsigned int)nh_s;
++		*proto_out = skb->protocol;
++		return true;
++	}
++
++	proto = hnat_skb_l3_proto(skb);
++	if (proto == htons(ETH_P_IP) || proto == htons(ETH_P_IPV6)) {
++		*nh_off_out = (nh_s >= 0 && (unsigned int)nh_s < skb->len) ?
++			      (unsigned int)nh_s : 0;
++		*proto_out = proto;
++		return true;
++	}
++
++	proto = skb->protocol;
++	off = 0;
++	for (depth = 0; depth < 3; depth++) {
++		if (eth_type_vlan(proto)) {
++			struct vlan_hdr _vh;
++			const struct vlan_hdr *vh =
++				skb_header_pointer(skb, off, sizeof(_vh), &_vh);
++			if (!vh)
++				return false;
++			proto = vh->h_vlan_encapsulated_proto;
++			off += sizeof(_vh);
++		} else if (proto == htons(ETH_P_PPP_SES)) {
++			__be16 _ppp_proto;
++			const __be16 *ppp_proto =
++				skb_header_pointer(skb, off + PPPOE_SES_HLEN - 2,
++						   sizeof(_ppp_proto), &_ppp_proto);
++			if (!ppp_proto)
++				return false;
++			off += PPPOE_SES_HLEN;
++			if (*ppp_proto == htons(PPP_IP))
++				proto = htons(ETH_P_IP);
++			else if (*ppp_proto == htons(PPP_IPV6))
++				proto = htons(ETH_P_IPV6);
++			else
++				return false;
++		} else {
++			break;
++		}
++	}
++
++	if (proto != htons(ETH_P_IP) && proto != htons(ETH_P_IPV6)) {
++		u8 ver = 0;
++
++		if (skb_copy_bits(skb, off, &ver, 1))
++			return false;
++		if ((ver >> 4) == 4)
++			proto = htons(ETH_P_IP);
++		else if ((ver >> 4) == 6)
++			proto = htons(ETH_P_IPV6);
++		else
++			return false;
++	}
++
++	*nh_off_out = off;
++	*proto_out = proto;
++	return true;
++}
++
++static bool hnat_sqm_is_prio_dscp(u8 tos)
++{
++	switch (tos >> 2) {
++	case 46: /* EF */
++	case 44: /* VA */
++	case 48: /* CS6 */
++	case 56: /* CS7 */
++	case 40: /* CS5 */
++	case 34: /* AF41 */
++	case 24: /* CS3 */
++		return true;
++	default:
++		return false;
++	}
++}
++
++static bool hnat_sqm_is_video_dscp(u8 tos)
++{
++	switch (tos >> 2) {
++	case 26: /* AF31 */
++	case 28: /* AF32 */
++	case 18: /* AF21 */
++		return true;
++	default:
++		return false;
++	}
++}
++
++static bool hnat_sqm_is_p2p_dscp(u8 tos)
++{
++	switch (tos >> 2) {
++	case 8: /* CS1 */
++	case 1: /* LE */
++		return true;
++	default:
++		return false;
++	}
++}
++
++static bool hnat_qos_match_video_sni(const u8 *buf, int len)
++{
++	static const char * const domains[] = {
++		"googlevideo", "youtube", "netflix", "nflxvideo",
++		"bilivideo", "bilibili", "akamaized", "ttvnw",
++		"tiktok", "douyin", "byteimg", "iqiyi"
++	};
++	int i, d, dlen;
++
++	for (d = 0; d < ARRAY_SIZE(domains); d++) {
++		dlen = strlen(domains[d]);
++		if (len < dlen)
++			continue;
++		for (i = 0; i <= len - dlen; i++) {
++			if (!memcmp(buf + i, domains[d], dlen))
++				return true;
++		}
++	}
++	return false;
++}
++
++static enum hnat_dpi_class hnat_dpi_inspect_l7_payload(
++	const struct sk_buff *skb, u8 l4_proto, unsigned int payload_off,
++	u16 payload_len, u16 sport_h, u16 dport_h, bool per_pkt,
++	bool tcp_ctrl_ack, u8 tos)
++{
++	u8 pbuf[192];
++	int probe_len;
++
++	if (hnat_sqm_is_prio_dscp(tos))
++		return HNAT_DPI_REALTIME;
++	if (hnat_sqm_is_p2p_dscp(tos))
++		return HNAT_DPI_P2P;
++
++	if (l4_proto == IPPROTO_TCP) {
++		if (per_pkt && tcp_ctrl_ack && READ_ONCE(qos_ack_prio))
++			return HNAT_DPI_REALTIME;
++		if (sport_h == 53 || dport_h == 53 ||
++		    sport_h == 22 || dport_h == 22)
++			return HNAT_DPI_REALTIME;
++		if (sport_h == 1935 || dport_h == 1935 ||
++		    sport_h == 554 || dport_h == 554)
++			return HNAT_DPI_VIDEO;
++		if ((sport_h >= 6881 && sport_h <= 6889) ||
++		    (dport_h >= 6881 && dport_h <= 6889) ||
++		    sport_h == 51413 || dport_h == 51413 ||
++		    sport_h == 4662 || dport_h == 4662)
++			return HNAT_DPI_P2P;
++
++		probe_len = min_t(int, payload_len, (int)sizeof(pbuf));
++		if (qos_dpi_toggle && probe_len >= 4) {
++			const u8 *p = skb_header_pointer(skb, payload_off,
++							 probe_len, pbuf);
++			if (p) {
++				if (!memcmp(p, "SSH-", 4))
++					return HNAT_DPI_REALTIME;
++				if (!memcmp(p, "\x13" "Bit", 4))
++					return HNAT_DPI_P2P;
++				if ((sport_h == 4662 || dport_h == 4662) &&
++				    (p[0] == 0xe3 || p[0] == 0xc5))
++					return HNAT_DPI_P2P;
++				if ((dport_h == 443 || sport_h == 443) &&
++				    probe_len > 43 && p[0] == 0x16 &&
++				    p[1] == 0x03 && p[5] == 0x01 &&
++				    hnat_qos_match_video_sni(p, probe_len))
++					return HNAT_DPI_VIDEO;
++			}
++		}
++	} else if (l4_proto == IPPROTO_UDP) {
++		if (sport_h == 53 || dport_h == 53 ||
++		    sport_h == 123 || dport_h == 123 ||
++		    sport_h == 67 || dport_h == 67 ||
++		    sport_h == 68 || dport_h == 68 ||
++		    sport_h == 3478 || dport_h == 3478 ||
++		    sport_h == 19302 || dport_h == 19302 ||
++		    sport_h == 51820 || dport_h == 51820 ||
++		    sport_h == 9993 || dport_h == 9993)
++			return HNAT_DPI_REALTIME;
++
++		if (payload_len <= 300 &&
++		    ((sport_h >= 27015 && sport_h <= 27050) ||
++		     (dport_h >= 27015 && dport_h <= 27050) ||
++		     sport_h == 3074 || dport_h == 3074 ||
++		     (sport_h >= 5000 && sport_h <= 5500) ||
++		     (dport_h >= 5000 && dport_h <= 5500) ||
++		     (sport_h >= 7000 && sport_h <= 8000) ||
++		     (dport_h >= 7000 && dport_h <= 8000)))
++			return HNAT_DPI_REALTIME;
++
++		if ((sport_h >= 6881 && sport_h <= 6889) ||
++		    (dport_h >= 6881 && dport_h <= 6889) ||
++		    sport_h == 51413 || dport_h == 51413 ||
++		    sport_h == 4672 || dport_h == 4672)
++			return HNAT_DPI_P2P;
++
++		probe_len = min_t(int, payload_len, 48);
++		if (qos_dpi_toggle && probe_len >= 4) {
++			const u8 *p = skb_header_pointer(skb, payload_off,
++							 probe_len, pbuf);
++			if (p) {
++				if (probe_len >= 8 && p[4] == 0x21 &&
++				    p[5] == 0x12 && p[6] == 0xa4 &&
++				    p[7] == 0x42)
++					return HNAT_DPI_REALTIME;
++				if (!memcmp(p, "d1:a", 4) ||
++				    !memcmp(p, "d1:r", 4) ||
++				    !memcmp(p, "d1:q", 4))
++					return HNAT_DPI_P2P;
++				if ((sport_h == 443 || dport_h == 443 ||
++				     sport_h == 8443 || dport_h == 8443) &&
++				    payload_len >= 40 && (p[0] & 0x40))
++					return HNAT_DPI_VIDEO;
++			}
++		}
++	}
++
++	if (hnat_sqm_is_video_dscp(tos))
++		return HNAT_DPI_VIDEO;
++
++	return HNAT_DPI_FAIR;
++}
++
++static void hnat_dpi_ct_key(const struct nf_conn *ct, u64 *sig_out, u32 *idx_out)
++{
++	const struct nf_conntrack_tuple *t =
++		&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
++	u32 words[11];
++	u32 h1, h2;
++
++	memset(words, 0, sizeof(words));
++	words[0] = ((u32)t->src.l3num << 16) | t->dst.protonum;
++	memcpy(&words[1], &t->src.u3, sizeof(t->src.u3));
++	memcpy(&words[5], &t->dst.u3, sizeof(t->dst.u3));
++	words[9] = ((u32)(__force u16)t->src.u.all << 16) |
++		   (__force u16)t->dst.u.all;
++	words[10] = 0x51a0c0deU;
++
++	h1 = jhash2(words, ARRAY_SIZE(words), 0x1f2e3d4cU);
++	h2 = jhash2(words, ARRAY_SIZE(words), 0xa5b6c7d8U);
++	*idx_out = h1 & (HNAT_DPI_CACHE_SIZE - 1);
++	*sig_out = (((u64)h1 << 32) | h2) & HNAT_CACHE_SIG_MASK;
++}
++
++static void hnat_wire_tuple_key(__be16 l3_proto, const __be32 *saddr,
++				const __be32 *daddr, __be16 sport, __be16 dport,
++				u8 l4_proto, bool canonical, u32 table_size,
++				u64 *sig_out, u32 *idx_out)
++{
++	u32 words[10];
++	u32 h1, h2;
++	int n = (l3_proto == htons(ETH_P_IPV6)) ? 4 : 1;
++
++	memset(words, 0, sizeof(words));
++	if (canonical) {
++		int cmp = memcmp(saddr, daddr, n * sizeof(u32));
++
++		if (cmp > 0 || (cmp == 0 && ((__force u16)sport > (__force u16)dport))) {
++			memcpy(&words[0], daddr, n * sizeof(u32));
++			memcpy(&words[4], saddr, n * sizeof(u32));
++			words[8] = ((u32)(__force u16)dport << 16) |
++				   (__force u16)sport;
++		} else {
++			memcpy(&words[0], saddr, n * sizeof(u32));
++			memcpy(&words[4], daddr, n * sizeof(u32));
++			words[8] = ((u32)(__force u16)sport << 16) |
++				   (__force u16)dport;
++		}
++	} else {
++		memcpy(&words[0], saddr, n * sizeof(u32));
++		memcpy(&words[4], daddr, n * sizeof(u32));
++		words[8] = ((u32)(__force u16)sport << 16) |
++			   (__force u16)dport;
++	}
++	words[9] = ((u32)(__force u16)l3_proto << 8) | l4_proto;
++
++	h1 = jhash2(words, ARRAY_SIZE(words), 0x9e3779b9U);
++	h2 = jhash2(words, ARRAY_SIZE(words), 0x7f4a7c15U);
++	*idx_out = h1 & (table_size - 1);
++	*sig_out = (((u64)h1 << 32) | h2) & HNAT_CACHE_SIG_MASK;
++}
++
++static bool hnat_dpi_cache_lookup(const struct nf_conn *ct, __be16 l3_proto,
++				  const __be32 *saddr, const __be32 *daddr,
++				  __be16 sport, __be16 dport, u8 l4_proto,
++				  enum hnat_dpi_class *cls_out)
++{
++	u64 sig, val;
++	u32 idx;
++
++	if (ct)
++		hnat_dpi_ct_key(ct, &sig, &idx);
++	else
++		hnat_wire_tuple_key(l3_proto, saddr, daddr, sport, dport,
++				    l4_proto, true, HNAT_DPI_CACHE_SIZE,
++				    &sig, &idx);
++
++	val = (u64)atomic64_read(&hnat_dpi_flow_cache[idx]);
++	if ((val & HNAT_CACHE_SIG_MASK) == sig && (val & 0x4ULL)) {
++		*cls_out = (enum hnat_dpi_class)(val & 0x3ULL);
++		return true;
++	}
++	return false;
++}
++
++static void hnat_dpi_cache_store(const struct nf_conn *ct, __be16 l3_proto,
++				 const __be32 *saddr, const __be32 *daddr,
++				 __be16 sport, __be16 dport, u8 l4_proto,
++				 enum hnat_dpi_class cls)
++{
++	u64 sig;
++	u32 idx;
++
++	if (cls == HNAT_DPI_FAIR)
++		return;
++
++	if (ct)
++		hnat_dpi_ct_key(ct, &sig, &idx);
++	else
++		hnat_wire_tuple_key(l3_proto, saddr, daddr, sport, dport,
++				    l4_proto, true, HNAT_DPI_CACHE_SIZE,
++				    &sig, &idx);
++
++	atomic64_set(&hnat_dpi_flow_cache[idx], sig | 0x4ULL | ((u64)cls & 0x3ULL));
++}
++
++static bool hnat_qos_extract_5tuple(const struct sk_buff *skb,
++				    unsigned int nh_off, __be16 proto,
++				    u8 *l4_proto_out, __be32 *saddr_buf,
++				    __be32 *daddr_buf, __be16 *sport_out,
++				    __be16 *dport_out, unsigned int *pay_off_out,
++				    u16 *pay_len_out, bool *tcp_ctrl_out,
++				    u8 *tos_out)
++{
++	struct iphdr _iph;
++	const struct iphdr *iph;
++	struct ipv6hdr _ip6h;
++	const struct ipv6hdr *ip6h;
++	unsigned int th_off;
++	u8 l4_proto;
++	u16 tot_len;
++
++	memset(saddr_buf, 0, sizeof(u32) * 4);
++	memset(daddr_buf, 0, sizeof(u32) * 4);
++	*sport_out = 0;
++	*dport_out = 0;
++	*pay_off_out = 0;
++	*pay_len_out = 0;
++	*tcp_ctrl_out = false;
++	*tos_out = 0;
++
++	if (proto == htons(ETH_P_IP)) {
++		unsigned int ip_hlen;
++
++		iph = skb_header_pointer(skb, nh_off, sizeof(_iph), &_iph);
++		if (!iph || iph->ihl < 5)
++			return false;
++		ip_hlen = iph->ihl * 4U;
++		tot_len = ntohs(iph->tot_len);
++		if (tot_len < ip_hlen)
++			return false;
++		l4_proto = iph->protocol;
++		*tos_out = iph->tos;
++		th_off = nh_off + ip_hlen;
++		saddr_buf[0] = iph->saddr;
++		daddr_buf[0] = iph->daddr;
++		tot_len -= ip_hlen;
++	} else if (proto == htons(ETH_P_IPV6)) {
++		ip6h = skb_header_pointer(skb, nh_off, sizeof(_ip6h), &_ip6h);
++		if (!ip6h)
++			return false;
++		l4_proto = ip6h->nexthdr;
++		*tos_out = (u8)((ip6h->priority << 4) | (ip6h->flow_lbl[0] >> 4));
++		tot_len = ntohs(ip6h->payload_len);
++		th_off = nh_off + sizeof(*ip6h);
++		memcpy(saddr_buf, &ip6h->saddr, sizeof(ip6h->saddr));
++		memcpy(daddr_buf, &ip6h->daddr, sizeof(ip6h->daddr));
++	} else {
++		return false;
++	}
++
++	*l4_proto_out = l4_proto;
++	if (l4_proto == IPPROTO_TCP) {
++		struct tcphdr _th;
++		const struct tcphdr *th =
++			skb_header_pointer(skb, th_off, sizeof(_th), &_th);
++		if (th) {
++			unsigned int tcp_hlen =
++				th->doff >= 5 ? th->doff * 4U : sizeof(_th);
++			*sport_out = th->source;
++			*dport_out = th->dest;
++			*pay_off_out = th_off + tcp_hlen;
++			*pay_len_out = tot_len > tcp_hlen ? tot_len - tcp_hlen : 0;
++			*tcp_ctrl_out = (*pay_len_out == 0 || th->syn ||
++					 th->fin || th->rst);
++		}
++	} else if (l4_proto == IPPROTO_UDP) {
++		struct udphdr _uh;
++		const struct udphdr *uh =
++			skb_header_pointer(skb, th_off, sizeof(_uh), &_uh);
++		if (uh) {
++			*sport_out = uh->source;
++			*dport_out = uh->dest;
++			*pay_off_out = th_off + sizeof(_uh);
++			*pay_len_out = tot_len > sizeof(_uh) ? tot_len - sizeof(_uh) : 0;
++		}
++	}
++	return true;
++}
++
++static void hnat_dpi_observe_skb(const struct sk_buff *skb)
++{
++	unsigned int nh_off = 0, pay_off = 0;
++	__be16 proto = 0, sport = 0, dport = 0;
++	__be32 saddr[4], daddr[4];
++	enum hnat_dpi_class cls;
++	enum ip_conntrack_info ctinfo;
++	const struct nf_conn *ct;
++	u8 l4_proto = 0, tos = 0;
++	u16 pay_len = 0;
++	bool tcp_ctrl = false;
++
++	if (!skb || !sqm_toggle || !qos_dpi_toggle)
++		return;
++	if (!hnat_qos_parse_l3(skb, &nh_off, &proto))
++		return;
++	if (!hnat_qos_extract_5tuple(skb, nh_off, proto, &l4_proto, saddr, daddr,
++				     &sport, &dport, &pay_off, &pay_len,
++				     &tcp_ctrl, &tos))
++		return;
++
++	ct = nf_ct_get(skb, &ctinfo);
++	cls = hnat_dpi_inspect_l7_payload(skb, l4_proto, pay_off, pay_len,
++					  ntohs(sport), ntohs(dport), false,
++					  tcp_ctrl, tos);
++	if (cls != HNAT_DPI_FAIR)
++		hnat_dpi_cache_store(ct, proto, saddr, daddr, sport, dport,
++				     l4_proto, cls);
++}
++
++static u32 hnat_qos_classify_skb(const struct sk_buff *skb,
++				 bool is_dl, bool per_pkt, u32 fallback_hash)
++{
++	u32 base = is_dl ? 48 : 16;
++	unsigned int nh_off = 0, pay_off = 0;
++	__be16 proto = 0, sport = 0, dport = 0;
++	__be32 saddr[4], daddr[4];
++	enum hnat_dpi_class cls = HNAT_DPI_FAIR;
++	enum ip_conntrack_info ctinfo;
++	const struct nf_conn *ct;
++	u8 l4_proto = 0, tos = 0;
++	u16 pay_len = 0;
++	bool tcp_ctrl = false;
++	u32 hkey1, hkey2, hkey3, hash;
++
++	if (!skb || !hnat_qos_parse_l3(skb, &nh_off, &proto) ||
++	    !hnat_qos_extract_5tuple(skb, nh_off, proto, &l4_proto, saddr, daddr,
++				     &sport, &dport, &pay_off, &pay_len,
++				     &tcp_ctrl, &tos)) {
++		atomic64_inc(&hnat_qos_fair_pkts);
++		return base + 1 + (fallback_hash % 13);
++	}
++
++	ct = nf_ct_get(skb, &ctinfo);
++	cls = hnat_dpi_inspect_l7_payload(skb, l4_proto, pay_off, pay_len,
++					  ntohs(sport), ntohs(dport), per_pkt,
++					  tcp_ctrl, tos);
++	if (cls == HNAT_DPI_FAIR && qos_dpi_toggle) {
++		enum hnat_dpi_class cached = HNAT_DPI_FAIR;
++
++		if (hnat_dpi_cache_lookup(ct, proto, saddr, daddr, sport,
++					  dport, l4_proto, &cached))
++			cls = cached;
++	} else if (cls != HNAT_DPI_FAIR && !per_pkt && qos_dpi_toggle) {
++		hnat_dpi_cache_store(ct, proto, saddr, daddr, sport, dport,
++				     l4_proto, cls);
++	}
++
++	switch (cls) {
++	case HNAT_DPI_REALTIME:
++		atomic64_inc(&hnat_qos_rt_pkts);
++		return base;
++	case HNAT_DPI_VIDEO:
++		atomic64_inc(&hnat_qos_video_pkts);
++		return base + 14;
++	case HNAT_DPI_P2P:
++		atomic64_inc(&hnat_qos_p2p_pkts);
++		return base + 15;
++	default:
++		atomic64_inc(&hnat_qos_fair_pkts);
++		if (proto == htons(ETH_P_IPV6)) {
++			hkey1 = (__force u32)(saddr[0] ^ saddr[3]);
++			hkey2 = (__force u32)(daddr[0] ^ daddr[3]);
++		} else {
++			hkey1 = (__force u32)saddr[0];
++			hkey2 = (__force u32)daddr[0];
++		}
++		hkey3 = ((__force u32)sport << 16) | (__force u32)dport;
++		hash = jhash_3words(hkey1, hkey2, hkey3, l4_proto);
++		return base + 1 + (hash % 13);
++	}
++}
++
++static u32 hnat_ext_dl_qid_lookup_skb(const struct sk_buff *skb)
++{
++	unsigned int nh_off = 0, pay_off = 0;
++	__be16 proto = 0, sport = 0, dport = 0;
++	__be32 saddr[4], daddr[4];
++	u8 l4_proto = 0, tos = 0;
++	u16 pay_len = 0;
++	bool tcp_ctrl = false;
++	u64 sig, val;
++	u32 idx;
++
++	if (!skb || !hnat_qos_parse_l3(skb, &nh_off, &proto))
++		return 0;
++	if (!hnat_qos_extract_5tuple(skb, nh_off, proto, &l4_proto, saddr, daddr,
++				     &sport, &dport, &pay_off, &pay_len,
++				     &tcp_ctrl, &tos))
++		return 0;
++
++	hnat_wire_tuple_key(proto, saddr, daddr, sport, dport, l4_proto,
++			    false, HNAT_EXT_DL_CACHE_SIZE, &sig, &idx);
++	val = (u64)atomic64_read(&hnat_ext_dl_qid_cache[idx]);
++	if ((val & HNAT_CACHE_SIG_MASK) == sig && (val & 0x80ULL))
++		return (u32)(val & 0x7fULL);
++	return 0;
++}
++
++static void hnat_ext_dl_qid_record_entry(const struct foe_entry *entry, u32 qid)
++{
++	__be32 saddr[4], daddr[4];
++	__be16 l3_proto, sport, dport;
++	u8 l4_proto;
++	u64 sig;
++	u32 idx;
++
++	if (!entry || qid < 33 || qid > 63)
++		return;
++
++	memset(saddr, 0, sizeof(saddr));
++	memset(daddr, 0, sizeof(daddr));
++	l4_proto = entry->bfib1.udp ? IPPROTO_UDP : IPPROTO_TCP;
++
++	if (IS_IPV4_GRP(entry)) {
++		l3_proto = htons(ETH_P_IP);
++		saddr[0] = htonl(entry->ipv4_hnapt.sip);
++		daddr[0] = htonl(entry->ipv4_hnapt.dip);
++		sport = htons(entry->ipv4_hnapt.sport);
++		dport = htons(entry->ipv4_hnapt.dport);
++	} else if (IS_IPV6_5T_ROUTE(entry) || IS_IPV6_HNAPT(entry) ||
++		   IS_IPV6_HNAT(entry)) {
++		l3_proto = htons(ETH_P_IPV6);
++		saddr[0] = htonl(entry->ipv6_5t_route.ipv6_sip0);
++		saddr[1] = htonl(entry->ipv6_5t_route.ipv6_sip1);
++		saddr[2] = htonl(entry->ipv6_5t_route.ipv6_sip2);
++		saddr[3] = htonl(entry->ipv6_5t_route.ipv6_sip3);
++		daddr[0] = htonl(entry->ipv6_5t_route.ipv6_dip0);
++		daddr[1] = htonl(entry->ipv6_5t_route.ipv6_dip1);
++		daddr[2] = htonl(entry->ipv6_5t_route.ipv6_dip2);
++		daddr[3] = htonl(entry->ipv6_5t_route.ipv6_dip3);
++		sport = htons(entry->ipv6_5t_route.sport);
++		dport = htons(entry->ipv6_5t_route.dport);
++	} else {
++		return;
++	}
++
++	hnat_wire_tuple_key(l3_proto, saddr, daddr, sport, dport, l4_proto,
++			    false, HNAT_EXT_DL_CACHE_SIZE, &sig, &idx);
++	atomic64_set(&hnat_ext_dl_qid_cache[idx],
++		     sig | 0x80ULL | ((u64)qid & 0x7fULL));
++}
++
++static bool hnat_ext_skb_needs_linearize(const struct sk_buff *skb)
++{
++	int i;
++
++	if (!skb_is_nonlinear(skb))
++		return false;
++
++	if (skb_has_frag_list(skb) || skb_headlen(skb) < 96)
++		return true;
++
++	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
++		if (skb_frag_size(&skb_shinfo(skb)->frags[i]) < 16)
++			return true;
++	}
++
++	return false;
++}
++
+ unsigned int do_hnat_ext_to_ge(struct sk_buff *skb, const struct net_device *in,
+ 			       const char *func)
+ {
+@@ -1194,6 +1880,9 @@ unsigned int do_hnat_ext_to_ge(struct sk_buff *skb, const struct net_device *in,
+ 	    ext_idx >= HNAT_EXT_SLOT_BASE + MAX_EXT_DEVS)
+ 		return -1;
+ 
++	if (hnat_ext_skb_needs_linearize(skb) && skb_linearize(skb))
++		return -1;
++
+ 	if (skb_cow_head(skb, FOE_INFO_LEN + ETH_HLEN + VLAN_HLEN))
+ 		return -1;
+ 
+@@ -1228,6 +1917,14 @@ unsigned int do_hnat_ext_to_ge(struct sk_buff *skb, const struct net_device *in,
+ 	/* set where we come from */
+ 	__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+ 			       VLAN_CFI_MASK | (ext_idx & VLAN_VID_MASK));
++	if (IS_HQOS_DL_MODE && !(skb->mark & MTK_QDMA_TX_MASK)) {
++		u32 dl_qid = hnat_ext_dl_qid_lookup_skb(skb);
++
++		if (dl_qid >= 33 && dl_qid <= 63)
++			skb->mark = dl_qid;
++		else if (sqm_toggle)
++			skb->mark = hnat_qos_classify_skb(skb, true, true, 0);
++	}
+ 	skb->dev = ppdev;
+ 	dev_queue_xmit(skb);
+ 	return 0;
+@@ -1272,7 +1969,10 @@ unsigned int do_hnat_ext_to_ge2(struct sk_buff *skb, const char *func)
+ 				(skb_hnat_entry(skb) != 0x3fff))))
+ 			skb_set_hash(skb, skb_hnat_entry(skb) >> 1, PKT_HASH_TYPE_L4);
+ 
+-		if (unlikely(skb->mark == 0x78681415))
++		if (dev == READ_ONCE(ppd_dev))
++			skb->mark = 0x78681415;
++		else if (unlikely(skb->mark == 0x78681415) ||
++			 (qos_toggle && skb->mark >= 33 && skb->mark <= 63))
+ 			skb->mark = 0;
+ 
+ 		set_from_extge(skb);
+@@ -1425,6 +2125,19 @@ unsigned int do_hnat_ge_to_ext(struct sk_buff *skb, const char *func)
+ 			}
+ 			return -1;
+ 		}
++		if (unlikely(dev->mtu && skb->len > READ_ONCE(dev->mtu))) {
++			if (entry_hnat_is_bound(entry)) {
++				entry->bfib1.state = INVALID;
++				hnat_cache_ebl(1);
++			}
++			if (skb_owned) {
++				kfree_skb(skb);
++				return 0;
++			}
++			return 1;
++		}
++		if (qos_toggle && skb->mark >= 1 && skb->mark <= 63)
++			skb->mark = 0;
+ 		skb->protocol = proto;
+ 		skb->dev = dev;
+ 		dev_queue_xmit(skb);
+@@ -1441,6 +2154,20 @@ unsigned int do_hnat_ge_to_ext(struct sk_buff *skb, const char *func)
+ 		return -1;
+ 	}
+ 
++	if (unlikely(dev->mtu && skb->len > READ_ONCE(dev->mtu))) {
++		if (entry_hnat_is_bound(entry)) {
++			entry->bfib1.state = INVALID;
++			hnat_cache_ebl(1);
++		}
++		if (skb_owned) {
++			kfree_skb(skb);
++			return 0;
++		}
++		return 1;
++	}
++	if (qos_toggle && skb->mark >= 1 && skb->mark <= 63)
++		skb->mark = 0;
++
+ 	skb->dev = dev;
+ 	skb_set_network_header(skb, 0);
+ 	skb_push(skb, ETH_HLEN);
+@@ -1782,7 +2509,7 @@ static bool hnat_prepare_ext_skb(struct sk_buff *skb,
+ 		      in->hard_header_len >= ETH_HLEN;
+ 	bool is_rawip = in && IS_EXT(in) && hnat_dev_is_rawip_ext(in);
+ 
+-	if (!is_eth && !is_rawip)
++	if (unlikely(skb->mark == HNAT_EXCEPTION_TAG) || (!is_eth && !is_rawip))
+ 		return false;
+ 
+ 	if (skb_is_gso(skb) || skb_shinfo(skb)->frag_list)
+@@ -1817,6 +2544,10 @@ mtk_hnat_ipv6_nf_pre_routing(void *priv, struct sk_buff *skb,
+ 	}
+ 
+ 	hnat_set_head_frags(state, skb, -1, hnat_set_iif);
++	if (sqm_toggle && qos_dpi_toggle && !FROM_EXT(skb) &&
++	    skb_hnat_reason(skb) != HIT_UNBIND_RATE_REACH &&
++	    skb_hnat_reason(skb) != HIT_BIND_FORCE_TO_CPU)
++		hnat_dpi_observe_skb(skb);
+ 
+ 	pre_routing_print(skb, state->in, state->out, __func__);
+ 
+@@ -1831,8 +2562,12 @@ mtk_hnat_ipv6_nf_pre_routing(void *priv, struct sk_buff *skb,
+ 	 * For standalone wan interface
+ 	 */
+ 	if (do_ge2ext_fast(state->in, skb)) {
+-		if (!do_hnat_ge_to_ext(skb, __func__))
++		int rc = do_hnat_ge_to_ext(skb, __func__);
++
++		if (!rc)
+ 			return NF_STOLEN;
++		if (rc > 0)
++			return NF_ACCEPT;
+ 		goto drop;
+ 	}
+ 
+@@ -1919,10 +2654,18 @@ mtk_hnat_ipv4_nf_pre_routing(void *priv, struct sk_buff *skb,
+ 	 * For standalone wan interface
+ 	 */
+ 	if (do_ge2ext_fast(state->in, skb)) {
+-		if (!do_hnat_ge_to_ext(skb, __func__))
++		int rc = do_hnat_ge_to_ext(skb, __func__);
++
++		if (!rc)
+ 			return NF_STOLEN;
++		if (rc > 0)
++			return NF_ACCEPT;
+ 		goto drop;
+ 	}
++	if (sqm_toggle && qos_dpi_toggle && !FROM_EXT(skb) &&
++	    skb_hnat_reason(skb) != HIT_UNBIND_RATE_REACH &&
++	    skb_hnat_reason(skb) != HIT_BIND_FORCE_TO_CPU)
++		hnat_dpi_observe_skb(skb);
+ 	if (xlat_toggle)
+ 		mtk_464xlat_pre_process(skb);
+ 
+@@ -2014,8 +2757,12 @@ mtk_hnat_br_nf_local_in(void *priv, struct sk_buff *skb,
+ 
+ 		/* packets form ge -> external device */
+ 		if (do_ge2ext_fast(state->in, skb)) {
+-			if (!do_hnat_ge_to_ext(skb, __func__))
++			int rc = do_hnat_ge_to_ext(skb, __func__);
++
++			if (!rc)
+ 				return NF_STOLEN;
++			if (rc > 0)
++				return NF_ACCEPT;
+ 			goto drop;
+ 		}
+ 	}
+@@ -2066,6 +2813,9 @@ static void hnat_write_skb_eth_macs(struct sk_buff *skb, bool is_v6_ipip,
+ 	if (!hnat_skb_has_eth_hdr(skb))
+ 		return;
+ 
++	if (skb_cloned(skb) && !skb_clone_writable(skb, 0))
++		return;
++
+ 	if (is_v6_ipip) {
+ 		if (skb_headroom(skb) <
+ 		    (unsigned int)(FOE_INFO_LEN + ipip_offset))
+@@ -2338,6 +3088,8 @@ static void hnat_copy_foe_info(struct foe_entry *dst,
+ static inline void hnat_qos_rate_limit_set(u32 id, const struct net_device *dev)
+ {
+ 	const struct mtk_mac *mac;
++	struct mtk_qdma_page page;
++	void __iomem *page_reg;
+ 	u32 max_man = SPEED_10000 / SPEED_100;
+ 	u32 max_exp = 5;
+ 	u32 cfg;
+@@ -2362,15 +3114,16 @@ static inline void hnat_qos_rate_limit_set(u32 id, const struct net_device *dev)
+ 	}
+ 
+ setup_rate_limit:
+-	cr_set_field(hnat_priv->fe_base + QDMA_PAGE, QTX_CFG_PAGE,
+-		     (id / NUM_OF_Q_PER_PAGE));
+ 	cfg = QTX_SCH_MIN_RATE_EN | QTX_SCH_MAX_RATE_EN;
+ 	cfg |= (1 << QTX_SCH_MIN_RATE_MAN_OFFSET) |
+ 	       (4 << QTX_SCH_MIN_RATE_EXP_OFFSET) |
+ 	       ((max_man & 0x7f) << QTX_SCH_MAX_RATE_MAN_OFFSET) |
+ 	       ((max_exp & 0xf) << QTX_SCH_MAX_RATE_EXP_OFFSET) |
+ 	       (4 << QTX_SCH_MAX_RATE_WGHT_OFFSET);
++	page_reg = hnat_priv->fe_base + QDMA_PAGE;
++	mtk_qdma_select_page(&page, page_reg, id / NUM_OF_Q_PER_PAGE);
+ 	writel(cfg, hnat_priv->fe_base + QTX_SCH(id % NUM_OF_Q_PER_PAGE));
++	mtk_qdma_restore_page(&page, page_reg);
+ }
+ 
+ static inline void hnat_fill_offload_engine_entry(struct sk_buff *skb,
+@@ -2828,7 +3581,7 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 
+ 	ct = nf_ct_get(skb, &ctinfo);
+ 
+-	if ((IS_EXT(dev) && hnat_dev_is_rawip_ext(dev)) ||
++	if ((IS_EXT(dev) && hnat_dev_is_noarp_ext(dev)) ||
+ 	    !hnat_skb_has_eth_hdr(skb)) {
+ 		__be16 proto = hnat_skb_l3_proto(skb);
+ 
+@@ -3399,16 +4152,41 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 				   skb_hnat_iface(skb), dev->name);
+  		return 0;
+  	}
+-	if (IS_HQOS_MODE || (skb->mark & MTK_QDMA_TX_MASK) >= MAX_PPPQ_PORT_NUM)
+-		qid = skb->mark & (MTK_QDMA_TX_MASK);
+-	else if (IS_PPPQ_MODE && IS_PPPQ_PATH(dev, skb))
+-		qid = port_id & MTK_QDMA_TX_MASK;
+-	else
+-		qid = 0;
+-	if ((IS_HQOS_MODE) && (dscp!=0) &&(hnat_priv->dscp_en))
+-		qid = (dscp>>2)& (MTK_QDMA_TX_MASK);
++	{
++		u32 mark_qid = skb->mark & MTK_QDMA_TX_MASK;
++
++		if (IS_HQOS_MODE && mark_qid) {
++			qid = mark_qid;
++			if ((mark_qid >= 1 && mark_qid <= 15) ||
++			    (mark_qid >= 33 && mark_qid <= 47))
++				atomic64_inc(&hnat_qos_eqos_flows);
++		} else if (mark_qid >= MAX_PPPQ_PORT_NUM) {
++			qid = mark_qid;
++		} else if (IS_PPPQ_MODE && IS_PPPQ_PATH(dev, skb)) {
++			qid = port_id & MTK_QDMA_TX_MASK;
++		} else if (sqm_toggle && IS_HQOS_MODE) {
++			if (IS_HQOS_UL_MODE && hnat_qos_is_wan_egress(dev))
++				qid = hnat_qos_classify_skb(skb, false, false,
++							    skb_hnat_entry(skb));
++			else if (IS_HQOS_DL_MODE && IS_LAN_GRP(dev) &&
++				 hnat_qos_is_wan_ingress(skb))
++				qid = hnat_qos_classify_skb(skb, true, false,
++							    skb_hnat_entry(skb));
++			else
++				qid = 0;
++		} else if (IS_HQOS_MODE && dscp != 0 && hnat_priv->dscp_en) {
++			qid = (dscp >> 2) & MTK_QDMA_TX_MASK;
++		} else {
++			qid = 0;
++		}
++	}
+ 
+-	if (IS_PPPQ_MODE) {
++	/* An unclassified no-ARP external output has no PPPQ port assignment. */
++	if (IS_PPPQ_MODE &&
++	    !(hnat_priv->data->version == MTK_HNAT_V3 &&
++	      qid == 0 && gmac == NR_PDMA_PORT && IS_EXT(dev) &&
++	      hnat_dev_is_noarp_ext(dev) && !whnat &&
++	      !IS_PPPQ_PATH(dev, skb))) {
+ 		qid+= gmac;
+ 		if (gmac == 0) qid+= 12;
+ 		if (ntohs(eth->h_proto) == ETH_P_IP) {
+@@ -3459,12 +4237,21 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 				}
+ 			}
+ 
+-			if (FROM_EXT(skb) || skb_hnat_sport(skb) == NR_QDMA_PORT)
++			if (FROM_EXT(skb) || skb_hnat_sport(skb) == NR_QDMA_PORT) {
++				if (FROM_EXT(skb) && IS_HQOS_DL_MODE &&
++				    qid >= 33 && qid <= 63)
++					hnat_ext_dl_qid_record_entry(&entry, qid);
+ 				entry.ipv4_hnapt.iblk2.fqos = 0;
+ #if defined(CONFIG_MEDIATEK_NETSYS_V3)
+-				entry.ipv4_hnapt.tport_id = HQOS_FLAG(dev, skb, qid) ? 1 : 0;
++				entry.ipv4_hnapt.tport_id = 0;
++#endif
++			} else {
++				bool want = hnat_qos_want_hqos(dev, skb, qid);
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++				entry.ipv4_hnapt.tport_id = want ? 1 : 0;
+ #endif
+-				entry.ipv4_hnapt.iblk2.fqos = HQOS_FLAG(dev, skb, qid) ? 1 : 0;
++				entry.ipv4_hnapt.iblk2.fqos = want ? 1 : 0;
++			}
+ 		} else {
+ 			entry.ipv4_hnapt.iblk2.fqos = 0;
+ 		}
+@@ -3493,27 +4280,45 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 				}
+ 			}
+ 
+-			if (FROM_EXT(skb) || skb_hnat_sport(skb) == NR_QDMA_PORT)
++			if (FROM_EXT(skb) || skb_hnat_sport(skb) == NR_QDMA_PORT) {
++				if (FROM_EXT(skb) && IS_HQOS_DL_MODE &&
++				    qid >= 33 && qid <= 63)
++					hnat_ext_dl_qid_record_entry(&entry, qid);
+ 				entry.ipv6_5t_route.iblk2.fqos = 0;
+ #if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 				switch (entry.bfib1.pkt_type) {
+ 				case IPV4_MAP_E:
+ 				case IPV4_MAP_T:
+-					entry.ipv4_mape.tport_id =
+-						HQOS_FLAG(dev, skb, qid) ? 1 : 0;
++					entry.ipv4_mape.tport_id = 0;
+ 					break;
+ 				case IPV6_HNAPT:
+ 				case IPV6_HNAT:
+-					entry.ipv6_hnapt.tport_id =
+-						HQOS_FLAG(dev, skb, qid) ? 1 : 0;
++					entry.ipv6_hnapt.tport_id = 0;
+ 					break;
+ 				default:
+-					entry.ipv6_5t_route.tport_id =
+-						HQOS_FLAG(dev, skb, qid) ? 1 : 0;
++					entry.ipv6_5t_route.tport_id = 0;
+ 					break;
+ 				}
+-				entry.ipv6_5t_route.iblk2.fqos = HQOS_FLAG(dev, skb, qid) ? 1 : 0;
+ #endif
++			} else {
++				bool want = hnat_qos_want_hqos(dev, skb, qid);
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++				switch (entry.bfib1.pkt_type) {
++				case IPV4_MAP_E:
++				case IPV4_MAP_T:
++					entry.ipv4_mape.tport_id = want ? 1 : 0;
++					break;
++				case IPV6_HNAPT:
++				case IPV6_HNAT:
++					entry.ipv6_hnapt.tport_id = want ? 1 : 0;
++					break;
++				default:
++					entry.ipv6_5t_route.tport_id = want ? 1 : 0;
++					break;
++				}
++#endif
++				entry.ipv6_5t_route.iblk2.fqos = want ? 1 : 0;
++			}
+ 		} else {
+ 			entry.ipv6_5t_route.iblk2.fqos = 0;
+ 		}
+@@ -3684,136 +4489,162 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 		entry.bfib1.vlan_layer = 0;
+ 	}
+ 
+-	/* MT7622 wifi hw_nat not support QoS */
+-	if (IS_IPV4_GRP(&entry)) {
+-		entry.ipv4_hnapt.iblk2.fqos = 0;
+-		if ((hnat_priv->data->version == MTK_HNAT_V1_2 &&
+-		     gmac_no == NR_WHNAT_WDMA_PORT) ||
+-		    ((hnat_priv->data->version == MTK_HNAT_V2 ||
+-		      hnat_priv->data->version == MTK_HNAT_V3) &&
+-		     (gmac_no == NR_WDMA0_PORT || gmac_no == NR_WDMA1_PORT ||
+-		      gmac_no == NR_WDMA2_PORT))) {
+-			entry.ipv4_hnapt.winfo.bssid = skb_hnat_bss_id(skb);
+-			entry.ipv4_hnapt.winfo.wcid = skb_hnat_wc_id(skb);
++	{
++		u32 wed_qid = IS_HQOS_MODE ? (skb->mark & MTK_QDMA_TX_MASK) : 0;
++		bool use_wed_hqos = false;
++
++		if (wed_qid >= 33 && wed_qid <= 47)
++			atomic64_inc(&hnat_qos_eqos_flows);
++		if (!wed_qid && sqm_toggle && IS_HQOS_DL_MODE &&
++		    hnat_qos_is_wan_ingress(skb))
++			wed_qid = hnat_qos_classify_skb(skb, true, false,
++							skb_hnat_entry(skb));
++		if (FROM_EXT(skb)) {
++			if (IS_HQOS_DL_MODE && wed_qid >= 33 && wed_qid <= 63)
++				hnat_ext_dl_qid_record_entry(&entry, wed_qid);
++			use_wed_hqos = false;
++		} else {
++			use_wed_hqos = IS_HQOS_DL_MODE &&
++				       (wed_qid != 0 || hnat_qos_is_wan_ingress(skb)) &&
++				       skb_hnat_sport(skb) != NR_QDMA_PORT;
++		}
++
++		/* MT7622 wifi hw_nat not support QoS */
++		if (IS_IPV4_GRP(&entry)) {
++			entry.ipv4_hnapt.iblk2.fqos = 0;
++			if (wed_qid)
++				entry.ipv4_hnapt.iblk2.qid = wed_qid & 0x7f;
++			if ((hnat_priv->data->version == MTK_HNAT_V1_2 &&
++			     gmac_no == NR_WHNAT_WDMA_PORT) ||
++			    ((hnat_priv->data->version == MTK_HNAT_V2 ||
++			      hnat_priv->data->version == MTK_HNAT_V3) &&
++			     (gmac_no == NR_WDMA0_PORT || gmac_no == NR_WDMA1_PORT ||
++			      gmac_no == NR_WDMA2_PORT))) {
++				entry.ipv4_hnapt.winfo.bssid = skb_hnat_bss_id(skb);
++				entry.ipv4_hnapt.winfo.wcid = skb_hnat_wc_id(skb);
+ #if defined(CONFIG_MEDIATEK_NETSYS_V3)
+-			entry.ipv4_hnapt.tport_id = IS_HQOS_DL_MODE ? 1 : 0;
+-			entry.ipv4_hnapt.iblk2.fqos = IS_HQOS_DL_MODE ? 1 : 0;
+-			entry.ipv4_hnapt.iblk2.rxid = skb_hnat_rx_id(skb);
+-			entry.ipv4_hnapt.iblk2.winfoi = 1;
+-			entry.ipv4_hnapt.winfo_pao.usr_info =
+-				skb_hnat_usr_info(skb);
+-			entry.ipv4_hnapt.winfo_pao.tid = skb_hnat_tid(skb);
+-			entry.ipv4_hnapt.winfo_pao.is_fixedrate =
+-				skb_hnat_is_fixedrate(skb);
+-			entry.ipv4_hnapt.winfo_pao.is_prior =
+-				skb_hnat_is_prior(skb);
+-			entry.ipv4_hnapt.winfo_pao.is_sp = skb_hnat_is_sp(skb);
+-			entry.ipv4_hnapt.winfo_pao.hf = skb_hnat_hf(skb);
+-			entry.ipv4_hnapt.winfo_pao.amsdu = skb_hnat_amsdu(skb);
++				entry.ipv4_hnapt.tport_id = use_wed_hqos ? 1 : 0;
++				entry.ipv4_hnapt.iblk2.fqos = use_wed_hqos ? 1 : 0;
++				entry.ipv4_hnapt.iblk2.rxid = skb_hnat_rx_id(skb);
++				entry.ipv4_hnapt.iblk2.winfoi = 1;
++				entry.ipv4_hnapt.winfo_pao.usr_info =
++					skb_hnat_usr_info(skb);
++				entry.ipv4_hnapt.winfo_pao.tid = skb_hnat_tid(skb);
++				entry.ipv4_hnapt.winfo_pao.is_fixedrate =
++					skb_hnat_is_fixedrate(skb);
++				entry.ipv4_hnapt.winfo_pao.is_prior =
++					skb_hnat_is_prior(skb);
++				entry.ipv4_hnapt.winfo_pao.is_sp = skb_hnat_is_sp(skb);
++				entry.ipv4_hnapt.winfo_pao.hf = skb_hnat_hf(skb);
++				entry.ipv4_hnapt.winfo_pao.amsdu = skb_hnat_amsdu(skb);
+ #elif defined(CONFIG_MEDIATEK_NETSYS_V2)
+-			entry.ipv4_hnapt.iblk2.rxid = skb_hnat_rx_id(skb);
+-			entry.ipv4_hnapt.iblk2.winfoi = 1;
++				entry.ipv4_hnapt.iblk2.rxid = skb_hnat_rx_id(skb);
++				entry.ipv4_hnapt.iblk2.winfoi = 1;
+ #else
+-			entry.ipv4_hnapt.winfo.rxid = skb_hnat_rx_id(skb);
+-			entry.ipv4_hnapt.iblk2w.winfoi = 1;
+-			entry.ipv4_hnapt.iblk2w.wdmaid = skb_hnat_wdma_id(skb);
++				entry.ipv4_hnapt.winfo.rxid = skb_hnat_rx_id(skb);
++				entry.ipv4_hnapt.iblk2w.winfoi = 1;
++				entry.ipv4_hnapt.iblk2w.wdmaid = skb_hnat_wdma_id(skb);
+ #endif
+-		} else {
+-			if (IS_GMAC1_MODE && !hnat_dsa_is_enable(hnat_priv)) {
+-				entry.bfib1.vpm = 1;
+-				entry.bfib1.vlan_layer = 1;
++			} else {
++				if (IS_GMAC1_MODE && !hnat_dsa_is_enable(hnat_priv)) {
++					entry.bfib1.vpm = 1;
++					entry.bfib1.vlan_layer = 1;
+ 
+-				if (FROM_GE_LAN_GRP(skb))
+-					entry.ipv4_hnapt.vlan1 = 1;
+-				else if (FROM_GE_WAN(skb) || FROM_GE_VIRTUAL(skb))
+-					entry.ipv4_hnapt.vlan1 = 2;
+-			}
++					if (FROM_GE_LAN_GRP(skb))
++						entry.ipv4_hnapt.vlan1 = 1;
++					else if (FROM_GE_WAN(skb) || FROM_GE_VIRTUAL(skb))
++						entry.ipv4_hnapt.vlan1 = 2;
++				}
+ 
+-			if (IS_HQOS_MODE &&
+-			    (FROM_GE_LAN_GRP(skb) || FROM_GE_WAN(skb) || FROM_GE_VIRTUAL(skb))) {
+-				entry.bfib1.vpm = 0;
+-				entry.bfib1.vlan_layer = 1;
+-				entry.ipv4_hnapt.etype = htons(HQOS_MAGIC_TAG);
+-				entry.ipv4_hnapt.vlan1 = skb_hnat_entry(skb);
+-				entry.ipv4_hnapt.iblk2.fqos = 1;
++				if (IS_HQOS_MODE &&
++				    (FROM_GE_LAN_GRP(skb) || FROM_GE_WAN(skb) || FROM_GE_VIRTUAL(skb))) {
++					entry.bfib1.vpm = 0;
++					entry.bfib1.vlan_layer = 1;
++					entry.ipv4_hnapt.etype = htons(HQOS_MAGIC_TAG);
++					entry.ipv4_hnapt.vlan1 = skb_hnat_entry(skb);
++					entry.ipv4_hnapt.iblk2.fqos = 1;
++				}
+ 			}
+-		}
+-		entry.ipv4_hnapt.iblk2.dp = gmac_no;
++			entry.ipv4_hnapt.iblk2.dp = gmac_no;
+ #if defined(CONFIG_MEDIATEK_NETSYS_V3)
+-	} else if (IS_IPV6_HNAPT(&entry) || IS_IPV6_HNAT(&entry)) {
+-		entry.ipv6_hnapt.iblk2.dp = gmac_no;
+-		entry.ipv6_hnapt.iblk2.rxid = skb_hnat_rx_id(skb);
+-		entry.ipv6_hnapt.iblk2.winfoi = 1;
+-
+-		entry.ipv6_hnapt.winfo.bssid = skb_hnat_bss_id(skb);
+-		entry.ipv6_hnapt.winfo.wcid = skb_hnat_wc_id(skb);
+-		entry.ipv6_hnapt.winfo_pao.usr_info = skb_hnat_usr_info(skb);
+-		entry.ipv6_hnapt.winfo_pao.tid = skb_hnat_tid(skb);
+-		entry.ipv6_hnapt.winfo_pao.is_fixedrate =
+-			skb_hnat_is_fixedrate(skb);
+-		entry.ipv6_hnapt.winfo_pao.is_prior = skb_hnat_is_prior(skb);
+-		entry.ipv6_hnapt.winfo_pao.is_sp = skb_hnat_is_sp(skb);
+-		entry.ipv6_hnapt.winfo_pao.hf = skb_hnat_hf(skb);
+-		entry.ipv6_hnapt.winfo_pao.amsdu = skb_hnat_amsdu(skb);
+-		entry.ipv6_hnapt.tport_id = IS_HQOS_DL_MODE ? 1 : 0;
+-		entry.ipv6_hnapt.iblk2.fqos = IS_HQOS_DL_MODE ? 1 : 0;
++		} else if (IS_IPV6_HNAPT(&entry) || IS_IPV6_HNAT(&entry)) {
++			entry.ipv6_hnapt.iblk2.dp = gmac_no;
++			if (wed_qid)
++				entry.ipv6_hnapt.iblk2.qid = wed_qid & 0x7f;
++			entry.ipv6_hnapt.iblk2.rxid = skb_hnat_rx_id(skb);
++			entry.ipv6_hnapt.iblk2.winfoi = 1;
++
++			entry.ipv6_hnapt.winfo.bssid = skb_hnat_bss_id(skb);
++			entry.ipv6_hnapt.winfo.wcid = skb_hnat_wc_id(skb);
++			entry.ipv6_hnapt.winfo_pao.usr_info = skb_hnat_usr_info(skb);
++			entry.ipv6_hnapt.winfo_pao.tid = skb_hnat_tid(skb);
++			entry.ipv6_hnapt.winfo_pao.is_fixedrate =
++				skb_hnat_is_fixedrate(skb);
++			entry.ipv6_hnapt.winfo_pao.is_prior = skb_hnat_is_prior(skb);
++			entry.ipv6_hnapt.winfo_pao.is_sp = skb_hnat_is_sp(skb);
++			entry.ipv6_hnapt.winfo_pao.hf = skb_hnat_hf(skb);
++			entry.ipv6_hnapt.winfo_pao.amsdu = skb_hnat_amsdu(skb);
++			entry.ipv6_hnapt.tport_id = use_wed_hqos ? 1 : 0;
++			entry.ipv6_hnapt.iblk2.fqos = use_wed_hqos ? 1 : 0;
+ #endif
+-	} else {
+-		entry.ipv6_5t_route.iblk2.fqos = 0;
+-		if ((hnat_priv->data->version == MTK_HNAT_V1_2 &&
+-		     gmac_no == NR_WHNAT_WDMA_PORT) ||
+-		    ((hnat_priv->data->version == MTK_HNAT_V2 ||
+-		      hnat_priv->data->version == MTK_HNAT_V3) &&
+-		     (gmac_no == NR_WDMA0_PORT || gmac_no == NR_WDMA1_PORT ||
+-		      gmac_no == NR_WDMA2_PORT))) {
++		} else {
++			entry.ipv6_5t_route.iblk2.fqos = 0;
++			if (wed_qid)
++				entry.ipv6_5t_route.iblk2.qid = wed_qid & 0x7f;
++			if ((hnat_priv->data->version == MTK_HNAT_V1_2 &&
++			     gmac_no == NR_WHNAT_WDMA_PORT) ||
++			    ((hnat_priv->data->version == MTK_HNAT_V2 ||
++			      hnat_priv->data->version == MTK_HNAT_V3) &&
++			     (gmac_no == NR_WDMA0_PORT || gmac_no == NR_WDMA1_PORT ||
++			      gmac_no == NR_WDMA2_PORT))) {
+ #if defined(CONFIG_MEDIATEK_NETSYS_V3)
+-			switch (entry.bfib1.pkt_type) {
+-			case IPV4_MAP_E:
+-			case IPV4_MAP_T:
+-				entry.ipv4_mape.winfo.bssid = skb_hnat_bss_id(skb);
+-				entry.ipv4_mape.winfo.wcid = skb_hnat_wc_id(skb);
+-				entry.ipv4_mape.tport_id = IS_HQOS_DL_MODE ? 1 : 0;
+-				entry.ipv4_mape.iblk2.fqos = IS_HQOS_DL_MODE ? 1 : 0;
+-				entry.ipv4_mape.iblk2.rxid = skb_hnat_rx_id(skb);
+-				entry.ipv4_mape.iblk2.winfoi = 1;
+-				entry.ipv4_mape.winfo_pao.usr_info =
+-					skb_hnat_usr_info(skb);
+-				entry.ipv4_mape.winfo_pao.tid =
+-					skb_hnat_tid(skb);
+-				entry.ipv4_mape.winfo_pao.is_fixedrate =
+-					skb_hnat_is_fixedrate(skb);
+-				entry.ipv4_mape.winfo_pao.is_prior =
+-					skb_hnat_is_prior(skb);
+-				entry.ipv4_mape.winfo_pao.is_sp =
+-					skb_hnat_is_sp(skb);
+-				entry.ipv4_mape.winfo_pao.hf =
+-					skb_hnat_hf(skb);
+-				entry.ipv4_mape.winfo_pao.amsdu =
+-					skb_hnat_amsdu(skb);
+-				break;
+-			default:
+-				entry.ipv6_5t_route.winfo.bssid = skb_hnat_bss_id(skb);
+-				entry.ipv6_5t_route.winfo.wcid = skb_hnat_wc_id(skb);
+-				entry.ipv6_5t_route.tport_id = IS_HQOS_DL_MODE ? 1 : 0;
+-				entry.ipv6_5t_route.iblk2.fqos = IS_HQOS_DL_MODE ? 1 : 0;
+-				entry.ipv6_5t_route.iblk2.rxid = skb_hnat_rx_id(skb);
+-				entry.ipv6_5t_route.iblk2.winfoi = 1;
+-				entry.ipv6_5t_route.winfo_pao.usr_info =
+-					skb_hnat_usr_info(skb);
+-				entry.ipv6_5t_route.winfo_pao.tid =
+-					skb_hnat_tid(skb);
+-				entry.ipv6_5t_route.winfo_pao.is_fixedrate =
+-					skb_hnat_is_fixedrate(skb);
+-				entry.ipv6_5t_route.winfo_pao.is_prior =
+-					skb_hnat_is_prior(skb);
+-				entry.ipv6_5t_route.winfo_pao.is_sp =
+-					skb_hnat_is_sp(skb);
+-				entry.ipv6_5t_route.winfo_pao.hf =
+-					skb_hnat_hf(skb);
+-				entry.ipv6_5t_route.winfo_pao.amsdu =
+-					skb_hnat_amsdu(skb);
+-				break;
+-			}
++				switch (entry.bfib1.pkt_type) {
++				case IPV4_MAP_E:
++				case IPV4_MAP_T:
++					entry.ipv4_mape.winfo.bssid = skb_hnat_bss_id(skb);
++					entry.ipv4_mape.winfo.wcid = skb_hnat_wc_id(skb);
++					entry.ipv4_mape.tport_id = use_wed_hqos ? 1 : 0;
++					entry.ipv4_mape.iblk2.fqos = use_wed_hqos ? 1 : 0;
++					entry.ipv4_mape.iblk2.rxid = skb_hnat_rx_id(skb);
++					entry.ipv4_mape.iblk2.winfoi = 1;
++					entry.ipv4_mape.winfo_pao.usr_info =
++						skb_hnat_usr_info(skb);
++					entry.ipv4_mape.winfo_pao.tid =
++						skb_hnat_tid(skb);
++					entry.ipv4_mape.winfo_pao.is_fixedrate =
++						skb_hnat_is_fixedrate(skb);
++					entry.ipv4_mape.winfo_pao.is_prior =
++						skb_hnat_is_prior(skb);
++					entry.ipv4_mape.winfo_pao.is_sp =
++						skb_hnat_is_sp(skb);
++					entry.ipv4_mape.winfo_pao.hf =
++						skb_hnat_hf(skb);
++					entry.ipv4_mape.winfo_pao.amsdu =
++						skb_hnat_amsdu(skb);
++					break;
++				default:
++					entry.ipv6_5t_route.winfo.bssid = skb_hnat_bss_id(skb);
++					entry.ipv6_5t_route.winfo.wcid = skb_hnat_wc_id(skb);
++					entry.ipv6_5t_route.tport_id = use_wed_hqos ? 1 : 0;
++					entry.ipv6_5t_route.iblk2.fqos = use_wed_hqos ? 1 : 0;
++					entry.ipv6_5t_route.iblk2.rxid = skb_hnat_rx_id(skb);
++					entry.ipv6_5t_route.iblk2.winfoi = 1;
++					entry.ipv6_5t_route.winfo_pao.usr_info =
++						skb_hnat_usr_info(skb);
++					entry.ipv6_5t_route.winfo_pao.tid =
++						skb_hnat_tid(skb);
++					entry.ipv6_5t_route.winfo_pao.is_fixedrate =
++						skb_hnat_is_fixedrate(skb);
++					entry.ipv6_5t_route.winfo_pao.is_prior =
++						skb_hnat_is_prior(skb);
++					entry.ipv6_5t_route.winfo_pao.is_sp =
++						skb_hnat_is_sp(skb);
++					entry.ipv6_5t_route.winfo_pao.hf =
++						skb_hnat_hf(skb);
++					entry.ipv6_5t_route.winfo_pao.amsdu =
++						skb_hnat_amsdu(skb);
++					break;
++				}
+ #elif defined(CONFIG_MEDIATEK_NETSYS_V2)
+ 			entry.ipv6_5t_route.winfo.bssid = skb_hnat_bss_id(skb);
+ 			entry.ipv6_5t_route.winfo.wcid = skb_hnat_wc_id(skb);
+@@ -3847,6 +4678,7 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 			}
+ 		}
+ 		entry.ipv6_5t_route.iblk2.dp = gmac_no;
++		}
+ 	}
+ 
+ 	if (!hnat_mib_bind_begin(hnat_priv, skb_hnat_ppe(skb),
+@@ -4472,10 +5304,12 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 		return 0;
+ 	}
+ 
++#if !defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	if (!IS_WHNAT(out) && IS_EXT(out) && FROM_WED(skb)) {
+ 		hnat_multitier_on_post_routing_skip(skb);
+ 		return 0;
+ 	}
++#endif
+ 
+ #if defined(CONFIG_NET_DSA)
+ 	{
+@@ -4499,6 +5333,11 @@ static unsigned int mtk_hnat_nf_post_routing(
+ 
+ 	entry = &hnat_priv->foe_table_cpu[skb_hnat_ppe(skb)][skb_hnat_entry(skb)];
+ 
++	if (sqm_toggle && qos_dpi_toggle &&
++	    skb_hnat_reason(skb) != HIT_UNBIND_RATE_REACH &&
++	    skb_hnat_reason(skb) != HIT_BIND_FORCE_TO_CPU)
++		hnat_dpi_observe_skb(skb);
++
+ 	switch (skb_hnat_reason(skb)) {
+ 	case HIT_UNBIND_RATE_REACH:
+ 		if (entry_hnat_is_bound(entry)) {
+@@ -4754,8 +5593,12 @@ mtk_pong_hqos_handler(void *priv, struct sk_buff *skb,
+ 
+ 	/* packets form ge -> external device */
+ 	if (do_ge2ext_fast(state->in, skb)) {
+-		if (!do_hnat_ge_to_ext(skb, __func__))
++		int rc = do_hnat_ge_to_ext(skb, __func__);
++
++		if (!rc)
+ 			return NF_STOLEN;
++		if (rc > 0)
++			return NF_ACCEPT;
+ 		goto drop;
+ 	}
+ 
+@@ -4965,7 +5808,7 @@ int mtk_hqos_ptype_cb(struct sk_buff *skb, struct net_device *dev,
+ 	skb_hnat_entry(skb) = ntohs(veth->h_vlan_TCI) & 0x3fff;
+ 	skb_hnat_reason(skb) = HIT_BIND_FORCE_TO_CPU;
+ 
+-	if (do_hnat_ge_to_ext(skb, __func__) == -1) {
++	if (do_hnat_ge_to_ext(skb, __func__) != 0) {
+ 		kfree_skb(skb);
+ 		return NET_RX_DROP;
+ 	}
+@@ -5173,10 +6016,12 @@ static bool hnat_multitier_defer_sw_admit(const struct sk_buff *skb,
+ 	out = dst ? dst->dev : NULL;
+ 	if (out && IS_BOND(out))
+ 		return false;
++#if !defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	if (out && !IS_WHNAT(out) && IS_EXT(out) &&
+ 	    IS_SPACE_AVAILABLE_HEAD(skb) && is_magic_tag_valid(skb) &&
+ 	    FROM_WED(skb))
+ 		return false;
++#endif
+ 	if (skb->mark == HNAT_EXCEPTION_TAG)
+ 		return false;
+ 
+@@ -5205,6 +6050,257 @@ static bool hnat_multitier_defer_sw_admit(const struct sk_buff *skb,
+ 	return false;
+ }
+ 
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++static u32 hnat_sport_to_ppe(const struct mtk_hnat *h, u32 sport)
++{
++	if (sport == NR_GMAC3_PORT && h->ppe_num >= 3)
++		return 2;
++	if (sport == NR_GMAC2_PORT && h->ppe_num >= 2)
++		return 1;
++
++	return 0;
++}
++
++static bool hnat_foe_is_hqos_ext_entry(const struct foe_entry *entry)
++{
++	union {
++		struct hnat_bind_info_blk bfib1;
++		u32 raw;
++	} blk1;
++	u8 tport_id;
++
++	blk1.raw = READ_ONCE(entry->ipv4_hnapt.info_blk1);
++	if (blk1.bfib1.state != BIND)
++		return false;
++
++	switch ((int)blk1.bfib1.pkt_type) {
++	case IPV4_HNAPT:
++	case IPV4_HNAT:
++		return entry->ipv4_hnapt.iblk2.dp == NR_PDMA_PORT &&
++		       entry->ipv4_hnapt.iblk2.fqos &&
++		       entry->ipv4_hnapt.tport_id == 1 &&
++		       (entry->ipv4_hnapt.act_dp & UDF_PINGPONG_IFIDX);
++	case IPV4_DSLITE:
++		tport_id = entry->ipv4_dslite.tport_id;
++		break;
++	case IPV4_MAP_E:
++	case IPV4_MAP_T:
++		tport_id = entry->ipv4_mape.tport_id;
++		break;
++	case IPV6_3T_ROUTE:
++		tport_id = entry->ipv6_3t_route.tport_id;
++		break;
++	case IPV6_5T_ROUTE:
++		tport_id = entry->ipv6_5t_route.tport_id;
++		break;
++	case IPV6_6RD:
++		tport_id = entry->ipv6_6rd.tport_id;
++		break;
++	case IPV6_HNAPT:
++	case IPV6_HNAT:
++		tport_id = entry->ipv6_hnapt.tport_id;
++		break;
++	default:
++		return false;
++	}
++
++	return entry->ipv6_5t_route.iblk2.dp == NR_PDMA_PORT &&
++	       entry->ipv6_5t_route.iblk2.fqos &&
++	       tport_id == 1 &&
++	       (entry->ipv6_5t_route.act_dp & UDF_PINGPONG_IFIDX);
++}
++
++static bool hnat_foe_extract_l2_macs(const struct foe_entry *entry,
++				     u8 dmac[ETH_ALEN], u8 smac[ETH_ALEN])
++{
++	switch ((int)entry->bfib1.pkt_type) {
++	case IPV4_HNAPT:
++	case IPV4_HNAT:
++		foe_dmac_to_bytes(dmac, entry->ipv4_hnapt.dmac_hi,
++				  entry->ipv4_hnapt.dmac_lo);
++		foe_dmac_to_bytes(smac, entry->ipv4_hnapt.smac_hi,
++				  entry->ipv4_hnapt.smac_lo);
++		return true;
++	case IPV4_DSLITE:
++	case IPV4_MAP_E:
++	case IPV4_MAP_T:
++	case IPV6_3T_ROUTE:
++	case IPV6_5T_ROUTE:
++	case IPV6_6RD:
++	case IPV6_HNAPT:
++	case IPV6_HNAT:
++		foe_dmac_to_bytes(dmac, entry->ipv6_5t_route.dmac_hi,
++				  entry->ipv6_5t_route.dmac_lo);
++		foe_dmac_to_bytes(smac, entry->ipv6_5t_route.smac_hi,
++				  entry->ipv6_5t_route.smac_lo);
++		return true;
++	default:
++		return false;
++	}
++}
++
++static bool hnat_foe_ipv6_sip_eq(const struct foe_entry *entry,
++				 const struct in6_addr *sip)
++{
++	u32 foe_sip[4];
++
++	switch ((int)entry->bfib1.pkt_type) {
++	case IPV6_3T_ROUTE:
++		foe_sip[0] = entry->ipv6_3t_route.ipv6_sip0;
++		foe_sip[1] = entry->ipv6_3t_route.ipv6_sip1;
++		foe_sip[2] = entry->ipv6_3t_route.ipv6_sip2;
++		foe_sip[3] = entry->ipv6_3t_route.ipv6_sip3;
++		break;
++	case IPV6_5T_ROUTE:
++		foe_sip[0] = entry->ipv6_5t_route.ipv6_sip0;
++		foe_sip[1] = entry->ipv6_5t_route.ipv6_sip1;
++		foe_sip[2] = entry->ipv6_5t_route.ipv6_sip2;
++		foe_sip[3] = entry->ipv6_5t_route.ipv6_sip3;
++		break;
++	case IPV6_HNAPT:
++	case IPV6_HNAT:
++		if (entry->ipv6_hnapt.eg_ipv6_dir == IPV6_SNAT) {
++			foe_sip[0] = entry->ipv6_hnapt.new_ipv6_ip0;
++			foe_sip[1] = entry->ipv6_hnapt.new_ipv6_ip1;
++			foe_sip[2] = entry->ipv6_hnapt.new_ipv6_ip2;
++			foe_sip[3] = entry->ipv6_hnapt.new_ipv6_ip3;
++		} else {
++			foe_sip[0] = entry->ipv6_hnapt.ipv6_sip0;
++			foe_sip[1] = entry->ipv6_hnapt.ipv6_sip1;
++			foe_sip[2] = entry->ipv6_hnapt.ipv6_sip2;
++			foe_sip[3] = entry->ipv6_hnapt.ipv6_sip3;
++		}
++		break;
++	default:
++		return false;
++	}
++
++	return foe_sip[0] == be32_to_cpu(sip->s6_addr32[0]) &&
++	       foe_sip[1] == be32_to_cpu(sip->s6_addr32[1]) &&
++	       foe_sip[2] == be32_to_cpu(sip->s6_addr32[2]) &&
++	       foe_sip[3] == be32_to_cpu(sip->s6_addr32[3]);
++}
++
++static const struct foe_entry *hnat_lookup_hqos_ext_entry(u32 entry_idx,
++							  u32 sport)
++{
++	struct mtk_hnat *h = READ_ONCE(hnat_priv);
++	struct foe_entry *table;
++	u32 ppe_id;
++
++	if (!h || !READ_ONCE(h->fe_base) || !READ_ONCE(hook_toggle) ||
++	    !h->data || h->data->version != MTK_HNAT_V3)
++		return NULL;
++
++	if (entry_idx == 0x7fff || entry_idx >= READ_ONCE(h->foe_etry_num))
++		return NULL;
++
++	ppe_id = hnat_sport_to_ppe(h, sport);
++	if (ppe_id >= h->ppe_num || ppe_id >= MAX_PPE_NUM)
++		return NULL;
++
++	table = READ_ONCE(h->foe_table_cpu[ppe_id]);
++	if (!table)
++		return NULL;
++
++	return &table[entry_idx];
++}
++
++bool mtk_hnat_hqos_ext_rx_match_rxd(u32 rxd5)
++{
++	const struct foe_entry *entry;
++
++	entry = hnat_lookup_hqos_ext_entry(rxd5 & MTK_RXD5_FOE_ENTRY,
++					   FIELD_GET(MTK_RXD5_SRC_PORT, rxd5));
++	return entry && hnat_foe_is_hqos_ext_entry(entry);
++}
++
++bool mtk_hnat_hqos_ext_rx_match_skb(struct sk_buff *skb)
++{
++	const struct foe_entry *entry;
++	const struct ethhdr *eth;
++	const u8 *l3;
++	unsigned int l3_len;
++	__be16 proto;
++	u8 dmac[ETH_ALEN];
++	u8 smac[ETH_ALEN];
++	int pkt_type;
++
++	if (!skb || !skb_mac_header_was_set(skb))
++		return false;
++
++	entry = hnat_lookup_hqos_ext_entry(skb_hnat_entry(skb),
++					   skb_hnat_sport(skb));
++	if (!entry || !hnat_foe_is_hqos_ext_entry(entry))
++		return false;
++
++	dma_rmb();
++
++	eth = eth_hdr(skb);
++	if (!hnat_foe_extract_l2_macs(entry, dmac, smac) ||
++	    !ether_addr_equal(eth->h_dest, dmac) ||
++	    !ether_addr_equal(eth->h_source, smac))
++		return false;
++
++	l3 = skb->data;
++	l3_len = skb_headlen(skb);
++	proto = eth->h_proto;
++
++	if (entry->bfib1.vlan_layer == 1 && eth_type_vlan(proto)) {
++		const struct vlan_hdr *vh;
++
++		if (l3_len < VLAN_HLEN)
++			return false;
++		vh = (const struct vlan_hdr *)l3;
++		proto = vh->h_vlan_encapsulated_proto;
++		l3 += VLAN_HLEN;
++		l3_len -= VLAN_HLEN;
++	}
++
++	pkt_type = (int)entry->bfib1.pkt_type;
++	switch (pkt_type) {
++	case IPV4_HNAPT:
++	case IPV4_HNAT: {
++		const struct iphdr *iph = (const struct iphdr *)l3;
++
++		if (proto != htons(ETH_P_IP) || l3_len < sizeof(*iph) ||
++		    iph->version != 4)
++			return false;
++		if (iph->saddr != htonl(entry->ipv4_hnapt.new_sip) ||
++		    iph->daddr != htonl(entry->ipv4_hnapt.new_dip))
++			return false;
++		break;
++	}
++	case IPV6_3T_ROUTE:
++	case IPV6_5T_ROUTE:
++	case IPV6_HNAPT:
++	case IPV6_HNAT: {
++		const struct ipv6hdr *ip6h = (const struct ipv6hdr *)l3;
++
++		if (proto != htons(ETH_P_IPV6) || l3_len < sizeof(*ip6h) ||
++		    ip6h->version != 6)
++			return false;
++		if (!foe_ipv6_dip_eq(entry, &ip6h->daddr) ||
++		    !hnat_foe_ipv6_sip_eq(entry, &ip6h->saddr))
++			return false;
++		break;
++	}
++	case IPV4_DSLITE:
++	case IPV4_MAP_E:
++	case IPV4_MAP_T:
++	case IPV6_6RD:
++		if (proto != htons(ETH_P_IP) && proto != htons(ETH_P_IPV6))
++			return false;
++		break;
++	default:
++		return false;
++	}
++
++	dma_rmb();
++	return hnat_foe_is_hqos_ext_entry(entry);
++}
++#endif
++
+ const struct mtk_flow_multitier_ops mtk_hnat_multitier_ops = {
+ 	.get_ppe_occupancy = hnat_multitier_get_ppe_occupancy,
+ 	.roam_flush_mac = hnat_multitier_roam_flush,

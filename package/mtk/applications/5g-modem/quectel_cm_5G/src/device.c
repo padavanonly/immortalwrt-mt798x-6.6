@@ -435,7 +435,7 @@ int mhidevice_detect(char *qmichannel, char *usbnet_adapter, PROFILE_T *profile)
                 continue;
             }
 
-            char *d_name[32];
+            char d_name[32];
             strcpy(d_name, ent->d_name);
             replaceStr(d_name, "_IP_HW0", "");
             dbg_time("while -> pcie_name = : %s ", d_name);
@@ -463,7 +463,7 @@ int mhidevice_detect(char *qmichannel, char *usbnet_adapter, PROFILE_T *profile)
                 continue;
             }
 
-            //解决PCIE硬编码导致不兼容hv问题
+            /* Resolve PCIE hardcoding incompatibility with hv */
             snprintf(path, sizeof(path), "%s/%s_IPCR", rootdir, d_name);
             if (access(path, F_OK)) {
                 snprintf(path, sizeof(path), "%s/%s_QMI0", rootdir, d_name);
@@ -475,7 +475,7 @@ int mhidevice_detect(char *qmichannel, char *usbnet_adapter, PROFILE_T *profile)
                 }
             }
 
-            //原
+            /* Original: */
             // snprintf(path, sizeof(path), "%s/%.14s_IPCR", rootdir, ent->d_name);
             // dbg_time("while -> path3 : %s ", path);
             // if (access(path, F_OK)) {

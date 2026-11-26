@@ -1,0 +1,16 @@
+--- a/drivers/mtd/parsers/ofpart_core.c
++++ b/drivers/mtd/parsers/ofpart_core.c
+@@ -150,6 +150,13 @@ static int parse_fixed_partitions(struct
+ 
+ 		parts[i].offset = of_read_number(reg, a_cells);
+ 		parts[i].size = of_read_number(reg + a_cells, s_cells);
++		if (of_property_read_bool(pp, "mtd-extend-to-end")) {
++			if (parts[i].size) {
++				pr_debug("partition len must be 0 if using mtd-extend-to-end.\n");
++				goto ofpart_fail;
++			}
++			parts[i].size = master->size - parts[i].offset;
++		}
+ 		parts[i].of_node = pp;
+ 
+ 		partname = of_get_property(pp, "label", &len);

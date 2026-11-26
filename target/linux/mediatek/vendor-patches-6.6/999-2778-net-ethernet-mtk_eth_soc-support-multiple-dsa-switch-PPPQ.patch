@@ -1,0 +1,140 @@
+From 741e86e18785f6c3b9ed006399be11177a8d9ce0 Mon Sep 17 00:00:00 2001
+From: "chak-kei.lam" <chak-kei.lam@mediatek.com>
+Date: Thu, 27 Nov 2025 11:42:37 +0800
+Subject: [PATCH] net: ethernet: mtk_eth_soc: support multiple dsa switch PPPQ
+
+Without this patch, when multiple dsa switch exists,
+the same QDMA TX queue would be used by two different
+DSA device if their dp->index are the same, which would
+leads to throughput bound in QDMA queue.
+---
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c | 60 ++++++++++++++++++++-
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h |  5 ++
+ 2 files changed, 63 insertions(+), 2 deletions(-)
+
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -4170,6 +4170,51 @@ static bool mtk_uses_dsa(struct net_devi
+ #endif
+ }
+ 
++void mtk_eth_set_dsa_pppq_offset(struct mtk_eth *eth)
++{
++	struct net_device *dev;
++	int i, offset = 0;
++
++	for (i = 0; i < MTK_MAX_DEVS; i++) {
++		dev = eth->netdev[i];
++		if (dev && netdev_uses_dsa(dev)) {
++			eth->pppq_ofs[i] = offset;
++			/* add the number of DSA user ports in that switch */
++			offset += hweight32(dsa_user_ports(dev->dsa_ptr->ds));
++		}
++	}
++
++	/* save the total number of DSA user ports in the all switches */
++	eth->pppq_ofs[MTK_MAX_DEVS] = offset;
++}
++
++void mtk_eth_set_dsa_user_idx(struct mtk_eth *eth, struct net_device *dev)
++{
++	const struct dsa_port *dp;
++	struct dsa_switch *ds;
++	struct mtk_mac *mac;
++	int p, cnt = 0;
++
++	if (!dsa_slave_dev_check(dev))
++		return;
++
++	dp = dsa_port_from_netdev(dev);
++	ds = dp->cpu_dp->ds;
++	mac = netdev_priv(dp->cpu_dp->master);
++
++	for (p = 0; p < ds->num_ports; p++) {
++		/* only handle user ports */
++		if (!dsa_is_user_port(ds, p))
++			continue;
++
++		dp = dsa_to_port(ds, p);
++		if (dp->index < ARRAY_SIZE(mac->dsa_user_idx))
++			mac->dsa_user_idx[dp->index] = cnt;
++
++		cnt++;
++	}
++}
++
+ static int mtk_device_event(struct notifier_block *n, unsigned long event, void *ptr)
+ {
+ 	struct mtk_mac *mac = container_of(n, struct mtk_mac, device_notifier);
+@@ -4184,6 +4229,7 @@ static int mtk_device_event(struct notif
+ 	struct list_head *iter;
+ 	struct dsa_port *dp;
+ 	unsigned int queue;
++	u32 pppq_ofs;
+ 
+ 	if (event != NETDEV_CHANGE || dev->priv_flags & IFF_EBRIDGE)
+ 		return NOTIFY_DONE;
+@@ -4208,8 +4254,15 @@ found:
+ 		return NOTIFY_DONE;
+ 
+ 	if (dsa_slave_dev_check(dev)) {
++		/* set txq offset when multiple dsa switch exist */
++		mtk_eth_set_dsa_pppq_offset(eth);
++		pppq_ofs = eth->pppq_ofs[mac->id];
++		/* set DSA user port ordering index due to non-contiguous dp index */
++		mtk_eth_set_dsa_user_idx(eth, dev);
++
+ 		dp = dsa_port_from_netdev(dev);
+-		queue = dp->index + 3;
++		if (dp->index < ARRAY_SIZE(mac->dsa_user_idx))
++			queue = MTK_MAX_DEVS + pppq_ofs + mac->dsa_user_idx[dp->index];
+ 	} else
+ 		queue = mac->id;
+ 
+@@ -5955,13 +6008,18 @@ static int mtk_set_eee(struct net_device
+ static u16 mtk_select_queue(struct net_device *dev, struct sk_buff *skb,
+ 			    struct net_device *sb_dev)
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
++	struct mtk_eth *eth = mac->hw;
+ 	unsigned int queue = 0;
++	unsigned int dp_index = skb_get_queue_mapping(skb);
++
++	if (skb->mark > 0 && skb->mark < dev->num_tx_queues)
++		return skb->mark;
+ 
+-	if (netdev_uses_dsa(dev))
+-		queue = skb_get_queue_mapping(skb) + 3;
++	if (netdev_uses_dsa(dev) && dp_index < ARRAY_SIZE(mac->dsa_user_idx))
++		queue = MTK_MAX_DEVS + eth->pppq_ofs[mac->id] + mac->dsa_user_idx[dp_index];
+ 	else
+ 		queue = mac->id;
+ 
+ 	if (queue >= dev->num_tx_queues)
+ 		queue = 0;
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1670,6 +1670,7 @@ struct mtk_eth {
+ 	int				irq_fe[MTK_FE_IRQ_NUM];
+ 	int				irq_pdma[MTK_PDMA_IRQ_NUM];
+ 	u32				msg_enable;
++	u32				pppq_ofs[MTK_MAX_DEVS];
+ 	unsigned long			sysclk;
+ 	struct regmap			*ethsys;
+ 	struct regmap			*infra;
+@@ -1763,6 +1764,7 @@ struct mtk_mac {
+ 	bool				tx_lpi_enabled;
+ 	u32				tx_lpi_timer;
+ 	struct notifier_block		device_notifier;
++	u8				dsa_user_idx[16];
+ };
+ 
+ /* struct mtk_mux_data -	the structure that holds the private data about the
+@@ -1938,4 +1940,7 @@ void mtk_eth_set_dma_device(struct mtk_e
+ bool mtk_shaper_is_available(struct mtk_eth *eth, int idx);
+ void mtk_shaper_update_refcnt(struct mtk_eth *eth, int idx, bool add);
+ 
++void mtk_eth_set_dsa_pppq_offset(struct mtk_eth *eth);
++void mtk_eth_set_dsa_user_idx(struct mtk_eth *eth, struct net_device *dev);
++
+ #endif /* MTK_ETH_H */

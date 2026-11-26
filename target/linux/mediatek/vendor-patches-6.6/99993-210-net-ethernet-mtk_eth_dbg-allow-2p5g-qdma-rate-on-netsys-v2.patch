@@ -1,0 +1,33 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_eth_dbg: allow 2.5Gbps QDMA rates on NETSYS_V2
+
+Raise qdma_sched_write() and qdma_queue_write() rate ceiling from 1000000 kbps
+to 2500000 kbps on NETSYS_V2 (MT7981/MT7986 2.5G platforms) while keeping
+10000000 kbps on NETSYS_V3+ and 1000000 kbps on older NETSYS, without breaking
+qdma_txq32..63 writes used by eqos and mtk-qos.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+@@ -250,6 +250,9 @@
+ 	if (mtk_is_netsys_v3_or_greater(eth)) {
+ 		if (rate > 10000000 || rate < 0)
+ 			return -EINVAL;
++	} else if (mtk_is_netsys_v2_or_greater(eth)) {
++		if (rate > 2500000 || rate < 0)
++			return -EINVAL;
+ 	} else {
+ 		if (rate > 1000000 || rate < 0)
+ 			return -EINVAL;
+@@ -426,6 +429,10 @@
+ 		if (max_rate > 10000000 || max_rate < 0 ||
+ 		    min_rate > 10000000 || min_rate < 0)
+ 			return -EINVAL;
++	} else if (mtk_is_netsys_v2_or_greater(eth)) {
++		if (max_rate > 2500000 || max_rate < 0 ||
++		    min_rate > 2500000 || min_rate < 0)
++			return -EINVAL;
+ 	} else {
+ 		if (max_rate > 1000000 || max_rate < 0 ||
+ 		    min_rate > 1000000 || min_rate < 0)

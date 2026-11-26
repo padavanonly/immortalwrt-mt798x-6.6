@@ -1,24 +1,24 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+#Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 
-#预设
+#Preset
 meig_presets()
 {
-    #关闭自动上报系统模式变化
+    #Disable auto-reporting systemModechange
 	at_command='AT^MODE=0'
 	sh "${SCRIPT_DIR}/modem_at.sh" "$at_port" "$at_command"
 
-    #关闭自动上报DS流量
+    #Disable auto-reportingDStraffic
 	at_command='AT^DSFLOWRPT=0,0,1'
 	sh "${SCRIPT_DIR}/modem_at.sh" "$at_port" "$at_command"
 }
 
-#获取DNS
-# $1:AT串口
-# $2:连接定义
+#Get DNS
+# $1:ATSerial port
+# $2:Connection definition
 meig_get_dns()
 {
     local at_port="$1"
@@ -30,10 +30,10 @@ meig_get_dns()
 
     local public_dns1_ipv4="223.5.5.5"
     local public_dns2_ipv4="119.29.29.29"
-    local public_dns1_ipv6="2400:3200::1" #下一代互联网北京研究中心：240C::6666，阿里：2400:3200::1，腾讯：2402:4e00::
+    local public_dns1_ipv6="2400:3200::1" #BII: 240C::6666, Ali: 2400:3200::1, Tencent: 2402:4e00::
     local public_dns2_ipv6="2402:4e00::"
 
-    #获取DNS地址
+    #Get DNS address
     at_command="AT+CGCONTRDP=${define_connect}"
     local response=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CGCONTRDP: " | grep -E '[0-9]+.[0-9]+.[0-9]+.[0-9]+' | sed -n '1p')
 
@@ -69,9 +69,9 @@ meig_get_dns()
     echo "$dns"
 }
 
-#获取拨号模式
-# $1:AT串口
-# $2:平台
+#Get dial mode
+# $1:ATSerial port
+# $2:Platform
 meig_get_mode()
 {
     local at_port="$1"
@@ -85,7 +85,7 @@ meig_get_mode()
         return
     fi
 
-    #获取芯片平台
+    #Get chipset platform
 	if [ -z "$platform" ]; then
 		local modem_number=$(uci -q get modem.@global[0].modem_number)
         for i in $(seq 0 $((modem_number-1))); do
@@ -118,15 +118,15 @@ meig_get_mode()
     echo "${mode}"
 }
 
-#设置拨号模式
-# $1:AT串口
-# $2:拨号模式配置
+#Set dial mode
+# $1:ATSerial port
+# $2:Dial mode config
 meig_set_mode()
 {
     local at_port="$1"
     local mode_config="$2"
 
-    #获取芯片平台
+    #Get chipset platform
     local platform
     local modem_number=$(uci -q get modem.@global[0].modem_number)
     for i in $(seq 0 $((modem_number-1))); do
@@ -137,7 +137,7 @@ meig_set_mode()
         fi
     done
 
-    #获取拨号模式配置
+    #Get dial mode config
     local mode_num
     case "$platform" in
         "qualcomm")
@@ -156,13 +156,13 @@ meig_set_mode()
         ;;
     esac
 
-    #设置模组
+    #Configure modem
     at_command="AT+SER=${mode_num},1"
     sh ${SCRIPT_DIR}/modem_at.sh ${at_port} "${at_command}"
 }
 
-#获取位
-# $1:频段名称
+#Get bit
+# $1:Band name
 meig_get_bit()
 {
     local band_name="$1"
@@ -183,10 +183,10 @@ meig_get_bit()
     echo "${bit}"
 }
 
-#获取频段信息
-# $1:频段二进制数
-# $2:支持的频段
-# $3:频段类型（2G，3G，4G，5G）
+#Get band information
+# $1:Band binary number
+# $2:Supported bands
+# $3:Band type (2G, 3G, 4G, 5G)
 meig_get_band_info()
 {
     local band_bin="$1"
@@ -198,17 +198,17 @@ meig_get_band_info()
     if [ "$band_type" = "2G" ]; then
 
         for band in $support_band; do
-            #获取bit位
+            #Getbitbit
             local bit=$(meig_get_bit ${band})
-            #获取值
-            local enable="${band_bin: $((-bit)):1}"
+            #Get value
+            local enable=$(awk -v s="$band_bin" -v b="$bit" 'BEGIN { n = length(s); print (b >= 1 && n >= b) ? substr(s, n - b + 1, 1) : "0" }')
             [ -z "$enable" ] && enable="0"
-            #设置频段信息
+            #Set band information
             # band_info=$(echo ${band_info} | jq '. += [{"'$band'":'$enable'}]')
             band_info="${band_info},{\"$band\":$enable}"
         done
     else
-        #频段频段起始，前缀位置
+        #Band start, Prefix position
         local start_bit
         local band_prefix
         case "$band_type" in
@@ -227,25 +227,26 @@ meig_get_band_info()
         esac
 
         for band in $support_band; do
-            #获取值（从start_bit位开始）
-            local enable="${band_bin: $((-band-start_bit+1)):1}"
+            #Get value (starting from start_bit)
+            local bit=$((band + start_bit - 1))
+            local enable=$(awk -v s="$band_bin" -v b="$bit" 'BEGIN { n = length(s); print (b >= 1 && n >= b) ? substr(s, n - b + 1, 1) : "0" }')
             [ -z "$enable" ] && enable="0"
-            #设置频段信息
+            #Set band information
             # band_info=$(echo ${band_info} | jq '. += [{'$band_prefix$band':'$enable'}]')
             band_info="${band_info},{\"$band_prefix$band\":$enable}"
         done
     fi
-    #去掉第一个,
-    band_info="["${band_info/,/}"]"
+    #Remove first comma
+    band_info="[${band_info#,}]"
     # band_info="[${band_info%?}]"
 
     echo "${band_info}"
 }
 
-#获取网络偏好
-# $1:AT串口
-# $2:数据接口
-# $3:模组名称
+#Get network preference
+# $1:ATSerial port
+# $2:Data interface
+# $3:Modem name
 meig_get_network_prefer()
 {
     local at_port="$1"
@@ -256,13 +257,13 @@ meig_get_network_prefer()
     local response=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "\^SYSCFGEX:" | sed 's/\^SYSCFGEX://g')
     local network_type_num=$(echo "$response" | awk -F'"' '{print $2}')
 
-    #获取网络类型
+    #Get network type
     local network_prefer_2g="0";
     local network_prefer_3g="0";
     local network_prefer_4g="0";
     local network_prefer_5g="0";
 
-    #匹配不同的网络类型
+    #Match different network types
     local auto=$(echo "${network_type_num}" | grep "00")
     if [ -n "$auto" ]; then
         network_prefer_2g="1"
@@ -288,37 +289,39 @@ meig_get_network_prefer()
         fi
     fi
 
-	#获取模组信息
-    local modem_info=$(jq '.modem_support.'$data_interface'."'$modem_name'"' ${SCRIPT_DIR}/modem_support.json)
+	#Get modem info
+    local data_if_lc=$(echo "$data_interface" | tr 'A-Z' 'a-z')
+    local modem_name_lc=$(echo "$modem_name" | tr 'A-Z' 'a-z')
+    local modem_info=$(jq '.modem_support["'"$data_if_lc"'"]["'"$modem_name_lc"'"]' ${SCRIPT_DIR}/modem_support.json)
 
-    #获取模组支持的频段
+    #Get supported modem bands
     local support_2g_band=$(echo "$modem_info" | jq -r '.band_2g')
     local support_3g_band=$(echo "$modem_info" | jq -r '.band_3g')
     local support_4g_band=$(echo "$modem_info" | jq -r '.band_4g')
     local support_5g_band=$(echo "$modem_info" | jq -r '.band_5g')
 
-    #获取2G，3G频段信息
+    #Get2G, 3GBand info
     local band_hex_2g_3g=$(echo "$response" | awk -F',' '{print $2}')
-    #十六进制转二进制
+    #Hex to binary conversion
     local bin_2g_3g=$(echo "obase=2; ibase=16; $band_hex_2g_3g" | bc)
     local band_2g_info=$(meig_get_band_info "${bin_2g_3g}" "${support_2g_band}" "2G")
     local band_3g_info=$(meig_get_band_info "${bin_2g_3g}" "${support_3g_band}" "3G")
 
-    #获取4G频段信息
+    #Get4GBand info
     local band_hex_4g_1=$(echo "$response" | awk -F',' '{print $5}' | sed 's/\r//g')
     local band_hex_4g_2=$(echo "$response" | awk -F',' '{print $7}' | sed 's/\r//g')
-    #十六进制转二进制
+    #Hex to binary conversion
     local bin_4g=$(echo "obase=2; ibase=16; $band_hex_4g_1 + $band_hex_4g_2" | bc)
     local band_4g_info=$(meig_get_band_info "${bin_4g}" "${support_4g_band}" "4G")
     
-    #获取5G频段信息
+    #Get5GBand info
     local band_hex_5g_1=$(echo "$response" | awk -F',' '{print $8}' | sed 's/\r//g')
     local band_hex_5g_2=$(echo "$response" | awk -F',' '{print $9}' | sed 's/\r//g')
-    #十六进制转二进制
+    #Hex to binary conversion
     local bin_5g=$(echo "obase=2; ibase=16; $band_hex_5g_1 + $band_hex_5g_2" | bc)
     local band_5g_info=$(meig_get_band_info "${bin_5g}" "${support_5g_band}" "5G")
 
-    #生成网络偏好
+    #Generate network preference
     local network_prefer="{
         \"network_prefer\":[
             {\"2G\":{
@@ -342,23 +345,23 @@ meig_get_network_prefer()
     echo "${network_prefer}"
 }
 
-#设置网络偏好
-# $1:AT串口
-# $2:网络偏好配置
+#Set network preference
+# $1:ATSerial port
+# $2:Network preference config
 meig_set_network_prefer()
 {
     local at_port="$1"
     local network_prefer="$2"
 
-    #获取网络偏好配置
+    #Get network preference config
     local network_prefer_config
 
-    #获取启用的网络偏好
+    #Get enabled network preference
     local enable_5g=$(echo "$network_prefer" | jq -r '.["5G"].enable')
     local enable_4g=$(echo "$network_prefer" | jq -r '.["4G"].enable')
     local enable_3g=$(echo "$network_prefer" | jq -r '.["3G"].enable')
 
-    #获取网络偏好配置
+    #Get network preference config
     local network_prefer_config
     [ "$enable_5g" = "1" ] && network_prefer_config="${network_prefer_config}04"
     [ "$enable_4g" = "1" ] && network_prefer_config="${network_prefer_config}03"
@@ -366,31 +369,31 @@ meig_set_network_prefer()
 
     [ -z "$network_prefer_config" ] && network_prefer_config="00"
 
-    #设置模组
+    #Configure modem
     at_command='AT^SYSCFGEX="'${network_prefer_config}'",all,0,2,all,all,all,all,1'
     sh ${SCRIPT_DIR}/modem_at.sh "${at_port}" "${at_command}"
 }
 
-#获取电压
-# $1:AT串口
+#Get voltage
+# $1:ATSerial port
 meig_get_voltage()
 {
     local at_port="$1"
     
-    # #Voltage（电压）
+    # #Voltage (Voltage)
     # at_command="AT+ADCREAD=0"
 	# local voltage=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+ADCREAD:" | awk -F' ' '{print $2}' | sed 's/\r//g')
     # voltage=$(awk "BEGIN{ printf \"%.2f\", $voltage / 1000000 }" | sed 's/\.*0*$//')
     # echo "${voltage}"
 }
 
-#获取温度
-# $1:AT串口
+#Get temperature
+# $1:ATSerial port
 meig_get_temperature()
 {
     local at_port="$1"
     
-    #Temperature（温度）
+    #Temperature (Temperature)
     at_command="AT+TEMP"
 	response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep 'TEMP: "cpu0-0-usr"' | awk -F'"' '{print $4}')
 
@@ -404,15 +407,15 @@ meig_get_temperature()
     echo "${temperature}"
 }
 
-#获取连接状态
-# $1:AT串口
-# $2:连接定义
+#Get connection status
+# $1:ATSerial port
+# $2:Connection definition
 meig_get_connect_status()
 {
     local at_port="$1"
     local define_connect="$2"
 
-    #默认值为1
+    #Default value is1
     [ -z "$define_connect" ] && {
         define_connect="1"
     }
@@ -421,7 +424,7 @@ meig_get_connect_status()
     local ipv4=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CGPADDR: " | awk -F',' '{print $2}')
     local not_ip="0.0.0.0"
 
-    #设置连接状态
+    #Set connection status
     local connect_status
     if [ -z "$ipv4" ] || [[ "$ipv4" = *"$not_ip"* ]]; then
         connect_status="disconnect"
@@ -432,30 +435,30 @@ meig_get_connect_status()
     echo "${connect_status}"
 }
 
-#基本信息
+#Basic info
 meig_base_info()
 {
     debug "Meig base info"
 
-    #Name（名称）
+    #Name (Name)
     at_command="AT+CGMM"
     name=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CGMM: " | awk -F': ' '{print $2}' | sed 's/\r//g')
-    #Manufacturer（制造商）
+    #Manufacturer (Manufacturer)
     at_command="AT+CGMI"
     manufacturer=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CGMI: " | awk -F': ' '{print $2}' | sed 's/\r//g')
-    #Revision（固件版本）
+    #Revision (Firmware version)
     at_command="AT+CGMR"
     revision=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CGMR: " | awk -F': ' '{print $2}' | sed 's/\r//g')
 
-    #Mode（拨号模式）
+    #Mode (Dial mode)
     mode=$(meig_get_mode ${at_port} ${platform} | tr 'a-z' 'A-Z')
 
-    #Temperature（温度）
+    #Temperature (Temperature)
     temperature=$(meig_get_temperature ${at_port})
 }
 
-#获取SIM卡状态
-# $1:SIM卡状态标志
+#GetSIMCard status
+# $1:SIM status flag
 meig_get_sim_status()
 {
     local sim_status
@@ -483,12 +486,12 @@ meig_get_sim_status()
     echo "${sim_status}"
 }
 
-#SIM卡信息
+#SIMCard info
 meig_sim_info()
 {
     debug "Meig sim info"
     
-    #SIM Slot（SIM卡卡槽）
+    #SIM Slot (SIMSIM slot)
     at_command="AT^SIMSLOT?"
 	response=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "\^SIMSLOT:" | awk -F': ' '{print $2}' | awk -F',' '{print $2}')
 
@@ -498,11 +501,11 @@ meig_sim_info()
         sim_slot="2"
     fi
     
-    #IMEI（国际移动设备识别码）
+    #IMEI (IMEI)
     at_command="AT+CGSN"
 	imei=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | sed -n '2p' | sed 's/\r//g')
 
-    #SIM Status（SIM状态）
+    #SIM Status (SIMStatus)
     at_command="AT+CPIN?"
 	sim_status_flag=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CPIN: ")
     sim_status=$(meig_get_sim_status "$sim_status_flag")
@@ -511,35 +514,35 @@ meig_sim_info()
         return
     fi
 
-    #ISP（互联网服务提供商）
+    #ISP (Internet Service Provider)
     at_command="AT+COPS?"
     isp=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+COPS" | awk -F'"' '{print $2}')
     # if [ "$isp" = "CHN-CMCC" ] || [ "$isp" = "CMCC" ]|| [ "$isp" = "46000" ]; then
-    #     isp="中国移动"
+    #     isp="China Mobile"
     # elif [ "$isp" = "CHN-UNICOM" ] || [ "$isp" = "UNICOM" ] || [ "$isp" = "46001" ]; then
-    #     isp="中国联通"
+    #     isp="China Unicom"
     # elif [ "$isp" = "CHN-CT" ] || [ "$isp" = "CT" ] || [ "$isp" = "46011" ]; then
-    #     isp="中国电信"
+    #     isp="China Telecom"
     # fi
 
-    #SIM Number（SIM卡号码，手机号）
+    #SIM Number (SIMCard number, Phone number)
     at_command="AT+CNUM"
 	sim_number=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CNUM: " | awk -F'"' '{print $2}')
     [ -z "$sim_number" ] && {
         sim_number=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "+CNUM: " | awk -F'"' '{print $4}')
     }
 	
-    #IMSI（国际移动用户识别码）
+    #IMSI (IMSI)
     at_command="AT+CIMI"
 	imsi=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | sed -n '2p' | sed 's/\r//g')
 
-    #ICCID（集成电路卡识别码）
+    #ICCID (ICCID)
     at_command="AT+ICCID"
 	iccid=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep -o "+ICCID:[ ]*[-0-9]\+" | grep -o "[-0-9]\{1,4\}")
 }
 
-#获取网络类型
-# $1:网络类型数字
+#Get network type
+# $1:Network typenumber
 meig_get_rat()
 {
     local rat
@@ -552,8 +555,8 @@ meig_get_rat()
     echo "${rat}"
 }
 
-#获取信号强度指示（4G）
-# $1:信号强度指示数字
+#GetRSSI (4G)
+# $1:RSSI value
 meig_get_rssi()
 {
     local rssi
@@ -564,9 +567,9 @@ meig_get_rssi()
     echo "$rssi"
 }
 
-#获取4G签约速率
-# $1:AT响应
-# $2:上行或下行标志
+#Get4GAMBR
+# $1:ATresponse
+# $2:Uplink or downlink flag
 meig_get_lte_ambr()
 {
     local response="$1"
@@ -575,12 +578,12 @@ meig_get_lte_ambr()
     local ambr
     case $flag in
 		"ul")
-            #使用awk拆分字符串
+            #useawkSplit string
             ambr=$(echo "$response" | awk -F',' '{
-                #使用split()函数将字符串拆分为数组
+                #usesplit()Function to split string into array
                 n = split($0, arr, ",")
                 
-                #循环遍历每个值
+                #loopIterateeach value
                 for (i = 1; i <= n-2; i=i+2)
                 {
                     if (arr[i] != "0") {
@@ -594,12 +597,12 @@ meig_get_lte_ambr()
             }')
         ;;
         "dl")
-            #使用awk拆分字符串
+            #useawkSplit string
             ambr=$(echo "$response" | awk -F',' '{
-                #使用split()函数将字符串拆分为数组
+                #usesplit()Function to split string into array
                 n = split($0, arr, ",")
                 
-                #循环遍历每个值
+                #loopIterateeach value
                 for (i = 2; i <= n-2; i=i+2)
                 {
                     if (arr[i] != "0") {
@@ -613,12 +616,12 @@ meig_get_lte_ambr()
             }')
         ;;
 		* )
-            #使用awk拆分字符串
+            #useawkSplit string
             ambr=$(echo "$response" | awk -F',' '{
-                #使用split()函数将字符串拆分为数组
+                #usesplit()Function to split string into array
                 n = split($0, arr, ",")
                 
-                #循环遍历每个值
+                #loopIterateeach value
                 for (i = 2; i <= n-2; i=i+2)
                 {
                     if (arr[i] != "0") {
@@ -635,18 +638,18 @@ meig_get_lte_ambr()
     echo "$ambr"
 }
 
-#网络信息
+#Network info
 meig_network_info()
 {
     debug "Meig network info"
 
-    #Connect Status（连接状态）
+    #Connect Status (Connection status)
     connect_status=$(meig_get_connect_status ${at_port} ${define_connect})
     if [ "$connect_status" != "connect" ]; then
         return
     fi
 
-    #Network Type（网络类型）
+    #Network Type (Network type)
     at_command="AT^SYSINFOEX"
     network_type=$(sh ${SCRIPT_DIR}/modem_at.sh ${at_port} ${at_command} | grep "\^SYSINFOEX:" | awk -F'"' '{print $4}')
 
@@ -656,26 +659,26 @@ meig_network_info()
         network_type=$(meig_get_rat ${rat_num})
     }
 
-    #设置网络类型为5G时，信号强度指示用RSRP代替
+    #Set network type to5Gwhen, RSSI usesRSRPinstead
     # at_command="AT+GTCSQNREN=1"
     # sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command
 
-    #CSQ（信号强度）
+    #CSQ (Signal strength)
     at_command="AT+CSQ"
     response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "+CSQ:" | sed 's/+CSQ: //g' | sed 's/\r//g')
 
-    #RSSI（4G信号强度指示）
+    #RSSI (4GRSSI)
     # rssi_num=$(echo $response | awk -F',' '{print $1}')
     # rssi=$(meig_get_rssi $rssi_num)
-    #BER（4G信道误码率）
+    #BER (4GChannel BER)
     # ber=$(echo $response | awk -F',' '{print $2}')
 
-    # #PER（信号强度）
+    # #PER (Signal strength)
     # if [ -n "$csq" ]; then
     #     per=$(($csq * 100/31))"%"
     # fi
 
-    #最大比特率，信道质量指示
+    #Max bit rate, CQI
     at_command="AT^DSAMBR=${define_connect}"
     response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "\^DSAMBR:" | awk -F': ' '{print $2}')
 
@@ -697,25 +700,25 @@ meig_network_info()
         ;;
 	esac
 
-    #AMBR UL（上行签约速率，单位，Mbps）
+    #AMBR UL (Uplink AMBR, Unit, Mbps)
     ambr_ul=$(awk "BEGIN{ printf \"%.2f\", $ambr_ul_tmp / 1024 }" | sed 's/\.*0*$//')
-    #AMBR DL（下行签约速率，单位，Mbps）
+    #AMBR DL (Downlink AMBR, Unit, Mbps)
     ambr_dl=$(awk "BEGIN{ printf \"%.2f\", $ambr_dl_tmp / 1024 }" | sed 's/\.*0*$//')
 
-    # #速率统计
+    # #Rate statistics
     # at_command='AT^DSFLOWQRY'
     # response=$(sh ${SCRIPT_DIR}/modem_at.sh $at_port $at_command | grep "\^DSFLOWRPT:" | sed 's/\^DSFLOWRPT: //g' | sed 's/\r//g')
 
-    # #当前上传速率（单位，Byte/s）
+    # #Current upload rate (Bytes/s)
     # tx_rate=$(echo $response | awk -F',' '{print $1}')
 
-    # #当前下载速率（单位，Byte/s）
+    # #Current download rate (Bytes/s)
     # rx_rate=$(echo $response | awk -F',' '{print $2}')
 }
 
-#获取频段
-# $1:网络类型
-# $2:频段数字
+#Get band
+# $1:Network type
+# $2:Band number
 meig_get_band()
 {
     local band
@@ -727,9 +730,9 @@ meig_get_band()
     echo "$band"
 }
 
-#获取带宽
-# $1:网络类型
-# $2:带宽数字
+#Getbandwidth
+# $1:Network type
+# $2:Bandwidth number
 meig_get_bandwidth()
 {
     local network_type="$1"
@@ -743,9 +746,9 @@ meig_get_bandwidth()
     echo "$bandwidth"
 }
 
-#获取参考信号接收功率
-# $1:网络类型
-# $2:参考信号接收功率数字
+#GetRSRP
+# $1:Network type
+# $2:RSRP value
 meig_get_rsrp()
 {
     local rsrp
@@ -756,9 +759,9 @@ meig_get_rsrp()
     echo "$rsrp"
 }
 
-#获取参考信号接收质量
-# $1:网络类型
-# $2:参考信号接收质量数字
+#GetRSRQ
+# $1:Network type
+# $2:RSRQ value
 meig_get_rsrq()
 {
     local rsrq
@@ -769,15 +772,15 @@ meig_get_rsrq()
     echo "$rsrq"
 }
 
-#获取信噪比
-# $1:信噪比数字
+#GetSNR
+# $1:SNR value
 meig_get_sinr()
 {
     local sinr=$(awk "BEGIN{ printf \"%.2f\", $1 / 10 }" | sed 's/\.*0*$//')
     echo "$sinr"
 }
 
-#小区信息
+#Cell info
 meig_cell_info()
 {
     debug "Meig cell info"
@@ -927,33 +930,33 @@ meig_cell_info()
     esac
 }
 
-#获取美格模组信息
-# $1:AT串口
-# $2:平台
-# $3:连接定义
+#GetMeiGModem info
+# $1:ATSerial port
+# $2:Platform
+# $3:Connection definition
 get_meig_info()
 {
     debug "get meig info"
-    #设置AT串口
+    #SetATSerial port
     at_port="$1"
     platform="$2"
     define_connect="$3"
 
-    #基本信息
+    #Basic info
     meig_base_info
 
-	#SIM卡信息
+	#SIMCard info
     meig_sim_info
     if [ "$sim_status" != "ready" ]; then
         return
     fi
 
-    #网络信息
+    #Network info
     meig_network_info
     if [ "$connect_status" != "connect" ]; then
         return
     fi
 
-    #小区信息
+    #Cell info
     meig_cell_info
 }

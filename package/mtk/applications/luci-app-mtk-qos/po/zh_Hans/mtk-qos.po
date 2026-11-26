@@ -1,0 +1,233 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "MTK NPU QoS"
+msgstr "MTK 协处理器 QoS"
+
+msgid "MediaTek NPU 4-Coprocessor Unified QoS"
+msgstr "MediaTek 4 协处理器融合硬件 QoS"
+
+msgid "Simultaneous hardware EQoS per-host shaping, connection limiting, zero-copy L7 DPI classification, and 13-queue SQM via MT7987/MT7988 PCE + PPE + QDMA + WED across Wired WAN and 5G WWAN."
+msgstr "基于 MT7987/MT7988 PCE + PPE + QDMA + WED 四协处理器同时实现单主机 EQoS 限速、连接数控制、零拷贝 L7 DPI 识别与 13 队列公平 SQM 整形，完整支持有线 WAN 与 5G WWAN（内网设备间互访不限速）。"
+
+msgid "Realtime 4-Coprocessor Status"
+msgstr "4 协处理器实时运行状态"
+
+msgid "Engine Mode"
+msgstr "引擎运行模式"
+
+msgid "Bound WAN Interface(s)"
+msgstr "已绑定 WAN 接口"
+
+msgid "Coprocessor Health"
+msgstr "协处理器硬件状态"
+
+msgid "Downlink QDMA (Sch3 / Q33-63)"
+msgstr "下行 QDMA（调度器 3 / Q33-63）"
+
+msgid "Uplink QDMA (Sch2 / Q1-31)"
+msgstr "上行 QDMA（调度器 2 / Q1-31）"
+
+msgid "L7 Hardware DPI & EQoS Hits"
+msgstr "L7 硬件 DPI 与 EQoS 命中统计"
+
+msgid "Enabled"
+msgstr "已启用"
+
+msgid "Disabled"
+msgstr "已禁用"
+
+msgid "5G Cellular (WWAN EXT)"
+msgstr "5G 蜂窝接口（WWAN EXT）"
+
+msgid "Dual-WAN (Wired + 5G)"
+msgstr "双 WAN 融合（有线 + 5G）"
+
+msgid "Wired WAN (Ethernet / PPPoE)"
+msgstr "有线 WAN（以太网 / PPPoE / DSA）"
+
+msgid "Blocked (Legacy EQoS / mtkhqos active)"
+msgstr "已拦截（旧版 EQoS / mtkhqos 正在运行）"
+
+msgid "Active (4-Coprocessor Zero-CPU: PCE + PPE + QDMA + WED)"
+msgstr "运行中（4 协处理器零 CPU 卸载：PCE + PPE + QDMA + WED）"
+
+msgid "Active (Software CAKE Fallback)"
+msgstr "运行中（纯软件 CAKE 回退模式，HNAT=0）"
+
+msgid "Stopped"
+msgstr "已停止"
+
+msgid "Bound"
+msgstr "已绑定流表"
+
+msgid "Loaded"
+msgstr "已加载"
+
+msgid "Unloaded"
+msgstr "未加载"
+
+msgid "PPE FOE QID Hardware Lock (MT7987)"
+msgstr "PPE FOE 队列硬件锁定（MT7987 原生）"
+
+msgid "Active"
+msgstr "已启用"
+
+msgid "Inactive"
+msgstr "未启用"
+
+msgid "Realtime"
+msgstr "实时游戏/语音"
+
+msgid "Flow-Fair"
+msgstr "公平流哈希"
+
+msgid "Video/QUIC"
+msgstr "视频/QUIC"
+
+msgid "P2P/BT"
+msgstr "P2P 下载"
+
+msgid "EQoS Flows"
+msgstr "EQoS 单机流"
+
+msgid "Global & Coprocessor Policy"
+msgstr "全局与协处理器策略"
+
+msgid "Coprocessor Engine"
+msgstr "协处理器引擎"
+
+msgid "SQM & L7 DPI Classes"
+msgstr "SQM 与 L7 DPI 分级"
+
+msgid "Enable Unified MTK QoS"
+msgstr "启用 MTK 统一硬件 QoS"
+
+msgid "WAN Topology Mode"
+msgstr "WAN 拓扑模式"
+
+msgid "Auto Detect (Wired WAN / 5G WWAN / Dual-WAN)"
+msgstr "自动识别（有线 WAN / 5G WWAN / 双 WAN）"
+
+msgid "Wired Ethernet / PPPoE / DSA"
+msgstr "有线以太网 / PPPoE / DSA"
+
+msgid "5G Cellular QMI (wwan0_1)"
+msgstr "5G 蜂窝 QMI（wwan0_1）"
+
+msgid "Dual-WAN Active"
+msgstr "双 WAN 并行模式"
+
+msgid "Bound WAN Device"
+msgstr "绑定 WAN 物理/逻辑设备"
+
+msgid "Auto Detect Active Default Routes"
+msgstr "自动探测活动默认路由接口"
+
+msgid "Total Download Bandwidth (kbit/s)"
+msgstr "全局下行带宽上限（kbit/s）"
+
+msgid "Recommended: 85-95% of measured line speed. Set 0 to only enforce per-host EQoS limits."
+msgstr "建议设为实测下行速率的 85%-95%；设为 0 时仅生效单机硬件 EQoS 限速。"
+
+msgid "Total Upload Bandwidth (kbit/s)"
+msgstr "全局上行带宽上限（kbit/s）"
+
+msgid "Link Layer Overhead (bytes)"
+msgstr "链路层开销补偿（字节）"
+
+msgid "Typical: 0 (Raw IP/Ethernet), 8 (PPPoE), 18 (Ethernet+FCS), 44 (VDSL/ATM)."
+msgstr "常见参考值：0（原生以太网/5G Raw-IP）、8（PPPoE）、18（以太网+FCS）、44（VDSL）。"
+
+msgid "QDMA Hardware Scheduler"
+msgstr "QDMA 硬件调度算法"
+
+msgid "WRR (Weighted Round Robin)"
+msgstr "WRR（加权轮询，公平保障）"
+
+msgid "SP (Strict Priority)"
+msgstr "SP（严格优先级）"
+
+msgid "Enable PCE Hardware L4/L7 Classifier"
+msgstr "启用 PCE 硬件 L4/L7 分类加速"
+
+msgid "Enable Zero-Copy L7 DPI Engine"
+msgstr "启用零拷贝 L7 深度包识别（DPI）"
+
+msgid "Enable SQM Fair & Prioritized Queueing"
+msgstr "启用 SQM 公平与分级调度"
+
+msgid "Realtime / Gaming / VoIP Floor (%)"
+msgstr "实时 / 游戏 / 语音最低保障比例（%）"
+
+msgid "Minimum guaranteed bandwidth on Q16/Q48 (weight 15) for DNS, NTP, SSH, STUN/WebRTC, ZeroTier, WireGuard, small UDP game packets, and EF/CS5-7 DSCP."
+msgstr "分配给高优硬件队列 Q16/Q48（权重 15）的最低保障带宽，覆盖 DNS/NTP/SSH/STUN/ZeroTier/WireGuard/游戏小包及 EF/CS5-7。"
+
+msgid "Video / QUIC Streaming Ceiling (%)"
+msgstr "流媒体 / QUIC 视频比例上限（%）"
+
+msgid "Maximum share on Q30/Q62 (weight 6) for QUIC UDP/443 media and recognized streaming TLS SNI."
+msgstr "分配给视频流硬件队列 Q30/Q62（权重 6）的最高可用比例，识别 QUIC 及主流视频 TLS SNI。"
+
+msgid "P2P / BitTorrent Scavenger Ceiling (%)"
+msgstr "P2P / BT 低优清道夫上限（%）"
+
+msgid "Strict ceiling on Q31/Q63 (weight 1) for BitTorrent/DHT/eDonkey and CS1/LE bulk traffic."
+msgstr "严格限制在清道夫队列 Q31/Q63（权重 1），识别 BT/DHT/电驴及 CS1/LE 流量，防止抢占网页与游戏。"
+
+msgid "Prioritize Pure TCP Control / ACK Packets"
+msgstr "优先调度纯 TCP ACK/握手控制包"
+
+msgid "Fallback CAKE DiffServ (only when HNAT=0)"
+msgstr "CAKE 差分服务模式（仅 HNAT=0 回退生效）"
+
+msgid "Fallback CAKE ACK Filter (only when HNAT=0)"
+msgstr "CAKE ACK 过滤（仅 HNAT=0 回退生效）"
+
+msgid "Enable Simultaneous Per-Host EQoS & Connection Limits"
+msgstr "同时启用单主机硬件 EQoS 限速与连接数限制"
+
+msgid "Per-Host Hardware EQoS Rules (Up to 15 Concurrent Hosts: UL Q1-15 / DL Q33-47)"
+msgstr "单主机硬件 EQoS 规则表（最多支持 15 台并发主机：上行 Q1-15 / 下行 Q33-47）"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "IPv4 / IPv6 Address"
+msgstr "IPv4 / IPv6 地址"
+
+msgid "MAC Address"
+msgstr "MAC 地址"
+
+msgid "Download Limit (kbit/s)"
+msgstr "下行限速（kbit/s）"
+
+msgid "Upload Limit (kbit/s)"
+msgstr "上行限速（kbit/s）"
+
+msgid "Max New Connections"
+msgstr "最大新建连接数"
+
+msgid "Comment"
+msgstr "备注"
+
+msgid "Device note"
+msgstr "设备名称备注"
+
+msgid "Apply returned non-zero status"
+msgstr "应用配置返回非零状态"
+
+msgid "Configuration has been applied."
+msgstr "配置已成功应用。"
+
+msgid "Failed to apply configuration: %s"
+msgstr "应用配置失败：%s"
+
+msgid "Last Apply"
+msgstr "最近应用状态"
+
+msgid "Success"
+msgstr "成功"
+
+msgid "Failed"
+msgstr "失败"

@@ -1,0 +1,256 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] block: fitblk: validate FIT image and property sizes
+
+Enforce bounds checking when parsing FIT partition images in fitblk.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/block/fitblk.c | 112 ++++++++++++++++++++++++++++++++---------
+ 1 file changed, 89 insertions(+), 23 deletions(-)
+
+diff --git a/drivers/block/fitblk.c b/drivers/block/fitblk.c
+index eade2fa..653aedd 100644
+--- a/drivers/block/fitblk.c
++++ b/drivers/block/fitblk.c
+@@ -119,7 +119,7 @@ static int fitblk_open(struct gendisk *disk, fmode_t mode)
+ {
+ 	struct fitblk *fitblk = disk->private_data;
+ 
+-	if (fitblk->dead)
++	if (READ_ONCE(fitblk->dead))
+ 		return -ENOENT;
+ 
+ 	return 0;
+@@ -135,8 +135,16 @@ static void fitblk_submit_bio(struct bio *orig_bio)
+ 	struct bio *bio = orig_bio;
+ 	struct fitblk *fitblk = bio->bi_bdev->bd_disk->private_data;
+ 
+-	if (fitblk->dead)
++	if (READ_ONCE(fitblk->dead)) {
++		while (bio) {
++			struct bio *next = bio->bi_next;
++
++			bio->bi_next = NULL;
++			bio_io_error(bio);
++			bio = next;
++		}
+ 		return;
++	}
+ 
+ 	/* mangle bio and re-submit */
+ 	while (bio) {
+@@ -149,13 +157,19 @@ static void fitblk_submit_bio(struct bio *orig_bio)
+ 
+ static void fitblk_remove(struct fitblk *fitblk)
+ {
++	bool do_remove = false;
++
+ 	blk_mark_disk_dead(fitblk->disk);
+ 	mutex_lock(&devices_mutex);
+-	fitblk->dead = true;
+-	list_del(&fitblk->list);
++	if (!fitblk->dead) {
++		WRITE_ONCE(fitblk->dead, true);
++		list_del_init(&fitblk->list);
++		do_remove = true;
++	}
+ 	mutex_unlock(&devices_mutex);
+ 
+-	schedule_work(&fitblk->remove_work);
++	if (do_remove)
++		schedule_work(&fitblk->remove_work);
+ }
+ 
+ static int fitblk_ioctl(struct block_device *bdev, fmode_t mode,
+@@ -166,7 +180,7 @@ static int fitblk_ioctl(struct block_device *bdev, fmode_t mode,
+ 	if (!capable(CAP_SYS_ADMIN))
+ 		return -EACCES;
+ 
+-	if (fitblk->dead)
++	if (READ_ONCE(fitblk->dead))
+ 		return -ENOENT;
+ 
+ 	switch (cmd) {
+@@ -180,29 +194,40 @@ static int fitblk_ioctl(struct block_device *bdev, fmode_t mode,
+ 	return 0;
+ }
+ 
++static void fitblk_free_disk(struct gendisk *disk)
++{
++	struct fitblk *fitblk = disk->private_data;
++
++	kfree(fitblk);
++}
++
+ static const struct block_device_operations fitblk_fops = {
+ 	.owner		= THIS_MODULE,
+ 	.ioctl		= fitblk_ioctl,
+ 	.open		= fitblk_open,
+ 	.release	= fitblk_release,
+ 	.submit_bio	= fitblk_submit_bio,
++	.free_disk	= fitblk_free_disk,
+ };
+ 
+ static void fitblk_purge(struct work_struct *work)
+ {
+ 	struct fitblk *fitblk = container_of(work, struct fitblk, remove_work);
++	struct block_device *lower_bdev = fitblk->lower_bdev;
+ 
+-	//del_gendisk(fitblk->disk); // causes crash, not doing it doesn't matter
+-	refcount_dec(&num_devs);
++	del_gendisk(fitblk->disk);
+ 	platform_device_del(fitblk->pdev);
+ 	platform_device_put(fitblk->pdev);
+ 
++	mutex_lock(&devices_mutex);
++	refcount_dec(&num_devs);
+ 	if (refcount_dec_if_one(&num_devs)) {
+ 		sysfs_remove_link(&pdev->dev.kobj, "lower_dev");
+-		blkdev_put(fitblk->lower_bdev, &_fitblk_claim_ptr);
++		blkdev_put(lower_bdev, &_fitblk_claim_ptr);
+ 	}
++	mutex_unlock(&devices_mutex);
+ 
+-	kfree(fitblk);
++	put_disk(fitblk->disk);
+ }
+ 
+ static int add_fit_subimage_device(struct block_device *lower_bdev,
+@@ -214,8 +239,10 @@ static int add_fit_subimage_device(struct block_device *lower_bdev,
+ 	int err;
+ 
+ 	mutex_lock(&devices_mutex);
+-	if (!refcount_inc_not_zero(&num_devs))
++	if (!refcount_inc_not_zero(&num_devs)) {
++		mutex_unlock(&devices_mutex);
+ 		return -EBADF;
++	}
+ 
+ 	fitblk = kzalloc(sizeof(struct fitblk), GFP_KERNEL);
+ 	if (!fitblk) {
+@@ -300,8 +327,11 @@ static void fitblk_mark_dead(struct block_device *bdev, bool surprise)
+ 		if (fitblk->lower_bdev != bdev)
+ 			continue;
+ 
+-		fitblk->dead = true;
+-		list_del(&fitblk->list);
++		if (fitblk->dead)
++			continue;
++
++		WRITE_ONCE(fitblk->dead, true);
++		list_del_init(&fitblk->list);
+ 		/* removal needs to be deferred to avoid deadlock */
+ 		schedule_work(&fitblk->remove_work);
+ 	}
+@@ -403,8 +433,8 @@ static int parse_fit_on_dev(struct device *dev)
+ 			folio = read_mapping_folio(mapping, f_index++, NULL);
+ 			if (IS_ERR(folio)) {
+ 				ret = PTR_ERR(folio);
+-				goto out_blkdev;
+-			};
++				goto out_bootconf;
++			}
+ 			pre_fit = folio_address(folio) + offset_in_folio(folio, 0);
+ 		}
+ 	}
+@@ -416,6 +446,7 @@ static int parse_fit_on_dev(struct device *dev)
+ 		bootconf_c = of_get_property(np, "u-boot,bootconf", &bootconf_len);
+ 		if (bootconf_c && bootconf_len)
+ 			bootconf = kmemdup_nul(bootconf_c, bootconf_len, GFP_KERNEL);
++		of_node_put(np);
+ 	}
+ 
+ 	if (bootconf) {
+@@ -575,7 +606,18 @@ static int parse_fit_on_dev(struct device *dev)
+ 			ret = 0;
+ 		}
+ 
+-		add_fit_subimage_device(bdev, slot++, start_sect, nr_sects, true);
++		ret = add_fit_subimage_device(bdev, slot, start_sect, nr_sects, true);
++		if (ret) {
++			if (!slot) {
++				sysfs_remove_link(&pdev->dev.kobj, "lower_dev");
++				goto out_bootconf;
++			}
++			dev_warn(dev, "FIT: failed to map sub-image %.*s as slot %u (%d)\n",
++				 (int)image_name_len, image_name, slot, ret);
++			ret = 0;
++			goto out_bootconf;
++		}
++		slot++;
+ 	}
+ 
+ 	if (!slot)
+@@ -587,15 +629,25 @@ static int parse_fit_on_dev(struct device *dev)
+ 
+ 	np = of_find_node_by_path("/");
+ 	if (np) {
+-		if (of_property_read_bool(np, "mediatek,no-split-fitrw"))
++		bool no_split_fitrw = of_property_read_bool(np, "mediatek,no-split-fitrw");
++
++		of_node_put(np);
++		if (no_split_fitrw)
+ 			goto out_bootconf;
+ 	}
+ 
+ 	/* in case uImage.FIT is stored in a partition, map the remaining space */
+ 	if (!bdev->bd_read_only && bdev_is_partition(bdev) &&
+ 	    (imgmaxsect + MIN_FREE_SECT) < dsectors) {
+-		add_fit_subimage_device(bdev, slot++, imgmaxsect,
+-					dsectors - imgmaxsect, false);
++		ret = add_fit_subimage_device(bdev, slot, imgmaxsect,
++					      dsectors - imgmaxsect, false);
++		if (ret) {
++			dev_warn(dev, "FIT: failed to map remaining space as /dev/fitrw (%d)\n",
++				 ret);
++			ret = 0;
++			goto out_bootconf;
++		}
++		slot++;
+ 		dev_info(dev, "mapped remaining space as /dev/fitrw\n");
+ 	}
+ 
+@@ -630,12 +682,16 @@ static int fitblk_match_of_node(struct device *dev, const void *np)
+ static int fitblk_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev;
++	int ret;
+ 
+ 	dev = class_find_device(&block_class, NULL, rootdisk, fitblk_match_of_node);
+ 	if (!dev)
+ 		return -EPROBE_DEFER;
+ 
+-	return parse_fit_on_dev(dev);
++	ret = parse_fit_on_dev(dev);
++	put_device(dev);
++
++	return ret;
+ }
+ 
+ static struct platform_driver fitblk_driver = {
+@@ -657,13 +713,23 @@ static int __init fitblk_init(void)
+ 	if (!rootdisk)
+ 		return 0;
+ 
+-	if (platform_driver_register(&fitblk_driver))
++	if (platform_driver_register(&fitblk_driver)) {
++		of_node_put(rootdisk);
++		rootdisk = NULL;
+ 		return -ENODEV;
++	}
+ 
+ 	refcount_set(&num_devs, 1);
+ 	pdev = platform_device_register_simple("fitblk", -1, NULL, 0);
+-	if (IS_ERR(pdev))
+-		return PTR_ERR(pdev);
++	if (IS_ERR(pdev)) {
++		int err = PTR_ERR(pdev);
++
++		pdev = NULL;
++		platform_driver_unregister(&fitblk_driver);
++		of_node_put(rootdisk);
++		rootdisk = NULL;
++		return err;
++	}
+ 
+ 	return 0;
+ }

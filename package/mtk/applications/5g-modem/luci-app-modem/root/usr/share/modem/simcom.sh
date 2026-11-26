@@ -1,14 +1,14 @@
 #!/bin/sh
 # Copyright (C) 2023 Siriling <siriling@qq.com>
 
-#脚本目录
-SCRIPT_DIR="/usr/share/modem"
+# Script directory
+SCRIPT_DIR="${MODEM_SHARE_DIR:-/usr/share/modem}"
 
-#查询信息强度
+# Query signal strength
 All_CSQ()
 {
     debug "All_CSQ"
-	#信号
+	# Signal
 	OX=$( sh modem_at.sh $at_port "AT+CSQ" |grep "+CSQ:")
 	OX=$(echo $OX | tr 'a-z' 'A-Z')
 	CSQ=$(echo "$OX" | grep -o "+CSQ: [0-9]\{1,2\}" | grep -o "[0-9]\{1,2\}")
@@ -25,7 +25,7 @@ All_CSQ()
 	fi
 }
 
-# SIMCOM获取基站信息
+# SIMCOM get cell information
 SIMCOM_Cellinfo()
 {
     #baseinfo.gcom
@@ -158,27 +158,27 @@ SIMCOM_Cellinfo()
 SIMCOM_SIMINFO()
 {
     debug "Quectel_SIMINFO"
-    # 获取IMEI
+    # Get IMEI
 	IMEI=$( sh modem_at.sh $at_port "AT+CGSN"  | sed -n '2p'  )
-	# 获取IMSI
+	# Get IMSI
 	IMSI=$( sh modem_at.sh $at_port "AT+CIMI"  | sed -n '2p'  )
-	# 获取ICCID
+	# Get ICCID
 	ICCID=$( sh modem_at.sh $at_port "AT+ICCID"  | grep -o "+ICCID:[ ]*[-0-9]\+" | grep -o "[-0-9]\{1,4\}"  )
-	# 获取电话号码
+	# Get phone number
 	phone=$( sh modem_at.sh $at_port "AT+CNUM"  | grep "+CNUM:"  )
 }
-#simcom查找基站AT
+# SIMCOM cell lookup AT
 get_simcom_data()
 {
     debug "get simcom data"
-    #设置AT串口
+    # Set AT serial port
     at_port=$1
 
     All_CSQ
 	SIMCOM_SIMINFO
     SIMCOM_Cellinfo
 
-    #温度
+    # Temperature
 	OX=$( sh modem_at.sh $at_port "AT+CPMUTEMP")
 	TEMP=$(echo "$OX" | grep -o "+CPMUTEMP:[ ]*[-0-9]\+" | grep -o "[-0-9]\{1,4\}")
 	if [ -n "$TEMP" ]; then
@@ -186,7 +186,7 @@ get_simcom_data()
 	fi
 
 
-    #基站信息
+    # Cell information
 	OX=$( sh modem_at.sh $at_port "AT+CPSI?")
 	rec=$(echo "$OX" | grep "+CPSI:")
 	w=$(echo $rec |grep "NO SERVICE"| wc -l)
@@ -225,9 +225,9 @@ get_simcom_data()
 		rect8s="${rect8%%,*}" #-940
 		rect9=${rect8#*,}
 		rect9s="${rect9%%,*}" #-110
-		# "${rec1##*,}" #最后一位
+		# "${rec1##*,}" # Last field
 		rect10=${rect9#*,}
-		rect10s="${rect10%%,*}" #最后一位
+		rect10s="${rect10%%,*}" # Last field
 		PCI=$rect5s
 		LBAND="n"$(echo $rect6s | cut -d, -f0 | grep -o "BAND[0-9]\{1,3\}" | grep -o "[0-9]\+")
 		CHANNEL=$rect7s
@@ -286,7 +286,7 @@ get_simcom_data()
 		esac
 	fi
 	
-	# CMGRMI 信息
+	# CMGRMI information
 	OX=$( sh modem_at.sh $at_port "AT+CMGRMI=4")
 	CAINFO=$(echo "$OX" | grep -o "$REGXz" | tr ' ' ':')
 	if [ -n "$CAINFO" ]; then

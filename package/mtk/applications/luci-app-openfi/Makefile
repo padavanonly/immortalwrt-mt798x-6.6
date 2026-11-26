@@ -5,10 +5,13 @@
 #
 
 include $(TOPDIR)/rules.mk
-include $(INCLUDE_DIR)/package.mk
 
-LUCI_TITLE:=OpenFi Proprietary Configuration.
-#LUCI_DEPENDS:=+datconf-lua
+PKG_NAME:=luci-app-openfi
+PKG_VERSION:=2.0
+PKG_RELEASE:=1
+
+LUCI_TITLE:=LuCI JS support for OpenFi hardware controls
+LUCI_DEPENDS:=+luci-base
 LUCI_PKGARCH:=all
 
 include $(TOPDIR)/feeds/luci/luci.mk

@@ -1,0 +1,45 @@
+From ee3b760cb42935f4b6578c0481f75b793eadd0f7 Mon Sep 17 00:00:00 2001
+From: Hauke Mehrtens <hauke@hauke-m.de>
+Date: Sat, 11 Jul 2026 23:31:09 +0200
+Subject: script: avoid kill(0) when SIGCHLD races script_call
+
+script_call() does
+
+    if (running) {
+        ...
+        kill(running, SIGTERM);
+    }
+
+where 'running' is a volatile pid_t cleared to 0 by the SIGCHLD
+handler when the previous script child exits. The 'if (running)'
+gate and the 'kill(running, ...)' that follows it are independent
+reads of the volatile variable. If SIGCHLD fires for the previous
+child between these two reads, the handler clears 'running' to 0
+and kill() is called with pid == 0, which delivers SIGTERM to every
+process in the same process group as odhcp6c, including odhcp6c
+itself (and any peer/parent that shares the pgrp).
+
+Snapshot the pid into a local before checking it and using it, so the
+kill() target is the value we actually tested.
+
+Link: https://github.com/openwrt/odhcp6c/pull/160
+Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
+
+(cherry picked from commit 2521bf732b9f643ce36c5ac3b314b17c034a0f50)
+---
+--- a/src/script.c
++++ b/src/script.c
+@@ -432,10 +432,11 @@
+ 	if (!argv[0])
+ 		return;
+ 
+-	if (running) {
++	pid_t prev = running;
++	if (prev > 0) {
+ 		time_t diff = now - started;
+ 
+-		kill(running, SIGTERM);
++		kill(prev, SIGTERM);
+ 
+ 		if (diff > delay)
+ 			delay -= diff;

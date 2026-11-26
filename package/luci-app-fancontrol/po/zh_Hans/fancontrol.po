@@ -1,41 +1,192 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: luci-app-fancontrol 2.0\n"
+"Report-Msgid-Bugs-To: \n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "5G Modem Chip Temperature (AT+QTEMP / AT^CHIPTEMP)"
+msgstr "5G 模组芯片温度 (AT+QTEMP / AT^CHIPTEMP)"
+
+msgid "5G Modem Temperature"
+msgstr "5G 模组温度"
+
+msgid "Active Sensor Source"
+msgstr "当前温度源"
+
+msgid "Active Temperature"
+msgstr "当前生效温度"
+
+msgid "Allow the WPS hardware button to toggle between Turbo Mode and Smart Thermal Mode."
+msgstr "允许通过 WPS 硬件按键在狂暴模式和智能温控模式之间切换。"
+
+msgid "Auto Detect (Devicetree Cooling Levels)"
+msgstr "自动检测（依据设备树 cooling-levels）"
+
+msgid "CPU Temperature"
+msgstr "CPU 温度"
+
+msgid "CPU Thermal Zone (thermal_zone0)"
+msgstr "CPU 温度传感器 (thermal_zone0)"
+
+msgid "Configuration has been applied."
+msgstr "配置已成功应用。"
+
+msgid "Configuration was applied, but status refresh failed: %s"
+msgstr "配置已应用，但刷新状态失败：%s"
+
+msgid "Configure cooling fan operating mode, temperature sensor source, and hardware thermal curve."
+msgstr "配置散热风扇运行模式、温度传感器来源与硬件温控曲线。"
+
+msgid "Controller Status"
+msgstr "控制器状态"
+
+msgid "Cooling Policy Settings"
+msgstr "散热策略设置"
+
+msgid "Deadband margin to suppress rapid fan speed oscillation (0 - 20)."
+msgstr "温度迟滞死区，避免风扇转速频繁抖动 (0 - 20)。"
+
+msgid "Failed to apply configuration: %s"
+msgstr "应用配置失败：%s"
+
 msgid "Fan Control"
 msgstr "风扇控制"
 
-msgid "Settings"
-msgstr "设置"
+msgid "Fan RPM"
+msgstr "风扇转速 (RPM)"
 
-msgid "Enable"
-msgstr "开启"
+msgid "Fan Speed"
+msgstr "风扇占空比"
 
-msgid "Thermal File"
-msgstr "温度文件"
+msgid "Fan status refresh failed: %s"
+msgstr "刷新风扇状态失败：%s"
 
-msgid "Fan File"
-msgstr "风扇控制"
+msgid "Full Speed Temperature (°C)"
+msgstr "满速温度 (°C)"
 
-msgid "Fan Speed File"
-msgstr "风扇速度虚拟文件"
+msgid "Full Speed Temperature must be greater than Start Temperature."
+msgstr "满速温度必须高于启动温度。"
 
-msgid "Initial Speed"
-msgstr "初始速度"
+msgid "Hardware Driver"
+msgstr "硬件驱动"
 
-msgid "Please enter the initial speed for fan startup."
-msgstr "请输入风扇启动的初始速度。"
+msgid "Hysteresis (°C)"
+msgstr "温度迟滞 (°C)"
 
-msgid "Max Speed"
-msgstr "最大速度"
+msgid "Inverted"
+msgstr "反向 PWM"
 
-msgid "Please enter maximum fan speed."
-msgstr "请输入风扇最大速度"
+msgid "Inverted (0 = Full Speed, 255 = Off)"
+msgstr "反向极性 (0 = 满速, 255 = 停转)"
 
-msgid "Start Temperature"
-msgstr "启动温度"
+msgid "Kernel Thermal Mode"
+msgstr "内核温控模式"
 
-msgid "Please enter the fan start temperature."
-msgstr "请输入风扇启动温度。"
+msgid "Kernel Thermal Mode (Native Driver)"
+msgstr "内核温控模式（原生驱动接管）"
 
-msgid "Current speed:"
-msgstr "当前速度："
+msgid "Low Speed Mode"
+msgstr "低速模式"
 
-msgid "Current temperature:"
-msgstr "当前温度："
+msgid "Low Speed Mode (PWM 128 / 50%)"
+msgstr "低速模式 (PWM 128 / 50%)"
+
+msgid "Max (CPU & 5G Modem)"
+msgstr "较高值（CPU 与 5G 模组）"
+
+msgid "Max (CPU & 5G Modem, fallback to CPU)"
+msgstr "取较高值（CPU 与 5G 模组，不可用时回退 CPU）"
+
+msgid "Maximum PWM (0 - 255)"
+msgstr "最大 PWM 占空比 (0 - 255)"
+
+msgid "Maximum PWM change per smart thermal control cycle (1 - 255)."
+msgstr "智能温控每个周期允许的最大 PWM 步进变化 (1 - 255)。"
+
+msgid "Maximum PWM must be greater than or equal to Minimum PWM."
+msgstr "最大 PWM 必须大于或等于最小 PWM。"
+
+msgid "Minimum PWM (0 - 255)"
+msgstr "最小 PWM 占空比 (0 - 255)"
+
+msgid "Normal"
+msgstr "正向 PWM"
+
+msgid "Normal (0 = Off, 255 = Full Speed)"
+msgstr "正向极性 (0 = 停转, 255 = 满速)"
+
+msgid "Normal Mode"
+msgstr "常规模式"
+
+msgid "Normal Mode (PWM 192 / 75%)"
+msgstr "常规模式 (PWM 192 / 75%)"
+
+msgid "Operating Mode"
+msgstr "运行模式"
+
+msgid "PWM Polarity"
+msgstr "PWM 极性"
+
+msgid "Realtime Status"
+msgstr "实时状态"
+
+msgid "Set fixed PWM value between 0 (0%) and 255 (100%)."
+msgstr "设置 0 (0%) 至 255 (100%) 之间的固定 PWM 占空比数值。"
+
+msgid "Silent Mode"
+msgstr "静音模式"
+
+msgid "Silent Mode (PWM 64 / 25%)"
+msgstr "静音模式 (PWM 64 / 25%)"
+
+msgid "Slew Rate (PWM Step / Cycle)"
+msgstr "平滑变化率 (每周期 PWM 步长)"
+
+msgid "Smart Thermal Mode"
+msgstr "智能温控模式"
+
+msgid "Smart Thermal Mode (Auto)"
+msgstr "智能温控模式 (自动)"
+
+msgid "Start Temperature (°C)"
+msgstr "启动温度 (°C)"
+
+msgid "Stepless Custom PWM Mode"
+msgstr "无极自定义调速模式"
+
+msgid "Stepless Mode"
+msgstr "无极调速模式"
+
+msgid "Stepless PWM Duty (0 - 255)"
+msgstr "无极调速占空比 (0 - 255)"
+
+msgid "Temperature Sensor Source"
+msgstr "温度传感器来源"
+
+msgid "Temperature threshold where smart fan ramp begins (20 - 95 °C)."
+msgstr "智能温控开始加速的温度阈值 (20 - 95 °C)。"
+
+msgid "Temperature threshold where smart fan reaches Maximum PWM (must exceed Start Temperature)."
+msgstr "智能温控达到最大 PWM 转速的温度阈值（必须高于启动温度）。"
+
+msgid "Thermal Curve & Hardware Settings"
+msgstr "温控曲线与硬件设置"
+
+msgid "Turbo Mode"
+msgstr "狂暴模式"
+
+msgid "Turbo Mode (PWM 255 / 100%)"
+msgstr "狂暴模式 (PWM 255 / 100%)"
+
+msgid "WPS Button Turbo Toggle"
+msgstr "WPS 按键切换狂暴模式"
+
+msgid "WPS button pressed: Restored to Smart Thermal Mode."
+msgstr "WPS 按键触发：已恢复智能温控模式。"
+
+msgid "WPS button pressed: Turbo cooling mode enabled."
+msgstr "WPS 按键触发：已开启狂暴散热模式。"

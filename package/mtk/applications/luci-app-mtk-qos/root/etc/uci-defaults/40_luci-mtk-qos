@@ -1,0 +1,10 @@
+#!/bin/sh
+
+uci -q batch <<-EOF >/dev/null 2>&1
+	delete ucitrack.@mtk_npu_sqm[0]
+	delete ucitrack.@mtk_qos[0]
+	add ucitrack mtk_qos
+	set ucitrack.@mtk_qos[-1].init=mtk_qos
+	commit ucitrack
+EOF
+exit 0

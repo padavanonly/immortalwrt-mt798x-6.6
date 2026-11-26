@@ -1,0 +1,50 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Online Hosts"
+msgstr "在线主机"
+
+msgid "Online"
+msgstr "在线"
+
+msgid "Offline"
+msgstr "离线"
+
+msgid "Hostname"
+msgstr "主机名"
+
+msgid "IPv4 address"
+msgstr "IPv4 地址"
+
+msgid "IPv6 addresses"
+msgstr "IPv6 地址"
+
+msgid "MAC address"
+msgstr "MAC 地址"
+
+msgid "Upload"
+msgstr "上传"
+
+msgid "Download"
+msgstr "下载"
+
+msgid "Total traffic"
+msgstr "总流量"
+
+msgid "Connection count"
+msgstr "连接数"
+
+msgid "Static Lease"
+msgstr "静态租约"
+
+msgid "Reserve IP"
+msgstr "设为静态"
+
+msgid "Reserve a specific IP address for this device"
+msgstr "为此设备保留指定 IP 地址"
+
+msgid "Expired"
+msgstr "已过期"
+
+msgid "No active leases found"
+msgstr "没有已分配的租约"

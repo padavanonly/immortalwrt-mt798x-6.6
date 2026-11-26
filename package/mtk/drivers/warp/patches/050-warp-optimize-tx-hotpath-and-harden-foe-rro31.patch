@@ -1,0 +1,258 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] warp: optimize TX hotpath, fix tailroom FOE macros, and unwind RRO 3.1
+
+Short-circuit wifi_dump_skb() when debug level is below WARP_DBG_WAR and
+guard header dereferences with skb_header_pointer(), validate headroom
+and tailroom bounds before accessing FOE_AI()/FOE_AI_TAIL() and use
+_TAIL PAO macros inside the tailroom branch, and invoke
+warp_rx_rro_3_1_exit_hw() during exit and SER reset when RRO 3.1 is
+supported.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/warp_platform/warp_mtk.c
++++ b/warp_platform/warp_mtk.c
+@@ -44,8 +44,13 @@
+ 	struct wlan_tx_info *info,
+ 	struct sk_buff *skb)
+ {
+-	struct iphdr *ip_h = ip_hdr(skb);
+-	struct ethhdr *eth_h = eth_hdr(skb);
++	struct ethhdr _eth, *eth_h;
++	struct iphdr _iph, *ip_h;
++	int nh_off;
++
++	/* Fast exit when debug level is below WARP_DBG_WAR. */
++	if (likely(warp_log_get() < WARP_DBG_WAR))
++		return;
+ 
+ 	warp_dbg(WARP_DBG_WAR,
+ 		 "%s(): add entry: wdma=%d,ringId=%d,wcid=%d,bssid=%d\n",
+@@ -55,49 +60,46 @@
+ 		 info->wcid,
+ 		 info->bssidx);
+ 
+-	if (ip_h->version != 4)
++	if (skb->protocol != htons(ETH_P_IP))
+ 		return;
+ 
+-	warp_dbg(WARP_DBG_WAR,
+-		 "%s(): src=%d.%d.%d.%d\n",
+-		 __func__,
+-		 (0xff & ip_h->saddr),
+-		 (0xff00 & ip_h->saddr) >> 8,
+-		 (0xff0000 & ip_h->saddr) >> 16,
+-		 (0xff000000 & ip_h->saddr) >> 24);
++	nh_off = skb_network_offset(skb);
++	if (nh_off < 0)
++		return;
++	ip_h = skb_header_pointer(skb, nh_off, sizeof(_iph), &_iph);
++	if (!ip_h || ip_h->version != 4 || ip_h->ihl < 5)
++		return;
+ 
+-	warp_dbg(WARP_DBG_WAR,
+-		 "%s(): dst=%d.%d.%d.%d\n",
+-		 __func__,
+-		 (0xff & ip_h->daddr),
+-		 (0xff00 & ip_h->daddr) >> 8,
+-		 (0xff0000 & ip_h->daddr) >> 16,
+-		 (0xff000000 & ip_h->daddr) >> 24);
+-
+-	warp_dbg(WARP_DBG_WAR,
+-		 "%s(): src_mac=%pM, dest_mac=%pM\n",
+-		 __func__,
+-		 eth_h->h_source,
+-		 eth_h->h_dest);
++	eth_h = skb_mac_header_was_set(skb) ?
++		skb_header_pointer(skb, skb_mac_offset(skb), sizeof(_eth), &_eth) :
++		NULL;
++
++	warp_dbg(WARP_DBG_WAR, "%s(): src=%pI4 dst=%pI4\n",
++		 __func__, &ip_h->saddr, &ip_h->daddr);
++	if (eth_h)
++		warp_dbg(WARP_DBG_WAR, "%s(): src_mac=%pM, dest_mac=%pM\n",
++			 __func__, eth_h->h_source, eth_h->h_dest);
+ 
+ 	if (ip_h->protocol == IPPROTO_TCP) {
+-		struct tcphdr *tcph = tcp_hdr(skb);
+-
+-		warp_dbg(WARP_DBG_WAR,
+-			 "%s(): protocol=TCP,src_port=%d,dst_port=%d\n",
+-			 __func__,
+-			 tcph->source,
+-			 tcph->dest);
+-	}
+-
+-	if (ip_h->protocol == IPPROTO_UDP) {
+-		struct udphdr *udph = udp_hdr(skb);
++		struct tcphdr _tcph, *tcph;
+ 
+-		warp_dbg(WARP_DBG_WAR,
+-			 "%s(): protocol=UDP,src_port=%d,dst_port=%d\n",
+-			 __func__,
+-			 udph->source,
+-			 udph->dest);
++		tcph = skb_header_pointer(skb, nh_off + ip_h->ihl * 4,
++					  sizeof(_tcph), &_tcph);
++		if (tcph)
++			warp_dbg(WARP_DBG_WAR,
++				 "%s(): protocol=TCP,src_port=%u,dst_port=%u\n",
++				 __func__, ntohs(tcph->source),
++				 ntohs(tcph->dest));
++	} else if (ip_h->protocol == IPPROTO_UDP) {
++		struct udphdr _udph, *udph;
++
++		udph = skb_header_pointer(skb, nh_off + ip_h->ihl * 4,
++					  sizeof(_udph), &_udph);
++		if (udph)
++			warp_dbg(WARP_DBG_WAR,
++				 "%s(): protocol=UDP,src_port=%u,dst_port=%u\n",
++				 __func__, ntohs(udph->source),
++				 ntohs(udph->dest));
+ 	}
+ }
+ #endif /*CONFIG_WARP_DBG_SUPPORT*/
+@@ -148,62 +148,70 @@
+ 			warp_dbg(WARP_DBG_INF, "%s():skb->head is NULL!!!!\n", __func__);
+ 			return -EFAULT;
+ 		}
+-		if ((FOE_AI(skb) == HIT_UNBIND_RATE_REACH) ||
+-		    (FOE_AI_TAIL(skb) == HIT_UNBIND_RATE_REACH)) {
+-			if (IS_SPACE_AVAILABLE_HEAD(skb)) {
+-				/*WDMA idx*/
+-				FOE_WDMA_ID(skb) = idx;
+-				/*Ring idx*/
+-				FOE_RX_ID(skb) = info->ringidx;
+-				/*wtable Idx*/
+-				FOE_WC_ID(skb) = info->wcid;
+-				/*Bssidx*/
+-				FOE_BSS_ID(skb) = info->bssidx;
++		{
++			bool head_ok = IS_SPACE_AVAILABLE_HEAD(skb);
++			bool tail_ok = IS_SPACE_AVAILABLE_TAIL(skb);
++
++			if ((head_ok && (FOE_AI(skb) == HIT_UNBIND_RATE_REACH)) ||
++			    (tail_ok && (FOE_AI_TAIL(skb) == HIT_UNBIND_RATE_REACH))) {
++				if (head_ok) {
++					/*WDMA idx*/
++					FOE_WDMA_ID(skb) = idx;
++					/*Ring idx*/
++					FOE_RX_ID(skb) = info->ringidx;
++					/*wtable Idx*/
++					FOE_WC_ID(skb) = info->wcid;
++					/*Bssidx*/
++					FOE_BSS_ID(skb) = info->bssidx;
+ #ifdef WED_PAO_SUPPORT
+-				FOE_USR_INFO(skb) = info->usr_info;
+-				FOE_TID(skb) = info->tid;
+-				FOE_IS_FIXEDRATE(skb) = info->is_fixedrate;
+-				FOE_IS_PRIOR(skb) = info->is_prior;
+-				FOE_IS_SP(skb) = info->is_sp;
+-				FOE_HF(skb) = info->hf;
+-				FOE_AMSDU(skb) = info->amsdu_en;
++					FOE_USR_INFO(skb) = info->usr_info;
++					FOE_TID(skb) = info->tid;
++					FOE_IS_FIXEDRATE(skb) = info->is_fixedrate;
++					FOE_IS_PRIOR(skb) = info->is_prior;
++					FOE_IS_SP(skb) = info->is_sp;
++					FOE_HF(skb) = info->hf;
++					FOE_AMSDU(skb) = info->amsdu_en;
+ #endif
+-			}
+-			if (IS_SPACE_AVAILABLE_TAIL(skb)) {
+-				/*WDMA idx*/
+-				FOE_WDMA_ID_TAIL(skb) = idx;
+-				/*Ring idx*/
+-				FOE_RX_ID_TAIL(skb) = info->ringidx;
+-				/*wtable Idx*/
+-				FOE_WC_ID_TAIL(skb) = info->wcid;
+-				/*Bssidx*/
+-				FOE_BSS_ID_TAIL(skb) = info->bssidx;
++				}
++				if (tail_ok) {
++					/*WDMA idx*/
++					FOE_WDMA_ID_TAIL(skb) = idx;
++					/*Ring idx*/
++					FOE_RX_ID_TAIL(skb) = info->ringidx;
++					/*wtable Idx*/
++					FOE_WC_ID_TAIL(skb) = info->wcid;
++					/*Bssidx*/
++					FOE_BSS_ID_TAIL(skb) = info->bssidx;
+ #ifdef WED_PAO_SUPPORT
+-				FOE_USR_INFO(skb) = info->usr_info;
+-				FOE_TID(skb) = info->tid;
+-				FOE_IS_FIXEDRATE(skb) = info->is_fixedrate;
+-				FOE_IS_PRIOR(skb) = info->is_prior;
+-				FOE_IS_SP(skb) = info->is_sp;
+-				FOE_HF(skb) = info->hf;
+-				FOE_AMSDU(skb) = info->amsdu_en;
++					/* Keep tailroom metadata aligned with struct dmad_rx_descinfo4. */
++					FOE_USR_INFO_TAIL(skb) = info->usr_info;
++					FOE_TID_TAIL(skb) = info->tid;
++					FOE_IS_FIXEDRATE_TAIL(skb) = info->is_fixedrate;
++					FOE_IS_PRIOR_TAIL(skb) = info->is_prior;
++					FOE_IS_SP_TAIL(skb) = info->is_sp;
++					FOE_HF_TAIL(skb) = info->hf;
++					FOE_AMSDU_TAIL(skb) = info->amsdu_en;
+ #endif
+-
++				}
++				if (!tail_ok && !head_ok) {
++					warp_dbg(WARP_DBG_INF, "%s(): SKB HEAD/TAIL is not available\n",
++							__func__);
++				}
++
++				if (head_ok) {
++					warp_dbg(WARP_DBG_LOU, "%s(): WDMAID: %d,RingID: %d, Wcid: %d, Bssid: %d\n",
++						__func__,
++						FOE_WDMA_ID(skb), FOE_RX_ID(skb), FOE_WC_ID(skb), FOE_BSS_ID(skb));
++				}
+ 			}
+-			if (!IS_SPACE_AVAILABLE_TAIL(skb) && !IS_SPACE_AVAILABLE_HEAD(skb)) {
+-				warp_dbg(WARP_DBG_INF, "%s(): SKB HEAD/TAIL is not available\n",
+-						__func__);
+-			}
+-
+-			warp_dbg(WARP_DBG_LOU, "%s(): WDMAID: %d,RingID: %d, Wcid: %d, Bssid: %d\n",
+-				__func__,
+-				FOE_WDMA_ID(skb), FOE_RX_ID(skb), FOE_WC_ID(skb), FOE_BSS_ID(skb));
+ 		}
+ 		/*use port for specify which hw_nat architecture*/
+ 		if (ra_sw_nat_hook_tx(skb, wdma_rx_port) != 1)
+ 			wifi->ops->txinfo_set_drop(tx_info);
+ 
+ #ifdef CONFIG_WARP_DBG_SUPPORT
+-		wifi_dump_skb(idx, info, skb);
++		if (unlikely(warp_log_get() >= WARP_DBG_WAR))
++			wifi_dump_skb(idx, info, skb);
+ #endif /*CONFIG_WARP_DBG_SUPPORT*/
+ 
+ 	} else {
+--- a/warp_main.c
++++ b/warp_main.c
+@@ -1455,6 +1455,12 @@
+ 
+ 	warp_quiesce_and_drain_irq_and_tasks(warp, wed, wdma, wifi, bus);
+ 
++#ifdef WED_RX_HW_RRO_3_1
++	/* Tear down RRO 3.1 hardware state before resetting the WED interface. */
++	if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_1))
++		warp_rx_rro_3_1_exit_hw(wed, wifi);
++#endif
++
+ 	ret = warp_reset_hw(wed, WARP_RESET_INTERFACE);
+ 	if (ret) {
+ 		spin_lock_irqsave(&warp->ring_lock, flags);
+@@ -1683,6 +1689,12 @@
+ 
+ 		warp_quiesce_and_drain_irq_and_tasks(warp, wed, wdma, wifi, bus);
+ 
++#ifdef WED_RX_HW_RRO_3_1
++		/* Tear down RRO 3.1 hardware state during SER ring recovery. */
++		if (wifi->hw.hw_cap & BIT(WIFI_HW_CAP_RRO_3_1))
++			warp_rx_rro_3_1_exit_hw(wed, wifi);
++#endif
++
+ 		ret = warp_reset_hw(wed, WARP_RESET_IDX_ONLY);
+ 		if (ret) {
+ 			spin_lock_irqsave(&warp->ring_lock, flags);

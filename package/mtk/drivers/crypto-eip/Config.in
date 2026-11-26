@@ -1,0 +1,48 @@
+menu "Crypto Offload Configuration"
+	depends on PACKAGE_kmod-crypto-eip
+
+choice
+	prompt "Crypto Offload Mode"
+	default CRYPTO_OFFLOAD_INLINE
+	help
+	  Select crypto offload mode. Support lookaside mode or inline mode.
+
+config CRYPTO_OFFLOAD_INLINE
+	bool "Inline Mode"
+	depends on TARGET_mediatek_filogic_hwifi_a73 || TARGET_mediatek_filogic_hwifi || TARGET_mediatek_mt7988 || TARGET_DEVICE_mediatek_filogic_DEVICE_mediatek_mt7988a-rfb || TARGET_DEVICE_mediatek_filogic_DEVICE_mediatek_mt7988d-rfb
+	select PACKAGE_kmod-crypto-eip-inline
+	select PACKAGE_kmod-crypto-eip-ddk
+	select PACKAGE_kmod-crypto-eip-ddk-ksupport
+	select PACKAGE_kmod-crypto-eip-ddk-ctrl
+	select PACKAGE_kmod-crypto-eip-ddk-ctrl-app
+	select PACKAGE_kmod-crypto-eip-ddk-engine
+	select PACKAGE_crypto-eip-inline-fw
+	select PACKAGE_strongswan
+	select PACKAGE_strongswan-mod-kdf
+	select PACKAGE_strongswan-default
+endchoice
+
+choice
+	prompt "Crypto XFRM Offload Method"
+	depends on CRYPTO_OFFLOAD_INLINE
+	default CRYPTO_XFRM_OFFLOAD_MTK_PCE
+	help
+	  Select crypto XFRM offload method. Either RAMBUS PCL support or
+	  MTK PCE support.
+
+config CRYPTO_XFRM_OFFLOAD_MTK_PCE
+	bool "Enable MTK PCE XFRM Offload"
+endchoice
+
+config CRYPTO_MTK_DDK_LOOKASIDE
+	bool "Enable ddk look-aside mode"
+	default n
+	help
+	  select y to enable ddk look-aside mode
+
+config CRYPTO_OFFLOAD_INLINE_FLOWBLOCK
+	bool "Inline mode with flowblock offload"
+	depends on !PACKAGE_kmod-mediatek_hnat
+	default n
+
+endmenu

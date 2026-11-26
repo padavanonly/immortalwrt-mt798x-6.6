@@ -1,0 +1,52 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: bound MT799x solicited MCU RX response copy lengths
+
+Clamp solicited MCU RX response copy lengths against caller buffer capacity in hwifi_main.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/hw_ctrl/hwifi_main.c   | 4 +++-
+ mt_wifi/include/os/hwifi_mac.h | 2 +-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/mt_wifi/hw_ctrl/hwifi_main.c b/mt_wifi/hw_ctrl/hwifi_main.c
+index b3115a8..d45b9d4 100644
+--- a/mt_wifi/hw_ctrl/hwifi_main.c
++++ b/mt_wifi/hw_ctrl/hwifi_main.c
+@@ -1273,6 +1273,7 @@ hwifi_mcu_tx(struct _RTMP_ADAPTER *ad, struct cmd_msg *msg)
+ 	struct _CMD_ATTRIBUTE *attr;
+ 	struct sk_buff *skb;
+ 	char *buf = NULL;
++	u32 rx_buf_len = 2048;
+ 	int ret = NDIS_STATUS_SUCCESS;
+ 	struct mtk_mac_mcu_msg mcu_msg = {0};
+ 
+@@ -1304,7 +1305,7 @@ hwifi_mcu_tx(struct _RTMP_ADAPTER *ad, struct cmd_msg *msg)
+ #endif /* WIFI_UNIFIED_COMMAND */
+ 
+ 	/*TxPowerInfo show all rate power, the pkt length is 1262 for bellwether.*/
+-	os_alloc_mem(NULL, (UCHAR **)&buf, 2048);
++	os_alloc_mem(NULL, (UCHAR **)&buf, rx_buf_len);
+ 	if (buf == NULL) {
+ 		MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_HWIFI, DBG_LVL_ERROR,
+ 			"can not allocate buf[1024]\n");
+@@ -1321,6 +1322,7 @@ hwifi_mcu_tx(struct _RTMP_ADAPTER *ad, struct cmd_msg *msg)
+ #endif /* WIFI_UNIFIED_COMMAND */
+ 
+ 	mcu_msg.rx_data = buf;
++	mcu_msg.rx_len = rx_buf_len;
+ 
+ 	ret = mcu_dest_trans(attr->mcu_dest, &mcu_msg.dest);
+ 
+diff --git a/mt_wifi/include/os/hwifi_mac.h b/mt_wifi/include/os/hwifi_mac.h
+index 3ef1255..398fb1f 100644
+--- a/mt_wifi/include/os/hwifi_mac.h
++++ b/mt_wifi/include/os/hwifi_mac.h
+@@ -385,7 +385,7 @@ enum MTK_MAC_MCU_DEST {
+  * @data: Point to cmd payload buffer head.
+  * @rx_data: Point to cmd response buffer head for rx response.
+  * @len: Indicate buffer size (in bytes) ready for tx.
+- * @rx_len: Indicate max rx response size (in bytes) ready for rx response.
++ * @rx_len: Input response capacity; output actual response length in bytes.
+  * @is_wait: Indicate if driver need to handle wait rsp.
+  * @dest: Indicate this cmd target destination see &enum MTK_MAC_MCU_DEST.
+  * @action: Indicate this cmd type see &enum MTK_MAC_MCU_ACTION.

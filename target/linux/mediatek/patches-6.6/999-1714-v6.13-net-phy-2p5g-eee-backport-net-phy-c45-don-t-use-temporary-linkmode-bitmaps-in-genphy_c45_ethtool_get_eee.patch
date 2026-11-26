@@ -15,8 +15,6 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  drivers/net/phy/phy-c45.c | 7 ++-----
  1 file changed, 2 insertions(+), 5 deletions(-)
 
-diff --git a/drivers/net/phy/phy-c45.c b/drivers/net/phy/phy-c45.c
-index c1b3576c307f..7b0ffa3515aa 100644
 --- a/drivers/net/phy/phy-c45.c
 +++ b/drivers/net/phy/phy-c45.c
 @@ -1523,20 +1523,17 @@ EXPORT_SYMBOL(genphy_c45_eee_is_active);
@@ -42,6 +40,3 @@ index c1b3576c307f..7b0ffa3515aa 100644
  
  	return 0;
  }
--- 
-2.45.2
-

@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Copyright (C) 2025 MediaTek Inc.
+ * Author: Sam.Shih <sam.shih@mediatek.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	/*
+	 * On this MT7988A settings, only 2-lane PCIe is enabled.
+	 * All 1-lane PCIe devices are disabled, Due to MT7990/MT7992/MT7996
+	 * WiFi PCIe card only uses 2-lane PCIe on MT7988A. So this can keep
+	 * the testing environment clean and simplifies PCIe debugging.
+	 * Enabled PCIe slots:
+	 * - pcie0: pcie@11300000 (Gen3, 2 lanes)
+	 * - pcie1: pcie@11310000 (Gen3, 2 lanes)
+	 * Disabled PCIe slots:
+	 * - pcie2: pcie@11280000 (Gen3, 1 lane)
+	 * - pcie3: pcie@11290000 (Gen3, 1 lane)
+	 */
+
+	fragment@0 {
+		target-path = "/soc/pcie@11280000";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/pcie@11290000";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};
+

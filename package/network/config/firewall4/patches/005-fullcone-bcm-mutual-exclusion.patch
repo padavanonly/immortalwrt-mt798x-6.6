@@ -1,0 +1,30 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] firewall4: enforce fullcone mutual exclusion with BCM nat_mode and clear fullcone6
+
+When Broadcom kernel Full Cone NAT (nf_conntrack_nat_mode=1) is active,
+disable nftables fullcone and fullcone6 rules so sysupgrade -k boots or
+firewall reloads cannot load nft_fullcone simultaneously with BCM Full Cone.
+Also delete defs.fullcone6 alongside defs.fullcone when nft_try_fullcone fails.
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+--- a/root/usr/share/ucode/fw4.uc	2026-11-24 00:41:53.577156643 +0800
++++ b/root/usr/share/ucode/fw4.uc	2026-11-24 00:41:53.586574163 +0800
+@@ -2031,8 +2031,16 @@
+ 
+ 		delete defs.syn_flood;
+ 
+-		if (!nft_try_fullcone()) {
++		if ((defs.fullcone || defs.fullcone6) &&
++		    trim(fs.readfile("/proc/sys/net/netfilter/nf_conntrack_nat_mode") || "") == "1") {
+ 			delete defs.fullcone;
++			delete defs.fullcone6;
++			warn("BCM fullcone (nf_conntrack_nat_mode=1) is active, disabling nft fullcone\n");
++		}
++
++		if ((defs.fullcone || defs.fullcone6) && !nft_try_fullcone()) {
++			delete defs.fullcone;
++			delete defs.fullcone6;
+ 			warn("nft_try_fullcone failed, disable fullcone globally\n");
+ 		}
+ 

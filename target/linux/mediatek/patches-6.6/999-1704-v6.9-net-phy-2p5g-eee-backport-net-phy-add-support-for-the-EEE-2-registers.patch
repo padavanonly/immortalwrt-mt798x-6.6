@@ -133,7 +133,7 @@
  
 --- a/include/linux/mdio.h
 +++ b/include/linux/mdio.h
-@@ -439,6 +439,42 @@ static inline void mii_eee_cap1_mod_link
+@@ -436,6 +436,42 @@ static inline void mii_eee_cap1_mod_link
  }
  
  /**
@@ -176,7 +176,7 @@
   * linkmode_to_mii_eee_cap1_t()
   * @adv: the linkmode advertisement settings
   *
-@@ -464,6 +500,25 @@ static inline u32 linkmode_to_mii_eee_ca
+@@ -461,6 +497,25 @@ static inline u32 linkmode_to_mii_eee_ca
  
  	return result;
  }

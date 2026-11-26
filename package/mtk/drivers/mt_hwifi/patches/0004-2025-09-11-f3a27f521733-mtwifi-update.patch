@@ -1,0 +1,40 @@
+From: padavanonly <padavanonly@github.com>
+Date: Thu, 11 Sep 2025 23:14:24 +0800
+Subject: [PATCH] mtwifi:update
+
+Restore vendor driver change from f3a27f521733.
+
+[sKyissKy: extract mt_hwifi patch from commit f3a27f521733]
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/profiles/ap_profile.c  | 2 +-
+ mt_wifi/profiles/cmm_profile.c | 3 ---
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/mt_wifi/profiles/ap_profile.c b/mt_wifi/profiles/ap_profile.c
+index 19ce351..a654fab 100644
+--- a/mt_wifi/profiles/ap_profile.c
++++ b/mt_wifi/profiles/ap_profile.c
+@@ -1010,7 +1010,7 @@ static void rtmp_read_mld_group_idx_from_file(
+ 				pMbss->mld_grp_idx = mld_grp;
+ 				pMbss->mld_grp_by_cfg = TRUE;
+ 				pMbss->unique_mld_addr_enable = TRUE;
+-                                if (mld_grp != 3) 
++                                if (mld_grp != 1) 
+                                         wdev->ap_mlo_disable = TRUE;
+                                 else
+                                         wdev->ap_mlo_disable = FALSE;
+diff --git a/mt_wifi/profiles/cmm_profile.c b/mt_wifi/profiles/cmm_profile.c
+index 9c03c36..2d301c6 100644
+--- a/mt_wifi/profiles/cmm_profile.c
++++ b/mt_wifi/profiles/cmm_profile.c
+@@ -6173,9 +6173,6 @@ NDIS_STATUS	RTMPSetProfileParameters(
+ 					if (i >= pAd->ApCfg.BssidNum)
+ 						break;
+ 
+-					if (os_str_tol(macptr, 0, 10) != 0) /*Enable*/
+-						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = TRUE;
+-					else /*Disable*/
+ 						pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].IsolateInterStaTraffic = FALSE;
+ 
+ 					MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,

@@ -6,16 +6,10 @@
 
 / {
 	model = "Zbtlink ZBT-Z8103AX";
-	compatible = "zbtlink,zbt-z8103ax", "mediatek,mt7981";
+	compatible = "zbtlink,zbt-z8103ax", "mediatek,mt7981b";
 };
 
-&chosen {
-	bootargs = "earlycon=uart8250,mmio32,0x11002000 console=ttyS0,115200n8 loglevel=8";
-};
-
-&partitions {
-	partition@580000 {
-		label = "ubi";
-		reg = <0x580000 0x4000000>;
-	};
+&ubi {
+	/* reduce ubi partition size from .dtsi to fit into 64M Nand */
+	reg = <0x580000 0x4000000>;
 };

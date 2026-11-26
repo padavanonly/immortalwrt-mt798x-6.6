@@ -1,0 +1,42 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-usbmodem\n"
+"Language: zh_Hans\n"
+
+msgid "-- Please choose --"
+msgstr "-- 请选择 --"
+
+msgid "APN"
+msgstr "接入点 APN"
+
+msgid "Authentication Type"
+msgstr "认证类型"
+
+msgid "Base Setting"
+msgstr "基本设置"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "Modem Server For OpenWrt"
+msgstr "OpenWrt移动网络拨号服务"
+
+msgid "Modem device"
+msgstr "调制解调器设备"
+
+msgid "PAP/CHAP password"
+msgstr "PAP/CHAP 密码"
+
+msgid "PAP/CHAP username"
+msgstr "PAP/CHAP 用户名"
+
+msgid "PIN"
+msgstr "PIN 码"
+
+msgid "Tools"
+msgstr "拨号工具"
+
+msgid "USB Modem Server"
+msgstr "USB移动网络拨号服务"
+

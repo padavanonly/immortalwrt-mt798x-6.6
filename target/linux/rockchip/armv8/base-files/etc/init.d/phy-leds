@@ -27,16 +27,39 @@ netled_set() {
 
 boot() {
 	case "$(board_name)" in
+	9tripod,x3568-v4)
+		netled_set "stmmac-0:03:amber:lan" "eth1" "link_10 link_100 link_1000" "1" "rx tx" "1"
+		netled_set "stmmac-0:03:green:lan" "eth1" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		netled_set "stmmac-1:02:amber:lan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "1"
+		netled_set "stmmac-1:02:green:lan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		;;
+	ariaboard,photonicat)
+		netled_set "stmmac-0:03:amber:lan" "eth1" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-0:03:green:lan" "eth1" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		netled_set "stmmac-1:03:amber:wan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-1:03:green:wan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		;;
 	armsom,sige3)
 		netled_set "stmmac-0:01:amber:lan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
 		netled_set "stmmac-0:01:green:lan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		;;
+	linkease,easepi-r1)
+		netled_set "stmmac-0:01:amber:wan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-0:01:green:wan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		netled_set "stmmac-1:01:amber:lan" "eth1" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-1:01:green:lan" "eth1" "link_10 link_100 link_1000" "1" "rx tx" "0"
 		;;
 	lunzn,fastrhino-r68s|\
 	ezpro,mrkaio-m68s)
 		netled_set "stmmac-0:01:amber:lan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
 		netled_set "stmmac-0:01:green:lan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
-		netled_set "stmmac-1:01:amber:lan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
-		netled_set "stmmac-1:01:green:lan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		netled_set "stmmac-1:01:amber:lan" "eth1" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-1:01:green:lan" "eth1" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		;;
+	friendlyarm,nanopi-r2c|\
+	friendlyarm,nanopi-r2c-plus)
+		netled_set "stmmac-0:03:amber:wan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-0:03:green:wan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
 		;;
 	friendlyarm,nanopi-r3s)
 		netled_set "enp1s0-1::lan" "" "link_10 link_100 link_1000" "1" "rx tx" "0"
@@ -54,8 +77,8 @@ boot() {
 		netled_set "stmmac-0:01:green:lan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
 		;;
 	huake,guangmiao-g4c)
-		netled_set "enp1s0-1::lan" "" "link_10 link_100 link_1000" "1" "rx tx" "0"
-		netled_set "enp1s0-2::lan" "" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "enp1s0-0::lan" "" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		netled_set "enp1s0-1::lan" "" "link_10 link_100 link_1000" "0" "rx tx" "1"
 		;;
 	lyt,t68m)
 		netled_set "stmmac-0:01:amber:lan" "lan1" "link_10 link_100 link_1000" "0" "rx tx" "1"
@@ -66,6 +89,10 @@ boot() {
 	radxa,rock3a)
 		netled_set "stmmac-1:01:amber:lan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
 		netled_set "stmmac-1:01:green:lan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
+		;;
+	xunlong,orangepi-r1-plus-lts)
+		netled_set "stmmac-0:00:amber:wan" "eth0" "link_10 link_100 link_1000" "0" "rx tx" "1"
+		netled_set "stmmac-0:00:green:wan" "eth0" "link_10 link_100 link_1000" "1" "rx tx" "0"
 		;;
 	esac
 }

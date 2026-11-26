@@ -22,7 +22,7 @@ Subject: [PATCH] net-phy-add-mxl862xx-built-in-phy-support
  
  #define PHY_CTL1		0x13
  #define PHY_CTL1_MDICD		BIT(3)
-@@ -200,6 +202,29 @@
+@@ -200,6 +202,29 @@ static int gpy_hwmon_read(struct device
  	return 0;
  }
  
@@ -52,7 +52,7 @@ Subject: [PATCH] net-phy-add-mxl862xx-built-in-phy-support
  static umode_t gpy_hwmon_is_visible(const void *data,
  				    enum hwmon_sensor_types type,
  				    u32 attr, int channel)
-@@ -217,14 +242,25 @@
+@@ -217,14 +242,25 @@ static const struct hwmon_ops gpy_hwmon_
  	.read		= gpy_hwmon_read,
  };
  
@@ -78,7 +78,7 @@ Subject: [PATCH] net-phy-add-mxl862xx-built-in-phy-support
  	struct device *hwmon_dev;
  	char *hwmon_name;
  
-@@ -232,11 +268,13 @@
+@@ -232,11 +268,13 @@ static int gpy_hwmon_register(struct phy
  	if (IS_ERR(hwmon_name))
  		return PTR_ERR(hwmon_name);
  
@@ -96,7 +96,7 @@ Subject: [PATCH] net-phy-add-mxl862xx-built-in-phy-support
  	return PTR_ERR_OR_ZERO(hwmon_dev);
  }
  #else
-@@ -1306,6 +1344,29 @@
+@@ -1306,6 +1344,29 @@ static struct phy_driver gpy_drivers[] =
  		.get_wol	= gpy_get_wol,
  		.set_loopback	= gpy_loopback,
  	},
@@ -126,7 +126,7 @@ Subject: [PATCH] net-phy-add-mxl862xx-built-in-phy-support
  };
  module_phy_driver(gpy_drivers);
  
-@@ -1322,6 +1383,7 @@
+@@ -1322,6 +1383,7 @@ static struct mdio_device_id __maybe_unu
  	{PHY_ID_MATCH_MODEL(PHY_ID_GPY241B)},
  	{PHY_ID_MATCH_MODEL(PHY_ID_GPY241BM)},
  	{PHY_ID_MATCH_MODEL(PHY_ID_GPY245B)},

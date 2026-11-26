@@ -1,8 +1,12 @@
 #!/bin/sh /etc/rc.common
 
 START=99
-USE_PROCD=1
 
-start_service() {
-    /sbin/smp.sh
+boot() {
+	/sbin/smp.sh
 }
+
+start() {
+	/sbin/smp.sh
+}
+

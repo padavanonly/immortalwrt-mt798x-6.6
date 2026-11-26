@@ -161,6 +161,7 @@ menu "Global build settings"
 	config USE_GC_SECTIONS
 		bool
 		prompt "Dead code and data elimination for all packages (EXPERIMENTAL)"
+		default y if TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi || TARGET_mediatek_filogic_hwifi_a73
 		help
 		  Places functions and data items into its own sections to use the linker's
 		  garbage collection capabilites.
@@ -169,13 +170,24 @@ menu "Global build settings"
 	config USE_LTO
 		bool
 		prompt "Use the link-time optimizer for all packages (EXPERIMENTAL)"
+		default y if TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi || TARGET_mediatek_filogic_hwifi_a73
 		help
 		  Adds LTO flags to the CFLAGS and LDFLAGS.
 		  Packages can choose to opt-out via setting PKG_BUILD_FLAGS:=no-lto
 
+	config LTO_PARTITION
+		string "GCC LTO partitioning strategy"
+		depends on USE_LTO
+		default "one" if TARGET_mediatek_filogic || TARGET_mediatek_filogic_mtwifi || TARGET_mediatek_filogic_hwifi || TARGET_mediatek_filogic_hwifi_a73
+		default ""
+		help
+		  Optional value passed to -flto-partition=<value> (e.g. "one" for single-partition
+		  whole-program IPA optimization when build time is unconstrained).
+
 	config MOLD
 		depends on (aarch64 || arm || i386 || i686 || m68k || powerpc || powerpc64 || sh4 || x86_64)
 		depends on !GCC_USE_VERSION_11
+		depends on !HOST_OS_MACOS
 		def_bool $(shell, ./config/check-hostcxx.sh 10 2 12)
 
 	config USE_MOLD

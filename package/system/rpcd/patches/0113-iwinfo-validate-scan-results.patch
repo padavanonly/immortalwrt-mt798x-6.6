@@ -1,0 +1,111 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] rpcd: iwinfo: validate scan result length before blobmsg
+ encoding
+
+Ensure iwinfo scan returns success with valid positive buffer bounds before iterating entries.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ iwinfo.c | 41 ++++++++++++++++++++++++++++++-----------
+ 1 file changed, 30 insertions(+), 11 deletions(-)
+
+diff --git a/iwinfo.c b/iwinfo.c
+index 56afcfd..4a8fbdb 100644
+--- a/iwinfo.c
++++ b/iwinfo.c
+@@ -378,10 +378,16 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+                 struct ubus_request_data *req, const char *method,
+                 struct blob_attr *msg)
+ {
+-	int i, rv, len, band;
++	int i, rv, len = 0, band;
++	unsigned int mode;
++	const char *mode_name;
+ 	void *c, *d, *t;
+ 	char mac[18];
+-	char res[IWINFO_BUFSIZE];
++	char ssid[IWINFO_ESSID_MAX_SIZE + 1];
++	union {
++		struct iwinfo_scanlist_entry align;
++		char data[IWINFO_BUFSIZE];
++	} res;
+ 	struct iwinfo_scanlist_entry *e;
+ 
+ 	rv = rpc_iwinfo_open(msg);
+@@ -393,15 +399,20 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+ 
+ 	c = blobmsg_open_array(&buf, "results");
+ 
+-	if (!iw->scanlist(ifname, res, &len) && (len > 0))
++	memset(res.data, 0, sizeof(res.data));
++	if (!iw->scanlist(ifname, res.data, &len) && len > 0 &&
++	    (size_t)len <= sizeof(res.data) &&
++	    (size_t)len % sizeof(struct iwinfo_scanlist_entry) == 0)
+ 	{
+ 		for (i = 0; i < len; i += sizeof(struct iwinfo_scanlist_entry))
+ 		{
+-			e = (struct iwinfo_scanlist_entry *)&res[i];
++			e = (struct iwinfo_scanlist_entry *)&res.data[i];
+ 			d = blobmsg_open_table(&buf, NULL);
+ 
+-			if (e->ssid[0])
+-				blobmsg_add_string(&buf, "ssid", (const char *)e->ssid);
++			memcpy(ssid, e->ssid, IWINFO_ESSID_MAX_SIZE);
++			ssid[IWINFO_ESSID_MAX_SIZE] = '\0';
++			if (ssid[0])
++				blobmsg_add_string(&buf, "ssid", ssid);
+ 
+ 			snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+ 					 e->mac[0], e->mac[1], e->mac[2],
+@@ -409,7 +420,10 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+ 
+ 			blobmsg_add_string(&buf, "bssid", mac);
+ 
+-			blobmsg_add_string(&buf, "mode", IWINFO_OPMODE_NAMES[e->mode]);
++			mode = (unsigned int)e->mode;
++			mode_name = mode < IWINFO_OPMODE_COUNT ? IWINFO_OPMODE_NAMES[mode] :
++				IWINFO_OPMODE_NAMES[IWINFO_OPMODE_UNKNOWN];
++			blobmsg_add_string(&buf, "mode", mode_name);
+ 
+ 			band = iwinfo_band2ghz(e->band);
+ 			if (band > 0)
+@@ -421,7 +435,9 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+ 			blobmsg_add_u32(&buf, "quality", e->quality);
+ 			blobmsg_add_u32(&buf, "quality_max", e->quality_max);
+ 
+-			if (e->ht_chan_info.primary_chan) {
++			if (e->ht_chan_info.primary_chan &&
++			    e->ht_chan_info.secondary_chan_off < ARRAY_SIZE(ht_secondary_offset) &&
++			    e->ht_chan_info.chan_width < ARRAY_SIZE(ht_chan_width)) {
+ 				t = blobmsg_open_table(&buf, "ht_operation");
+ 				blobmsg_add_u32(&buf, "primary_channel", e->ht_chan_info.primary_chan);
+ 				blobmsg_add_string(&buf, "secondary_channel_offset", ht_secondary_offset[e->ht_chan_info.secondary_chan_off]);
+@@ -429,7 +445,8 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+ 				blobmsg_close_table(&buf, t);
+ 			}
+ 
+-			if (e->vht_chan_info.center_chan_1) {
++			if (e->vht_chan_info.center_chan_1 &&
++			    e->vht_chan_info.chan_width < ARRAY_SIZE(vht_chan_width)) {
+ 				t = blobmsg_open_table(&buf, "vht_operation");
+ 				blobmsg_add_u32(&buf, "channel_width", vht_chan_width[e->vht_chan_info.chan_width]);
+ 				blobmsg_add_u32(&buf, "center_freq_1", e->vht_chan_info.center_chan_1);
+@@ -437,7 +454,8 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+ 				blobmsg_close_table(&buf, t);
+ 			}
+ 
+-			if (e->he_chan_info.center_chan_1) {
++			if (e->he_chan_info.center_chan_1 &&
++			    e->he_chan_info.chan_width < ARRAY_SIZE(eht_chan_width)) {
+ 				t = blobmsg_open_table(&buf, "he_operation");
+ 				blobmsg_add_u32(&buf, "channel_width", eht_chan_width[e->he_chan_info.chan_width]);
+ 				blobmsg_add_u32(&buf, "center_freq_1", e->he_chan_info.center_chan_1);
+@@ -445,7 +463,8 @@ rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+ 				blobmsg_close_table(&buf, t);
+ 			}
+ 
+-			if (e->eht_chan_info.center_chan_1) {
++			if (e->eht_chan_info.center_chan_1 &&
++			    e->eht_chan_info.chan_width < ARRAY_SIZE(eht_chan_width)) {
+ 				t = blobmsg_open_table(&buf, "eht_operation");
+ 				blobmsg_add_u32(&buf, "channel_width", eht_chan_width[e->eht_chan_info.chan_width]);
+ 				blobmsg_add_u32(&buf, "center_freq_1", e->eht_chan_info.center_chan_1);

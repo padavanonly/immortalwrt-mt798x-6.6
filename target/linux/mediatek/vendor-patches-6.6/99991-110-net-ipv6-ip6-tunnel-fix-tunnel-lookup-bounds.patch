@@ -1,0 +1,319 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] ipv6: ip6_tunnel: validate tunnel lookup parameters and
+ bounds
+
+Prevent out-of-bounds parameter handling in ip6_tunnel receive/lookup paths.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ net/ipv6/ip6_tunnel.c | 154 +++++++++++++++++++++++++++++-------------
+ 1 file changed, 108 insertions(+), 46 deletions(-)
+
+diff --git a/net/ipv6/ip6_tunnel.c b/net/ipv6/ip6_tunnel.c
+index e698b0a..405e412 100644
+--- a/net/ipv6/ip6_tunnel.c
++++ b/net/ipv6/ip6_tunnel.c
+@@ -393,6 +393,16 @@ static struct ip6_tnl *ip6_tnl_locate(struct net *net,
+  *   ip6_tnl_dev_uninit() removes tunnel from its list
+  **/
+ 
++static void ip6_tnl_free_fmrs(struct __ip6_tnl_parm *parms)
++{
++	while (parms->fmrs) {
++		struct __ip6_tnl_fmr *next = parms->fmrs->next;
++
++		kfree(parms->fmrs);
++		parms->fmrs = next;
++	}
++}
++
+ static void
+ ip6_tnl_dev_uninit(struct net_device *dev)
+ {
+@@ -400,11 +410,7 @@ ip6_tnl_dev_uninit(struct net_device *dev)
+ 	struct net *net = t->net;
+ 	struct ip6_tnl_net *ip6n = net_generic(net, ip6_tnl_net_id);
+ 
+-	while (t->parms.fmrs) {
+-		struct __ip6_tnl_fmr *next = t->parms.fmrs->next;
+-		kfree(t->parms.fmrs);
+-		t->parms.fmrs = next;
+-	}
++	ip6_tnl_free_fmrs(&t->parms);
+ 
+ 	if (dev == ip6n->fb_tnl_dev)
+ 		RCU_INIT_POINTER(ip6n->tnls_wc[0], NULL);
+@@ -842,19 +848,24 @@ static void ip4ip6_fmr_calc(struct in6_addr *dest,
+ 	bool use_dest_addr;
+ 	const struct iphdr *dsth = iph;
+ 
+-	if ((u8*)dsth >= end)
++	if (((const u8 *)&dsth[1]) > end || dsth->ihl < 5)
++		return;
++
++	if (fmr->ip6_prefix_len > 128 || fmr->ip4_prefix_len > 32 ||
++	    fmr->ea_len > 48 || fmr->offset > 16 ||
++	    psidlen < 0 || psidlen > 16 || psidlen + fmr->offset > 16)
+ 		return;
+ 
+ 	/* find significant IP header */
+ 	if (iph->protocol == IPPROTO_ICMP) {
+-		struct icmphdr *ih = (struct icmphdr*)(((u8*)dsth) + dsth->ihl * 4);
+-		if (ih && ((u8*)&ih[1]) <= end && (
++		struct icmphdr *ih = (struct icmphdr *)(((u8 *)dsth) + dsth->ihl * 4);
++		if (((u8 *)&ih[1]) <= end && (
+ 			ih->type == ICMP_DEST_UNREACH ||
+ 			ih->type == ICMP_SOURCE_QUENCH ||
+ 			ih->type == ICMP_TIME_EXCEEDED ||
+ 			ih->type == ICMP_PARAMETERPROB ||
+ 			ih->type == ICMP_REDIRECT))
+-				dsth = (const struct iphdr*)&ih[1];
++				dsth = (const struct iphdr *)&ih[1];
+ 	}
+ 
+ 	/* in xmit-path use dest port by default and source port only if
+@@ -862,22 +873,23 @@ static void ip4ip6_fmr_calc(struct in6_addr *dest,
+ 	use_dest_addr = (xmit && dsth == iph) || (!xmit && dsth != iph);
+ 
+ 	/* get dst port */
+-	if (((u8*)&dsth[1]) <= end && (
++	if (((const u8 *)&dsth[1]) <= end && dsth->ihl >= 5 && (
+ 		dsth->protocol == IPPROTO_UDP ||
+ 		dsth->protocol == IPPROTO_TCP ||
+ 		dsth->protocol == IPPROTO_SCTP ||
+ 		dsth->protocol == IPPROTO_DCCP)) {
+ 			/* for UDP, TCP, SCTP and DCCP source and dest port
+ 			follow IPv4 header directly */
+-			portp = ((u8*)dsth) + dsth->ihl * 4;
++			portp = ((u8 *)dsth) + dsth->ihl * 4;
+ 
+ 			if (use_dest_addr)
+ 				portp += sizeof(u16);
+-	} else if (iph->protocol == IPPROTO_ICMP) {
+-		struct icmphdr *ih = (struct icmphdr*)(((u8*)dsth) + dsth->ihl * 4);
++	} else if (iph->protocol == IPPROTO_ICMP &&
++		   ((const u8 *)&dsth[1]) <= end && dsth->ihl >= 5) {
++		struct icmphdr *ih = (struct icmphdr *)(((u8 *)dsth) + dsth->ihl * 4);
+ 
+ 		/* use icmp identifier as port */
+-		if (((u8*)&ih) <= end && (
++		if (((u8 *)&ih[1]) <= end && (
+ 		    (use_dest_addr && (
+ 		    ih->type == ICMP_ECHOREPLY ||
+ 			ih->type == ICMP_TIMESTAMPREPLY ||
+@@ -889,7 +901,7 @@ static void ip4ip6_fmr_calc(struct in6_addr *dest,
+ 			ih->type == ICMP_INFO_REQUEST ||
+ 			ih->type == ICMP_ADDRESS)
+ 			)))
+-				portp = (u8*)&ih->un.echo.id;
++				portp = (u8 *)&ih->un.echo.id;
+ 	}
+ 
+ 	if ((portp && &portp[2] <= end) || psidlen == 0) {
+@@ -897,7 +909,8 @@ static void ip4ip6_fmr_calc(struct in6_addr *dest,
+ 		int fromrem = fmr->ip6_prefix_len % 8;
+ 		int bytes = sizeof(struct in6_addr) - frombyte;
+ 		const u32 *addr = (use_dest_addr) ? &iph->daddr : &iph->saddr;
+-		u64 eabits = ((u64)ntohl(*addr)) << (32 + fmr->ip4_prefix_len);
++		u64 eabits = fmr->ip4_prefix_len < 32 ?
++			((u64)ntohl(*addr)) << (32 + fmr->ip4_prefix_len) : 0;
+ 		u64 t = 0;
+ 
+ 		/* extract PSID from port and add it to eabits */
+@@ -912,17 +925,19 @@ static void ip4ip6_fmr_calc(struct in6_addr *dest,
+ 		/* rewrite destination address */
+ 		*dest = fmr->ip6_prefix;
+ 		memcpy(&dest->s6_addr[10], addr, sizeof(*addr));
+-		dest->s6_addr16[7] = htons(psidbits >> (16 - psidlen));
++		dest->s6_addr16[7] = psidlen > 0 ? htons(psidbits >> (16 - psidlen)) : 0;
+ 
+ 		if (bytes > sizeof(u64))
+ 			bytes = sizeof(u64);
+ 
+ 		/* insert eabits */
+-		memcpy(&t, &dest->s6_addr[frombyte], bytes);
+-		t = be64_to_cpu(t) & ~(((((u64)1) << fmr->ea_len) - 1)
+-			<< (64 - fmr->ea_len - fromrem));
+-		t = cpu_to_be64(t | (eabits >> fromrem));
+-		memcpy(&dest->s6_addr[frombyte], &t, bytes);
++		if (fmr->ea_len > 0 && bytes > 0) {
++			memcpy(&t, &dest->s6_addr[frombyte], bytes);
++			t = be64_to_cpu(t) & ~(((((u64)1) << fmr->ea_len) - 1)
++				<< (64 - fmr->ea_len - fromrem));
++			t = cpu_to_be64(t | (eabits >> fromrem));
++			memcpy(&dest->s6_addr[frombyte], &t, bytes);
++		}
+ 	}
+ }
+ 
+@@ -1543,8 +1558,9 @@ ipxip6_tnl_xmit(struct sk_buff *skb, struct net_device *dev,
+ 
+ 	/* try to find matching FMR */
+ 	for (fmr = t->parms.fmrs; fmr; fmr = fmr->next) {
+-		unsigned mshift = 32 - fmr->ip4_prefix_len;
+-		if (ntohl(fmr->ip4_prefix.s_addr) >> mshift ==
++		unsigned int mshift = 32 - fmr->ip4_prefix_len;
++		if (mshift >= 32 ||
++		    ntohl(fmr->ip4_prefix.s_addr) >> mshift ==
+ 				ntohl(ip_hdr(skb)->daddr) >> mshift)
+ 			break;
+ 	}
+@@ -1710,11 +1726,7 @@ ip6_tnl_change(struct ip6_tnl *t, const struct __ip6_tnl_parm *p)
+ 	t->parms.proto = p->proto;
+ 	t->parms.fwmark = p->fwmark;
+ 
+-	while (t->parms.fmrs) {
+-		struct __ip6_tnl_fmr *next = t->parms.fmrs->next;
+-		kfree(t->parms.fmrs);
+-		t->parms.fmrs = next;
+-	}
++	ip6_tnl_free_fmrs(&t->parms);
+ 	t->parms.fmrs = p->fmrs;
+ 
+ 	dst_cache_reset(&t->dst_cache);
+@@ -2168,13 +2180,15 @@ static const struct nla_policy ip6_tnl_fmr_policy[IFLA_IPTUN_FMR_MAX + 1] = {
+ 	[IFLA_IPTUN_FMR_OFFSET] = { .type = NLA_U8 }
+ };
+ 
+-static void ip6_tnl_netlink_parms(struct nlattr *data[],
+-				  struct __ip6_tnl_parm *parms)
++static int ip6_tnl_netlink_parms(struct nlattr *data[],
++				 struct __ip6_tnl_parm *parms)
+ {
++	int err;
++
+ 	memset(parms, 0, sizeof(*parms));
+ 
+ 	if (!data)
+-		return;
++		return 0;
+ 
+ 	if (data[IFLA_IPTUN_LINK])
+ 		parms->link = nla_get_u32(data[IFLA_IPTUN_LINK]);
+@@ -2207,17 +2221,24 @@ static void ip6_tnl_netlink_parms(struct nlattr *data[],
+ 		parms->fwmark = nla_get_u32(data[IFLA_IPTUN_FWMARK]);
+ 
+ 	if (data[IFLA_IPTUN_FMRS]) {
+-		unsigned rem;
++		unsigned int rem;
+ 		struct nlattr *fmr;
++
+ 		nla_for_each_nested(fmr, data[IFLA_IPTUN_FMRS], rem) {
+ 			struct nlattr *fmrd[IFLA_IPTUN_FMR_MAX + 1], *c;
+ 			struct __ip6_tnl_fmr *nfmr;
++			int psidlen;
+ 
+-			nla_parse_nested(fmrd, IFLA_IPTUN_FMR_MAX,
+-				fmr, ip6_tnl_fmr_policy, NULL);
++			err = nla_parse_nested(fmrd, IFLA_IPTUN_FMR_MAX,
++					       fmr, ip6_tnl_fmr_policy, NULL);
++			if (err)
++				goto err_free_fmrs;
+ 
+-			if (!(nfmr = kzalloc(sizeof(*nfmr), GFP_KERNEL)))
+-				continue;
++			nfmr = kzalloc(sizeof(*nfmr), GFP_KERNEL);
++			if (!nfmr) {
++				err = -ENOMEM;
++				goto err_free_fmrs;
++			}
+ 
+ 			nfmr->offset = 6;
+ 
+@@ -2241,10 +2262,28 @@ static void ip6_tnl_netlink_parms(struct nlattr *data[],
+ 			if ((c = fmrd[IFLA_IPTUN_FMR_OFFSET]))
+ 				nfmr->offset = nla_get_u8(c);
+ 
++			psidlen = (int)nfmr->ea_len - (32 - (int)nfmr->ip4_prefix_len);
++			if (nfmr->ip6_prefix_len > 128 ||
++			    nfmr->ip4_prefix_len > 32 ||
++			    nfmr->ea_len > 48 ||
++			    nfmr->offset > 16 ||
++			    psidlen < 0 || psidlen > 16 ||
++			    psidlen + nfmr->offset > 16) {
++				kfree(nfmr);
++				err = -EINVAL;
++				goto err_free_fmrs;
++			}
++
+ 			nfmr->next = parms->fmrs;
+ 			parms->fmrs = nfmr;
+ 		}
+ 	}
++
++	return 0;
++
++err_free_fmrs:
++	ip6_tnl_free_fmrs(parms);
++	return err;
+ }
+ 
+ static int ip6_tnl_newlink(struct net *src_net, struct net_device *dev,
+@@ -2265,21 +2304,34 @@ static int ip6_tnl_newlink(struct net *src_net, struct net_device *dev,
+ 			return err;
+ 	}
+ 
+-	ip6_tnl_netlink_parms(data, &nt->parms);
++	err = ip6_tnl_netlink_parms(data, &nt->parms);
++	if (err)
++		return err;
+ 
+ 	if (nt->parms.collect_md) {
+-		if (rtnl_dereference(ip6n->collect_md_tun))
+-			return -EEXIST;
++		if (rtnl_dereference(ip6n->collect_md_tun)) {
++			err = -EEXIST;
++			goto err_free_fmrs;
++		}
+ 	} else {
+ 		t = ip6_tnl_locate(net, &nt->parms, 0);
+-		if (!IS_ERR(t))
+-			return -EEXIST;
++		if (!IS_ERR(t)) {
++			err = -EEXIST;
++			goto err_free_fmrs;
++		}
+ 	}
+ 
+ 	err = ip6_tnl_create2(dev);
+-	if (!err && tb[IFLA_MTU])
++	if (err)
++		goto err_free_fmrs;
++
++	if (tb[IFLA_MTU])
+ 		ip6_tnl_change_mtu(dev, nla_get_u32(tb[IFLA_MTU]));
+ 
++	return 0;
++
++err_free_fmrs:
++	ip6_tnl_free_fmrs(&nt->parms);
+ 	return err;
+ }
+ 
+@@ -2305,14 +2357,24 @@ static int ip6_tnl_changelink(struct net_device *dev, struct nlattr *tb[],
+ 		if (err < 0)
+ 			return err;
+ 	}
+-	ip6_tnl_netlink_parms(data, &p);
+-	if (p.collect_md)
++	{
++		int err;
++
++		err = ip6_tnl_netlink_parms(data, &p);
++		if (err)
++			return err;
++	}
++	if (p.collect_md) {
++		ip6_tnl_free_fmrs(&p);
+ 		return -EINVAL;
++	}
+ 
+ 	t = ip6_tnl_locate(net, &p, 0);
+ 	if (!IS_ERR(t)) {
+-		if (t->dev != dev)
++		if (t->dev != dev) {
++			ip6_tnl_free_fmrs(&p);
+ 			return -EEXIST;
++		}
+ 	} else
+ 		t = netdev_priv(dev);
+ 

@@ -35,8 +35,8 @@
 	vproc: regulator-vproc {
 		compatible = "regulator-fixed";
 		regulator-name = "proc";
-		regulator-min-microvolt = <8500000>;
-		regulator-max-microvolt = <8500000>;
+		regulator-min-microvolt = <850000>;
+		regulator-max-microvolt = <850000>;
 		regulator-boot-on;
 		regulator-always-on;
 	};
@@ -62,7 +62,9 @@
 				 <&topckgen CLK_TOP_CB_CKSQ_40M>,
 				 <&apmixedsys CLK_APMIXED_ARM_LL>;
 			clock-names = "cpu", "intermediate", "armpll";
+			proc-supply = <&vproc>;
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 		};
 
 		cpu1: cpu@1 {
@@ -75,7 +77,9 @@
 				 <&topckgen CLK_TOP_CB_CKSQ_40M>,
 				 <&apmixedsys CLK_APMIXED_ARM_LL>;
 			clock-names = "cpu", "intermediate", "armpll";
+			proc-supply = <&vproc>;
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 		};
 
 		cpu2: cpu@2 {
@@ -88,7 +92,9 @@
 				 <&topckgen CLK_TOP_CB_CKSQ_40M>,
 				 <&apmixedsys CLK_APMIXED_ARM_LL>;
 			clock-names = "cpu", "intermediate", "armpll";
+			proc-supply = <&vproc>;
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 		};
 
 		cpu3: cpu@3 {
@@ -101,7 +107,9 @@
 				 <&topckgen CLK_TOP_CB_CKSQ_40M>,
 				 <&apmixedsys CLK_APMIXED_ARM_LL>;
 			clock-names = "cpu", "intermediate", "armpll";
+			proc-supply = <&vproc>;
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 		};
 
 		cluster0_opp: opp_table0 {
@@ -239,16 +247,6 @@
 		status = "disabled";
 	};
 
-	pwm_led: pwm-led {
-		 compatible = "pwm-leds";
-		 status = "disabled";
-	 };
-
-	pwm_rgb: pwm-rgb {
-		 compatible = "pwm-leds-multicolor";
-		 status = "disabled";
-	};
-
 	pmu: pmu {
 		compatible = "arm,cortex-a53-pmu";
 		interrupt-parent = <&gic>;
@@ -291,6 +289,12 @@
 					type = "hot";
 				};
 
+				cpu_trip_active_hot: active-hot {
+					temperature = <117000>;
+					hysteresis = <2000>;
+					type = "active";
+				};
+
 				cpu_trip_active_high: active-high {
 					temperature = <115000>;
 					hysteresis = <2000>;
@@ -311,6 +315,15 @@
 			};
 
 			cooling-maps {
+				cpu-active-hot {
+				/* active: dynamic cpu frequency scaling */
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+							 <&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+					trip = <&cpu_trip_active_hot>;
+				};
+
 				cpu-active-high {
 				/* active: set fan to cooling level 2 */
 					cooling-device = <&fan 3 3>;
@@ -586,7 +599,7 @@
 				nvmem-cell-names = "intr", "rx_imp", "tx_imp",
 						   "auto_load_valid";
 				mediatek,syscon-type = <&topmisc 0x218 0>;
-				status = "disabled";
+				status = "okay";
 			};
 		};
 
@@ -612,11 +625,12 @@
 			phys = <&tphyu2port0 PHY_TYPE_USB2>;
 			usb2-lpm-disable;
 			mediatek,u3p-dis-msk=<1>;
-			status = "disabled";
+			status = "okay";
 		};
 
 		afe: audio-controller@11210000 {
-			compatible = "mediatek,mt79xx-audio";
+			compatible = "mediatek,mt7987-afe",
+				     "mediatek,mt7986-afe";
 			reg = <0 0x11210000 0 0x9000>;
 			interrupts = <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&infracfg CLK_INFRA_66M_AUD_SLV_BCK>,
@@ -631,8 +645,8 @@
 				      "aud_l_ck",
 				      "aud_aud_ck",
 				      "aud_eg2_ck",
-				      "aud_sel",
-				      "aud_i2s_m";
+				      "aud_sel", /* Not used in the driver */
+				      "aud_i2s_m"; /* Not used in the driver */
 			assigned-clocks = <&topckgen CLK_TOP_AUD_SEL>,
 					  <&topckgen CLK_TOP_A1SYS_SEL>,
 					  <&topckgen CLK_TOP_AUD_L_SEL>,
@@ -703,10 +717,9 @@
 			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P0>,
 				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P0>,
 				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P0>,
-				 <&infracfg CLK_INFRA_133M_PCIE_CK_P0>,
-				 <&topckgen CLK_TOP_PEXTP_TL_SEL>;
+				 <&infracfg CLK_INFRA_133M_PCIE_CK_P0>;
 			clock-names = "pl_250m", "tl_26m", "peri_26m",
-				      "top_133m", "pextp_clk";
+				      "top_133m";
 			status = "disabled";
 			#interrupt-cells = <1>;
 			interrupt-map-mask = <0 0 0 0x7>;
@@ -741,10 +754,9 @@
 			clocks = <&infracfg CLK_INFRA_PCIE_PIPE_P1>,
 				 <&infracfg CLK_INFRA_PCIE_GFMUX_TL_P1>,
 				 <&infracfg CLK_INFRA_PCIE_PERI_26M_CK_P1>,
-				 <&infracfg CLK_INFRA_133M_PCIE_CK_P1>,
-				 <&topckgen CLK_TOP_PEXTP_TL_P1_SEL>;
+				 <&infracfg CLK_INFRA_133M_PCIE_CK_P1>;
 			clock-names = "pl_250m", "tl_26m", "peri_26m",
-				      "top_133m", "pextp_clk";
+				      "top_133m";
 			status = "disabled";
 			#interrupt-cells = <1>;
 			interrupt-map-mask = <0 0 0 0x7>;

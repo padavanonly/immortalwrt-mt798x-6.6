@@ -1,0 +1,82 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] arm64: panic: harden memdump and panic notifier bounds
+
+Guard arm64 memdump buffer handling and panic notifier error bounds.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ arch/arm64/kernel/memdump.c | 16 ++++++++++++++--
+ kernel/panic.c              |  2 +-
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/kernel/memdump.c b/arch/arm64/kernel/memdump.c
+index 6598dde..a8d1552 100644
+--- a/arch/arm64/kernel/memdump.c
++++ b/arch/arm64/kernel/memdump.c
+@@ -92,6 +92,9 @@ static void prepare_mdump_core_info(void)
+ 	uintptr_t *note_buf;
+ 	size_t len;
+ 
++	if (!mdump_core_info || !mdump_panic_regs)
++		return;
++
+ 	walk_system_ram_res(0, -1, &nr_ranges, get_nr_ram_ranges_callback);
+ 
+ 	mdump_core_info->ver = MEMDUMP_CORE_VER;
+@@ -133,7 +136,8 @@ static void prepare_mdump_core_info(void)
+ 
+ 	mdump_core_info->crc = crc32(0xffffffff, mdump_core_info, len) ^ 0xffffffff;
+ 
+-	dcache_clean_inval_poc((unsigned long)mdump_core_info, len);
++	dcache_clean_inval_poc((unsigned long)mdump_core_info,
++			       (unsigned long)mdump_core_info + len);
+ }
+ 
+ void arm64_atf_memory_dump(int reboot_timeout)
+@@ -141,6 +145,9 @@ void arm64_atf_memory_dump(int reboot_timeout)
+ 	struct arm_smccc_res res;
+ 	struct pt_regs regs;
+ 
++	if (!mdump_core_info || !mdump_panic_regs)
++		return;
++
+ 	crash_setup_regs(&regs, NULL);
+ 	crash_save_vmcoreinfo();
+ 
+@@ -159,11 +166,15 @@ void arm64_atf_memory_dump(int reboot_timeout)
+ 
+ void arm64_atf_memory_dump_save_regs(struct pt_regs *regs)
+ {
++	if (!mdump_core_info || !mdump_panic_regs || !regs)
++		return;
++
+ 	mdump_core_info->panic_regs_valid = true;
+ 
+ 	memcpy(mdump_panic_regs, regs, sizeof(*regs));
+ 
+-	dcache_clean_inval_poc((unsigned long)mdump_panic_regs, sizeof(*regs));
++	dcache_clean_inval_poc((unsigned long)mdump_panic_regs,
++			       (unsigned long)mdump_panic_regs + sizeof(*regs));
+ }
+ 
+ /* dummy functions */
+@@ -192,6 +203,7 @@ static int __init memdump_core_info_init(void)
+ 	if (!mdump_panic_regs) {
+ 		pr_warn("Memory allocation for pt_regs failed\n");
+ 		free_page((unsigned long)mdump_core_info);
++		mdump_core_info = NULL;
+ 		return -ENOMEM;
+ 	}
+ 
+diff --git a/kernel/panic.c b/kernel/panic.c
+index 9bee906..9e81cc2 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -185,7 +185,7 @@ void __weak crash_smp_send_stop(void)
+ 	 */
+ 	smp_send_stop();
+ #else
+-	crash_smp_send_stop();
++	smp_send_stop();
+ #endif
+ 	cpus_stopped = 1;
+ }

@@ -1,13 +1,12 @@
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
 
 /* CONST definition */
 #ifndef REG_CONST
 #define REG_CONST
 #endif
 
+typedef unsigned int uint32_t;
 typedef volatile struct pao2_REG {
     /* 0x000 */
     union {
@@ -24,7 +23,9 @@ typedef volatile struct pao2_REG {
             REG_CONST uint32_t _JUMBO_ID_ERR_1_DROP_EN : 1;
             REG_CONST uint32_t _JUMBO_ID_ERR_0_DROP_EN : 1;
             REG_CONST uint32_t _JUMBO_ERR_STOP_EN : 1;
-            REG_CONST uint32_t _RESERVED_12 : 7;
+            REG_CONST uint32_t _LATCH_HIFTXD_OFF : 1;
+            REG_CONST uint32_t _DMAD_LAT_OPT : 4;
+            REG_CONST uint32_t _RESERVED_14 : 2;
             REG_CONST uint32_t _JUMBO_MAX_BUF_NUM : 4;
         };
         REG_CONST uint32_t DATA;
@@ -692,7 +693,8 @@ typedef volatile struct pao2_REG {
             REG_CONST uint32_t _IS_MCAST_CLONE : 1;
             REG_CONST uint32_t _SRC : 2;
             REG_CONST uint32_t _HIF_VERSION : 4;
-            REG_CONST uint32_t _RESERVED_8 : 11;
+            REG_CONST uint32_t _ETHER_TYPE_BSWAP : 1;
+            REG_CONST uint32_t _RESERVED_9 : 10;
         };
         REG_CONST uint32_t DATA;
     } WED_PAO_HIFTXD;
@@ -1092,8 +1094,56 @@ typedef volatile struct pao2_REG {
         REG_CONST uint32_t DATA;
     } WED_PAO_MON_AMSDU_FIFO_CNT7;
 
-    /* 0x254 ~ 0x26c */
-    REG_CONST uint32_t          RSV_254_26c[7];
+    /* 0x254 */
+    union {
+        struct {
+            REG_CONST uint32_t _ETHER_TYPE_CNT : 32;
+        };
+        REG_CONST uint32_t DATA;
+    } WED_PAO_MON_AMSDU_FIFO_CNT8;
+
+    /* 0x258 ~ 0x258 */
+    REG_CONST uint32_t          RSV_258_258[1];
+
+    /* 0x25c */
+    union {
+        struct {
+            REG_CONST uint32_t _DATA : 32;
+        };
+        REG_CONST uint32_t DATA;
+    } WED_PAO_MON_AMSDU_FIFO_DMAD_0;
+
+    /* 0x260 */
+    union {
+        struct {
+            REG_CONST uint32_t _DATA : 32;
+        };
+        REG_CONST uint32_t DATA;
+    } WED_PAO_MON_AMSDU_FIFO_DMAD_1;
+
+    /* 0x264 */
+    union {
+        struct {
+            REG_CONST uint32_t _DATA : 32;
+        };
+        REG_CONST uint32_t DATA;
+    } WED_PAO_MON_AMSDU_FIFO_DMAD_2;
+
+    /* 0x268 */
+    union {
+        struct {
+            REG_CONST uint32_t _DATA : 32;
+        };
+        REG_CONST uint32_t DATA;
+    } WED_PAO_MON_AMSDU_FIFO_DMAD_3;
+
+    /* 0x26c */
+    union {
+        struct {
+            REG_CONST uint32_t _DATA : 32;
+        };
+        REG_CONST uint32_t DATA;
+    } WED_PAO_MON_AMSDU_FIFO_DMAD_4;
 
     /* 0x270 */
     union {
@@ -3290,6 +3340,12 @@ typedef volatile struct pao2_REG {
 #define WED_PAO_MON_AMSDU_FIFO_CNT5_OFFSET                0x00001A48
 #define WED_PAO_MON_AMSDU_FIFO_CNT6_OFFSET                0x00001A4C
 #define WED_PAO_MON_AMSDU_FIFO_CNT7_OFFSET                0x00001A50
+#define WED_PAO_MON_AMSDU_FIFO_CNT8_OFFSET                0x00001A54
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_0_OFFSET              0x00001A5C
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_1_OFFSET              0x00001A60
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_2_OFFSET              0x00001A64
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_3_OFFSET              0x00001A68
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_4_OFFSET              0x00001A6C
 #define WED_PAO_MON_AMSDU_ENG0_OFFSET                     0x00001A70
 #define WED_PAO_MON_AMSDU_ENG0_CNT0_OFFSET                0x00001A74
 #define WED_PAO_MON_AMSDU_ENG0_CNT1_OFFSET                0x00001A78
@@ -3533,13 +3589,21 @@ typedef volatile struct pao2_REG {
     JUMBO_ID_ERR_1_DROP_EN[18]   - (RW) When receive jumbo DMAD, if the coming DMAD ID mismatch, then drop current merged jumbo DMAD, for debug mode only
     JUMBO_ID_ERR_0_DROP_EN[19]   - (RW) When receive jumbo DMAD, if the coming DMAD ID mismatch, then drop current merged jumbo DMAD, for debug mode only
     JUMBO_ERR_STOP_EN[20]        - (RW) Stop AMSDU_FIFO FSM when Error occur, send clr to release FSM to IDLE, for debug mode only
-    RESERVED21[27..21]           - (RO) Reserved bits
+    LATCH_HIFTXD_OFF[21]         - (RW) Latch the latest partial HIFTXD when dispatch to AMSDU_ENG
+    DMAD_LAT_OPT[25..22]         - (RW) Latch DMAD when dispatch to AMSDU_ENG
+    RESERVED26[27..26]           - (RO) Reserved bits
     JUMBO_MAX_BUF_NUM[31..28]    - (RW) Set the maximum jumbo DMAD counts, for debug mode only
 
  =====================================================================================*/
 #define WED_PAO_AMSDU_FIFO_JUMBO_MAX_BUF_NUM_OFFSET       WED_PAO_AMSDU_FIFO_OFFSET
 #define WED_PAO_AMSDU_FIFO_JUMBO_MAX_BUF_NUM_MASK         0xF0000000                // JUMBO_MAX_BUF_NUM[31..28]
 #define WED_PAO_AMSDU_FIFO_JUMBO_MAX_BUF_NUM_SHFT         28
+#define WED_PAO_AMSDU_FIFO_DMAD_LAT_OPT_OFFSET            WED_PAO_AMSDU_FIFO_OFFSET
+#define WED_PAO_AMSDU_FIFO_DMAD_LAT_OPT_MASK              0x03C00000                // DMAD_LAT_OPT[25..22]
+#define WED_PAO_AMSDU_FIFO_DMAD_LAT_OPT_SHFT              22
+#define WED_PAO_AMSDU_FIFO_LATCH_HIFTXD_OFF_OFFSET        WED_PAO_AMSDU_FIFO_OFFSET
+#define WED_PAO_AMSDU_FIFO_LATCH_HIFTXD_OFF_MASK          0x00200000                // LATCH_HIFTXD_OFF[21]
+#define WED_PAO_AMSDU_FIFO_LATCH_HIFTXD_OFF_SHFT          21
 #define WED_PAO_AMSDU_FIFO_JUMBO_ERR_STOP_EN_OFFSET       WED_PAO_AMSDU_FIFO_OFFSET
 #define WED_PAO_AMSDU_FIFO_JUMBO_ERR_STOP_EN_MASK         0x00100000                // JUMBO_ERR_STOP_EN[20]
 #define WED_PAO_AMSDU_FIFO_JUMBO_ERR_STOP_EN_SHFT         20
@@ -4658,9 +4722,13 @@ typedef volatile struct pao2_REG {
     IS_MCAST_CLONE[14]           - (RW) HIFTXD.IS_MCAST_CLONE value config.
     SRC[16..15]                  - (RW) HIFTXD.SRC value config.
     HIF_VERSION[20..17]          - (RW) HIFTXD.HIF_VERSION value config.
-    RESERVED21[31..21]           - (RO) Reserved bits
+    ETHER_TYPE_BSWAP[21]         - (RW) HIFTXD.ETHER_TYPE byte swap
+    RESERVED22[31..22]           - (RO) Reserved bits
 
  =====================================================================================*/
+#define WED_PAO_HIFTXD_ETHER_TYPE_BSWAP_OFFSET            WED_PAO_HIFTXD_OFFSET
+#define WED_PAO_HIFTXD_ETHER_TYPE_BSWAP_MASK              0x00200000                // ETHER_TYPE_BSWAP[21]
+#define WED_PAO_HIFTXD_ETHER_TYPE_BSWAP_SHFT              21
 #define WED_PAO_HIFTXD_HIF_VERSION_OFFSET                 WED_PAO_HIFTXD_OFFSET
 #define WED_PAO_HIFTXD_HIF_VERSION_MASK                   0x001E0000                // HIF_VERSION[20..17]
 #define WED_PAO_HIFTXD_HIF_VERSION_SHFT                   17
@@ -5290,6 +5358,72 @@ typedef volatile struct pao2_REG {
 #define WED_PAO_MON_AMSDU_FIFO_CNT7_MSDU_CNT_OFFSET       WED_PAO_MON_AMSDU_FIFO_CNT7_OFFSET
 #define WED_PAO_MON_AMSDU_FIFO_CNT7_MSDU_CNT_MASK         0xFFFFFFFF                // MSDU_CNT[31..0]
 #define WED_PAO_MON_AMSDU_FIFO_CNT7_MSDU_CNT_SHFT         0
+
+/* =====================================================================================
+
+  ---WED_PAO_MON_AMSDU_FIFO_CNT8 (0x15015800 + 0x254)---
+
+    ETHER_TYPE_CNT[31..0]        - (RO) AMSDU_FIFO MSDU counter, count ETHER_TYPE<16'h0600
+
+ =====================================================================================*/
+#define WED_PAO_MON_AMSDU_FIFO_CNT8_ETHER_TYPE_CNT_OFFSET WED_PAO_MON_AMSDU_FIFO_CNT8_OFFSET
+#define WED_PAO_MON_AMSDU_FIFO_CNT8_ETHER_TYPE_CNT_MASK   0xFFFFFFFF                // ETHER_TYPE_CNT[31..0]
+#define WED_PAO_MON_AMSDU_FIFO_CNT8_ETHER_TYPE_CNT_SHFT   0
+
+/* =====================================================================================
+
+  ---WED_PAO_MON_AMSDU_FIFO_DMAD_0 (0x15015800 + 0x25C)---
+
+    DATA[31..0]                  - (RO) AMSDU_FIFO latch DMAD data
+
+ =====================================================================================*/
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_0_DATA_OFFSET         WED_PAO_MON_AMSDU_FIFO_DMAD_0_OFFSET
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_0_DATA_MASK           0xFFFFFFFF                // DATA[31..0]
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_0_DATA_SHFT           0
+
+/* =====================================================================================
+
+  ---WED_PAO_MON_AMSDU_FIFO_DMAD_1 (0x15015800 + 0x260)---
+
+    DATA[31..0]                  - (RO) AMSDU_FIFO latch DMAD data
+
+ =====================================================================================*/
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_1_DATA_OFFSET         WED_PAO_MON_AMSDU_FIFO_DMAD_1_OFFSET
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_1_DATA_MASK           0xFFFFFFFF                // DATA[31..0]
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_1_DATA_SHFT           0
+
+/* =====================================================================================
+
+  ---WED_PAO_MON_AMSDU_FIFO_DMAD_2 (0x15015800 + 0x264)---
+
+    DATA[31..0]                  - (RO) AMSDU_FIFO latch DMAD data
+
+ =====================================================================================*/
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_2_DATA_OFFSET         WED_PAO_MON_AMSDU_FIFO_DMAD_2_OFFSET
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_2_DATA_MASK           0xFFFFFFFF                // DATA[31..0]
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_2_DATA_SHFT           0
+
+/* =====================================================================================
+
+  ---WED_PAO_MON_AMSDU_FIFO_DMAD_3 (0x15015800 + 0x268)---
+
+    DATA[31..0]                  - (RO) AMSDU_FIFO latch DMAD data
+
+ =====================================================================================*/
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_3_DATA_OFFSET         WED_PAO_MON_AMSDU_FIFO_DMAD_3_OFFSET
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_3_DATA_MASK           0xFFFFFFFF                // DATA[31..0]
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_3_DATA_SHFT           0
+
+/* =====================================================================================
+
+  ---WED_PAO_MON_AMSDU_FIFO_DMAD_4 (0x15015800 + 0x26C)---
+
+    DATA[31..0]                  - (RO) AMSDU_FIFO latch DMAD data
+
+ =====================================================================================*/
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_4_DATA_OFFSET         WED_PAO_MON_AMSDU_FIFO_DMAD_4_OFFSET
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_4_DATA_MASK           0xFFFFFFFF                // DATA[31..0]
+#define WED_PAO_MON_AMSDU_FIFO_DMAD_4_DATA_SHFT           0
 
 /* =====================================================================================
 
@@ -7802,7 +7936,7 @@ typedef volatile struct pao2_REG {
 
   ---WED_PAO_MON_HIFTXD_FETCH_CNT1 (0x15015800 + 0x678)---
 
-    HIFTXD_OU1_CNT[31..0]        - (RO) PAO HIFTX_FETCH output HIFTXD count
+    HIFTXD_OU1_CNT[31..0]        - (RO) PAO HIFTX_FETCH output HIFTXD to Ring0 count
 
  =====================================================================================*/
 #define WED_PAO_MON_HIFTXD_FETCH_CNT1_HIFTXD_OU1_CNT_OFFSET WED_PAO_MON_HIFTXD_FETCH_CNT1_OFFSET
@@ -7813,7 +7947,7 @@ typedef volatile struct pao2_REG {
 
   ---WED_PAO_MON_HIFTXD_FETCH_CNT2 (0x15015800 + 0x67C)---
 
-    HIFTXD_OU2_CNT[31..0]        - (RO) PAO HIFTX_FETCH output WPDMAD count
+    HIFTXD_OU2_CNT[31..0]        - (RO) PAO HIFTX_FETCH output HIFTXD to Ring1 count
 
  =====================================================================================*/
 #define WED_PAO_MON_HIFTXD_FETCH_CNT2_HIFTXD_OU2_CNT_OFFSET WED_PAO_MON_HIFTXD_FETCH_CNT2_OFFSET

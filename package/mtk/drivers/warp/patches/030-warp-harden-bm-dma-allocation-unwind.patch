@@ -1,0 +1,130 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] warp: harden HIF TXD lifecycle and BM DMA allocation unwind
+
+Make wed_tx_ring_exit() and wed_txbm_exit() idempotent, balance HIF TXD accounting, and free already-mapped DMA/page-pool cells on RXBM and PageBM OOM.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ warp_rx_bm.c      |  2 ++
+ warp_rx_page_bm.c |  6 ++++++
+ wed.c             | 26 +++++++++++++++++++-------
+ 3 files changed, 27 insertions(+), 7 deletions(-)
+
+diff --git a/warp_rx_bm.c b/warp_rx_bm.c
+index a4237c1..e9601c4 100644
+--- a/warp_rx_bm.c
++++ b/warp_rx_bm.c
+@@ -60,6 +60,7 @@ wed_rx_bm_ring_exit(
+ 
+ 	if (!ring->cell) {
+ 		warp_dbg(WARP_DBG_ERR, "%s(): ring->cell is null return\n", __func__);
++		warp_dma_buf_free(wed->pdev, desc);
+ 		return;
+ 	}
+ 
+@@ -81,6 +82,7 @@ wed_rx_bm_ring_exit(
+ 	}
+ 
+ 	vfree(ring->cell);
++	ring->cell = NULL;
+ 	warp_dma_buf_free(wed->pdev, desc);
+ }
+ 
+diff --git a/warp_rx_page_bm.c b/warp_rx_page_bm.c
+index ecf2ee5..f1bcb8b 100644
+--- a/warp_rx_page_bm.c
++++ b/warp_rx_page_bm.c
+@@ -234,6 +234,11 @@ wed_rx_page_bm_ring_exit(
+ 	struct wed_rx_page_bm *bm = &rx_ctrl->page_bm;
+ 	u32 i;
+ 
++	if (!ring->cell) {
++		warp_dma_buf_free(wed->pdev, desc);
++		return;
++	}
++
+ 	wed_exit_msdu_page_hash(bm);
+ 
+ 	for (i = 0; i < ring_len; i++)
+@@ -248,6 +253,7 @@ wed_rx_page_bm_ring_exit(
+ 	}
+ 
+ 	vfree(ring->cell);
++	ring->cell = NULL;
+ 	warp_dma_buf_free(wed->pdev, desc);
+ }
+ 
+diff --git a/wed.c b/wed.c
+index 38e7b56..e1a2030 100644
+--- a/wed.c
++++ b/wed.c
+@@ -998,11 +998,15 @@ hif_txd_init(struct wed_entry *wed)
+ 	struct pci_dev *wdev = hw->hif_dev;
+ 	int i = 0;
+ 
+-	/* TODO: set segment_num */
+-	hif_txd_ctrl->hif_txd_segment_nums = 32;
++	/* Do not overwrite a live allocation set. */
++	if (hif_txd_ctrl->hif_txd_segment_nums)
++		return -EBUSY;
++
+ 	hif_txd_ctrl->hif_txd_src = hw->src;
+ 
+-	for (i = 0; i < hif_txd_ctrl->hif_txd_segment_nums; i++) {
++	for (i = 0; i < 32; i++) {
++		hif_txd_ctrl->hif_txd_addr[i] = NULL;
++		hif_txd_ctrl->hif_txd_addr_pa[i] = 0;
+ 		/* each segment is 64K */
+ 		hif_txd_ctrl->hif_txd_addr[i] =
+ 			(void *)__get_free_pages(GFP_ATOMIC | __GFP_ZERO, 4);
+@@ -1022,9 +1026,9 @@ hif_txd_init(struct wed_entry *wed)
+ 			warp_dbg(WARP_DBG_ERR, "%s(): dma map fail\n", __func__);
+ 			goto err_dma_map;
+ 		}
+-	}
+ 
+-	hif_txd_ctrl->hif_txd_segment_nums = i;
++		hif_txd_ctrl->hif_txd_segment_nums++;
++	}
+ 
+ 	return 0;
+ 
+@@ -1033,14 +1037,19 @@ err_dma_map:
+ 	pkt_free_mem(hif_txd_ctrl->hif_txd_addr[i]);
+ #endif
+ 	free_pages((unsigned long)hif_txd_ctrl->hif_txd_addr[i], 4);
++	hif_txd_ctrl->hif_txd_addr[i] = NULL;
++	hif_txd_ctrl->hif_txd_addr_pa[i] = 0;
+ err_alloc:
+-	for (i -= 1; i >= 0; i--) {
++	while (hif_txd_ctrl->hif_txd_segment_nums) {
++		i = --hif_txd_ctrl->hif_txd_segment_nums;
+ 		dma_unmap_single(&wdev->dev, hif_txd_ctrl->hif_txd_addr_pa[i],
+ 				64 * 1024, DMA_TO_DEVICE);
+ #ifdef WED_MEM_LEAK_DBG
+ 		pkt_free_mem(hif_txd_ctrl->hif_txd_addr[i]);
+ #endif
+ 		free_pages((unsigned long)hif_txd_ctrl->hif_txd_addr[i], 4);
++		hif_txd_ctrl->hif_txd_addr[i] = NULL;
++		hif_txd_ctrl->hif_txd_addr_pa[i] = 0;
+ 	}
+ 
+ 	return -ENOMEM;
+@@ -1056,7 +1065,8 @@ hif_txd_exit(struct wed_entry *wed)
+ 	struct wifi_hw *hw = &wifi->hw;
+ 	struct pci_dev *wdev = hw->hif_dev;
+ 
+-	for (i = 0; i < hif_txd_ctrl->hif_txd_segment_nums; i++) {
++	while (hif_txd_ctrl->hif_txd_segment_nums) {
++		i = --hif_txd_ctrl->hif_txd_segment_nums;
+ 
+ 		dma_unmap_single(&wdev->dev, hif_txd_ctrl->hif_txd_addr_pa[i],
+ 				64 * 1024, DMA_TO_DEVICE);
+@@ -1064,6 +1074,8 @@ hif_txd_exit(struct wed_entry *wed)
+ 		pkt_free_mem(hif_txd_ctrl->hif_txd_addr[i]);
+ #endif
+ 		free_pages((unsigned long)hif_txd_ctrl->hif_txd_addr[i], 4);
++		hif_txd_ctrl->hif_txd_addr[i] = NULL;
++		hif_txd_ctrl->hif_txd_addr_pa[i] = 0;
+ 	}
+ };
+ 

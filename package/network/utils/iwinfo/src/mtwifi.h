@@ -1,20 +1,24 @@
 #ifndef __MTWIFI_H
 #define __MTWIFI_H
 
+#include "iwinfo.h"
+
 #define USHORT  unsigned short
 #define UCHAR   unsigned char
 #define ULONG	unsigned long
 #define UINT8	unsigned char
 #define UINT16	unsigned short
 #define UINT32	unsigned int
+#define UINT64	unsigned long long
 #define INT32	int
+#define INT64	long long
 #define INT 	int
 
 typedef union _HTTRANSMIT_SETTING_FIX {
 	struct {
 		unsigned short MCS:6;
 		unsigned short ldpc:1;
-		unsigned short BW:2;
+		unsigned short BW:4;
 		unsigned short ShortGI:2;
 		unsigned short STBC:1;
 		unsigned short eTxBF:1;
@@ -34,21 +38,38 @@ typedef struct _RT_802_11_MAC_ENTRY_FIX {
 	signed char             AvgRssi1;
 	signed char             AvgRssi2;
 	signed char             AvgRssi3;
+	unsigned char           AvgSnr;
 	unsigned int            ConnectedTime;
 	HTTRANSMIT_SETTING      TxRate;
 	HTTRANSMIT_SETTING      LastRxRate;
 	short                   StreamSnr[3];
 	short                   SoundingRespSnr[3];
-	unsigned int			EncryMode;
-	unsigned int			AuthMode;
+	unsigned int            InactiveTime;
+	unsigned int            EncryMode;
+	unsigned int            AuthMode;
+	unsigned int            TxPackets; //TxPackets.QuadPart
+	unsigned int            RxPackets; //RxPackets.QuadPart
+	unsigned long long      TxBytes;
+	unsigned long long      RxBytes;
 } RT_802_11_MAC_ENTRY;
 
 #define MAX_NUMBER_OF_MAC               544
+#define MAX_NUM_OF_CHANNELS				59
 
 typedef struct _RT_802_11_MAC_TABLE_FIX {
 	unsigned long            Num;
 	RT_802_11_MAC_ENTRY      Entry[MAX_NUMBER_OF_MAC];
 } RT_802_11_MAC_TABLE;
+
+typedef struct _channel_info_basic {
+	UINT8 channel;
+	UINT8 channel_idx;
+} CHANNEL_INFO_BASIC, *PCHANNEL_INFO_BASIC;
+
+struct channel_list_basic {
+	CHANNEL_INFO_BASIC ChList[MAX_NUM_OF_CHANNELS];
+	UINT8 ChListNum;
+};
 
 #define RT_PRIV_IOCTL				(SIOCIWFIRSTPRIV + 0x01)
 #define RTPRIV_IOCTL_SET			(SIOCIWFIRSTPRIV + 0x02)
@@ -62,8 +83,7 @@ typedef struct _RT_802_11_MAC_TABLE_FIX {
 #define OID_802_11_BW						0x1903
 #define OID_GET_CHAN_LIST					0x0998
 #define OID_GET_WIRELESS_BAND				0x09B4
-#define OID_GET_CEN_CH1					0x09C0
-#define OID_GET_CEN_CH2					0x09C1
+#define OID_GET_CHANNEL_LIST					0x09C0
 #define OID_802_11_SECURITY_TYPE                0x093e
 #define RT_OID_802_11_PHY_MODE				0x050C
 #define GET_MAC_TABLE_STRUCT_FLAG_RAW_SSID	0x1
@@ -74,12 +94,20 @@ typedef struct _RT_802_11_MAC_TABLE_FIX {
 #define MODE_HTGREENFIELD 3
 #define MODE_VHT 4
 #define MODE_HE 5
-#define MODE_HE_5G 6
-#define MODE_HE_24G 7
+#define MODE_EHT 6
+
 #define MODE_HE_SU	8
+#define MODE_HE_24G 7
 #define MODE_HE_EXT_SU	9
 #define MODE_HE_TRIG	10
 #define MODE_HE_MU	11
+#define MODE_EHT_ER_SU	13
+#define MODE_EHT_TB	14
+#define MODE_EHT_MU	15
+#define MODE_UNKNOWN 255
+
+#define MODE_HE_SU_REMAPPING  5
+#define MODE_HE_EXTSU_REMAPPING  6
 
 #define TMI_TX_RATE_OFDM_6M     11
 #define TMI_TX_RATE_OFDM_9M     15
@@ -107,6 +135,7 @@ enum oid_bw {
 	BAND_WIDTH_10,
 	BAND_WIDTH_5,
 	BAND_WIDTH_8080,
+	BAND_WIDTH_320,
 	BAND_WIDTH_BOTH,
 	BAND_WIDTH_25,
 	BAND_WIDTH_20_242TONE,
@@ -122,6 +151,7 @@ enum oid_bw {
 #define BW_8080		BAND_WIDTH_8080
 #define BW_25		BAND_WIDTH_25
 #define BW_20_242TONE	BAND_WIDTH_20_242TONE
+#define BW_320		BAND_WIDTH_320
 #define BW_NUM		BAND_WIDTH_NUM
 
 enum WIFI_MODE {
@@ -135,20 +165,27 @@ enum WIFI_MODE {
 	WMODE_AX_24G = 1 << 6,
 	WMODE_AX_5G = 1 << 7,
 	WMODE_AX_6G = 1 << 8,
-	WMODE_COMP = 9,
+	WMODE_BE_24G = 1 << 9,
+	WMODE_BE_5G = 1 << 10,
+	WMODE_BE_6G = 1 << 11,
+	/*
+	 * total types of supported wireless mode,
+	 * add this value once yow add new type
+	 */
+	WMODE_COMP = 12,
 };
 
 #define WMODE_CAP_N(_x)			(((_x) & (WMODE_GN | WMODE_AN)) != 0)
 #define WMODE_CAP_AC(_x)		(((_x) & (WMODE_AC)) != 0)
 #define WMODE_CAP_AX(_x)		((_x) & (WMODE_AX_24G | WMODE_AX_5G | WMODE_AX_6G))
+#define WMODE_CAP_BE(_x) \
+((_x) & (WMODE_BE_24G | WMODE_BE_5G | WMODE_BE_6G))
 
 enum MTK_CH_BAND {
 	MTK_CH_BAND_24G = 0,
 	MTK_CH_BAND_5G = 1,
 	MTK_CH_BAND_6G = 2,
 };
-
-#define MAX_NUM_OF_CHANNELS		59
 
 struct __attribute__ ((packed)) chnList {
 	unsigned char channel;
@@ -262,9 +299,14 @@ typedef enum _SEC_AKM_MODE {
 #define IS_AKM_OWE(_AKMMap) ((_AKMMap & (1 << SEC_AKM_OWE)) > 0)
 
 #define MTK_L1_PROFILE_PATH		"/etc/wireless/l1profile.dat"
+#define MTK_L1UTIL_PATH			"/usr/lib/lua/l1dat_parser.lua"
 
 void getRate(HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate);
 void get_rate_he(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate);
+void get_rate_eht(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate);
 UINT32 cck_to_mcs(UINT32 mcs);
+
+int mtk_get_id_by_l1util(const char *dev, struct iwinfo_hardware_id *id);
+int mtk_get_id_from_l1profile(struct iwinfo_hardware_id *id);
 
 #endif

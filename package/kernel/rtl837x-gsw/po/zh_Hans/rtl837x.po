@@ -1,0 +1,122 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "-"
+msgstr "-"
+
+msgid "Full"
+msgstr "全双工"
+
+msgid "Half"
+msgstr "半双工"
+
+msgid "Empty / Not Present"
+msgstr "未插入 / 不存在"
+
+msgid "Generic"
+msgstr "通用"
+
+msgid "Vendor"
+msgstr "厂商"
+
+msgid "Part Number"
+msgstr "部件型号"
+
+msgid "Serial"
+msgstr "序列号"
+
+msgid "DDM Optical Diagnostics"
+msgstr "DDM 光学诊断"
+
+msgid "Temperature"
+msgstr "温度"
+
+msgid "Supply Voltage"
+msgstr "供电电压"
+
+msgid "TX Bias Current"
+msgstr "发射偏置电流"
+
+msgid "TX Optical Power"
+msgstr "发射光功率"
+
+msgid "RX Optical Power"
+msgstr "接收光功率"
+
+msgid "DDM"
+msgstr "DDM"
+
+msgid "Passive DAC or Non-DDM module"
+msgstr "无源高速线缆 (DAC) 或非 DDM 模块"
+
+msgid "DAC / Non-DDM"
+msgstr "DAC / 非 DDM"
+
+msgid "RTL8372 Switch & SFP Status"
+msgstr "RTL8372 交换机与 SFP 状态"
+
+msgid "Switch Chip: "
+msgstr "交换芯片: "
+
+msgid "CPU Port: "
+msgstr "CPU 端口: "
+
+msgid "IGMP Snooping: "
+msgstr "IGMP 侦听: "
+
+msgid "Active"
+msgstr "已启用"
+
+msgid "Disabled"
+msgstr "已禁用"
+
+msgid "IGMP Fast Leave: "
+msgstr "IGMP 快速离开: "
+
+msgid "Port"
+msgstr "端口"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Speed / Duplex"
+msgstr "速率 / 双工"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Port Information & SFP DDM Sensors"
+msgstr "端口信息与 SFP DDM 传感器"
+
+msgid "Link Up"
+msgstr "已连接"
+
+msgid "Link Down"
+msgstr "未连接"
+
+msgid "Internal CPU SerDes Interconnect"
+msgstr "内部 CPU SerDes 互联"
+
+msgid "Copper (2.5G Base-T)"
+msgstr "电口 (2.5G Base-T)"
+
+msgid "EEE On"
+msgstr "EEE 开启"
+
+msgid "EEE Off"
+msgstr "EEE 关闭"
+
+msgid "STP Fwd"
+msgstr "STP 转发"
+
+msgid "STP Block"
+msgstr "STP 阻塞"
+
+msgid "Storm Filter"
+msgstr "风暴过滤"
+
+msgid "Isolated"
+msgstr "端口隔离"

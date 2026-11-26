@@ -1,0 +1,25 @@
+diff -Naur a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -1,7 +1,7 @@
+ SOURCES =  main.c asr.c mdm.c tty2tcp.c sahara.c
+ 
+ linux: clean
+-	${CC} $(SOURCES) $(CFLAGS) -Wall -o QLog -lpthread -ldl
++	${CC} $(SOURCES) $(CFLAGS) -Wall $(LDFLAGS) -o QLog -lpthread -ldl
+ 
+ clean:
+ 	rm -rf QLog *.exe *.dSYM *.obj *.exp .*o *.lib *~ libs out
+diff -Naur a/tty2tcp.c b/tty2tcp.c
+--- a/tty2tcp.c
++++ b/tty2tcp.c
+@@ -147,7 +147,8 @@
+ 
+     tty2tcp_sockfd = sockfd;
+     tty2tcp_ttyfd = ttyfd;
+-    pthread_create(&tid, &attr, tcp_sock_read_Loop, &attr);
++    pthread_create(&tid, &attr, tcp_sock_read_Loop, NULL);
++    pthread_attr_destroy(&attr);
+ 
+     return 0;
+ }

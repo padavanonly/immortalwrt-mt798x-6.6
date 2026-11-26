@@ -4,7 +4,7 @@ source /usr/share/cpe/SIMCOM
 source /usr/share/cpe/Quectel
 source /usr/share/cpe/Fibocom
 
-#初值化数据结构
+# Initialize data structure
 InitData()
 {
     Date=''
@@ -28,17 +28,17 @@ InitData()
 
 
 }
-#写数据
+# Write data
 SETData()
 {
     {
         echo $Model #'RM520N-GL'
         echo $conntype #'conntype'
         echo '1e0e:9001'
-        echo $COPS #运营商
-        echo 'ttyUSB2' #端口
-        echo $TEMP #温度
-        echo 'QMI' #协议 
+        echo $COPS # Carrier
+        echo 'ttyUSB2' # Port
+        echo $TEMP # Temperature
+        echo 'QMI' # Protocol 
         echo '---------------------------------'
         echo $IMEI #imei
         echo $IMSI #imsi
@@ -50,17 +50,17 @@ SETData()
         echo $CSQ
         echo $CSQ_PER
         echo $CSQ_RSSI
-        echo $ECIO #参考信号接收质量 RSRQ ecio
-        echo $ECIO1 #参考信号接收质量 RSRQ ecio1
-        echo $RSCP #参考信号接收功率 RSRP rscp0
-        echo $RSCP1 #参考信号接收功率 RSRP rscp1
-        echo $SINR #信噪比 SINR  rv["sinr"]
-        echo $NETMODE #连接状态监控 rv["netmode"]
+        echo $ECIO # Reference Signal Received Quality RSRQ ecio
+        echo $ECIO1 # Reference Signal Received Quality RSRQ ecio1
+        echo $RSCP # Reference Signal Received Power RSRP rscp0
+        echo $RSCP1 # Reference Signal Received Power RSRP rscp1
+        echo $SINR # SINR SINR  rv["sinr"]
+        echo $NETMODE # Connection status monitor rv["netmode"]
         echo '---------------------------------'
 
 
         echo $COPS_MCC #MCC
-        echo $$COPS_MNC #MNC
+        echo $COPS_MNC #MNC
         echo $LAC  #eNB ID
         echo ''  #LAC_NUM
         echo $RNC #TAC
@@ -82,15 +82,15 @@ SETData()
 }
 ATPORT=1
 
-# 自动处理模块信号
+# Automatically handle modem signals
 AUTO_CPE()
 {
-    Debug "------------------------------端口$ATPORT---------------------------"
+    Debug "------------------------------Port $ATPORT---------------------------"
 	Debug "AUTO_CPE"
 	Date=$(date "+%Y-%m-%d %H:%M:%S")
 
 
-	#检测设备是否准备好
+	# Check if device is ready
 	rec=$(sendat $ATPORT "AT" 500 |grep OK |wc -l) 
 	if [ $rec == "1" ];then
 		sleep 1s
@@ -98,10 +98,10 @@ AUTO_CPE()
 		sleep 5s
 		return
 	fi
-    #读取模块信息
+    # Read modem information
     # if [ "$conntype" == "" ]; then
     # {
-    #     Debug "计算模块"
+    #     Debug "Compute modem"
     #     ATATI=$( sendat $ATPORT "ATI")
     #     Getconntype=$(echo "$ATATI" | sed -n '2p')
     #     if [ "$Getconntype" == "" ]; then
@@ -115,7 +115,7 @@ AUTO_CPE()
     # }
     # fi
 
-    Debug "读取模块信息 计算模块"
+    Debug "Read modem info / compute modem"
     ATATI=$( sendat $ATPORT "ATI")
     Getconntype=$(echo "$ATATI" | sed -n '2p')
     if [ "$Getconntype" == "" ]; then
@@ -142,7 +142,7 @@ AUTO_CPE()
 	else
 		Debug "Not Locked"
 	fi
-    #执行对应模块
+    # Execute corresponding modem handler
 	if [ $(echo $conntype |grep "Quectel"| wc -l) -ge 1 ];then
 	{
         Quectel_AT 
@@ -161,7 +161,7 @@ AUTO_CPE()
     }
 	fi
 }
-#重新联网
+# Reconnect network
 modem_reset()
 {
     
@@ -183,7 +183,7 @@ modem_reset()
     }
 	fi
 }
-#检测SIM卡是否插入,10次检测不到则重启模块
+# Check if SIM card is inserted, restart modem after 10 failures
 check_sim()
 {
 	while [ 1 ]
@@ -200,7 +200,7 @@ check_sim()
                 let x++
                 if [ $x == 10 ]; then
                     echo "SIM abnormal restart" 
-                    modem_reset	#重启模块
+                    modem_reset	# Restart modem
                     x=0
                 fi
             fi
@@ -208,7 +208,7 @@ check_sim()
 		sleep 6s
 	done
 }
-#检测网络状态第一次开机
+# Check network status on first boot
 chenk_firstdns()
 {
     while [ 1 ]
@@ -217,15 +217,15 @@ chenk_firstdns()
         en1=$(uci -q get modem.@ndis[0].en)
         if [ $enabled == '1' ] ;then
             if [ $en1 == '1' ] ;then
-                echo "------------------------------开启任务---------------------------"
+                echo "------------------------------Start task---------------------------"
                 ipadd=$(uci -q get modem.@ndis[0].ipaddress)
                 ping -c 1 -w 1  $ipadd > /dev/null 2>&1
                 if [ $? -eq 0 ];then  
-                    echo "网络连接正常" 
+                    echo "Network connected normally" 
                     xx=0
                     return
                 else  
-                    echo "网络连接异常 $ipadd" 
+                    echo "Network connection abnormal: $ipadd" 
                     let xx++
                     let pxx++
                 fi	
@@ -239,24 +239,24 @@ chenk_firstdns()
                 pxx=0
                 return
             fi
-            echo "------------------------------结束任务---------------------------"
+            echo "------------------------------End task---------------------------"
         fi
 	    sleep 1s
     done
 }
-#检测网络状态
+# Check network status
 chenk_dns()
 {
     en1=$(uci -q get modem.@ndis[0].en)
     if [ $en1 == '1' ] ;then
-        echo "------------------------------开启任务---------------------------"
+        echo "------------------------------Start task---------------------------"
         ipadd=$(uci -q get modem.@ndis[0].ipaddress)
         ping -c 1 -w 1  $ipadd > /dev/null 2>&1
         if [ $? -eq 0 ];then  
-            echo "网络连接正常" 
+            echo "Network connected normally" 
             xx=0
         else  
-            echo "网络连接异常 $ipadd 次数$xx" 
+            echo "Network connection abnormal: $ipadd, count: $xx" 
             let xx++
         fi	
     fi
@@ -265,10 +265,10 @@ chenk_dns()
         xx=0
         modem_reset
     fi
-    echo "------------------------------结束任务---------------------------"
+    echo "------------------------------End task---------------------------"
 
 }
-# 信号任务
+# Signal task
 chenk_Task()
 {
     while [ 1 ]
@@ -276,22 +276,22 @@ chenk_Task()
         enabled=$(uci -q get modem.@ndis[0].enabled)
         if [ $enabled == '1' ] ;then
             ATPORT
-            Debug "------------------------------开启任务---------------------------"
+            Debug "------------------------------Start task---------------------------"
             AUTO_CPE
             SETData
             chenk_dns
-            Debug "------------------------------结束任务---------------------------"
+            Debug "------------------------------End task---------------------------"
         fi
         sleep 10s
     done
 }
 
 
-#注册网卡
+# Register network interface
 RegisterNetwork()
 {
     # ATPORT
-    Debug "RegisterNetwork 注册网卡 $ $MODEMNAME"
+    Debug "RegisterNetwork: registering interface $MODEMNAME"
     # if [ "$MODEMNAME" == "FM650CN" ]; then
     #     getFM650=$(uci -q get network.wwan5g |grep "interface"| wc -l)
     #     if [ $getFM650 == "0" ] ;then
@@ -387,32 +387,32 @@ RegisterNetwork()
 
 
 
-# 运行入口
+# Entry point
 first()
 {
-    Debug "开启RSSI服务"
-    # 初值化数据结构
+    Debug "Start RSSI service"
+    # Initialize data structure
     InitData
-    Debug "初值化数据完成"
+    Debug "Data structure initialized"
     sleep 1s
-    # 计算模块AT端口号
+    # Compute modem AT port
     ATPORT
-    # 注册网卡
+    # Register network interface
     RegisterNetwork
-    # 第一次获取模块信息数据
+    # Fetch initial modem info
     AUTO_CPE
-    # 保存结构数据
+    # Save structured data
     SETData
-    #开机直接运行网络注册
+    # Run network registration on boot
     modem_reset
-    # 第一次开机检测是否联网
+    # Check internet connectivity on first boot
     chenk_firstdns
     chenk_Task
 }
 
 #############################################
 #					#
-#		进入主函数                             #
+#		Enter main function                             #
 #					#
 #############################################
 first

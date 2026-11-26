@@ -1,0 +1,249 @@
+diff -uNr a/base/include/osal.h b/base/include/osal.h
+--- a/base/include/osal.h	2023-12-29 13:52:41.000000000 +0800
++++ b/base/include/osal.h	2026-11-12 15:50:51.401175107 +0800
+@@ -244,6 +244,13 @@
+ 	unsigned long usec;
+ };
+ 
++typedef long __kernel_time_t;
++
++struct timeval {
++	__kernel_time_t		tv_sec;		/* seconds */
++	__kernel_suseconds_t	tv_usec;	/* microseconds */
++};
++
+ struct osal_op_history {
+ 	struct ring ring_buffer;
+ 	struct osal_op_history_entry *queue;
+diff -uNr a/Makefile b/Makefile
+--- a/Makefile	2023-12-29 13:52:41.000000000 +0800
++++ b/Makefile	2026-11-12 15:50:51.400009549 +0800
+@@ -24,11 +24,11 @@
+ # common_main
+ ###############################################################################
+ ccflags-y += \
+-	-I$(SUBDIRS)/include \
+-	-I$(SUBDIRS)/base/include \
+-	-I$(SUBDIRS)/core/include \
+-	-I$(SUBDIRS)/conf/include \
+-	-I$(SUBDIRS)/platform/include
++	-I$(src)/include \
++	-I$(src)/base/include \
++	-I$(src)/core/include \
++	-I$(src)/conf/include \
++	-I$(src)/platform/include
+ 
+ $(MODULE_NAME)-objs += base/ring.o
+ $(MODULE_NAME)-objs += base/osal.o
+@@ -46,7 +46,7 @@
+ # MT7986
+ ifeq ($(CONFIG_MTK_CONNINFRA_APSOC_MT7986),y)
+ ccflags-y += \
+-	-I$(SUBDIRS)/platform/mt7986/include -DCONNINFRA_APSOC_MT7986
++	-I$(src)/platform/mt7986/include -DCONNINFRA_APSOC_MT7986
+ $(MODULE_NAME)-objs += platform/mt7986/mt7986.o
+ $(MODULE_NAME)-objs += platform/mt7986/mt7986_pmic.o
+ $(MODULE_NAME)-objs += platform/mt7986/mt7986_consys_reg.o
+@@ -57,7 +57,36 @@
+ # MT7981
+ ifeq ($(CONFIG_MTK_CONNINFRA_APSOC_MT7981),y)
+ ccflags-y += \
+-	-I$(SUBDIRS)/platform/mt7981/include -DCONNINFRA_APSOC_MT7981
++	-I$(src)/platform/mt7981/include -DCONNINFRA_APSOC_MT7981
++MT7981_SYM_REMAP := \
++	$(addprefix -D,$(foreach s, \
++		consys_soc_chipid_get consys_get_hw_ver get_consys_platform_pmic_ops \
++		get_conn_reg_base_addr consys_base_addr_index_to_str conn_reg \
++		_is_flash_content_valid _consys_check_adie_cfg consys_xtal_ctrl_fast_mode \
++		consys_sw_reset_ctrl consys_set_if_pinmux consys_tx_rx_bus_slp_prot_ctrl \
++		_consys_polling_chipid_int consys_polling_chipid consys_bus_clock_ctrl \
++		consys_emi_set_remapping_reg consys_emi_set_region_protection \
++		connsys_d_die_cfg connsys_conninfra_sysram_hw_ctrl connsys_spi_master_cfg \
++		consys_sema_acquire_timeout consys_sema_release consys_spi_read \
++		consys_spi_write consys_spi_write_offset_range _connsys_a_die_cfg_7976 \
++		_connsys_a_die_cfg_7975 connsys_a_die_cfg _connsys_afe_wbg_cal_7976 \
++		_connsys_afe_wbg_cal_7975 connsys_afe_wbg_cal _connsys_subsys_pll_initial \
++		connsys_subsys_pll_initial connsys_osc_legacy_mode connsys_top_pwr_ctrl \
++		connsys_conn_infra_bus_timeout connsys_clkgen_wpll_hw_ctrl \
++		consys_conninfra_top_wakeup consys_conninfra_top_sleep \
++		_consys_adie_top_ck_en_on_off_ctrl consys_adie_top_ck_en_on_off_ctrl \
++		consys_conninfra_wf_wakeup consys_conninfra_wf_sleep \
++		consys_conn_wmcpu_sw_reset consys_wf_bus_slp_prot_ctrl \
++		consys_wfsys_top_on_ctrl consys_wfsys_bus_slp_prot_check \
++		consys_wfsys_bus_timeout_ctrl consys_wmcpu_idle_loop_check \
++		_consys_check_sku_cfg consys_wpll_ctrl consys_conninfra_wf_req_clr \
++		adie_cfg_type one_adie_dbdc consys_emi_get_fw_emi_size \
++		get_consys_platform_emi_ops,$(s)=mt7981_$(s)))
++CFLAGS_platform/mt7981/mt7981.o += $(MT7981_SYM_REMAP)
++CFLAGS_platform/mt7981/mt7981_pmic.o += $(MT7981_SYM_REMAP)
++CFLAGS_platform/mt7981/mt7981_consys_reg.o += $(MT7981_SYM_REMAP)
++CFLAGS_platform/mt7981/mt7981_pos.o += $(MT7981_SYM_REMAP)
++CFLAGS_platform/mt7981/mt7981_emi.o += $(MT7981_SYM_REMAP)
+ $(MODULE_NAME)-objs += platform/mt7981/mt7981.o
+ $(MODULE_NAME)-objs += platform/mt7981/mt7981_pmic.o
+ $(MODULE_NAME)-objs += platform/mt7981/mt7981_consys_reg.o
+diff -uNr a/platform/consys_hw.c b/platform/consys_hw.c
+--- a/platform/consys_hw.c	2023-12-29 13:52:41.000000000 +0800
++++ b/platform/consys_hw.c	2026-11-12 15:50:51.402462291 +0800
+@@ -22,6 +22,7 @@
+ #include <linux/delay.h>
+ #include <linux/of_device.h>
+ #include <linux/of_reserved_mem.h>
++#include <linux/clk.h>
+ 
+ #include "osal.h"
+ #include "consys_hw.h"
+@@ -518,6 +519,7 @@
+ int mtk_conninfra_probe(struct platform_device *pdev)
+ {
+ 	int ret = -1;
++	struct clk *mcu_clk, *ap_conn_clk;
+ 
+ 	if (pdev)
+ 		g_pdev = pdev;
+@@ -532,6 +534,18 @@
+ 		return -2;
+ 	}
+ 
++	mcu_clk = devm_clk_get(&pdev->dev, "mcu");
++	if (IS_ERR(mcu_clk))
++		pr_err("mcu clock not found\n");
++	else if (clk_prepare_enable(mcu_clk))
++		pr_err("mcu clock configuration failed\n");
++
++	ap_conn_clk = devm_clk_get(&pdev->dev, "ap2conn");
++	if (IS_ERR(ap_conn_clk))
++		pr_err("ap2conn clock not found\n");
++	else if (clk_prepare_enable(ap_conn_clk))
++		pr_err("ap2conn clock configuration failed\n");
++
+ 	if (consys_hw_ops == NULL)
+ 		consys_hw_ops = (const struct consys_hw_ops_struct*)g_conninfra_plat_data->hw_ops;
+ 	if (consys_hw_ops == NULL) {
+diff -uNr a/platform/consys_hw_plat_data.c b/platform/consys_hw_plat_data.c
+--- a/platform/consys_hw_plat_data.c	2023-12-29 13:52:41.000000000 +0800
++++ b/platform/consys_hw_plat_data.c	2026-11-12 15:50:51.403586614 +0800
+@@ -18,22 +18,23 @@
+ /* Platform data */
+ #ifdef CONNINFRA_APSOC_MT7986
+ extern struct conninfra_plat_data mt7986_plat_data;
++#endif
++#ifdef CONNINFRA_APSOC_MT7981
++extern struct conninfra_plat_data mt7981_plat_data;
++#endif
++
+ const struct of_device_id apconninfra_of_ids[] = {
++#ifdef CONNINFRA_APSOC_MT7986
+ 	{
+ 		.compatible = "mediatek,mt7986-consys",
+ 		.data = (void*)&mt7986_plat_data,
+ 	},
+-	{}
+-};
+ #endif
+-
+ #ifdef CONNINFRA_APSOC_MT7981
+-extern struct conninfra_plat_data mt7981_plat_data;
+-const struct of_device_id apconninfra_of_ids[] = {
+ 	{
+ 		.compatible = "mediatek,mt7981-consys",
+ 		.data = (void*)&mt7981_plat_data,
+ 	},
++#endif
+ 	{}
+ };
+-#endif
+diff -uNr a/platform/consys_reg_mng.c b/platform/consys_reg_mng.c
+--- a/platform/consys_reg_mng.c	2023-12-29 13:52:41.000000000 +0800
++++ b/platform/consys_reg_mng.c	2026-11-12 15:50:51.404728872 +0800
+@@ -107,7 +107,7 @@
+ {
+ 	void __iomem *vir_addr = NULL;
+ 
+-	vir_addr = ioremap_nocache(addr, 0x100);
++	vir_addr = ioremap(addr, 0x100);
+ 	if (!vir_addr) {
+ 		pr_err("ioremap fail\n");
+ 		return -1;
+@@ -125,7 +125,7 @@
+ {
+ 	void __iomem *vir_addr = NULL;
+ 
+-	vir_addr = ioremap_nocache(addr, 0x100);
++	vir_addr = ioremap(addr, 0x100);
+ 	if (!vir_addr) {
+ 		pr_err("ioremap fail\n");
+ 		return -1;
+diff -uNr a/platform/mt7981/include/mt7981_pos.h b/platform/mt7981/include/mt7981_pos.h
+--- a/platform/mt7981/include/mt7981_pos.h	2023-12-29 13:52:41.000000000 +0800
++++ b/platform/mt7981/include/mt7981_pos.h	2026-11-12 15:50:51.406111372 +0800
+@@ -19,13 +19,13 @@
+ #ifndef _PLATFORM_MT7981_POS_H_
+ #define _PLATFORM_MT7981_POS_H_
+ 
+-int consys_plt_hw_init(void);
++int consys_plt_hw_init(void) __asm__("mt7981_consys_plt_hw_init");
+ int consys_xtal_ctrl_fast_mode(void);
+ int consys_sw_reset_ctrl(bool bassert);
+ int consys_tx_rx_bus_slp_prot_ctrl(bool enable);
+ void consys_set_if_pinmux(bool enable);
+ int consys_polling_chipid(void);
+-int consys_plt_adie_type_cfg(void);
++int consys_plt_adie_type_cfg(void) __asm__("mt7981_consys_plt_adie_type_cfg");
+ int consys_bus_clock_ctrl(enum consys_drv_type drv_type, unsigned int bus_clock);
+ int consys_emi_set_remapping_reg(void);
+ int consys_emi_set_region_protection(void);
+diff -uNr a/platform/mt7981/mt7981_consys_reg.c b/platform/mt7981/mt7981_consys_reg.c
+--- a/platform/mt7981/mt7981_consys_reg.c	2023-12-29 13:52:41.000000000 +0800
++++ b/platform/mt7981/mt7981_consys_reg.c	2026-11-12 15:50:51.407318799 +0800
+@@ -130,7 +130,7 @@
+ 			base_addr->vir_addr = (unsigned long)of_iomap(node, i);
+ 			of_get_address(node, i, &(base_addr->size), &flag);
+ #if 0
+-			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%zx)\n",
++			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%llx)\n",
+ 					i, consys_base_addr_index_to_str[i], base_addr->phy_addr,
+ 					base_addr->vir_addr, base_addr->size);
+ #endif
+@@ -141,7 +141,7 @@
+ 			if (base_addr->vir_addr == 0)
+ 				base_addr->vir_addr = (unsigned long)ioremap(base_addr->phy_addr, base_addr->size);
+ 
+-			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%zx)\n",
++			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%llx)\n",
+ 					i, consys_base_addr_index_to_str[i], base_addr->phy_addr,
+ 					base_addr->vir_addr, base_addr->size);
+ 		}
+diff -uNr a/platform/mt7986/mt7986_consys_reg.c b/platform/mt7986/mt7986_consys_reg.c
+--- a/platform/mt7986/mt7986_consys_reg.c	2023-12-29 13:52:41.000000000 +0800
++++ b/platform/mt7986/mt7986_consys_reg.c	2026-11-12 15:50:51.408333268 +0800
+@@ -130,7 +130,7 @@
+ 			base_addr->vir_addr = (unsigned long)of_iomap(node, i);
+ 			of_get_address(node, i, &(base_addr->size), &flag);
+ #if 0
+-			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%zx)\n",
++			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%llx)\n",
+ 					i, consys_base_addr_index_to_str[i], base_addr->phy_addr,
+ 					base_addr->vir_addr, base_addr->size);
+ #endif
+@@ -141,7 +141,7 @@
+ 			if (base_addr->vir_addr == 0)
+ 				base_addr->vir_addr = (unsigned long)ioremap(base_addr->phy_addr, base_addr->size);
+ 
+-			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%zx)\n",
++			pr_info("Get Index(%d-%s) phy_addr(0x%zx) vir_addr=(0x%zx) size=(0x%llx)\n",
+ 					i, consys_base_addr_index_to_str[i], base_addr->phy_addr,
+ 					base_addr->vir_addr, base_addr->size);
+ 		}
+diff -uNr a/src/conninfra_dev.c b/src/conninfra_dev.c
+--- a/src/conninfra_dev.c	2023-12-29 13:52:41.000000000 +0800
++++ b/src/conninfra_dev.c	2026-11-12 15:50:51.409380377 +0800
+@@ -240,7 +240,7 @@
+ 		goto err1;
+ 	}
+ 
+-	pConninfraClass = class_create(THIS_MODULE, CONNINFRA_DEVICE_NAME);
++	pConninfraClass = class_create(CONNINFRA_DRVIER_NAME);
+ 	if (IS_ERR(pConninfraClass)) {
+ 		pr_err("class create fail, error code(%ld)\n", PTR_ERR(pConninfraClass));
+ 		goto err1;

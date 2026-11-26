@@ -250,6 +250,8 @@ sub mconf_conflicts {
 
 	foreach my $depend (@$depends) {
 		next unless $package{$depend};
+		# Emit only one edge in Kconfig for reciprocal CONFLICTS to avoid recursive dependency errors.
+		next if ($pkgname lt $depend) && $package{$depend}->{conflicts} && grep { $_ eq $pkgname } @{$package{$depend}->{conflicts}};
 		$res .= "\t\tdepends on m || (PACKAGE_$depend != y)\n";
 	}
 	return $res;

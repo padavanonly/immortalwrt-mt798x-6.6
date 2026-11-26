@@ -44,7 +44,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  		ret = phy_restart_aneg(phydev);
 --- a/drivers/net/phy/phy_device.c
 +++ b/drivers/net/phy/phy_device.c
-@@ -3501,12 +3501,12 @@ static int phy_probe(struct device *dev)
+@@ -3503,12 +3503,12 @@ static int phy_probe(struct device *dev)
  	/* There is no "enabled" flag. If PHY is advertising, assume it is
  	 * kind of enabled.
  	 */

@@ -144,7 +144,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 +
  static int yt8531_config_init(struct phy_device *phydev)
  {
- 	struct device_node *node = phydev->mdio.dev.of_node;
+ 	struct device *dev = &phydev->mdio.dev;
 @@ -2920,6 +3034,9 @@ static struct phy_driver motorcomm_phy_d
  		.soft_reset	= yt8521_soft_reset,
  		.suspend	= yt8521_suspend,

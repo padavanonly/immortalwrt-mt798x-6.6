@@ -1,0 +1,22 @@
+--- a/mcu/warp_ccif.c
++++ b/mcu/warp_ccif.c
+@@ -150,7 +150,7 @@
+ 		disable_irq(ccif->irq);
+ 		free_irq(ccif->irq, bus);
+ 		if (ccif->base_addr)
+-			iounmap(ccif->base_addr);
++			iounmap((void __iomem *)ccif->base_addr);
+ 		warp_os_free_mem(ccif);
+ 	}
+ 
+--- a/wed.c
++++ b/wed.c
+@@ -974,7 +974,7 @@
+ 
+ 	case WED_PROC_TX_DYNAMIC_FREE: {
+ 		if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM))
+-			buf_free_task((unsigned long)wed);
++			buf_free_task(wed);
+ 		else
+ 			warp_dbg(WARP_DBG_ERR, "DYBM is not enabled!\n");
+ 	}

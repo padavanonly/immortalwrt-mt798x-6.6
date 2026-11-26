@@ -1,0 +1,11 @@
+--- a/mt_linux.c
++++ b/mt_linux.c
+@@ -218,7 +218,8 @@ EXPORT_SYMBOL(mt_devm_kzalloc);
+ 
+ int mt_init_dummy_netdev(struct net_device *dev)
+ {
+-	return init_dummy_netdev(dev);
++	init_dummy_netdev(dev);
++	return 0;
+ }
+ EXPORT_SYMBOL(mt_init_dummy_netdev);

@@ -1,155 +1,601 @@
-#!/usr/bin/env lua
--- Copyright (C) 2022 ImmortalWrt.org
+#!/usr/bin/env ucode
+// Copyright (C) 2022-2026 ImmortalWrt.org
+// Native ucode rpcd backend for luci-app-turboacc-mtk
 
-local json = require "luci.jsonc"
-local fs   = require "nixio.fs"
-local util = require "luci.util"
-local sys  = require "luci.sys"
+'use strict';
 
-string.trim = util.trim
+import * as fs from 'fs';
 
-local function readfile(path)
-	local s = fs.readfile(path)
-	return s and (s:gsub("^%s+", ""):gsub("%s+$", ""))
-end
+const ROOT = getenv('TURBOACC_ROOT') || '';
 
-local methods = {
-	getSystemFeatures = {
-		call = function()
-			local boardinfo = util.ubus("system", "board") or {}
-			local features  = {
-				hasIPV6           = fs.access("/proc/net/ipv6_route"),
-				-- disable FLOWOFFLOADING for mt798x
-				hasFLOWOFFLOADING = false,
-				hasFASTCLASSIFIER = fs.access("/lib/modules/" .. boardinfo.kernel .. "/fast-classifier.ko"),
-				hasSHORTCUTFECM   = fs.access("/lib/modules/" .. boardinfo.kernel .. "/shortcut-fe-cm.ko"),
-				hasMEDIATEKHNAT   = fs.access("/lib/modules/" .. boardinfo.kernel .. "/mtkhnat.ko"),
-				hasXTFULLCONENAT  = fs.access("/lib/modules/" .. boardinfo.kernel .. "/xt_FULLCONENAT.ko"),
-				hasTCPCCA         = readfile("/proc/sys/net/ipv4/tcp_available_congestion_control")
+function rpath(path) {
+	return ROOT ? ROOT + path : path;
+}
+
+function readfile(path) {
+	let s = fs.readfile(rpath(path));
+	return (s != null) ? trim(s) : null;
+}
+
+function is_dir(path) {
+	let st = fs.stat(rpath(path));
+	return st != null && st.type == 'directory';
+}
+
+function file_access(path) {
+	return !!fs.access(rpath(path));
+}
+
+function module_file_exists(kernel, names) {
+	if (!kernel || kernel == '')
+		return false;
+
+	const exts = [ '.ko', '.ko.gz', '.ko.xz', '.ko.zst' ];
+	for (let name in names) {
+		for (let ext in exts) {
+			if (file_access(`/lib/modules/${kernel}/${name}${ext}`))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+function module_loaded(names) {
+	for (let name in names) {
+		if (is_dir(`/sys/module/${name}`))
+			return true;
+	}
+
+	return false;
+}
+
+function module_active(name) {
+	let refcnt_path = `/sys/module/${name}/refcnt`;
+	if (file_access(refcnt_path))
+		return (readfile(refcnt_path) || '0') != '0';
+
+	return is_dir(`/sys/module/${name}`);
+}
+
+function resolve_hnat_dir() {
+	if (is_dir('/sys/kernel/debug/hnat'))
+		return '/sys/kernel/debug/hnat';
+	if (is_dir('/sys/kernel/debug/mtk_ppe'))
+		return '/sys/kernel/debug/mtk_ppe';
+	return null;
+}
+
+function is_hnat_enabled(value) {
+	value = lc(trim(value || ''));
+
+	return value == '1' || value == 'enabled' || value == 'enable' ||
+		value == 'on' || value == 'true' || value == 'y' || value == 'yes';
+}
+
+function hnat_hook_enabled() {
+	let dir = resolve_hnat_dir() || '/sys/kernel/debug/hnat';
+	let toggle = readfile(`${dir}/hook_toggle`);
+	if (toggle != null)
+		return is_hnat_enabled(toggle);
+	if (file_access('/sys/kernel/debug/mtk_ppe/entries'))
+		return true;
+	return false;
+}
+
+function get_wireless_dats() {
+	if (!is_dir('/etc/wireless/mediatek'))
+		return [];
+
+	return fs.glob(rpath('/etc/wireless/mediatek/*.dat')) || [];
+}
+
+function has_whnat_enabled_in_dats(dats) {
+	for (let p in dats) {
+		let content = fs.readfile(p);
+		if (content != null && match(content, /WHNAT=1/))
+			return true;
+	}
+	return false;
+}
+
+function get_board_kernel() {
+	let mock_kernel = getenv('TURBOACC_KERNEL');
+	if (mock_kernel != null && mock_kernel != '')
+		return mock_kernel;
+
+	try {
+		let ubus = require('ubus');
+		let ctx = ubus.connect();
+		if (ctx) {
+			let boardinfo = ctx.call('system', 'board') || {};
+			ctx.disconnect();
+			if (boardinfo.kernel)
+				return `${boardinfo.kernel}`;
+		}
+	}
+	catch (e) {}
+
+	return readfile('/proc/sys/kernel/osrelease') || '';
+}
+
+function ensure_ppe(ppe_stat, idx_str) {
+	if (idx_str == null || !match(`${idx_str}`, /^\d+$/))
+		return null;
+	let idx = int(idx_str);
+	let current = int(ppe_stat.PPE_NUM || '0');
+	if (idx + 1 > current)
+		ppe_stat.PPE_NUM = `${idx + 1}`;
+	return `${idx}`;
+}
+
+function set_ppe_value(ppe_stat, kind, idx_str, val_str) {
+	let idx = ensure_ppe(ppe_stat, idx_str);
+	if (idx == null || val_str == null || !match(`${val_str}`, /^\d+$/))
+		return;
+	let val = int(val_str);
+	ppe_stat[`${kind}_PPE${idx}`] = `${val}`;
+}
+
+function parse_compact_ppe_line(ppe_stat, line) {
+	let m_ppe = match(line, /[Pp][Pp][Ee]\s*(\d+)/);
+	if (!m_ppe)
+		return;
+	let ppe = m_ppe[1];
+
+	let m_bind = match(line, /[Bb][Ii][Nn][Dd]\w*\s*[:=]\s*(\d+)/) ||
+		match(line, /[Bb][Oo][Uu][Nn][Dd]\w*\s*[:=]\s*(\d+)/) ||
+		match(line, /[Bb][Ii][Nn][Dd]\w*\s+(\d+)/) ||
+		match(line, /[Bb][Oo][Uu][Nn][Dd]\w*\s+(\d+)/);
+	if (m_bind)
+		set_ppe_value(ppe_stat, 'BIND', ppe, m_bind[1]);
+
+	let m_all = match(line, /[Aa][Ll][Ll]\w*\s*[:=]\s*(\d+)/) ||
+		match(line, /[Ee][Nn][Tt][Rr][Yy]\w*\s*[:=]\s*(\d+)/) ||
+		match(line, /[Ee][Nn][Tt][Rr][Ii][Ee][Ss]\w*\s*[:=]\s*(\d+)/) ||
+		match(line, /[Tt][Oo][Tt][Aa][Ll]\w*\s*[:=]\s*(\d+)/) ||
+		match(line, /[Aa][Ll][Ll]\w*\s+(\d+)/) ||
+		match(line, /[Ee][Nn][Tt][Rr][Yy]\w*\s+(\d+)/) ||
+		match(line, /[Ee][Nn][Tt][Rr][Ii][Ee][Ss]\w*\s+(\d+)/) ||
+		match(line, /[Tt][Oo][Tt][Aa][Ll]\w*\s+(\d+)/);
+	if (m_all)
+		set_ppe_value(ppe_stat, 'ALL', ppe, m_all[1]);
+}
+
+function parse_ppe_entries_summary() {
+	let entries_path = '/sys/kernel/debug/mtk_ppe/entries';
+	let res = {
+		ppe: 0,
+		total: 0,
+		bind: 0,
+		ipv4_bind: 0,
+		ipv6_bind: 0,
+		unbind: 0
+	};
+	if (!file_access(entries_path))
+		return res;
+
+	let raw = fs.readfile(rpath(entries_path));
+	if (raw == null)
+		return res;
+
+	let max_ppe = -1;
+	for (let line in split(raw, /\r?\n/)) {
+		let t = trim(line);
+		if (t == '' || match(t, /^=+/))
+			continue;
+
+		let m_ppe = match(t, /[Pp][Pp][Ee]\s*[=:]?\s*(\d+)/);
+		if (m_ppe) {
+			let p_idx = int(m_ppe[1]);
+			if (p_idx > max_ppe)
+				max_ppe = p_idx;
+		}
+
+		let m_kv_tot = match(t, /\btotal\s*[:=]\s*(\d+)/i);
+		let m_kv_bind = match(t, /\bbind\s*[:=]\s*(\d+)/i);
+		let m_kv_v4 = match(t, /\bipv4_bind\s*[:=]\s*(\d+)/i);
+		let m_kv_v6 = match(t, /\bipv6_bind\s*[:=]\s*(\d+)/i);
+		let m_kv_unb = match(t, /\bunbind\s*[:=]\s*(\d+)/i);
+		if (m_kv_tot || m_kv_bind || m_kv_v4 || m_kv_v6 || m_kv_unb) {
+			if (m_kv_tot) res.total += int(m_kv_tot[1]);
+			if (m_kv_bind) res.bind += int(m_kv_bind[1]);
+			if (m_kv_v4) res.ipv4_bind += int(m_kv_v4[1]);
+			if (m_kv_v6) res.ipv6_bind += int(m_kv_v6[1]);
+			if (m_kv_unb) res.unbind += int(m_kv_unb[1]);
+			continue;
+		}
+
+		if (match(t, /\bBIND\b/i)) {
+			res.total++;
+			res.bind++;
+			if (match(t, /IPv6|6T|6RD/i))
+				res.ipv6_bind++;
+			else
+				res.ipv4_bind++;
+		}
+		else if (match(t, /\b(UNB|UNBIND|INVALID|FIN)\b/i)) {
+			res.total++;
+			res.unbind++;
+		}
+	}
+	res.ppe = (max_ppe >= 0) ? (max_ppe + 1) : ((res.total > 0) ? 1 : 0);
+	return res;
+}
+
+function read_multitier_telemetry(include_status) {
+	let res = {
+		tier1_ppe_bind: 0,
+		tier1_ppe_total: 0,
+		tier1_occupancy_permille: 0,
+		tier2_sw_flows: 0,
+		tier2_sw_packets: 0,
+		tier2_sw_bytes: 0,
+		watermark_defers: 0,
+		hw_fail_backoffs: 0,
+		roam_flushes: 0,
+		ser_epoch: 0
+	};
+
+	let raw = fs.readfile(rpath('/proc/net/stat/mtk_flow_multitier'));
+	if (raw == null) {
+		if (include_status) {
+			res.available = false;
+			res.ppe_occupancy_available = false;
+		}
+		return res;
+	}
+
+	let parsed = 0;
+	for (let line in split(raw, "\n")) {
+		let m = match(trim(line), /^([A-Za-z0-9_]+)[ \t:=]+([0-9]+)$/);
+		if (!m)
+			continue;
+		let key = m[1];
+		let num_str = m[2];
+		let val = (length(num_str) > 19 ||
+			   (length(num_str) == 19 && num_str > '9223372036854775807'))
+			? 9223372036854775807
+			: int(num_str);
+		if (exists(res, key)) {
+			res[key] = val;
+			parsed++;
+		}
+	}
+	if (include_status) {
+		res.available = parsed > 0;
+		res.ppe_occupancy_available = parsed > 0 && res.tier1_ppe_total > 0;
+	}
+
+	return res;
+}
+
+function read_service_status() {
+	let raw = fs.readfile(rpath('/var/run/turboacc.status'));
+	let status = null;
+	let message = '';
+
+	if (raw == null)
+		return { available: false, state: 'unknown' };
+
+	for (let line in split(raw, /\r?\n/)) {
+		let eq = index(line, '=');
+		if (eq < 0)
+			continue;
+
+		let key = trim(substr(line, 0, eq));
+		let value = trim(substr(line, eq + 1));
+		if (key == 'state')
+			status = value;
+		else if (key == 'message')
+			message = value;
+	}
+
+	if (status != 'starting' && status != 'ok' && status != 'error' && status != 'stopped')
+		return { available: false, state: 'unknown' };
+
+	return { available: true, state: status, message };
+}
+
+const methods = {
+	getSystemFeatures: {
+		args: {},
+		call: function() {
+			let kernel = get_board_kernel();
+			let has_cca = readfile('/proc/sys/net/ipv4/tcp_available_congestion_control');
+			let features = {
+				hasIPV6:           file_access('/proc/net/ipv6_route'),
+				// This firmware's fw4 patch disables generated flowtables; TurboACC cannot activate this selector.
+				hasFLOWOFFLOADING: false,
+				hasFASTCLASSIFIER: module_file_exists(kernel, [ 'fast-classifier', 'fast_classifier' ]) ||
+					module_loaded([ 'fast_classifier' ]) ||
+					is_dir('/sys/fast_classifier'),
+				hasSHORTCUTFECM:   module_file_exists(kernel, [ 'shortcut-fe-cm', 'shortcut_fe_cm' ]) ||
+					module_loaded([ 'shortcut_fe_cm' ]),
+				hasMEDIATEKHNAT:   module_file_exists(kernel, [ 'mtkhnat', 'mediatek_hnat' ]) ||
+					module_loaded([ 'mtkhnat', 'mediatek_hnat' ]) ||
+					resolve_hnat_dir() != null,
+				hasBCMFullcone:    file_access('/proc/sys/net/netfilter/nf_conntrack_nat_mode'),
+				hasNFTFULLCONE:    module_file_exists(kernel, [ 'nft_fullcone' ]) ||
+					module_loaded([ 'nft_fullcone' ]),
+				hasXTFULLCONENAT:  module_file_exists(kernel, [ 'xt_FULLCONENAT' ]) ||
+					module_loaded([ 'xt_FULLCONENAT' ])
+			};
+			if (has_cca != null)
+				features.hasTCPCCA = has_cca;
+
+			print(sprintf('%J\n', features));
+		}
+	},
+	getFastPathStat: {
+		args: {},
+		call: function() {
+			let fptype = null;
+			let has_hnat = resolve_hnat_dir() != null ||
+				module_loaded([ 'mtkhnat', 'mediatek_hnat' ]);
+
+			if (has_hnat && hnat_hook_enabled()) {
+				let hnat_note = '';
+				let dats = get_wireless_dats();
+				if (length(dats) > 0 && !has_whnat_enabled_in_dats(dats))
+					hnat_note = ' / HNAT Partially Enabled';
+
+				fptype = 'MediaTek HNAT' + hnat_note;
 			}
-			print(json.stringify(features))
-		end
-	},
-	getFastPathStat = {
-		call = function()
-			local fptype
-			if fs.access("/sys/module/xt_FLOWOFFLOAD/refcnt") and
-			(readfile("/sys/module/xt_FLOWOFFLOAD/refcnt") or "0") ~= "0" then
-				fptype = "Flow offloading"
-			elseif fs.stat("/sys/module/fast_classifier", "type") == "dir" then
-				fptype = "Fast classifier"
-			elseif fs.stat("/sys/module/shortcut_fe_cm", "type") == "dir" then
-				fptype = "Shortcut-FE CM"
-			elseif fs.stat("/sys/kernel/debug/hnat", "type") == "dir" then
-				local ethernet_hnat = readfile("/sys/kernel/debug/hnat/hook_toggle")
-				ethernet_hnat = (ethernet_hnat ~= "enabled") and " / Ethernet HNAT Disabled" or ""
+			else if ((file_access('/sys/module/xt_FLOWOFFLOAD/refcnt') &&
+			          (readfile('/sys/module/xt_FLOWOFFLOAD/refcnt') || '0') != '0') ||
+			         (file_access('/sys/module/nft_flow_offload/refcnt') &&
+			          (readfile('/sys/module/nft_flow_offload/refcnt') || '0') != '0')) {
+				fptype = 'Flow offloading';
+			}
+			else if (is_dir('/sys/module/fast_classifier')) {
+				fptype = 'Fast classifier';
+			}
+			else if (is_dir('/sys/module/shortcut_fe_cm')) {
+				fptype = 'Shortcut-FE CM';
+			}
+			else if (has_hnat) {
+				fptype = 'HNAT Disabled';
+			}
 
-				local wireless_hnat = (sys.call("grep -q 'WHNAT=1' '/etc/wireless/mediatek/'*_card*.dat") ~= 0) and " / Wireless HNAT Disabled" or ""
-				if (ethernet_hnat == "") or (wireless_hnat == "") then
-					fptype = "MediaTek HNAT" .. ethernet_hnat .. wireless_hnat
-				end
-			end
-			print(json.stringify({ type = fptype }))
-		end
+			let rv = {};
+			if (fptype != null)
+				rv.type = fptype;
+			print(sprintf('%J\n', rv));
+		}
 	},
-	getFullConeStat = {
-		call = function()
-			local fctype
-			if fs.access("/sys/module/xt_FULLCONENAT/refcnt") and
-			(readfile("/sys/module/xt_FULLCONENAT/refcnt") or "0") ~= "0" then
-				fctype = "xt_FULLCONENAT"
-			elseif  fs.access("/proc/sys/net/netfilter/nf_conntrack_nat_mode") and
-				(readfile("/proc/sys/net/netfilter/nf_conntrack_nat_mode") or "0") ~= "0" then
-				fctype = "Boardcom Fullcone"
-			end
-			print(json.stringify({ type = fctype }))
-		end
-	},
-	getTCPCCAStat = {
-		call = function()
-			local ccatype = readfile("/proc/sys/net/ipv4/tcp_congestion_control")
-			ccatype = ccatype and ccatype:upper() or nil
-			print(json.stringify({ type = ccatype }))
-		end
-	},
-	getMTKPPEStat = {
-		call = function()
-			local ppe_stat = {}
-			local ppe_path = "/sys/kernel/debug/hnat/hnat_stats"
-			local fd = io.open(ppe_path, 'r')
-		
-			if fd then
-				for line in fd:lines() do
-					local i = string.find(line, "=")
-					if i then
-						ppe_stat[string.sub(line,1,i-1)] = string.sub(line,i+1)
-					end
-				end
-				fd:close()
-			end
+	getFullConeStat: {
+		args: {},
+		call: function() {
+			let fctype = null;
 
-			print(json.stringify(ppe_stat))
-		end
+			if (module_active('nft_fullcone')) {
+				fctype = 'nft_fullcone';
+			}
+			else if (module_active('xt_FULLCONENAT')) {
+				fctype = 'xt_FULLCONENAT';
+			}
+			else if (file_access('/proc/sys/net/netfilter/nf_conntrack_nat_mode') &&
+			         (readfile('/proc/sys/net/netfilter/nf_conntrack_nat_mode') || '0') != '0') {
+				fctype = 'Boardcom Fullcone';
+			}
+
+			let rv = {};
+			if (fctype != null)
+				rv.type = fctype;
+			print(sprintf('%J\n', rv));
+		}
+	},
+	getTCPCCAStat: {
+		args: {},
+		call: function() {
+			let ccatype = readfile('/proc/sys/net/ipv4/tcp_congestion_control');
+			let rv = {};
+			if (ccatype != null && ccatype != '')
+				rv.type = uc(ccatype);
+			print(sprintf('%J\n', rv));
+		}
+	},
+	getMTKPPEStat: {
+		args: {},
+		call: function() {
+			let ppe_stat = { available: false, PPE_NUM: '0' };
+
+			if (!hnat_hook_enabled()) {
+				print(sprintf('%J\n', ppe_stat));
+				return;
+			}
+
+			const alts = [
+				'/sys/kernel/debug/hnat/hnat_stats',
+				'/sys/kernel/debug/mtk_ppe/hnat_stats',
+				'/sys/kernel/debug/mtk_hnat/hnat_stats',
+				'/sys/kernel/debug/ppe0/bind'
+			];
+			let ppe_path = null;
+			for (let alt in alts) {
+				if (file_access(alt)) {
+					ppe_path = alt;
+					break;
+				}
+			}
+
+			if (ppe_path == null) {
+				ppe_stat.PPE_NUM = '0';
+				print(sprintf('%J\n', ppe_stat));
+				return;
+			}
+
+			let raw = fs.readfile(rpath(ppe_path));
+			if (raw == null) {
+				print(sprintf('%J\n', ppe_stat));
+				return;
+			}
+
+			ppe_stat.available = true;
+			for (let line in split(raw, /\r?\n/)) {
+				if (line == '')
+					continue;
+				let eq = index(line, '=');
+				let second_eq = (eq >= 0) ? index(substr(line, eq + 1), '=') : -1;
+				if (eq >= 0 && second_eq < 0) {
+					let key = trim(substr(line, 0, eq));
+					let value = trim(substr(line, eq + 1));
+					let fwd = match(key, /^[Pp][Pp][Ee]\s*(\d+)\s*[_\-\s.]*(.+)$/);
+					let rev = match(key, /^(.+?)\s*[_\-\s.]*[Pp][Pp][Ee]\s*(\d+)$/);
+
+					if (fwd) {
+						let ppe = fwd[1];
+						let kind = lc(fwd[2]);
+						if (match(kind, /bind/) || match(kind, /bound/))
+							set_ppe_value(ppe_stat, 'BIND', ppe, value);
+						else if (match(kind, /all/) || match(kind, /entry/) || match(kind, /entries/) || match(kind, /total/))
+							set_ppe_value(ppe_stat, 'ALL', ppe, value);
+						else
+							ppe_stat[key] = value;
+					}
+					else if (rev) {
+						let reverse_kind = lc(rev[1]);
+						let reverse_ppe = rev[2];
+						if (match(reverse_kind, /bind/) || match(reverse_kind, /bound/))
+							set_ppe_value(ppe_stat, 'BIND', reverse_ppe, value);
+						else if (match(reverse_kind, /all/) || match(reverse_kind, /entry/) || match(reverse_kind, /entries/) || match(reverse_kind, /total/))
+							set_ppe_value(ppe_stat, 'ALL', reverse_ppe, value);
+						else
+							ppe_stat[key] = value;
+					}
+					else {
+						ppe_stat[key] = value;
+					}
+				}
+				else {
+					parse_compact_ppe_line(ppe_stat, line);
+				}
+			}
+
+			if (ppe_stat.PPE_NUM) {
+				let count = int(ppe_stat.PPE_NUM);
+				for (let index = 0; index < count; index++) {
+					let bkey = `BIND_PPE${index}`;
+					let akey = `ALL_PPE${index}`;
+					if (ppe_stat[bkey] == null)
+						ppe_stat[bkey] = '0';
+					if (ppe_stat[akey] == null)
+						ppe_stat[akey] = '0';
+				}
+			}
+
+			print(sprintf('%J\n', ppe_stat));
+		}
+	},
+	getMultiTierTelemetry: {
+		args: {},
+		call: function() {
+			print(sprintf('%J\n', read_multitier_telemetry(false)));
+		}
+	},
+	getMultiTierTelemetryStatus: {
+		args: {},
+		call: function() {
+			print(sprintf('%J\n', read_multitier_telemetry(true)));
+		}
+	},
+	getRuntimeStatus: {
+		args: {},
+		call: function() {
+			print(sprintf('%J\n', read_service_status()));
+		}
+	}
+};
+
+const extra_methods = {
+	check_status: {
+		args: {},
+		call: function() {
+			let fastpath = false;
+			let flow_offloading_enabled = function() {
+				return module_active('xt_FLOWOFFLOAD') || module_active('nft_flow_offload');
+			};
+			let hnat_present = is_dir('/sys/kernel/debug/mtk_ppe') ||
+				is_dir('/sys/kernel/debug/hnat') ||
+				module_loaded([ 'mtkhnat', 'mediatek_hnat' ]);
+			if ((hnat_present && hnat_hook_enabled()) ||
+			    flow_offloading_enabled() ||
+			    module_loaded([ 'fast_classifier', 'shortcut_fe_cm' ])) {
+				fastpath = true;
+			}
+			let fullconenat = module_active('nft_fullcone') || module_active('xt_FULLCONENAT') ||
+				(file_access('/proc/sys/net/netfilter/nf_conntrack_nat_mode') &&
+				 (readfile('/proc/sys/net/netfilter/nf_conntrack_nat_mode') || '0') != '0');
+			let cca = readfile('/proc/sys/net/ipv4/tcp_congestion_control') || '';
+			let avail_cca = readfile('/proc/sys/net/ipv4/tcp_available_congestion_control') || '';
+			let bbr = (lc(cca) == 'bbr') || !!match(avail_cca, /\bbbr\b/);
+			print(sprintf('%J\n', {
+				fastpath: fastpath,
+				fullconenat: fullconenat,
+				bbr: bbr
+			}));
+		}
+	},
+	get_ppe_entries: {
+		args: {},
+		call: function() {
+			print(sprintf('%J\n', parse_ppe_entries_summary()));
+		}
+	}
+};
+
+function parseInput() {
+	let raw = '';
+	while (true) {
+		let chunk = fs.stdin.read(4096);
+		if (!chunk || chunk == '')
+			break;
+		raw += chunk;
+	}
+	if (raw == '')
+		return {};
+	try {
+		return json(raw);
+	}
+	catch (e) {
+		print(sprintf('%J\n', { error: `${e}` }));
+		exit(1);
 	}
 }
 
-local function parseInput()
-	local parse = json.new()
-	local done, err
+function validateArgs(func, uargs) {
+	let method = methods[func] || extra_methods[func];
+	if (!method) {
+		print(sprintf('%J\n', { error: 'Method not found' }));
+		exit(1);
+	}
+	if (type(uargs) != 'object') {
+		print(sprintf('%J\n', { error: 'Invalid arguments' }));
+		exit(1);
+	}
+	delete uargs.ubus_rpc_session;
+	let margs = method.args || {};
+	for (let k, v in uargs) {
+		if (!(k in margs) || (v != null && type(v) != type(margs[k]))) {
+			print(sprintf('%J\n', { error: 'Invalid arguments' }));
+			exit(1);
+		}
+	}
+	return method;
+}
 
-	while true do
-		local chunk = io.read(4096)
-		if not chunk then
-			break
-		elseif not done and not err then
-			done, err = parse:parse(chunk)
-		end
-	end
-
-	if not done then
-		print(json.stringify({ error = err or "Incomplete input" }))
-		os.exit(1)
-	end
-
-	return parse:get()
-end
-
-local function validateArgs(func, uargs)
-	local method = methods[func]
-	if not method then
-		print(json.stringify({ error = "Method not found" }))
-		os.exit(1)
-	end
-
-	if type(uargs) ~= "table" then
-		print(json.stringify({ error = "Invalid arguments" }))
-		os.exit(1)
-	end
-
-	uargs.ubus_rpc_session = nil
-
-	local k, v
-	local margs = method.args or {}
-	for k, v in pairs(uargs) do
-		if margs[k] == nil or
-		   (v ~= nil and type(v) ~= type(margs[k]))
-		then
-			print(json.stringify({ error = "Invalid arguments" }))
-			os.exit(1)
-		end
-	end
-
-	return method
-end
-
-if arg[1] == "list" then
-	local _, method, rv = nil, nil, {}
-	for _, method in pairs(methods) do rv[_] = method.args or {} end
-	print((json.stringify(rv):gsub(":%[%]", ":{}")))
-elseif arg[1] == "call" then
-	local args = parseInput()
-	local method = validateArgs(arg[2], args)
-	local result, code = method.call(args)
-	print((json.stringify(result):gsub("^%[%]$", "{}")))
-	os.exit(code or 0)
-end
+if (ARGV[0] == 'list') {
+	let rv = {};
+	for (let name, method in methods)
+		rv[name] = method.args || {};
+	for (let name, method in extra_methods)
+		rv[name] = method.args || {};
+	print(sprintf('%J\n', rv));
+}
+else if (ARGV[0] == 'call') {
+	let args = parseInput();
+	let method = validateArgs(ARGV[1], args);
+	method.call(args);
+	exit(0);
+}

@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -15,7 +15,6 @@
 */
 
 #include "warp_utility.h"
-#ifdef CONFIG_WARP_CCIF_SUPPORT
 #include "warp.h"
 #include "warp_wo.h"
 #include "warp_ccif.h"
@@ -84,8 +83,8 @@ static int ccif_init(struct woif_bus *bus, u8 idx,
 	ccif->base_addr = (unsigned long)of_iomap(node, idx);
 	ccif->irq = irq_of_parse_and_map(node, idx);
 
-	warp_dbg(WARP_DBG_INF, "%s(): ccif: %p, addr: %lx, irq:%d!\n",
-		__func__, ccif, ccif->base_addr, ccif->irq);
+	warp_dbg(WARP_DBG_INF, "%s(): ccif: %p, addr: %lx, irq:%d, idx:%d!\n",
+		__func__, ccif, ccif->base_addr, ccif->irq, idx);
 
 	/*initial virtual ring*/
 	warp_ccif_tx_ring_get_hw(ccif, bus_to_tx_ring(bus));
@@ -150,7 +149,7 @@ static void ccif_exit(struct woif_bus *bus)
 		disable_irq(ccif->irq);
 		free_irq(ccif->irq, bus);
 		if (ccif->base_addr)
-			iounmap(ccif->base_addr);
+			iounmap((void *)ccif->base_addr);
 		warp_os_free_mem(ccif);
 	}
 
@@ -188,4 +187,3 @@ void ccif_bus_register(struct woif_bus *bus)
 	bus->clear_int = ccif_clear_int;
 }
 
-#endif

@@ -1,0 +1,65 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: luci-app-hypermodem\n"
+
+msgid "APN"
+msgstr ""
+
+msgid "After checking, enable network interface bridge."
+msgstr ""
+
+msgid "Authentication Type"
+msgstr ""
+
+msgid "Auto Choose"
+msgstr ""
+
+msgid "Base Setting"
+msgstr ""
+
+msgid "China Broadcast"
+msgstr ""
+
+msgid "China Mobile"
+msgstr ""
+
+msgid "China Telecom"
+msgstr ""
+
+msgid "China Unicom"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Enable IPv6"
+msgstr ""
+
+msgid "Enable Network bridge"
+msgstr ""
+
+msgid "Hyper Modem Server"
+msgstr ""
+
+msgid "Modem Server For OpenWrt"
+msgstr ""
+
+msgid "Modem device"
+msgstr ""
+
+msgid "NONE"
+msgstr ""
+
+msgid "PAP/CHAP (both)"
+msgstr ""
+
+msgid "PAP/CHAP Password"
+msgstr ""
+
+msgid "PAP/CHAP Username"
+msgstr ""
+
+msgid "Skytone"
+msgstr ""
+

@@ -92,7 +92,7 @@
  {
 --- a/include/linux/phy.h
 +++ b/include/linux/phy.h
-@@ -1963,7 +1963,7 @@ int genphy_c45_plca_set_cfg(struct phy_d
+@@ -1960,7 +1960,7 @@ int genphy_c45_plca_set_cfg(struct phy_d
  int genphy_c45_plca_get_status(struct phy_device *phydev,
  			       struct phy_plca_status *plca_st);
  int genphy_c45_eee_is_active(struct phy_device *phydev, unsigned long *adv,

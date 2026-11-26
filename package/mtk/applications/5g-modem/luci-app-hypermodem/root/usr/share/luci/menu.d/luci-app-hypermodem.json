@@ -1,0 +1,14 @@
+{
+	"admin/network/hypermodem": {
+		"title": "Hyper Modem Server",
+		"order": 80,
+		"action": {
+			"type": "view",
+			"path": "hypermodem"
+		},
+		"depends": {
+			"acl": [ "luci-app-hypermodem" ],
+			"uci": { "hypermodem": true }
+		}
+	}
+}

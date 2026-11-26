@@ -1,0 +1,365 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mtd: spi: harden calibration error handling and SPI-NAND
+ bounds
+
+Validate calibration rule pointers, normalize SPI-NOR read results, propagate SPI-NAND cache errors, and bound spi-mt65xx transfers.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/mtd/nand/spi/core.c |  15 ++++--
+ drivers/mtd/spi-nor/core.c  |  12 ++++-
+ drivers/spi/spi-mt65xx.c    |  37 ++++++++++---
+ drivers/spi/spi.c           | 103 ++++++++++++++++++++++++------------
+ 4 files changed, 119 insertions(+), 48 deletions(-)
+
+diff --git a/drivers/mtd/nand/spi/core.c b/drivers/mtd/nand/spi/core.c
+index 5b93233..2e42670 100644
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -221,13 +221,16 @@ static void spinand_read_adv_ecc(struct spinand_device *spinand,
+ 				 u8 pre_op, u8 pre_mask)
+ {
+ 	u8 *p = spinand->scratchbuf;
++	int ret;
+ 
+-	spi_mem_exec_op(spinand->spimem, ops);
++	ret = spi_mem_exec_op(spinand->spimem, ops);
++	if (ret)
++		return;
+ 
+ 	if (likely(mask <= 0xff))
+ 		*eccsr += (*p & mask) >> shift;
+ 	else
+-		*eccsr += (((*p << 8) | (*p+1)) & mask) >> shift;
++		*eccsr += (((*p << 8) | *(p + 1)) & mask) >> shift;
+ 
+ 	*eccsr = spinand->eccsr_math_op[pre_op](*eccsr, pre_mask);
+ }
+@@ -1100,7 +1103,7 @@ int spinand_cal_read(void *priv, u32 *addr, int addrlen, u8 *buf, int readlen) {
+ 
+ 	ret = spi_mem_exec_op(spinand->spimem, &op);
+ 
+-	return 0;
++	return ret;
+ }
+ 
+ static int spinand_check_casn_validity(struct spinand_device *spinand,
+@@ -1212,7 +1215,7 @@ static int spinand_check_casn(struct spinand_device *spinand,
+ 			struct nand_casn *casn, unsigned int *sel)
+ {
+ 	struct device *dev = &spinand->spimem->spi->dev;
+-	uint16_t crc = be16_to_cpu(casn->crc);
++	uint16_t crc = 0;
+ 	uint16_t crc_compute;
+ 	int ret = 0;
+ 	int i;
+@@ -1225,6 +1228,7 @@ static int spinand_check_casn(struct spinand_device *spinand,
+ 			ret = -EINVAL;
+ 			continue;
+ 		}
++		crc = be16_to_cpu(casn[i].crc);
+ 		crc_compute = nanddev_crc16(CASN_CRC_BASE, (u8 *)(casn + i),
+ 					    SPINAND_CASN_V1_CRC_OFS);
+ 		dev_dbg(dev, "CASN COPY %d CRC read: 0x%x, compute: 0x%x\n",
+@@ -1249,13 +1253,14 @@ static int spinand_check_casn(struct spinand_device *spinand,
+ 		dev_info(dev, "Couldn't find a valid CASN page, try bitwise majority to recover it\n");
+ 		nanddev_bit_wise_majority(srcbufs, CASN_PAGE_V1_COPIES, casn,
+ 					  sizeof(*casn));
++		crc = be16_to_cpu(casn->crc);
+ 		crc_compute = nanddev_crc16(CASN_CRC_BASE, (uint8_t *)casn,
+ 					    SPINAND_CASN_V1_CRC_OFS);
+ 		if (crc_compute != crc) {
+ 			dev_err(dev, "CASN page recovery failed, aborting\n");
+ 			return -EBADMSG;
+ 		}
+-		ret = spinand_check_casn_validity(spinand, casn + i);
++		ret = spinand_check_casn_validity(spinand, casn);
+ 		if (ret < 0)
+ 			return ret;
+ 		dev_info(dev, "CASN page recovery succeeded\n");
+diff --git a/drivers/mtd/spi-nor/core.c b/drivers/mtd/spi-nor/core.c
+index 4cf577c..9747217 100644
+--- a/drivers/mtd/spi-nor/core.c
++++ b/drivers/mtd/spi-nor/core.c
+@@ -3522,19 +3522,24 @@ static const struct flash_info *spi_nor_match_name(struct spi_nor *nor,
+ static int spi_nor_cal_read(void *priv, u32 *addr, int addrlen, u8 *buf, int readlen)
+ {
+ 	struct spi_nor *nor = (struct spi_nor *)priv;
++	ssize_t ret;
+ 
+ 	nor->reg_proto = SNOR_PROTO_1_1_1;
+ 	nor->read_proto = SNOR_PROTO_1_1_1;
+ 	nor->read_opcode = SPINOR_OP_READ;
+ 	nor->read_dummy = 0;
+ 
+-	return spi_nor_read_data(nor, *addr, readlen, buf);
++	ret = spi_nor_read_data(nor, *addr, readlen, buf);
++	if (ret < 0)
++		return ret;
++	return ret == readlen ? 0 : -EIO;
+ }
+ 
+ static int spi_nor_cal_read_4B(void *priv, u32 *addr, int addrlen, u8 *buf,
+ 			    int readlen)
+ {
+ 	struct spi_nor *nor = (struct spi_nor *)priv;
++	ssize_t ret;
+ 
+ 	nor->reg_proto = SNOR_PROTO_1_1_1;
+ 	nor->read_proto = SNOR_PROTO_1_1_1;
+@@ -3542,7 +3547,10 @@ static int spi_nor_cal_read_4B(void *priv, u32 *addr, int addrlen, u8 *buf,
+ 	nor->addr_nbytes = 4;
+ 	nor->read_dummy = 0;
+ 
+-	return spi_nor_read_data(nor, *addr, readlen, buf);
++	ret = spi_nor_read_data(nor, *addr, readlen, buf);
++	if (ret < 0)
++		return ret;
++	return ret == readlen ? 0 : -EIO;
+ }
+ 
+ static const struct flash_info *spi_nor_get_flash_info(struct spi_nor *nor,
+diff --git a/drivers/spi/spi-mt65xx.c b/drivers/spi/spi-mt65xx.c
+index d01f77d..f1d0c0b 100644
+--- a/drivers/spi/spi-mt65xx.c
++++ b/drivers/spi/spi-mt65xx.c
+@@ -836,8 +836,17 @@ static irqreturn_t mtk_spi_interrupt(int irq, void *dev_id)
+ 
+ static int mtk_spi_append_caldata(struct spi_controller *ctlr)
+ {
+-	struct spi_cal_target *cal_target = kmalloc(sizeof(*cal_target), GFP_KERNEL);
+ 	struct mtk_spi *mdata = spi_master_get_devdata(ctlr);
++	struct spi_cal_target *cal_target;
++
++	list_for_each_entry(cal_target, ctlr->cal_target, list) {
++		if (cal_target->cal_item == &mdata->get_tick_dly)
++			return 0;
++	}
++
++	cal_target = kmalloc(sizeof(*cal_target), GFP_KERNEL);
++	if (!cal_target)
++		return -ENOMEM;
+ 
+ 	cal_target->cal_item = &mdata->get_tick_dly;
+ 	cal_target->cal_min = 0;
+@@ -1252,14 +1261,18 @@ static int mtk_spi_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	if (mdata->dev_comp->need_pad_sel) {
+-		if (mdata->pad_num != master->num_chipselect)
+-			return dev_err_probe(dev, -EINVAL,
++		if (mdata->pad_num != master->num_chipselect) {
++			ret = dev_err_probe(dev, -EINVAL,
+ 				"pad_num does not match num_chipselect(%d != %d)\n",
+ 				mdata->pad_num, master->num_chipselect);
++			goto err_disable_sel_clk;
++		}
+ 
+-		if (!master->cs_gpiods && master->num_chipselect > 1)
+-			return dev_err_probe(dev, -EINVAL,
++		if (!master->cs_gpiods && master->num_chipselect > 1) {
++			ret = dev_err_probe(dev, -EINVAL,
+ 				"cs_gpios not specified and num_chipselect > 1\n");
++			goto err_disable_sel_clk;
++		}
+ 	}
+ 
+ 	if (mdata->dev_comp->dma_ext)
+@@ -1273,18 +1286,25 @@ static int mtk_spi_probe(struct platform_device *pdev)
+ 
+ 	ret = devm_request_irq(dev, irq, mtk_spi_interrupt,
+ 			       IRQF_TRIGGER_NONE, dev_name(dev), master);
+-	if (ret)
+-		return dev_err_probe(dev, ret, "failed to register irq\n");
++	if (ret) {
++		dev_err_probe(dev, ret, "failed to register irq\n");
++		goto err_disable_sel_clk;
++	}
+ 
+ 	pm_runtime_enable(dev);
+ 
+ 	ret = devm_spi_register_master(dev, master);
+ 	if (ret) {
+ 		pm_runtime_disable(dev);
+-		return dev_err_probe(dev, ret, "failed to register master\n");
++		dev_err_probe(dev, ret, "failed to register master\n");
++		goto err_disable_sel_clk;
+ 	}
+ 
+ 	return 0;
++
++err_disable_sel_clk:
++	clk_disable_unprepare(mdata->sel_clk);
++	return ret;
+ }
+ 
+ static void mtk_spi_remove(struct platform_device *pdev)
+@@ -1315,6 +1335,7 @@ static void mtk_spi_remove(struct platform_device *pdev)
+ 
+ 	pm_runtime_put_noidle(&pdev->dev);
+ 	pm_runtime_disable(&pdev->dev);
++	clk_disable_unprepare(mdata->sel_clk);
+ }
+ 
+ #ifdef CONFIG_PM_SLEEP
+diff --git a/drivers/spi/spi.c b/drivers/spi/spi.c
+index 9be4709..272f870 100644
+--- a/drivers/spi/spi.c
++++ b/drivers/spi/spi.c
+@@ -1389,8 +1389,7 @@ static int spi_transfer_wait(struct spi_controller *ctlr,
+ int spi_do_calibration(struct spi_controller *ctlr, struct spi_device *spi,
+ 	int (*cal_read)(void *priv, u32 *addr, int addrlen, u8 *buf, int readlen), void *drv_priv)
+ {
+-	int datalen = ctlr->cal_rule->datalen;
+-	int addrlen = ctlr->cal_rule->addrlen;
++	int datalen, addrlen;
+ 	u8 *buf;
+ 	int ret;
+ 	int i;
+@@ -1405,6 +1404,8 @@ int spi_do_calibration(struct spi_controller *ctlr, struct spi_device *spi,
+ 	if(!ctlr->cal_target || !ctlr->cal_rule || !ctlr->append_caldata)
+ 		return 0;
+ 
++	datalen = ctlr->cal_rule->datalen;
++	addrlen = ctlr->cal_rule->addrlen;
+ 	buf = kzalloc(datalen * sizeof(u8), GFP_KERNEL);
+ 	if(!buf)
+ 		return -ENOMEM;
+@@ -2297,17 +2298,35 @@ void spi_flush_queue(struct spi_controller *ctlr)
+ /*-------------------------------------------------------------------------*/
+ 
+ #if defined(CONFIG_OF)
+-static inline void alloc_cal_data(struct list_head **cal_target,
++static inline int alloc_cal_data(struct list_head **cal_target,
+ 	struct spi_cal_rule **cal_rule, bool enable)
+ {
+-	if(enable) {
+-		*cal_target = kmalloc(sizeof(struct list_head), GFP_KERNEL);
++	if (enable) {
++		*cal_target = kzalloc(sizeof(struct list_head), GFP_KERNEL);
++		if (!*cal_target)
++			return -ENOMEM;
++
++		*cal_rule = kzalloc(sizeof(struct spi_cal_rule), GFP_KERNEL);
++		if (!*cal_rule) {
++			kfree(*cal_target);
++			*cal_target = NULL;
++			return -ENOMEM;
++		}
++
+ 		INIT_LIST_HEAD(*cal_target);
+-		*cal_rule = kmalloc(sizeof(struct spi_cal_rule), GFP_KERNEL);
+-	} else {
+-		kfree(*cal_target);
+-		kfree(*cal_rule);
++		return 0;
+ 	}
++
++	if (*cal_rule) {
++		kfree((*cal_rule)->match_data);
++		kfree((*cal_rule)->addr);
++	}
++	kfree(*cal_target);
++	kfree(*cal_rule);
++	*cal_target = NULL;
++	*cal_rule = NULL;
++
++	return 0;
+ }
+ 
+ static int of_spi_parse_cal_dt(struct spi_controller *ctlr, struct spi_device *spi,
+@@ -2317,53 +2336,71 @@ static int of_spi_parse_cal_dt(struct spi_controller *ctlr, struct spi_device *s
+ 	int rc;
+ 	const char *cal_mode;
+ 
+-	rc = of_property_read_bool(nc, "spi-cal-enable");
+-	if (rc)
+-		alloc_cal_data(&ctlr->cal_target, &ctlr->cal_rule, true);
+-	else
++	if (!of_property_read_bool(nc, "spi-cal-enable"))
+ 		return 0;
+ 
++	rc = alloc_cal_data(&ctlr->cal_target, &ctlr->cal_rule, true);
++	if (rc)
++		return rc;
++
+ 	rc = of_property_read_string(nc, "spi-cal-mode", &cal_mode);
+-	if(!rc) {
+-		if(strcmp("read-data", cal_mode) == 0){
+-			ctlr->cal_rule->mode = SPI_CAL_READ_DATA;
+-		} else if(strcmp("read-pp", cal_mode) == 0) {
+-			ctlr->cal_rule->mode = SPI_CAL_READ_PP;
+-			return 0;
+-		} else if(strcmp("read-sfdp", cal_mode) == 0){
+-			ctlr->cal_rule->mode = SPI_CAL_READ_SFDP;
+-			return 0;
+-		}
+-	} else
++	if (rc)
+ 		goto err;
+ 
++	if (strcmp("read-data", cal_mode) == 0) {
++		ctlr->cal_rule->mode = SPI_CAL_READ_DATA;
++	} else if (strcmp("read-pp", cal_mode) == 0) {
++		ctlr->cal_rule->mode = SPI_CAL_READ_PP;
++		return 0;
++	} else if (strcmp("read-sfdp", cal_mode) == 0) {
++		ctlr->cal_rule->mode = SPI_CAL_READ_SFDP;
++		return 0;
++	} else {
++		rc = -EINVAL;
++		goto err;
++	}
++
+ 	ctlr->cal_rule->datalen = 0;
+ 	rc = of_property_read_u32(nc, "spi-cal-datalen", &value);
+-	if(!rc && value > 0) {
+-		ctlr->cal_rule->datalen = value;
+-
++	if (!rc && value > 0) {
+ 		ctlr->cal_rule->match_data = kzalloc(value * sizeof(u8), GFP_KERNEL);
++		if (!ctlr->cal_rule->match_data) {
++			rc = -ENOMEM;
++			goto err;
++		}
++		ctlr->cal_rule->datalen = value;
+ 		rc = of_property_read_u8_array(nc, "spi-cal-data",
+ 				ctlr->cal_rule->match_data, value);
+-		if(rc)
++		if (rc) {
+ 			kfree(ctlr->cal_rule->match_data);
++			ctlr->cal_rule->match_data = NULL;
++			ctlr->cal_rule->datalen = 0;
++			goto err;
++		}
+ 	}
+ 
+ 	rc = of_property_read_u32(nc, "spi-cal-addrlen", &value);
+-	if(!rc && value > 0) {
+-		ctlr->cal_rule->addrlen = value;
+-
++	if (!rc && value > 0) {
+ 		ctlr->cal_rule->addr = kzalloc(value * sizeof(u32), GFP_KERNEL);
++		if (!ctlr->cal_rule->addr) {
++			rc = -ENOMEM;
++			goto err;
++		}
++		ctlr->cal_rule->addrlen = value;
+ 		rc = of_property_read_u32_array(nc, "spi-cal-addr",
+ 				ctlr->cal_rule->addr, value);
+-		if(rc)
++		if (rc) {
+ 			kfree(ctlr->cal_rule->addr);
++			ctlr->cal_rule->addr = NULL;
++			ctlr->cal_rule->addrlen = 0;
++			goto err;
++		}
+ 	}
+ 	return 0;
+ 
+ err:
+ 	alloc_cal_data(&ctlr->cal_target, &ctlr->cal_rule, false);
+-	return 0;
++	return rc;
+ }
+ 
+ static void of_spi_parse_dt_cs_delay(struct device_node *nc,

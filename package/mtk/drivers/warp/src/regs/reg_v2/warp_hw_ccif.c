@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -37,7 +37,7 @@ warp_ccif_set_ack(void *hw)
 	struct ccif_entry *ccif = (struct ccif_entry *) hw;
 
 	warp_io_write32((struct ccif_entry *) hw, WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_ACK_ADDR, ccif->rx_ring->irq_mask);
-	warp_dbg(WARP_DBG_LOU, "%s(): write ack: %d & rx ack: %x\n", __func__, ccif->rx_ring->irq_mask, ccif->rx_ring->irq_mask);
+	warp_dbg(WARP_DBG_INF, "%s(): write ack: %d & rx ack: %x\n", __func__, ccif->rx_ring->irq_mask, ccif->rx_ring->irq_mask);
 }
 
 u32
@@ -48,7 +48,7 @@ warp_ccif_get_rxchnum(void *hw)
 	warp_io_read32((struct ccif_entry *) hw, WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_RCHNUM_ADDR, &val);
 	val = (val & WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_RCHNUM_RCHNUM_MASK) >> WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_RCHNUM_RCHNUM_SHFT;
 
-	warp_dbg(WARP_DBG_LOU, "%s(): get rxch: %x\n", __func__, val);
+	warp_dbg(WARP_DBG_INF, "%s(): get rxch: %x\n", __func__, val);
 	return val;
 }
 
@@ -59,10 +59,10 @@ warp_ccif_clear_int(void *hw)
 	struct ccif_entry *ccif = (struct ccif_entry *) hw;
 
 	warp_io_write32((struct ccif_entry *) hw, WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_ACK_ADDR, ccif->rx_ring->irq_mask);
-	warp_dbg(WARP_DBG_LOU, "%s(): clear_warp_CCIF\n", __func__);
+	warp_dbg(WARP_DBG_INF, "%s(): clear_warp_CCIF\n", __func__);
 	warp_io_read32((struct ccif_entry *) hw, WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_RCHNUM_ADDR, &val);
 	val = (val & WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_RCHNUM_RCHNUM_MASK) >> WOX_AP2WO_MCU_CCIF4_CPUA_PCCIF_RCHNUM_RCHNUM_SHFT;
-	warp_dbg(WARP_DBG_LOU, "%s(): get rxch: %x\n", __func__, val);
+	warp_dbg(WARP_DBG_INF, "%s(): get rxch: %x\n", __func__, val);
 }
 
 void

@@ -1,0 +1,41 @@
+diff --git a/mt_wifi/embedded/common/qos.c b/mt_wifi/embedded/common/qos.c
+index bc184bd8c10..d6a8afd6c57 100644
+--- a/mt_wifi/embedded/common/qos.c
++++ b/mt_wifi/embedded/common/qos.c
+@@ -537,7 +537,7 @@ static INT wext_send_qos_action_frame(struct wifi_dev *wdev,
+ }
+ 
+ static void wext_send_mscs_classifier_parameter(struct wifi_dev *wdev,
+-	UCHAR *classifier_parameter_report, ULONG len)
++	struct classifier_parameter *classifier_parameter_report)
+ {
+ 	char *buf = NULL;
+ 	struct wapp_event *event = NULL;
+@@ -562,7 +562,7 @@ static void wext_send_mscs_classifier_parameter(struct wifi_dev *wdev,
+ 	event->event_id = WAPP_MSCS_CLASSIFIER_PARAM_EVENT;
+ 	req_data = (struct classifier_parameter *)&(event->data.qos_frm);
+ 
+-	NdisCopyMemory(req_data, classifier_parameter_report, sizeof(*req_data));
++	*req_data = *classifier_parameter_report;
+ 	RtmpOSWrielessEventSend(wdev->if_dev, RT_WLAN_EVENT_CUSTOM,
+ 		OID_WAPP_EVENT, NULL, (PUCHAR)buf, buflen);
+ 	os_free_mem(buf);
+@@ -601,7 +601,7 @@ UCHAR QoS_parse_mscs_descriptor_ies(struct wifi_dev *wdev,
+ 	ptr += 7;
+ 	leftlen -= 7;
+ 	if (cs_param.requet_type == SCS_REQ_TYPE_REMOVE) {
+-		wext_send_mscs_classifier_parameter(wdev, (UCHAR *)&cs_param, sizeof(cs_param));
++		wext_send_mscs_classifier_parameter(wdev, &cs_param);
+ 		return 0;
+ 	}
+ 	while ((*ptr) == IE_WLAN_EXTENSION && (*(ptr + 2)) == IE_EXTENSION_ID_TCLAS_MASK) {
+@@ -613,8 +613,7 @@ UCHAR QoS_parse_mscs_descriptor_ies(struct wifi_dev *wdev,
+ 		if ((*(ptr+1)) == MSCS_CLASSIFIER_TYPE4) {
+ 			cs_param.cs.header.cs_type = *(ptr + 1);
+ 			cs_param.cs.header.cs_mask = *(ptr + 2);
+-			wext_send_mscs_classifier_parameter(wdev,
+-				(UCHAR *)&cs_param, sizeof(cs_param));
++			wext_send_mscs_classifier_parameter(wdev, &cs_param);
+ 		} else
+ 			MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+ 				"%s, not support mscs classifier type= %d.\n", __func__, (*ptr));

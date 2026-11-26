@@ -1,0 +1,1858 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_eth_hnat: coordinate PPE quiesce, DMA
+ retention, and provider lifecycle
+
+Introduce synchronous PPE quiesce and persistent DMA ownership, unify PPE port-policy resume, and bind ETH/HNAT lifetimes through a resident provider registry and supplier teardown.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_eth_dbg.c   |   6 +-
+ drivers/net/ethernet/mediatek/mtk_eth_reset.c |  18 +-
+ drivers/net/ethernet/mediatek/mtk_eth_reset.h |  59 ++
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c   | 766 +++++++++++++++++-
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h   |  68 +-
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.c | 440 +++++++---
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.h |   9 +
+ .../ethernet/mediatek/mtk_hnat/hnat_mcast.c   |   3 +-
+ 8 files changed, 1244 insertions(+), 125 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+index 53285f7..99da8e7 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_dbg.c
+@@ -2469,8 +2469,6 @@ static struct proc_dir_entry *proc_esw_cnt, *proc_mac_cnt, *proc_xfi_cnt,
+ 
+ int debug_proc_init(struct mtk_eth *eth)
+ {
+-	rcu_assign_pointer(g_eth, eth);
+-
+ 	if (!proc_reg_dir)
+ 		proc_reg_dir = proc_mkdir(PROCREG_DIR, NULL);
+ 
+@@ -2494,7 +2492,7 @@ int debug_proc_init(struct mtk_eth *eth)
+ 	if (!proc_esw_cnt)
+ 		pr_notice("!! FAIL to create %s PROC !!\n", PROCREG_ESW_CNT);
+ 
+-	if (mtk_is_netsys_v3_or_greater(g_eth)) {
++	if (mtk_is_netsys_v3_or_greater(eth)) {
+ 		proc_mac_cnt =
+ 		    proc_create(PROCREG_MAC_CNT, 0,
+ 				proc_reg_dir, &mac_count_fops);
+@@ -2515,7 +2513,7 @@ int debug_proc_init(struct mtk_eth *eth)
+ 	if (!proc_dbg_regs)
+ 		pr_notice("!! FAIL to create %s PROC !!\n", PROCREG_DBG_REGS);
+ 
+-	if (g_eth->hwlro) {
++	if (eth->hwlro) {
+ 		proc_hw_lro_stats =
+ 			proc_create(PROCREG_HW_LRO_STATS, 0, proc_reg_dir,
+ 				    &hw_lro_stats_fops);
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_reset.c b/drivers/net/ethernet/mediatek/mtk_eth_reset.c
+index 09ab3c4..f1e96be 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.c
+@@ -26,15 +26,16 @@ EXPORT_SYMBOL(mtk_check_wifi_busy);
+ void mtk_set_pse_drop(u32 config)
+ {
+ 	struct mtk_eth *eth;
++	unsigned long flags;
+ 
+ 	rcu_read_lock();
+ 	eth = rcu_dereference(g_eth);
+ 	if (eth && !mtk_is_netsys_v1(eth)) {
+-		mtk_w32(eth, config, PSE_PPE_DROP(0));
+-		if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE1))
+-			mtk_w32(eth, config, PSE_PPE_DROP(1));
+-		if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE2))
+-			mtk_w32(eth, config, PSE_PPE_DROP(2));
++		spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++		mtk_ppe_set_drop_locked(eth, 0, config);
++		mtk_ppe_set_drop_locked(eth, 1, config);
++		mtk_ppe_set_drop_locked(eth, 2, config);
++		spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ 	}
+ 	rcu_read_unlock();
+ }
+@@ -102,6 +103,11 @@ int mtk_eth_netdevice_event_init(struct mtk_eth *eth)
+ 	if (err)
+ 		return err;
+ 
+-	rcu_assign_pointer(g_eth, eth);
++	err = mtk_eth_provider_online(eth);
++	if (err) {
++		unregister_netdevice_notifier(&eth->reset.netdevice_notifier);
++		return err;
++	}
++
+ 	return 0;
+ }
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_reset.h b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+index f541a3b..5d8c185 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_reset.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_reset.h
+@@ -7,6 +7,11 @@
+ #ifndef MTK_ETH_RESET_H
+ #define MTK_ETH_RESET_H
+ 
++#include <linux/bits.h>
++#include <linux/types.h>
++
++struct device;
++
+ /* Frame Engine Reset FSM */
+ #define MTK_FE_START_RESET		(0x2000)
+ #define MTK_FE_RESET_DONE		(0x2001)
+@@ -32,4 +37,58 @@ extern bool mtk_stop_fail;
+ void mtk_set_pse_drop(u32 config);
+ int mtk_eth_netdevice_event_init(struct mtk_eth *eth);
+ bool mtk_eth_queue_reset(struct mtk_eth *eth, u32 event);
++
++#define MTK_PPE_OWNER_MAX 3
++
++enum mtk_ppe_owner_state {
++	MTK_PPE_EMPTY = 0,
++	MTK_PPE_ACTIVE,
++	MTK_PPE_QUIESCED,
++	MTK_PPE_FAULTED,
++};
++
++struct mtk_ppe_dma_hold {
++	struct device *dma_dev;
++	void *foe_cpu;
++	dma_addr_t foe_dma;
++	size_t foe_bytes;
++	void *mib_cpu;
++	dma_addr_t mib_dma;
++	size_t mib_bytes;
++};
++
++struct mtk_eth;
++struct mtk_ppe_registry;
++
++struct mtk_eth_hnat_tx {
++	struct mtk_eth *eth;
++	struct mtk_ppe_registry *provider;
++	bool locked;
++	bool owns_rtnl;
++};
++
++int mtk_eth_provider_online(struct mtk_eth *eth);
++void mtk_eth_provider_offline(struct mtk_eth *eth);
++int mtk_eth_hnat_get_supplier(struct device **out);
++
++int mtk_eth_hnat_begin(struct mtk_eth_hnat_tx *tx);
++int mtk_eth_hnat_begin_reset(struct mtk_eth_hnat_tx *tx);
++void mtk_eth_hnat_end(struct mtk_eth_hnat_tx *tx);
++
++int mtk_eth_claim_ppes_locked(struct mtk_eth_hnat_tx *tx, u32 mask);
++int mtk_eth_register_ppes_locked(struct mtk_eth_hnat_tx *tx, u32 mask,
++				 const struct mtk_ppe_dma_hold desc[MTK_PPE_OWNER_MAX]);
++void mtk_eth_abort_claim_locked(struct mtk_eth_hnat_tx *tx, u32 mask);
++int mtk_eth_can_warm_init_ppes_locked(struct mtk_eth_hnat_tx *tx, u32 mask);
++
++int mtk_eth_mark_ppe_quiesced_locked(struct mtk_eth_hnat_tx *tx, u32 id);
++int mtk_eth_free_ppe_dma_locked(struct mtk_eth_hnat_tx *tx, u32 id);
++void mtk_eth_fault_ppe_locked(struct mtk_ppe_registry *r, u32 id);
++void mtk_eth_fault_ppe(struct mtk_ppe_registry *r, u32 id);
++
++int mtk_eth_quiesce_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_id);
++int mtk_eth_resume_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_mask);
++int mtk_eth_quiesce_ppe_sync(u32 ppe_id);
++int mtk_eth_resume_ppe_sync(u32 ppe_id);
++void mtk_eth_set_pse_port_link_down(u32 port, bool link_down);
+ #endif		/* MTK_ETH_RESET_H */
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.c b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+index 16542af..61fe52e 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -26,7 +26,10 @@
+ #include <linux/phy/phy.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/jhash.h>
++#include <linux/lockdep.h>
++#include <linux/mutex.h>
+ #include <linux/rcupdate.h>
++#include <linux/rtnetlink.h>
+ #include <linux/bitfield.h>
+ #include <net/dsa.h>
+ #include <net/dst_metadata.h>
+@@ -5036,6 +5039,685 @@ static void mtk_hw_warm_reset(struct mtk_eth *eth)
+ 			val, rst_mask);
+ }
+ 
++void mtk_eth_set_pse_port_link_down(u32 port, bool link_down)
++{
++	struct mtk_eth *eth;
++	unsigned long flags;
++	u32 val;
++
++	rcu_read_lock();
++	eth = rcu_dereference(g_eth);
++	if (eth) {
++		spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++		val = mtk_r32(eth, MTK_FE_GLO_CFG(port));
++		if (link_down)
++			val |= MTK_FE_LINK_DOWN_P(port);
++		else
++			val &= ~MTK_FE_LINK_DOWN_P(port);
++		mtk_w32(eth, val, MTK_FE_GLO_CFG(port));
++		spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
++	}
++	rcu_read_unlock();
++}
++EXPORT_SYMBOL(mtk_eth_set_pse_port_link_down);
++
++struct mtk_ppe_owner_slot {
++	enum mtk_ppe_owner_state state;
++	struct mtk_ppe_dma_hold hold;
++	bool registered;
++};
++
++struct mtk_ppe_registry {
++	struct list_head list;
++	struct device_node *node;
++	struct mtk_eth *eth;
++	bool live;
++	struct mtk_ppe_owner_slot ppe[MTK_PPE_OWNER_MAX];
++};
++
++static LIST_HEAD(mtk_ppe_registries);
++static DEFINE_MUTEX(mtk_hnat_provider_lock);
++
++static struct mtk_ppe_registry *
++mtk_eth_ppe_registry_get_locked(struct device_node *node)
++{
++	struct mtk_ppe_registry *r;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!node)
++		return NULL;
++
++	list_for_each_entry(r, &mtk_ppe_registries, list)
++		if (r->node == node)
++			return r;
++
++	r = kzalloc(sizeof(*r), GFP_KERNEL);
++	if (!r)
++		return NULL;
++
++	r->node = of_node_get(node);
++	list_add_tail(&r->list, &mtk_ppe_registries);
++	return r;
++}
++
++static void
++mtk_eth_sync_faulted_policies_locked(struct mtk_eth *eth,
++				     struct mtk_ppe_registry *r)
++{
++	unsigned long flags;
++	unsigned int id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!eth || !r || mtk_is_netsys_v1(eth))
++		return;
++
++	spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		struct mtk_ppe_port_policy *p;
++		u32 reg, mask, val;
++
++		if (!mtk_eth_has_ppe_id(eth, id) ||
++		    r->ppe[id].state != MTK_PPE_FAULTED)
++			continue;
++
++		p = &eth->ppe_policy[id];
++		reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(id));
++		mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(id));
++		val = mtk_r32(eth, reg);
++		if (!p->isolated) {
++			p->link_down_was_set = !!(val & mask);
++			p->isolated = true;
++		}
++		p->requested_drop = 0x3fff;
++		p->requested_valid = true;
++		mtk_w32(eth, val | mask, reg);
++		mtk_w32(eth, 0x3fff, PSE_PPE_DROP(id));
++	}
++	spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
++}
++
++int mtk_eth_provider_online(struct mtk_eth *eth)
++{
++	struct mtk_ppe_registry *r;
++	int err = 0;
++
++	if (!eth || !eth->dev || !eth->dev->of_node)
++		return -EINVAL;
++
++	mutex_lock(&mtk_hnat_provider_lock);
++
++	if (rcu_access_pointer(g_eth)) {
++		err = -EBUSY;
++		goto out;
++	}
++
++	r = mtk_eth_ppe_registry_get_locked(eth->dev->of_node);
++	if (!r) {
++		err = -ENOMEM;
++		goto out;
++	}
++
++	if (r->live) {
++		err = -EBUSY;
++		goto out;
++	}
++
++	/*
++	 * Allow Ethernet CPU forwarding to come online.
++	 * Any pre-existing FAULTED slot remains latched in the resident
++	 * registry so HNAT claim refuses takeover before DMA allocation.
++	 */
++	r->eth = eth;
++	r->live = true;
++	eth->ppe_registry = r;
++	mtk_eth_sync_faulted_policies_locked(eth, r);
++	rcu_assign_pointer(g_eth, eth);
++
++out:
++	mutex_unlock(&mtk_hnat_provider_lock);
++	return err;
++}
++EXPORT_SYMBOL(mtk_eth_provider_online);
++
++void mtk_eth_provider_offline(struct mtk_eth *eth)
++{
++	struct mtk_ppe_registry *r;
++	unsigned int id;
++
++	if (!eth)
++		return;
++
++	mutex_lock(&mtk_hnat_provider_lock);
++
++	r = eth->ppe_registry;
++
++	if (rcu_access_pointer(g_eth) == eth)
++		RCU_INIT_POINTER(g_eth, NULL);
++
++	if (r && r->eth == eth) {
++		r->live = false;
++		r->eth = NULL;
++
++		for (id = 0; id < MTK_PPE_OWNER_MAX; id++)
++			if (r->ppe[id].state != MTK_PPE_EMPTY ||
++			    r->ppe[id].registered)
++				r->ppe[id].state = MTK_PPE_FAULTED;
++	}
++
++	eth->ppe_registry = NULL;
++	mutex_unlock(&mtk_hnat_provider_lock);
++
++	synchronize_rcu();
++}
++EXPORT_SYMBOL(mtk_eth_provider_offline);
++
++int mtk_eth_hnat_get_supplier(struct device **out)
++{
++	struct mtk_eth *eth;
++	struct mtk_ppe_registry *r;
++	int err = -ENODEV;
++
++	if (!out)
++		return -EINVAL;
++
++	*out = NULL;
++
++	mutex_lock(&mtk_hnat_provider_lock);
++	eth = rcu_dereference_protected(
++		g_eth, lockdep_is_held(&mtk_hnat_provider_lock));
++	if (!eth || !eth->dev || !eth->ethsys)
++		goto out;
++
++	r = eth->ppe_registry;
++	if (!r || !r->live || r->eth != eth)
++		goto out;
++
++	if (test_bit(MTK_REMOVING, &eth->state))
++		goto out;
++
++	*out = get_device(eth->dev);
++	err = *out ? 0 : -ENODEV;
++
++out:
++	mutex_unlock(&mtk_hnat_provider_lock);
++	return err;
++}
++EXPORT_SYMBOL(mtk_eth_hnat_get_supplier);
++
++static int
++mtk_eth_hnat_begin_rtnl(struct mtk_eth_hnat_tx *tx,
++			bool allow_reset, bool owns_rtnl)
++{
++	struct mtk_eth *eth;
++	struct mtk_ppe_registry *r;
++	int err = -ENODEV;
++
++	ASSERT_RTNL();
++
++	if (!tx)
++		return -EINVAL;
++
++	memset(tx, 0, sizeof(*tx));
++	mutex_lock(&mtk_hnat_provider_lock);
++
++	eth = rcu_dereference_protected(
++		g_eth, lockdep_is_held(&mtk_hnat_provider_lock));
++
++	if (!eth || !eth->ethsys)
++		goto fail;
++
++	r = eth->ppe_registry;
++	if (!r || !r->live || r->eth != eth)
++		goto fail;
++
++	if (test_bit(MTK_REMOVING, &eth->state))
++		goto fail;
++
++	if (!allow_reset && test_bit(MTK_RESETTING, &eth->state)) {
++		err = -EBUSY;
++		goto fail;
++	}
++
++	if (allow_reset && !test_bit(MTK_RESETTING, &eth->state)) {
++		err = -EBUSY;
++		goto fail;
++	}
++
++	tx->eth = eth;
++	tx->provider = r;
++	tx->locked = true;
++	tx->owns_rtnl = owns_rtnl;
++	return 0;
++
++fail:
++	mutex_unlock(&mtk_hnat_provider_lock);
++	return err;
++}
++
++int mtk_eth_hnat_begin(struct mtk_eth_hnat_tx *tx)
++{
++	int err;
++
++	if (!tx)
++		return -EINVAL;
++
++	rtnl_lock();
++	err = mtk_eth_hnat_begin_rtnl(tx, false, true);
++	if (err)
++		rtnl_unlock();
++
++	return err;
++}
++EXPORT_SYMBOL(mtk_eth_hnat_begin);
++
++/* Only for synchronous reset notifier (MTK_FE_RESET_NAT_DONE) with RTNL held. */
++int mtk_eth_hnat_begin_reset(struct mtk_eth_hnat_tx *tx)
++{
++	if (!rtnl_is_locked())
++		return -EPERM;
++
++	return mtk_eth_hnat_begin_rtnl(tx, true, false);
++}
++EXPORT_SYMBOL(mtk_eth_hnat_begin_reset);
++
++void mtk_eth_hnat_end(struct mtk_eth_hnat_tx *tx)
++{
++	bool owns_rtnl;
++
++	if (!tx || !tx->locked)
++		return;
++
++	owns_rtnl = tx->owns_rtnl;
++	tx->eth = NULL;
++	tx->provider = NULL;
++	tx->locked = false;
++	tx->owns_rtnl = false;
++
++	mutex_unlock(&mtk_hnat_provider_lock);
++
++	if (owns_rtnl)
++		rtnl_unlock();
++}
++EXPORT_SYMBOL(mtk_eth_hnat_end);
++
++int mtk_eth_claim_ppes_locked(struct mtk_eth_hnat_tx *tx, u32 mask)
++{
++	struct mtk_ppe_registry *r;
++	unsigned int id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->eth || !tx->provider || !mask ||
++	    (mask & ~GENMASK(MTK_PPE_OWNER_MAX - 1, 0)))
++		return -EINVAL;
++
++	r = tx->provider;
++
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		if (!(mask & BIT(id)))
++			continue;
++
++		if (!mtk_eth_has_ppe_id(tx->eth, id))
++			return -EINVAL;
++
++		if (r->ppe[id].state != MTK_PPE_EMPTY ||
++		    r->ppe[id].registered)
++			return -EBUSY;
++	}
++
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++)
++		if (mask & BIT(id))
++			r->ppe[id].state = MTK_PPE_ACTIVE;
++
++	return 0;
++}
++EXPORT_SYMBOL(mtk_eth_claim_ppes_locked);
++
++int mtk_eth_register_ppes_locked(
++	struct mtk_eth_hnat_tx *tx, u32 mask,
++	const struct mtk_ppe_dma_hold desc[MTK_PPE_OWNER_MAX])
++{
++	struct mtk_ppe_registry *r;
++	unsigned int id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->provider || !desc || !mask ||
++	    (mask & ~GENMASK(MTK_PPE_OWNER_MAX - 1, 0)))
++		return -EINVAL;
++
++	r = tx->provider;
++
++	/* Pre-validate the entire batch before mutating any slot or refcount. */
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		if (!(mask & BIT(id)))
++			continue;
++
++		if (r->ppe[id].state != MTK_PPE_ACTIVE ||
++		    r->ppe[id].registered ||
++		    !desc[id].dma_dev ||
++		    !desc[id].foe_cpu ||
++		    !desc[id].foe_bytes ||
++		    (!!desc[id].mib_cpu != !!desc[id].mib_bytes))
++			return -EINVAL;
++	}
++
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		if (!(mask & BIT(id)))
++			continue;
++
++		r->ppe[id].hold = desc[id];
++		r->ppe[id].hold.dma_dev = get_device(desc[id].dma_dev);
++		r->ppe[id].registered = true;
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL(mtk_eth_register_ppes_locked);
++
++void mtk_eth_abort_claim_locked(struct mtk_eth_hnat_tx *tx, u32 mask)
++{
++	struct mtk_ppe_registry *r;
++	unsigned int id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->provider)
++		return;
++
++	r = tx->provider;
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++)
++		if ((mask & BIT(id)) &&
++		    r->ppe[id].state == MTK_PPE_ACTIVE &&
++		    !r->ppe[id].registered)
++			r->ppe[id].state = MTK_PPE_EMPTY;
++}
++EXPORT_SYMBOL(mtk_eth_abort_claim_locked);
++
++int mtk_eth_can_warm_init_ppes_locked(struct mtk_eth_hnat_tx *tx, u32 mask)
++{
++	struct mtk_ppe_registry *r;
++	unsigned int id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->eth || !tx->provider || !mask ||
++	    (mask & ~GENMASK(MTK_PPE_OWNER_MAX - 1, 0)))
++		return -EINVAL;
++
++	r = tx->provider;
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		if (!(mask & BIT(id)))
++			continue;
++
++		if (!mtk_eth_has_ppe_id(tx->eth, id))
++			return -EINVAL;
++
++		if (r->ppe[id].state != MTK_PPE_ACTIVE ||
++		    !r->ppe[id].registered)
++			return -EBUSY;
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL(mtk_eth_can_warm_init_ppes_locked);
++
++void mtk_eth_fault_ppe_locked(struct mtk_ppe_registry *r, u32 id)
++{
++	unsigned long flags;
++	struct mtk_eth *eth;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (WARN_ON_ONCE(!r || id >= MTK_PPE_OWNER_MAX))
++		return;
++
++	r->ppe[id].state = MTK_PPE_FAULTED;
++
++	eth = r->live ? r->eth : NULL;
++	if (eth && !mtk_is_netsys_v1(eth) && mtk_eth_has_ppe_id(eth, id)) {
++		struct mtk_ppe_port_policy *p;
++		u32 reg, mask, val;
++
++		spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++		p = &eth->ppe_policy[id];
++		reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(id));
++		mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(id));
++		val = mtk_r32(eth, reg);
++		if (!p->isolated) {
++			p->link_down_was_set = !!(val & mask);
++			if (!p->requested_valid) {
++				p->requested_drop = mtk_r32(eth, PSE_PPE_DROP(id));
++				p->requested_valid = true;
++			}
++			p->isolated = true;
++		}
++		mtk_w32(eth, val | mask, reg);
++		mtk_w32(eth, 0x3fff, PSE_PPE_DROP(id));
++		spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
++	}
++}
++EXPORT_SYMBOL(mtk_eth_fault_ppe_locked);
++
++void mtk_eth_fault_ppe(struct mtk_ppe_registry *r, u32 id)
++{
++	mutex_lock(&mtk_hnat_provider_lock);
++	if (!WARN_ON_ONCE(!r || id >= MTK_PPE_OWNER_MAX))
++		r->ppe[id].state = MTK_PPE_FAULTED;
++	mutex_unlock(&mtk_hnat_provider_lock);
++}
++EXPORT_SYMBOL(mtk_eth_fault_ppe);
++
++int mtk_eth_mark_ppe_quiesced_locked(struct mtk_eth_hnat_tx *tx, u32 id)
++{
++	struct mtk_ppe_owner_slot *s;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->provider || id >= MTK_PPE_OWNER_MAX)
++		return -EINVAL;
++
++	s = &tx->provider->ppe[id];
++	if (s->state != MTK_PPE_ACTIVE || !s->registered)
++		return -EBUSY;
++
++	s->state = MTK_PPE_QUIESCED;
++	return 0;
++}
++EXPORT_SYMBOL(mtk_eth_mark_ppe_quiesced_locked);
++
++int mtk_eth_free_ppe_dma_locked(struct mtk_eth_hnat_tx *tx, u32 id)
++{
++	struct mtk_ppe_owner_slot *s;
++	struct mtk_ppe_dma_hold d;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->provider || id >= MTK_PPE_OWNER_MAX)
++		return -EINVAL;
++
++	s = &tx->provider->ppe[id];
++	if (s->state != MTK_PPE_QUIESCED || !s->registered)
++		return -EBUSY;
++
++	d = s->hold;
++
++	if (d.mib_cpu)
++		dma_free_coherent(d.dma_dev, d.mib_bytes,
++				  d.mib_cpu, d.mib_dma);
++
++	dma_free_coherent(d.dma_dev, d.foe_bytes,
++			  d.foe_cpu, d.foe_dma);
++
++	memset(&s->hold, 0, sizeof(s->hold));
++	s->registered = false;
++	s->state = MTK_PPE_EMPTY;
++	put_device(d.dma_dev);
++	return 0;
++}
++EXPORT_SYMBOL(mtk_eth_free_ppe_dma_locked);
++
++int mtk_eth_quiesce_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_id)
++{
++	struct mtk_eth *eth;
++	unsigned long flags;
++	struct mtk_ppe_port_policy *p;
++	u32 rst_mask = 0;
++	u32 reg, mask, val;
++	int ret = 0;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->eth)
++		return -EINVAL;
++
++	eth = tx->eth;
++	if (!mtk_eth_has_ppe_id(eth, ppe_id))
++		return -EINVAL;
++
++	if (ppe_id == 0) {
++		if (mtk_is_netsys_v3_or_greater(eth))
++			rst_mask = RSTCTRL_PPE0_V3;
++		else if (mtk_is_netsys_v2_or_greater(eth))
++			rst_mask = RSTCTRL_PPE0_V2;
++		else
++			rst_mask = RSTCTRL_PPE0;
++	} else if (ppe_id == 1) {
++		rst_mask = mtk_is_netsys_v3_or_greater(eth) ?
++			   RSTCTRL_PPE1_V3 : RSTCTRL_PPE1;
++	} else if (ppe_id == 2) {
++		rst_mask = RSTCTRL_PPE2;
++	} else {
++		return -EINVAL;
++	}
++
++	if (!mtk_is_netsys_v1(eth)) {
++		spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++		p = &eth->ppe_policy[ppe_id];
++		reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(ppe_id));
++		mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(ppe_id));
++		val = mtk_r32(eth, reg);
++		if (!p->isolated) {
++			p->link_down_was_set = !!(val & mask);
++			if (!p->requested_valid) {
++				p->requested_drop = mtk_r32(eth, PSE_PPE_DROP(ppe_id));
++				p->requested_valid = true;
++			}
++			p->isolated = true;
++		}
++		val |= mask;
++		mtk_w32(eth, val, reg);
++		mtk_w32(eth, 0x3fff, PSE_PPE_DROP(ppe_id));
++		spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
++	}
++
++	regmap_update_bits(eth->ethsys, ETHSYS_RSTCTRL, rst_mask, rst_mask);
++	if (readx_poll_timeout_atomic(mtk_hw_reset_read, eth, val,
++				      val & rst_mask, 1, 1000)) {
++		dev_err(eth->dev, "ppe%u reset assert timeout\n", ppe_id);
++		return -ETIMEDOUT;
++	}
++
++	regmap_update_bits(eth->ethsys, ETHSYS_RSTCTRL, rst_mask, ~rst_mask);
++	if (readx_poll_timeout_atomic(mtk_hw_reset_read, eth, val,
++				      !(val & rst_mask), 1, 1000)) {
++		dev_err(eth->dev, "ppe%u reset deassert timeout\n", ppe_id);
++		ret = -ETIMEDOUT;
++	}
++
++	return ret;
++}
++EXPORT_SYMBOL(mtk_eth_quiesce_ppe_locked);
++
++int mtk_eth_resume_ppe_locked(struct mtk_eth_hnat_tx *tx, u32 ppe_mask)
++{
++	struct mtk_eth *eth;
++	unsigned long flags;
++	struct mtk_ppe_port_policy *p;
++	u32 reg, mask, val;
++	u32 id;
++
++	lockdep_assert_held(&mtk_hnat_provider_lock);
++
++	if (!tx || !tx->locked || !tx->eth || !tx->provider)
++		return -EINVAL;
++
++	eth = tx->eth;
++	if (ppe_mask & ~GENMASK(MTK_PPE_OWNER_MAX - 1, 0))
++		return -EINVAL;
++
++	for (id = 0; id < MTK_PPE_OWNER_MAX; id++) {
++		if (!(ppe_mask & BIT(id)))
++			continue;
++		if (!mtk_eth_has_ppe_id(eth, id))
++			return -EINVAL;
++		if (tx->provider->ppe[id].state == MTK_PPE_FAULTED)
++			return -EBUSY;
++	}
++
++	if (!mtk_is_netsys_v1(eth)) {
++		spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++		for (id = 0; id < ARRAY_SIZE(eth->ppe_policy); id++) {
++			if (!(ppe_mask & BIT(id)))
++				continue;
++
++			p = &eth->ppe_policy[id];
++			if (p->isolated) {
++				reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(id));
++				mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(id));
++				val = mtk_r32(eth, reg);
++				val = (val & ~mask) | (p->link_down_was_set ? mask : 0);
++				mtk_w32(eth, val, reg);
++				p->isolated = false;
++			}
++			if (p->requested_valid)
++				mtk_w32(eth, p->requested_drop, PSE_PPE_DROP(id));
++		}
++		spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL(mtk_eth_resume_ppe_locked);
++
++int mtk_eth_quiesce_ppe_sync(u32 ppe_id)
++{
++	struct mtk_eth_hnat_tx tx;
++	int ret;
++
++	if (ppe_id >= MTK_PPE_OWNER_MAX)
++		return -EINVAL;
++
++	ret = mtk_eth_hnat_begin(&tx);
++	if (ret)
++		return ret;
++
++	ret = mtk_eth_quiesce_ppe_locked(&tx, ppe_id);
++	mtk_eth_hnat_end(&tx);
++	return ret;
++}
++EXPORT_SYMBOL(mtk_eth_quiesce_ppe_sync);
++
++int mtk_eth_resume_ppe_sync(u32 ppe_id)
++{
++	struct mtk_eth_hnat_tx tx;
++	int ret;
++
++	if (ppe_id >= MTK_PPE_OWNER_MAX)
++		return -EINVAL;
++
++	ret = mtk_eth_hnat_begin(&tx);
++	if (ret)
++		return ret;
++
++	ret = mtk_eth_resume_ppe_locked(&tx, BIT(ppe_id));
++	mtk_eth_hnat_end(&tx);
++	return ret;
++}
++EXPORT_SYMBOL(mtk_eth_resume_ppe_sync);
++
+ static inline u16 mtk_get_iq_sta(struct mtk_eth *eth, int port)
+ {
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+@@ -5337,6 +6019,7 @@ static int mtk_hw_init(struct mtk_eth *eth, bool reset)
+ 		       ETHSYS_DMA_AG_MAP_PPE;
+ 	const struct mtk_reg_map *reg_map = eth->soc->reg_map;
+ 	int i, val, ret;
++	unsigned long flags;
+ 
+ 	if (!reset && test_and_set_bit(MTK_HW_INIT, &eth->state))
+ 		return 0;
+@@ -5460,9 +6143,21 @@ static int mtk_hw_init(struct mtk_eth *eth, bool reset)
+ 			/* PSE should drop packets to port8, port9 and port13
+ 			 * on WDMA Rx ring full
+ 			 */
+-			mtk_w32(eth, 0x00002300, PSE_PPE_DROP(0));
+-			mtk_w32(eth, 0x00002300, PSE_PPE_DROP(1));
+-			mtk_w32(eth, 0x00002300, PSE_PPE_DROP(2));
++			spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++			for (i = 0; i < 3; i++) {
++				u32 def_drop = 0x00002300;
++				u32 drop_val = eth->ppe_policy[i].requested_valid ?
++					       eth->ppe_policy[i].requested_drop : def_drop;
++
++				mtk_ppe_set_drop_locked(eth, i, drop_val);
++				if (eth->ppe_policy[i].isolated) {
++					u32 reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(i));
++					u32 mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(i));
++
++					mtk_w32(eth, mtk_r32(eth, reg) | mask, reg);
++				}
++			}
++			spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ 
+ 			/* GDM and CDM Threshold */
+ 			mtk_w32(eth, 0x08000707, MTK_CDMW0_THRES);
+@@ -5474,8 +6169,21 @@ static int mtk_hw_init(struct mtk_eth *eth, bool reset)
+ 			/* PSE should drop packets to port8 on WDMA Rx ring
+ 			 * full
+ 			 */
+-			mtk_w32(eth, 0x00000100, PSE_PPE_DROP(0));
+-			mtk_w32(eth, 0x00000100, PSE_PPE_DROP(1));
++			spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++			for (i = 0; i < 2; i++) {
++				u32 def_drop = 0x00000100;
++				u32 drop_val = eth->ppe_policy[i].requested_valid ?
++					       eth->ppe_policy[i].requested_drop : def_drop;
++
++				mtk_ppe_set_drop_locked(eth, i, drop_val);
++				if (eth->ppe_policy[i].isolated) {
++					u32 reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(i));
++					u32 mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(i));
++
++					mtk_w32(eth, mtk_r32(eth, reg) | mask, reg);
++				}
++			}
++			spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ 		}
+ 
+ 		if (MTK_HAS_CAPS(eth->soc->caps, MTK_ESW)) {
+@@ -5494,7 +6202,21 @@ static int mtk_hw_init(struct mtk_eth *eth, bool reset)
+ 		mtk_w32(eth, 0x00000300, PSE_DROP_CFG);
+ 
+ 		/* PSE should drop packets to port 8/9 on WDMA Rx ring full */
+-		mtk_w32(eth, 0x00000300, PSE_PPE_DROP(0));
++		spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++		for (i = 0; i < 1; i++) {
++			u32 def_drop = 0x00000300;
++			u32 drop_val = eth->ppe_policy[i].requested_valid ?
++				       eth->ppe_policy[i].requested_drop : def_drop;
++
++			mtk_ppe_set_drop_locked(eth, i, drop_val);
++		if (eth->ppe_policy[i].isolated) {
++			u32 reg = MTK_FE_GLO_CFG(PSE_PPE_PORT(i));
++			u32 mask = MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(i));
++
++			mtk_w32(eth, mtk_r32(eth, reg) | mask, reg);
++		}
++		}
++		spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ 
+ 		/* PSE Free Queue Flow Control  */
+ 		mtk_w32(eth, 0x01fa01f4, PSE_FQFC_CFG2);
+@@ -5705,15 +6427,18 @@ void mtk_restore_qdma_cfg(struct mtk_eth *eth)
+ static void mtk_prepare_for_reset(struct mtk_eth *eth)
+ {
+ 	struct mtk_mac *mac;
++	unsigned long flags;
+ 	u32 val;
+ 	int i;
+ 
+ 	/* set FE PPE ports link down */
++	spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
+ 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++) {
+ 		val = mtk_r32(eth, MTK_FE_GLO_CFG(PSE_PPE_PORT(i)));
+ 		val |= MTK_FE_LINK_DOWN_P(PSE_PPE_PORT(i));
+ 		mtk_w32(eth, val, MTK_FE_GLO_CFG(PSE_PPE_PORT(i)));
+ 	}
++	spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ 
+ 	/* adjust PPE configurations to prepare for reset */
+ 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
+@@ -5770,8 +6495,16 @@ static void mtk_pending_work(struct work_struct *work)
+ 
+ 	mtk_hw_dump_all(eth);
+ 
++	mutex_lock(&mtk_hnat_provider_lock);
++	if (test_bit(MTK_REMOVING, &eth->state)) {
++		mutex_unlock(&mtk_hnat_provider_lock);
++		clear_bit(MTK_RESETTING, &eth->state);
++		rtnl_unlock();
++		return;
++	}
+ 	mtk_save_qdma_cfg(eth);
+ 	mtk_prepare_for_reset(eth);
++	mutex_unlock(&mtk_hnat_provider_lock);
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+ 		if (!eth->netdev[i])
+ 			continue;
+@@ -5823,6 +6556,13 @@ static void mtk_pending_work(struct work_struct *work)
+ 	/* Run again reset preliminary configuration in order to avoid any
+ 	 * possible race during FE reset since it can run releasing RTNL lock.
+ 	 */
++	mutex_lock(&mtk_hnat_provider_lock);
++	if (test_bit(MTK_REMOVING, &eth->state)) {
++		mutex_unlock(&mtk_hnat_provider_lock);
++		clear_bit(MTK_RESETTING, &eth->state);
++		rtnl_unlock();
++		return;
++	}
+ 	mtk_prepare_for_reset(eth);
+ 
+ 	/* stop all devices to make sure that dma is properly shut down */
+@@ -5839,6 +6579,7 @@ static void mtk_pending_work(struct work_struct *work)
+ 	if (eth->dev->pins)
+ 		pinctrl_select_state(eth->dev->pins->p,
+ 				     eth->dev->pins->default_state);
++	mtk_eth_sync_faulted_policies_locked(eth, eth->ppe_registry);
+ 	mtk_hw_init(eth, true);
+ 
+ 	/* restart DMA and enable IRQs */
+@@ -5857,6 +6598,7 @@ static void mtk_pending_work(struct work_struct *work)
+ 		    eth->mac[i]->id == MTK_GMAC1_ID)
+ 			mt7988_esw_force_link(eth, true);
+ 	}
++	mutex_unlock(&mtk_hnat_provider_lock);
+ 
+ 	for (i = 0; i < MTK_MAX_DEVS; i++) {
+ 		if (!eth->netdev[i])
+@@ -7093,6 +7835,7 @@ static int mtk_probe(struct platform_device *pdev)
+ 	spin_lock_init(&eth->dim_lock);
+ 	spin_lock_init(&eth->qdma_shaper.lock);
+ 	spin_lock_init(&eth->reset.lock);
++	spin_lock_init(&eth->ppe_cfg_lock);
+ 	eth->reset.event = MTK_FE_START_RESET;
+ 
+ 	eth->rx_dim.mode = DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+@@ -7430,13 +8173,10 @@ static int mtk_probe(struct platform_device *pdev)
+ 	eth->reset.pending = false;
+ 	atomic_set(&eth->reset.force, 0);
+ 	spin_unlock_irqrestore(&eth->reset.lock, flags);
++	mtk_eth_provider_offline(eth);
+ 	debug_proc_exit();
+ 	mtketh_debugfs_exit(eth);
+ 	cancel_work_sync(&eth->pending_work);
+-	if (rcu_access_pointer(g_eth) == eth) {
+-		RCU_INIT_POINTER(g_eth, NULL);
+-		synchronize_rcu();
+-	}
+ 	platform_set_drvdata(pdev, NULL);
+ 	mtk_unreg_dev(eth);
+ err_deinit_ppe:
+@@ -7469,6 +8209,8 @@ static int mtk_remove(struct platform_device *pdev)
+ 	atomic_set(&eth->reset.force, 0);
+ 	spin_unlock_irqrestore(&eth->reset.lock, flags);
+ 
++	mtk_eth_provider_offline(eth);
++
+ 	mtketh_debugfs_exit(eth);
+ 	debug_proc_exit();
+ 
+@@ -7482,10 +8224,6 @@ static int mtk_remove(struct platform_device *pdev)
+ 	cancel_work_sync(&eth->pending_work);
+ 
+ 	unregister_netdevice_notifier(&eth->reset.netdevice_notifier);
+-	if (rcu_access_pointer(g_eth) == eth) {
+-		RCU_INIT_POINTER(g_eth, NULL);
+-		synchronize_rcu();
+-	}
+ 
+ 	mtk_unreg_dev(eth);
+ 	mtk_wed_exit();
+diff --git a/drivers/net/ethernet/mediatek/mtk_eth_soc.h b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+index 818c798..4de2cc1 100644
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -1653,6 +1653,15 @@ struct mtk_soc_data {
+  * @soc:		Holding specific data among vaious SoCs
+  */
+ 
++struct mtk_ppe_port_policy {
++	u32 requested_drop;
++	bool requested_valid;
++	bool link_down_was_set;
++	bool isolated;
++};
++
++struct mtk_ppe_registry;
++
+ struct mtk_eth {
+ 	struct device			*dev;
+ 	struct device			*dma_dev;
+@@ -1750,6 +1759,10 @@ struct mtk_eth {
+ 		u8 gdm_tx_hang_count[3];
+ 		u8 gdm_rx_hang_count[3];
+ 	} reset;
++
++	spinlock_t			ppe_cfg_lock;
++	struct mtk_ppe_port_policy	ppe_policy[3];
++	struct mtk_ppe_registry		*ppe_registry;
+ };
+ 
+ /* struct mtk_mac -	the structure that holds the info about the MACs of the
+@@ -1973,40 +1986,83 @@ void mtk_w32(struct mtk_eth *eth, u32 val, unsigned reg);
+ u32 mtk_r32(struct mtk_eth *eth, unsigned reg);
+ u32 mtk_m32(struct mtk_eth *eth, u32 mask, u32 set, unsigned int reg);
+ 
++static inline bool mtk_eth_has_ppe_id(struct mtk_eth *eth, u32 id)
++{
++	if (!eth || id >= ARRAY_SIZE(eth->ppe_policy))
++		return false;
++	if (id == 0)
++		return true;
++	if (id == 1)
++		return MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE1);
++	if (id == 2)
++		return MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE2);
++	return false;
++}
++
++static inline void mtk_ppe_set_drop_locked(struct mtk_eth *eth,
++					   u32 id, u32 requested)
++{
++	struct mtk_ppe_port_policy *p;
++
++	if (!eth || mtk_is_netsys_v1(eth) || !mtk_eth_has_ppe_id(eth, id))
++		return;
++
++	p = &eth->ppe_policy[id];
++	p->requested_drop = requested;
++	p->requested_valid = true;
++
++	mtk_w32(eth, p->isolated ? 0x3fff : requested,
++		PSE_PPE_DROP(id));
++}
++
+ static inline void mtk_ppe_drop_config(struct mtk_eth *eth, u32 config)
+ {
+-	if (mtk_is_netsys_v1(eth))
++	unsigned long flags;
++
++	if (!eth || mtk_is_netsys_v1(eth))
+ 		return;
+ 
+-	mtk_w32(eth, config, PSE_PPE_DROP(0));
+-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE1))
+-		mtk_w32(eth, config, PSE_PPE_DROP(1));
+-	if (MTK_HAS_CAPS(eth->soc->caps, MTK_RSTCTRL_PPE2))
+-		mtk_w32(eth, config, PSE_PPE_DROP(2));
++	spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
++	mtk_ppe_set_drop_locked(eth, 0, config);
++	mtk_ppe_set_drop_locked(eth, 1, config);
++	mtk_ppe_set_drop_locked(eth, 2, config);
++	spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ }
+ 
+ static inline void mtk_pse_wdma_enable(struct mtk_eth *eth, int id, bool enable)
+ {
++	unsigned long flags;
+ 	u32 val;
+ 
++	if (!eth)
++		return;
++
++	spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
+ 	val = mtk_r32(eth, MTK_FE_GLO_CFG(PSE_WDMA_PORT(id)));
+ 	if (enable)
+ 		val &= ~MTK_FE_LINK_DOWN_P(PSE_WDMA_PORT(id));
+ 	else
+ 		val |= MTK_FE_LINK_DOWN_P(PSE_WDMA_PORT(id));
+ 	mtk_w32(eth, val, MTK_FE_GLO_CFG(PSE_WDMA_PORT(id)));
++	spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ }
+ 
+ static inline void mtk_pse_gdm_enable(struct mtk_eth *eth, int id, bool enable)
+ {
++	unsigned long flags;
+ 	u32 val;
+ 
++	if (!eth)
++		return;
++
++	spin_lock_irqsave(&eth->ppe_cfg_lock, flags);
+ 	val = mtk_r32(eth, MTK_FE_GLO_CFG(PSE_GDM_PORT(id)));
+ 	if (enable)
+ 		val &= ~MTK_FE_LINK_DOWN_P(PSE_GDM_PORT(id));
+ 	else
+ 		val |= MTK_FE_LINK_DOWN_P(PSE_GDM_PORT(id));
+ 	mtk_w32(eth, val, MTK_FE_GLO_CFG(PSE_GDM_PORT(id)));
++	spin_unlock_irqrestore(&eth->ppe_cfg_lock, flags);
+ }
+ 
+ int mtk_gmac_sgmii_path_setup(struct mtk_eth *eth, int mac_id);
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+index c18d2a9..2708255 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+@@ -13,6 +13,7 @@
+  */
+ 
+ #include <linux/atomic.h>
++#include <linux/device.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/delay.h>
+ #include <linux/if.h>
+@@ -21,16 +22,19 @@
+ #include <linux/kthread.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
++#include <linux/netdevice.h>
+ #include <linux/of_device.h>
+ #include <linux/platform_device.h>
+ #include <linux/reset.h>
+ #include <linux/rtnetlink.h>
++#include <linux/timer.h>
+ #include <linux/wait.h>
+ #include <net/netlink.h>
+ 
+ #include "nf_hnat_mtk.h"
+ #include "hnat.h"
+ #include "hnat_table_alloc.h"
++#include "../mtk_eth_reset.h"
+ 
+ struct mtk_hnat *hnat_priv;
+ 
+@@ -187,13 +191,14 @@ static int mtk_get_wdma_rx_port(u32 wdma_idx)
+ 
+ static int mtk_set_wdma_pse_port_state(u32 wdma_idx, bool up)
+ {
+-        int port;
+-        port = mtk_get_wdma_rx_port(wdma_idx);
+-        if (port < 0)
+-                return -EINVAL;
+-        cr_set_field(hnat_priv->fe_base + MTK_FE_GLO_CFG(port),
+-                     MTK_FE_LINK_DOWN1((u32)port), !up);
+-        return 0;
++	int port;
++
++	port = mtk_get_wdma_rx_port(wdma_idx);
++	if (port < 0)
++		return -EINVAL;
++
++	mtk_eth_set_pse_port_link_down((u32)port, !up);
++	return 0;
+ }
+ 
+ void set_gmac_ppe_fwd(int id, int enable)
+@@ -728,9 +733,15 @@ static void hnat_free_ppe_bundle_cb(void *context, unsigned int ppe_id,
+ 		hnat_free_ppe_bundle(alloc, bundle, entries);
+ }
+ 
++static int hnat_release_ppe_tables_locked(
++	struct mtk_hnat *h, struct mtk_eth_hnat_tx *tx, u32 id);
++
+ static int hnat_start(void)
+ {
++	struct mtk_eth_hnat_tx tx = { 0 };
++	u32 ppe_mask = (CFG_PPE_NUM >= 32) ? ~0U : ((1U << CFG_PPE_NUM) - 1U);
+ 	struct hnat_ppe_alloc ppe_tables[MAX_PPE_NUM] = { 0 };
++	struct mtk_ppe_dma_hold desc[MTK_PPE_OWNER_MAX] = { 0 };
+ 	struct hnat_alloc_context alloc = {
+ 		.dev = hnat_priv->dev,
+ 		.per_flow_accounting = hnat_priv->data->per_flow_accounting,
+@@ -746,18 +757,65 @@ static int hnat_start(void)
+ 	int err;
+ 	u32 ppe_id;
+ 
++	err = mtk_eth_hnat_begin(&tx);
++	if (err)
++		return err;
++
++	err = mtk_eth_claim_ppes_locked(&tx, ppe_mask);
++	if (err) {
++		mtk_eth_hnat_end(&tx);
++		return err;
++	}
++
+ 	err = mtk_hnat_alloc_common_tables(&alloc, CFG_PPE_NUM, MAX_PPE_NUM,
+ 					   DEF_ETRY_NUM, DEF_ETRY_NUM_CFG,
+ 					   TABLE_1K, &ops, bundles,
+ 					   &foe_etry_num, &etry_num_cfg);
+-	if (err)
++	if (err) {
++		mtk_eth_abort_claim_locked(&tx, ppe_mask);
++		mtk_eth_hnat_end(&tx);
+ 		return -ENOMEM;
++	}
+ 
+ 	foe_table_sz = foe_etry_num * sizeof(struct foe_entry);
+ 	foe_mib_tb_sz = foe_etry_num * sizeof(struct mib_entry);
+-	/* Commit the common capacity only after every per-PPE bundle exists. */
++
++	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
++		struct hnat_ppe_alloc *b = &ppe_tables[ppe_id];
++
++		memset(b->foe_cpu, 0, foe_table_sz);
++		if (hnat_priv->data->version == MTK_HNAT_V1_1)
++			exclude_boundary_entry(b->foe_cpu);
++
++		if (hnat_priv->data->per_flow_accounting)
++			memset(b->mib_cpu, 0, foe_mib_tb_sz);
++
++		desc[ppe_id].dma_dev = hnat_priv->dev;
++		desc[ppe_id].foe_cpu = b->foe_cpu;
++		desc[ppe_id].foe_dma = b->foe_dma;
++		desc[ppe_id].foe_bytes = foe_table_sz;
++		desc[ppe_id].mib_cpu = b->mib_cpu;
++		desc[ppe_id].mib_dma = b->mib_dma;
++		desc[ppe_id].mib_bytes =
++			hnat_priv->data->per_flow_accounting ? foe_mib_tb_sz : 0;
++	}
++
++	err = mtk_eth_register_ppes_locked(&tx, ppe_mask, desc);
++	if (err) {
++		for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++)
++			hnat_free_ppe_bundle(&alloc, &ppe_tables[ppe_id],
++					     foe_etry_num);
++
++		mtk_eth_abort_claim_locked(&tx, ppe_mask);
++		mtk_eth_hnat_end(&tx);
++		return err;
++	}
++
++	hnat_priv->ppe_owner = tx.provider;
++	/* Commit the common capacity and publish descriptors after registration. */
+ 	hnat_priv->foe_etry_num = foe_etry_num;
+ 	hnat_priv->etry_num_cfg = etry_num_cfg;
++
+ 	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
+ 		hnat_priv->foe_table_cpu[ppe_id] = ppe_tables[ppe_id].foe_cpu;
+ 		hnat_priv->foe_table_dev[ppe_id] = ppe_tables[ppe_id].foe_dma;
+@@ -771,26 +829,45 @@ static int hnat_start(void)
+ 
+ 		dev_info(hnat_priv->dev, "PPE%d entry number = %d\n",
+ 			 ppe_id, hnat_priv->foe_etry_num);
++	}
++
++	dma_wmb();
++
++	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
+ 		writel(hnat_priv->foe_table_dev[ppe_id],
+ 		       hnat_priv->ppe_base[ppe_id] + PPE_TB_BASE);
+-		memset(hnat_priv->foe_table_cpu[ppe_id], 0, foe_table_sz);
+-		if (hnat_priv->data->version == MTK_HNAT_V1_1)
+-			exclude_boundary_entry(hnat_priv->foe_table_cpu[ppe_id]);
+ 
+-		if (hnat_priv->data->per_flow_accounting) {
++		if (hnat_priv->data->per_flow_accounting)
+ 			writel(hnat_priv->foe_mib_dev[ppe_id],
+ 			       hnat_priv->ppe_base[ppe_id] + PPE_MIB_TB_BASE);
+-			memset(hnat_priv->foe_mib_cpu[ppe_id], 0, foe_mib_tb_sz);
+-		}
+ 	}
+ 
+ 	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
+ 		err = hnat_hw_init(ppe_id);
+ 		if (err)
+-			return err;
++			goto err_unwind_started;
+ 	}
+ 
++	err = mtk_eth_resume_ppe_locked(&tx, ppe_mask);
++	if (err)
++		goto err_unwind_started;
++
++	mtk_eth_hnat_end(&tx);
+ 	return 0;
++
++err_unwind_started:
++	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
++		int q_err = hnat_quiesce_ppe_locked(hnat_priv, &tx, ppe_id);
++
++		if (!q_err)
++			q_err = hnat_release_ppe_tables_locked(hnat_priv, &tx,
++							       ppe_id);
++		if (q_err)
++			hnat_retain_unquiesced_ppe_tables(hnat_priv, &tx,
++							  ppe_id);
++	}
++	mtk_eth_hnat_end(&tx);
++	return err;
+ }
+ 
+ static int ppe_busy_wait(u32 ppe_id)
+@@ -815,104 +892,194 @@ static int ppe_busy_wait(u32 ppe_id)
+ 	return -1;
+ }
+ 
+-static void hnat_stop(u32 ppe_id)
++int hnat_quiesce_ppe_locked(struct mtk_hnat *h, struct mtk_eth_hnat_tx *tx,
++			    u32 ppe_id)
+ {
+-	u32 foe_table_sz;
+-	u32 foe_mib_tb_sz;
++	unsigned long flags;
+ 	struct foe_entry *entry, *end;
++	int ret;
+ 
+-	if (ppe_id >= CFG_PPE_NUM)
+-		return;
++	if (!h || !tx || !tx->locked || ppe_id >= CFG_PPE_NUM || !h->ppe_base[ppe_id])
++		return -EINVAL;
+ 
+ 	/* send all traffic back to the DMA engine */
+ 	set_gmac_ppe_fwd(NR_GMAC1_PORT, 0);
+ 	set_gmac_ppe_fwd(NR_GMAC2_PORT, 0);
+ 	set_gmac_ppe_fwd(NR_GMAC3_PORT, 0);
+ 
+-	dev_info(hnat_priv->dev, "hwnat stop\n");
++	/* Quiesce per-flow MIB accounting first */
++	if (h->data->per_flow_accounting) {
++		spin_lock_irqsave(&h->mib[ppe_id].lock, flags);
++		h->mib[ppe_id].stopping = true;
++		spin_unlock_irqrestore(&h->mib[ppe_id].lock, flags);
+ 
+-	if (hnat_priv->foe_table_cpu[ppe_id]) {
+-		entry = hnat_priv->foe_table_cpu[ppe_id];
+-		end = hnat_priv->foe_table_cpu[ppe_id] + hnat_priv->foe_etry_num;
++		wait_event(h->mib[ppe_id].idle,
++			   !READ_ONCE(h->mib[ppe_id].pending.polling));
++
++		spin_lock_irqsave(&h->mib[ppe_id].lock, flags);
++		memset(&h->mib[ppe_id].pending, 0,
++		       sizeof(h->mib[ppe_id].pending));
++		spin_unlock_irqrestore(&h->mib[ppe_id].lock, flags);
++	}
++
++	/* Invalidate all FOE entries */
++	if (h->foe_table_cpu[ppe_id]) {
++		entry = h->foe_table_cpu[ppe_id];
++		end = h->foe_table_cpu[ppe_id] + h->foe_etry_num;
+ 		while (entry < end) {
+ 			entry->bfib1.state = INVALID;
+ 			entry++;
+ 		}
++		dma_wmb();
+ 	}
+-	/* disable caching */
+-	hnat_cache_ebl(0);
+-
+-	/* flush cache has to be ahead of hnat disable --*/
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_GLO_CFG, PPE_EN, 0);
+ 
+-	/* disable scan mode and keep-alive */
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, SCAN_MODE, 0);
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, KA_CFG, 0);
++	/* Disable caching */
++	hnat_cache_ebl(0);
+ 
+-	ppe_busy_wait(ppe_id);
++	/* Disable PPE and clear scan mode / keep-alive */
++	cr_set_field(h->ppe_base[ppe_id] + PPE_GLO_CFG, PPE_EN, 0);
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, SCAN_MODE, 0);
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, KA_CFG, 0);
+ 
+-	/* disable FOE */
+-	cr_clr_bits(hnat_priv->ppe_base[ppe_id] + PPE_FLOW_CFG,
++	/* Disable FOE */
++	cr_clr_bits(h->ppe_base[ppe_id] + PPE_FLOW_CFG,
+ 		    BIT_IPV4_NAPT_EN | BIT_IPV4_NAT_EN | BIT_IPV4_NAT_FRAG_EN |
+ 		    BIT_IPV6_HASH_GREK | BIT_IPV4_DSL_EN |
+ 		    BIT_IPV6_6RD_EN | BIT_IPV6_3T_ROUTE_EN |
+ 		    BIT_IPV6_5T_ROUTE_EN | BIT_FUC_FOE | BIT_FMC_FOE);
+ 
+-	if (hnat_priv->data->version == MTK_HNAT_V2 ||
+-	    hnat_priv->data->version == MTK_HNAT_V3)
+-		cr_clr_bits(hnat_priv->ppe_base[ppe_id] + PPE_FLOW_CFG,
++	if (h->data->version == MTK_HNAT_V2 ||
++	    h->data->version == MTK_HNAT_V3)
++		cr_clr_bits(h->ppe_base[ppe_id] + PPE_FLOW_CFG,
+ 			    BIT_IPV4_MAPE_EN | BIT_IPV4_MAPT_EN);
+ 
+-	if (hnat_priv->data->version == MTK_HNAT_V3)
+-		cr_clr_bits(hnat_priv->ppe_base[ppe_id] + PPE_FLOW_CFG,
++	if (h->data->version == MTK_HNAT_V3)
++		cr_clr_bits(h->ppe_base[ppe_id] + PPE_FLOW_CFG,
+ 			    BIT_IPV6_NAT_EN | BIT_IPV6_NAPT_EN |
+ 			    BIT_CS0_RM_ALL_IP6_IP_EN);
+ 
+-	/* disable FOE aging */
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, NTU_AGE, 0);
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, UNBD_AGE, 0);
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, TCP_AGE, 0);
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, UDP_AGE, 0);
+-	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, FIN_AGE, 0);
+-
+-	/* free the FOE table */
+-	foe_table_sz = hnat_priv->foe_etry_num * sizeof(struct foe_entry);
+-	if (hnat_priv->foe_table_cpu[ppe_id])
+-		dma_free_coherent(hnat_priv->dev, foe_table_sz,
+-				  hnat_priv->foe_table_cpu[ppe_id],
+-				  hnat_priv->foe_table_dev[ppe_id]);
+-	hnat_priv->foe_table_cpu[ppe_id] = NULL;
+-	writel(0, hnat_priv->ppe_base[ppe_id] + PPE_TB_BASE);
++	/* Disable FOE aging */
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, NTU_AGE, 0);
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, UNBD_AGE, 0);
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, TCP_AGE, 0);
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, UDP_AGE, 0);
++	cr_set_field(h->ppe_base[ppe_id] + PPE_TB_CFG, FIN_AGE, 0);
++
++	ret = ppe_busy_wait(ppe_id);
++	if (ret != 0) {
++		ret = mtk_eth_quiesce_ppe_locked(tx, ppe_id);
++		if (ret == 0 && (readl(h->ppe_base[ppe_id] + PPE_GLO_CFG) & BIT(31)))
++			ret = -ETIMEDOUT;
++		if (ret != 0) {
++			dev_crit(h->dev,
++				 "PPE%u failed to quiesce (err=%d); retaining coherent DMA tables\n",
++				 ppe_id, ret);
++			return ret;
++		}
++	}
+ 
+-	if (hnat_priv->data->per_flow_accounting) {
+-		unsigned long flags;
++	writel(0, h->ppe_base[ppe_id] + PPE_TB_BASE);
++	if (h->data->per_flow_accounting)
++		writel(0, h->ppe_base[ppe_id] + PPE_MIB_TB_BASE);
+ 
+-		spin_lock_irqsave(&hnat_priv->mib[ppe_id].lock, flags);
+-		hnat_priv->mib[ppe_id].stopping = true;
+-		spin_unlock_irqrestore(&hnat_priv->mib[ppe_id].lock, flags);
++	wmb();
++	if (readl(h->ppe_base[ppe_id] + PPE_TB_BASE) != 0) {
++		dev_crit(h->dev,
++			 "PPE%u PPE_TB_BASE failed to clear; retaining coherent DMA tables\n",
++			 ppe_id);
++		return -EIO;
++	}
++	if (h->data->per_flow_accounting &&
++	    readl(h->ppe_base[ppe_id] + PPE_MIB_TB_BASE) != 0) {
++		dev_crit(h->dev,
++			 "PPE%u PPE_MIB_TB_BASE failed to clear; retaining coherent DMA tables\n",
++			 ppe_id);
++		return -EIO;
++	}
+ 
+-		wait_event(hnat_priv->mib[ppe_id].idle,
+-			   !READ_ONCE(hnat_priv->mib[ppe_id].pending.polling));
++	return mtk_eth_mark_ppe_quiesced_locked(tx, ppe_id);
++}
+ 
+-		spin_lock_irqsave(&hnat_priv->mib[ppe_id].lock, flags);
+-		memset(&hnat_priv->mib[ppe_id].pending, 0,
+-		       sizeof(hnat_priv->mib[ppe_id].pending));
+-		spin_unlock_irqrestore(&hnat_priv->mib[ppe_id].lock, flags);
+-
+-		foe_mib_tb_sz = hnat_priv->foe_etry_num * sizeof(struct mib_entry);
+-		if (hnat_priv->foe_mib_cpu[ppe_id])
+-			dma_free_coherent(hnat_priv->dev, foe_mib_tb_sz,
+-					  hnat_priv->foe_mib_cpu[ppe_id],
+-					  hnat_priv->foe_mib_dev[ppe_id]);
+-		hnat_priv->foe_mib_cpu[ppe_id] = NULL;
+-		writel(0, hnat_priv->ppe_base[ppe_id] + PPE_MIB_TB_BASE);
+-		kfree(hnat_priv->acct[ppe_id]);
+-		hnat_priv->acct[ppe_id] = NULL;
+-		kfree(hnat_priv->ct_cursor[ppe_id]);
+-		hnat_priv->ct_cursor[ppe_id] = NULL;
++static void hnat_clear_ppe_aliases(struct mtk_hnat *h, u32 id)
++{
++	h->foe_table_cpu[id] = NULL;
++	h->foe_table_dev[id] = 0;
++	h->foe_mib_cpu[id] = NULL;
++	h->foe_mib_dev[id] = 0;
++
++	if (h->data->per_flow_accounting) {
++		kfree(h->acct[id]);
++		h->acct[id] = NULL;
++		kfree(h->ct_cursor[id]);
++		h->ct_cursor[id] = NULL;
+ 	}
+ }
+ 
++static int hnat_release_ppe_tables_locked(
++	struct mtk_hnat *h, struct mtk_eth_hnat_tx *tx, u32 id)
++{
++	int err;
++
++	err = mtk_eth_free_ppe_dma_locked(tx, id);
++	if (err)
++		return err;
++
++	hnat_clear_ppe_aliases(h, id);
++	return 0;
++}
++
++void hnat_retain_unquiesced_ppe_tables(struct mtk_hnat *h,
++				       struct mtk_eth_hnat_tx *tx,
++				       u32 ppe_id)
++{
++	if (!h || ppe_id >= CFG_PPE_NUM)
++		return;
++
++	if (tx && tx->locked)
++		mtk_eth_fault_ppe_locked(h->ppe_owner, ppe_id);
++	else
++		mtk_eth_fault_ppe(h->ppe_owner, ppe_id);
++
++	hnat_clear_ppe_aliases(h, ppe_id);
++}
++
++static void hnat_stop_locked(struct mtk_hnat *h, struct mtk_eth_hnat_tx *tx,
++			     u32 ppe_id)
++{
++	unsigned long flags;
++	int err;
++
++	if (!h || ppe_id >= CFG_PPE_NUM)
++		return;
++
++	if (!tx || !tx->locked) {
++		if (h->data && h->data->per_flow_accounting) {
++			spin_lock_irqsave(&h->mib[ppe_id].lock, flags);
++			h->mib[ppe_id].stopping = true;
++			spin_unlock_irqrestore(&h->mib[ppe_id].lock, flags);
++
++			wait_event(h->mib[ppe_id].idle,
++				   !READ_ONCE(h->mib[ppe_id].pending.polling));
++
++			spin_lock_irqsave(&h->mib[ppe_id].lock, flags);
++			memset(&h->mib[ppe_id].pending, 0,
++			       sizeof(h->mib[ppe_id].pending));
++			spin_unlock_irqrestore(&h->mib[ppe_id].lock, flags);
++		}
++		dev_crit(h->dev,
++			 "PPE%u Ethernet transaction unavailable; skipping MMIO and retaining coherent DMA tables\n",
++			 ppe_id);
++		hnat_retain_unquiesced_ppe_tables(h, NULL, ppe_id);
++		return;
++	}
++
++	err = hnat_quiesce_ppe_locked(h, tx, ppe_id);
++	if (!err)
++		err = hnat_release_ppe_tables_locked(h, tx, ppe_id);
++	if (err)
++		hnat_retain_unquiesced_ppe_tables(h, tx, ppe_id);
++}
++
+ static void hnat_release_netdev(void)
+ {
+ 	struct extdev_entry *ext_entry;
+@@ -1026,11 +1193,32 @@ int hnat_disable_hook(void)
+ 
+ int hnat_warm_init(void)
+ {
++	struct mtk_eth_hnat_tx tx = { 0 };
++	u32 ppe_mask = (CFG_PPE_NUM >= 32) ? ~0U : ((1U << CFG_PPE_NUM) - 1U);
+ 	u32 foe_table_sz, foe_mib_tb_sz, ppe_id = 0;
++	int ret;
+ 
+ 	unregister_netevent_notifier(&nf_hnat_netevent_nb);
+ 
++	ret = mtk_eth_hnat_begin_reset(&tx);
++	if (ret) {
++		register_netevent_notifier(&nf_hnat_netevent_nb);
++		return ret;
++	}
++
++	ret = mtk_eth_can_warm_init_ppes_locked(&tx, ppe_mask);
++	if (ret) {
++		register_netevent_notifier(&nf_hnat_netevent_nb);
++		mtk_eth_hnat_end(&tx);
++		return ret;
++	}
++
+ 	for (ppe_id = 0; ppe_id < CFG_PPE_NUM; ppe_id++) {
++		if (!hnat_priv->foe_table_cpu[ppe_id]) {
++			register_netevent_notifier(&nf_hnat_netevent_nb);
++			mtk_eth_hnat_end(&tx);
++			return -EBUSY;
++		}
+ 		foe_table_sz =
+ 			hnat_priv->foe_etry_num * sizeof(struct foe_entry);
+ 		writel(hnat_priv->foe_table_dev[ppe_id],
+@@ -1073,11 +1261,19 @@ int hnat_warm_init(void)
+ 		hnat_hw_init(ppe_id);
+ 	}
+ 
++	ret = mtk_eth_resume_ppe_locked(&tx, ppe_mask);
++	if (ret) {
++		register_netevent_notifier(&nf_hnat_netevent_nb);
++		mtk_eth_hnat_end(&tx);
++		return ret;
++	}
++
+ 	set_gmac_ppe_fwd(NR_GMAC1_PORT, 1);
+ 	set_gmac_ppe_fwd(NR_GMAC2_PORT, 1);
+ 	set_gmac_ppe_fwd(NR_GMAC3_PORT, 1);
+ 	register_netevent_notifier(&nf_hnat_netevent_nb);
+ 
++	mtk_eth_hnat_end(&tx);
+ 	return 0;
+ }
+ 
+@@ -1086,8 +1282,42 @@ static struct packet_type mtk_pack_type __read_mostly = {
+ 	.func   = mtk_hqos_ptype_cb,
+ };
+ 
++static int hnat_link_eth_supplier(struct platform_device *pdev)
++{
++	struct device *supplier = NULL;
++	struct device *recheck = NULL;
++	struct device_link *link;
++	int err;
++
++	err = mtk_eth_hnat_get_supplier(&supplier);
++	if (err)
++		return (err == -ENODEV) ? -EPROBE_DEFER : err;
++
++	link = device_link_add(&pdev->dev, supplier,
++			       DL_FLAG_AUTOREMOVE_CONSUMER);
++	if (!link ||
++	    READ_ONCE(link->status) == DL_STATE_SUPPLIER_UNBIND ||
++	    READ_ONCE(link->status) == DL_STATE_DORMANT) {
++		put_device(supplier);
++		return -EPROBE_DEFER;
++	}
++
++	err = mtk_eth_hnat_get_supplier(&recheck);
++	if (!err) {
++		if (recheck != supplier)
++			err = -EPROBE_DEFER;
++		put_device(recheck);
++	} else if (err == -ENODEV) {
++		err = -EPROBE_DEFER;
++	}
++
++	put_device(supplier);
++	return err;
++}
++
+ static int hnat_probe(struct platform_device *pdev)
+ {
++	struct mtk_eth_hnat_tx tx = { 0 };
+ 	int i;
+ 	int err = 0;
+ 	int index = 0;
+@@ -1110,6 +1340,10 @@ static int hnat_probe(struct platform_device *pdev)
+ 	else
+ 		ppe_num = val;
+ 
++	err = hnat_link_eth_supplier(pdev);
++	if (err)
++		return err;
++
+ 	hnat_priv = devm_kzalloc(&pdev->dev, sizeof(struct mtk_hnat), GFP_KERNEL);
+ 	if (!hnat_priv)
+ 		return -ENOMEM;
+@@ -1261,7 +1495,7 @@ static int hnat_probe(struct platform_device *pdev)
+ 
+ 	err = hnat_start();
+ 	if (err)
+-		goto err_out;
++		goto err_out1;
+ 
+ 	if (hnat_priv->data->whnat) {
+ 		err = whnat_adjust_nf_hooks();
+@@ -1300,8 +1534,14 @@ static int hnat_probe(struct platform_device *pdev)
+ 	return 0;
+ 
+ err_out:
+-	for (i = 0; i < CFG_PPE_NUM; i++)
+-		hnat_stop(i);
++	if (mtk_eth_hnat_begin(&tx) == 0) {
++		for (i = 0; i < CFG_PPE_NUM; i++)
++			hnat_stop_locked(hnat_priv, &tx, i);
++		mtk_eth_hnat_end(&tx);
++	} else {
++		for (i = 0; i < CFG_PPE_NUM; i++)
++			hnat_stop_locked(hnat_priv, NULL, i);
++	}
+ err_out1:
+ 	hnat_deinit_debugfs(hnat_priv);
+ 	hnat_release_netdev();
+@@ -1312,30 +1552,42 @@ static int hnat_probe(struct platform_device *pdev)
+ 	return err;
+ }
+ 
++static void hnat_detach_hooks(void)
++{
++	hnat_clear_ext_hooks();
++	hnat_unregister_nf_hooks();
++	hook_toggle = 0;
++	synchronize_net();
++}
++
+ static int hnat_remove(struct platform_device *pdev)
+ {
++	struct mtk_eth_hnat_tx tx = { 0 };
+ 	int i;
+ 
++	hnat_deinit_debugfs(hnat_priv);
+ 	hnat_roaming_disable();
+ 	unregister_netdevice_notifier(&nf_hnat_netdevice_nb);
+ 	unregister_netevent_notifier(&nf_hnat_netevent_nb);
+-	hnat_disable_hook();
+-
++	hnat_detach_hooks();
++	if (IS_HQOS_MODE && IS_GMAC1_MODE)
++		dev_remove_pack(&mtk_pack_type);
+ 	if (hnat_priv->data->mcast)
+ 		hnat_mcast_disable();
+-
+-	for (i = 0; i < CFG_PPE_NUM; i++)
+-		hnat_stop(i);
+-
+-	hnat_deinit_debugfs(hnat_priv);
+-	hnat_release_netdev();
+-	del_timer_sync(&hnat_priv->hnat_sma_build_entry_timer);
++	timer_shutdown_sync(&hnat_priv->hnat_sma_build_entry_timer);
+ 	if (hnat_priv->data->version == MTK_HNAT_V1_3)
+-		del_timer_sync(&hnat_priv->hnat_reset_timestamp_timer);
++		timer_shutdown_sync(&hnat_priv->hnat_reset_timestamp_timer);
+ 
+-	if (IS_HQOS_MODE && IS_GMAC1_MODE)
+-		dev_remove_pack(&mtk_pack_type);
++	if (mtk_eth_hnat_begin(&tx) == 0) {
++		for (i = 0; i < CFG_PPE_NUM; i++)
++			hnat_stop_locked(hnat_priv, &tx, i);
++		mtk_eth_hnat_end(&tx);
++	} else {
++		for (i = 0; i < CFG_PPE_NUM; i++)
++			hnat_stop_locked(hnat_priv, NULL, i);
++	}
+ 
++	hnat_release_netdev();
+ 	hnat_clear_ext_hooks();
+ 	hnat_priv = NULL;
+ 
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+index 9afdd7b..bd09628 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -1020,6 +1020,7 @@ struct mtk_hnat {
+ 
+ 	struct hnat_ct_cursor *ct_cursor[MAX_PPE_NUM];
+ 	struct hnat_mib_ppe mib[MAX_PPE_NUM];
++	struct mtk_ppe_registry *ppe_owner;
+ };
+ 
+ struct extdev_entry {
+@@ -1399,6 +1400,14 @@ bool hnat_mib_bind_begin(struct mtk_hnat *h, u32 ppe_id, u32 index,
+ void hnat_mib_bind_end(struct mtk_hnat *h, u32 ppe_id,
+ 		       struct hnat_mib_bind_guard *guard);
+ 
++struct mtk_eth_hnat_tx;
++
++int hnat_quiesce_ppe_locked(struct mtk_hnat *h, struct mtk_eth_hnat_tx *tx,
++			    u32 ppe_id);
++void hnat_retain_unquiesced_ppe_tables(struct mtk_hnat *h,
++				       struct mtk_eth_hnat_tx *tx,
++				       u32 ppe_id);
++
+ static inline u16 foe_timestamp(struct mtk_hnat *h)
+ {
+ 	return (readl(hnat_priv->fe_base + 0x0010)) & 0xffff;
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_mcast.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_mcast.c
+index b9457d8..3804476 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_mcast.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_mcast.c
+@@ -13,6 +13,7 @@
+ #include <linux/netlink.h>
+ #include <linux/rtnetlink.h>
+ #include <linux/if_bridge.h>
++#include <linux/timer.h>
+ #include "hnat.h"
+ 
+ /* *
+@@ -367,7 +368,7 @@ int hnat_mcast_disable(void)
+ 	}
+ 
+ 	if (hnat_priv->data->version == MTK_HNAT_V1_3)
+-		del_timer_sync(&hnat_priv->hnat_mcast_check_timer);
++		timer_shutdown_sync(&hnat_priv->hnat_mcast_check_timer);
+ 
+ 	flush_work(&pmcast->work);
+ 	cancel_work_sync(&pmcast->work);

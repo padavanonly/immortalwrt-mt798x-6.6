@@ -1,0 +1,347 @@
++=============================================================================+
+| Copyright (c) 2010-2022 Rambus, Inc. and/or its subsidiaries.               |
+|                                                                             |
+| Subject   : PEC API Implementation Notes                                    |
+| Product   : SLAD API                                                        |
+| Date      : 02 December, 2022                                               |
+|                                                                             |
++=============================================================================+
+
+The SLAD API is a set of the API's one of which is the Packet Engine
+Control (PEC) API. The driver implementation specifics of these APIs are
+described in short documents that serve as an addendum to the API
+specifications. This document describes the PEC API.
+
+This document uses the phrase "configurable" to indicate that a parameter or
+option is build-time configurable in the driver. Please refer to the User Guide
+of the driver for details.
+
+
+PEC API
+-------
+
+One PEC implementation is available: ARM (Autonomous Ring Mode).
+
+Packet engine device
+     The PEC API implementation can support multiple packet processing
+     devices. These devices are identified by the interface ID parameter
+     in the PEC API functions and are sometimes referred to as rings.
+
+ARM mode
+     ARM mode uses DMA, can queue many jobs, handles commands and
+     results asynchronously (but always in-order) and also supports
+     fragmented data buffers (scatter / gather). The implementation
+     supports a single multi-threaded application per ring, allowing
+     concurrent and independent use of PEC_SA_Register,
+     PEC_SA_UnRegister, PEC_Packet_Put and PEC_Packet_Get. Both
+     PEC_Packet_Put and PEC_Packet_Get are not re-entrant, but
+     individual threads can use these functions concurrently.
+
+     Ensure that the Token Data, Packet Data and Context Data DMA
+     buffers are not re-used or freed by the execution context using
+     the PEC and DMABuf API's functions or by another execution
+     context until the processed result descriptor(s) referring to the
+     packet associated with these buffers is(are) fully processed by
+     the engine. This is required not only when in-place packet
+     transform is done using the same Packet Data DMA buffer as input
+     and output buffer but also when different DMA buffers are used
+     for the packet processing input and output data.
+
+Byte ordering (endianess)
+     The SA and Token buffers are considered arrays of 32bit integers,
+     in host-native byte ordering. The driver will change the byte
+     order if required if this is required (configurable).  The data
+     buffers are considered byte arrays and the driver will not touch
+     these.
+
+Bounce Buffers
+     Bounce Buffer support can be removed (configurable) from the driver to
+     reduce footprint.
+     For ARM mode, the implementation can bounce the SA, Token and data buffers
+     if these are not DMA-safe. This requires that the buffer was registered
+     using DMABuf_Register with an unsupported AllocatorRef.
+     When bouncing an SA buffer, it will be copied to a bounce buffer in
+     PEC_SA_Register and copied back by PEC_SA_UnRegister.
+     When bouncing a token buffer, a bounce buffer is created by
+     PEC_Packet_Put and released by PEC_Packet_Get.
+     When bouncing a data buffer (because either the source or destination
+     requires bouncing), a single bounce buffer is created by PEC_Packet_Put
+     based on the largest of the source and destination buffers. The engine
+     then performs an in-place operation in the bounce buffer. PEC_Packet_Get
+     copies the result to the destination buffer and releases the bounce
+     buffer.
+
+Descriptor grouping
+     PEC_Packet_Get and PEC_Packet_Put can process up to a
+     configurable number of descriptors in one call.
+
+Queuing
+     The ring can queue a configurable number of jobs. This can be set to
+     hundreds or even thousands, at the cost of some memory footprint. This
+     can avoid queuing in software and can also give better performance
+     (avoids idle engine due to empty ring).
+
+Scatter / Gather support
+     The ARM mode supports the scatter/gather extension (configurable) of the
+     PEC API.
+     If the SrcPkt_Handle in the command descriptor is a PEC SG_List, a
+     packet is assumed to used gather.
+     If the DstPkt_Handle in the command descriptor is a PEC SG_List, a
+     packet is assumed to used scatter.
+
+     The application is responsible for setting up both the gather list
+     in SrcPkt_Handle and the scatter list in DstPkt_Handle for each packet.
+     The application is responsible for allocating and releasing the individual
+     gather and scatter buffers.
+
+     The buffers used for the Scatter and/or Gather data are not bounced and
+     must be allocated and provided to the driver as DMA-safe buffers. This
+     can be achieved by using the driver's DMABuf API.
+
+Continuous Scatter mode
+     The ARM mode supports continuous scatter mode, which can be enabled per
+     ring. When continuous scatter mode is enabled for a ring, the result
+     packets are written to a sequence of destination buffers supplied by the
+     function PEC_Scatter_Preload(). Each result packet will occupy one
+     or more destination buffers (it will be scattered), depending on the
+     packet length and the sizes of the destination buffers.
+
+     It is not determined in advance which destination buffers will be
+     used for the result packet of a certain PEC_Packet_Put(). In a
+     typical use case, the application will pre-allocate a number of
+     buffers, each of the same size, and submits them to the
+     PEC_Scatter_Preload() function. It will regularly call
+     PEC_Scatter_Preload() to refill the supply of destination buffers, after
+     buffers are used by result packets.
+
+     Continuous scatter mode can be used even if the driver is configured
+     without scatter-gather support, but in that case each packet is required
+     to fit into a single destination buffer.
+
+     Continuous scatter mode is not supported with LAC flows.
+
+Redirection
+     Some configurations of the hardware support redirection. A packet,
+     originally submitted with PEC_Packet_Put() can have its result appear
+     on a different ring or on the inline interface. A packet, originally
+     received on the inline interface, can have its result appear on
+     a ring.
+
+     Any ring from which packets can be redirected, must be configured with
+     continuous scatter mode. Any ring towards which packets can be redirected,
+     must be configured with continuous scatter mode. When redirection is
+     possible, the sequence of packets submitted with PEC_Packet_Put() and
+     the sequence of result packets retrieved with PEC_Packet_Get()
+     on the same ring are no longer related to one another.
+
+     When a packet submitted with PEC_Packet_Put() is redirected to the
+     inline interface, no result descriptor will be received with
+     PEC_Packet_Get(). When a packet is received on the inline interface and
+     it is redirected to a ring, a result descriptor will appear with no
+     corresponding command descriptor in PEC_Packet_Put().
+
+Command Descriptor fields
+     User_p is fully supported on rings that do not use continuous scatter mode
+     and allows the user to match results to commands. User_p is not supported
+     on rings with continuous scatter mode.
+
+     The Control1 field is not used by this implementation. The PEC
+     API function PEC_CD_Control_Write is not implemented. Instead use
+     the IOToken API to pass an array of 32-bit words via the
+     InputToken_p field. The application is responsible for allocating
+     this array. The HW_Services field in the data structure passed to
+     the IOToken API specifies the exact packet flow or alternatively
+     it can specify a record invalidation command instead.  The values
+     to be filled in are provided by the firmware API.
+
+     Control2 can be used to specify the engine on which a packet must be
+     processed. This can be useful for protocols like TLS, where subsequent
+     packets of the same data stream must be processed on the same engine to
+     ensure in-order processing and in-order assignment of the sequence numbers.
+     Bit 5 in Control2 can be set if the engine is specified. The engine ID
+     is put in bits 4..0. Otherwise, the Control2 field should be all zero.
+
+     LAC packet flow:
+     - A valid Token_Handle must always be provided for each packet and
+       Token_WordCount must be set to the exact size in words of the token.
+     - SA_Handle1 must point to the main SA, which must be registered by
+       PEC_SA_Register.
+     - SA_Handle2 must be a null handle
+     - SA_WordCount is not used.
+     - DstPkt_Handle must always be provided, also for input-only operations.
+       When no destination buffer is required, it can be set to SrcPkt_Handle.
+     - The TokenHeaderWord passed to the IOToken API must be filled in.
+     - The Offset_ByteCount passed to the IOToken API is not used.
+
+     Other packet flows:
+     - Token_Handle is the null handle and Token_WordCount is zero.
+     - SA_Handle1 is the null handle if classification is used, else it is the
+       DMABuf handle representing a transform record.
+     - SA_Handle2 must be a null handle
+     - SA_WordCount is not used.
+     - DstPkt_Handle must always be provided (except for continuous
+       scatter mode), also for input-only operations.
+       When no destination buffer is required, it can be set to SrcPkt_Handle.
+       When continuous scatter mode is enabled, no destination handle must be
+       provided.
+     - The Offset_ByteCount field passed to the IOTOken API specifies the
+       number of bytes at the start of each packet that will be passed
+       unchanged and are not part of the packet to be processed.
+     - The NextHeader field passed to the IOToken API specifies the Next
+       Header field for IPsec packet flows that do not use network header
+       processing.
+
+     Record invalidation commands:
+     - Token_Handle is the null handle and Token_WordCount is zero.
+     - SA_Handle must point to the SA, transform or flow record to be
+       invalidated.
+     - SA_Handle2 must be a null handle
+     - SA_WordCount is not used.
+     - SrcPkt_Handle and DstPkt_Handle must both be null handles.
+     - SrcPkt_ByteCount is zero.
+
+     Note: A record invalidation command may be submitted via the PEC API
+           to the engine only when the engine has no packets being processed
+           for this record.
+
+Result Descriptor fields
+     User_p is fully supported on rings that do not use continuous scatter mode
+     and allows the user to match results to commands. User_p is not supported
+     on rings with continuous scatter mode.
+
+     SrcPkt_Handle and DstPkt_Handle are the same as provided in the command
+     descriptor. DstPkt_p is the host address for DstPkt_Handle.
+     On ring with continuous scatter mode, these fields are the NULL handle
+     and NULL pointer. On rings with continuous scatter mode, the NumParticles
+     field will be the number of scatter buffers used by the result packet.
+     At least one scatter buffer will be used, even if the result packet
+     has zero length. In some cases, the number of scatter buffer is
+     higher that would be required by the result packet.
+
+     DstPkt_ByteCount and Bypass_WordCount have been extracted from the engine
+     result descriptor as described in the engine datasheet under PE_LENGTH.
+     Bypass_WordCount should be the same as was provided in the command
+     descriptor.
+
+     For operations that do not require output buffers such as hash operations
+     the SrcPkt_Handle and DstPkt_Handle parameters in the
+     PEC_CommandDescriptor_t descriptor must be set equal by applications.
+     The advantage of this solution is that the driver still checks that
+     the output buffer handle is not NULL for all operations and can detect
+     errors in applications that do not do provide correct output buffer handle.
+     The disadvantage is that for hash operations this will degrade performance
+     because the driver will have to perform bounce buffer copy back to
+     the original buffer which is not needed and the driver will also
+     perform the PostDMA operation which is also not needed.
+
+     Status1 and Status2 reflect up to two words from the result token that
+     contain relevant status information. Use the function
+     PEC_RD_Status_Read to extract this information in an
+     engine-independent form.
+
+     More status information is passed in an array of 32-bit words via
+     the OutputToken_p field. The IOToken API can be used to extract
+     information from this array. The application is responsible for allocating
+     this array before the call to PEC_Packet_Get.
+
+Notify Requests (callbacks)
+     In ARM mode, two notify requests (commands and results) are
+     supported.  The result notification callback is only invoked in
+     interrupt mode.  The command notification callback is invoked
+     from within PEC_Packet_Get.
+
+SA Invalidation
+     In order to remove an SA from the system, it is required to carry out
+     the following operations in the specified order.
+     - Submit a special command descriptor with a transform record invalidation
+       command via PEC_Packet_Put(). This command will remove the record from
+       the record cache of the packet engine.
+     - Wait until the corresponding result descriptor is received via
+       PEC_Packet_Get().
+     - Call PEC_SA_UnRegister(). This command will take care of CPU cache
+       coherency, endianness conversion and bounce buffers, whichever applies.
+     - At this time the DMA buffer of the SA can be reused for a different
+       purpose or it can be freed.
+
+Banks for DMA resources
+     DMA-safe buffers for each data type must be allocated with the
+     correct Bank parameter (in DAMBuf_Properties_t).
+     Buffers for SA records must be allocated with Bank=1, all other
+     buffers must be allocated with Bank=0. On 64-bit hosts, SA buffers
+     must be allocated in a 4GB memory range, which is taken care of by
+     using Bank=1.
+
+SA resources
+     The functions PEC_SA_Register and PEC_SA_UnRegister take three
+     DMABuf handles as parameters. The first of these is always the
+     DMABuf handle representing the SA, the second is always a null
+     handle and the third is the null handle if the SA does not have
+     an ARC4 state record.
+
+     If the SA does have an ARC4 state record, the SA_Handle3
+     parameter represents the ARC4 state record. However this DMABuf
+     handle is supposed to represent the ARC4 state part within the SA
+     buffer. The application is supposed to use DMABuf_Register
+     (AllocatorRef=='R') to register a subset of the SA buffer as a
+     DMA Handle.
+
+Multiple Applications
+     The current implementation supports multiple rings (tested with
+     two rings) and each ring can be used by a separate application,
+     independently of other rings. The applications can run
+     concurrently, as long as each application uses a different
+     ring. The use of PEC_Packet_Put and PEC_Packet_Get by different
+     concurrent applications requires no locking. The implementation
+     of PEC_SA_UnRegister contains the required locking to support
+     multiple applications.
+
+Concurrent Context Synchronization (CCS)
+     The PEC API implementation supports a single multi-threaded application
+     per interface ID, allowing concurrent and independent use of
+     PEC_SA_Register, PEC_SA_UnRegister, PEC_Packet_Put and PEC_Packet_Get.
+     Multiple applications using the PEC API are also supported but they must
+     use different interface ID each.
+
+     Note: although the PEC_SA_Register and PEC_SA_UnRegister functions take
+           InterfaceId as an input parameter it is ignored by these functions
+           since this functions do nothing what is specific to an packet I/O
+           (ring) interface.
+
+     The PEC API implementation provides synchronization mechanisms for
+     concurrent contexts invoking the API functions. The API can be used
+     by multi-threaded user-space and kernel-space applications. The latter
+     can invoke the API functions from the user process as well as from softirq
+     contexts. Mixing user process execution with softirq contexts is also
+     supported. Both Linux Uni-Processor (UP) and Symmetric Multi-Processor
+     (SMP) kernel configurations are supported.
+
+     The PEC API allows for non-blocking synchronization concurrent context
+     invoking the API functions for different interface ID's. The only
+     exception are the PEC_Init and PEC_UnInit functions which both allow
+     for just one execution context at a time even for different interface ID's.
+     Also there should be no contexts executing the PEC_Packet_Put
+     or PEC_Packet_Get function code in order for the PEC_UnInit function
+     to succeed for the same interface ID.
+
+     For optimal utilization of the packet engine the PEC API user should allow
+     for concurrent contexts for the PEC_Packet_Put and PEC_Packet_Get
+     functions for the same interface ID. Note that having multiple concurrent
+     contexts invoking the PEC_Packet_Put function for the same interface ID
+     will not improve performance because this function does not allow more
+     than one execution context at a time for one interface ID. The same
+     applies for the PEC_Packet_Get function.
+
+     When a function from the PEC API detects that it competes for a resource
+     already used at the time by another context executing the PEC code it will
+     not block and return PEC_STATUS_BUSY return code. The caller should try
+     calling this function again short after.
+
+Debugging
+     The PEC_Put_Dump() and PEC_Get_Dump() functions can be used to print
+     the command ring and result ring administration and cached data as well
+     as the content of the ring buffers respectively. A slot corresponds to
+     a descriptor in the ring. These functions can be used to debug the packet
+     I/O functionality.
+
+
+<end of document>

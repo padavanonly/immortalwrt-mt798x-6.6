@@ -1,0 +1,471 @@
+--- a/src/mktitanimg.c
++++ b/src/mktitanimg.c
+@@ -2,6 +2,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <limits.h>
+ #include <libgen.h>
+ #include "mktitanimg.h"
+ 
+@@ -56,8 +57,14 @@
+ 	printf("Offset Sect info:  0x%x\n",		hdr->head.sect_info_offset);
+ 	printf("Offset Sections:   0x%x\n",		hdr->sect_info.sections_offset);
+ 
+-	chksum=(struct nsp_img_hdr_chksum *)(hdr+hdr->head.chksum_offset);
+-	printf("Header Checksum:   0x%x\n",		chksum->hdr_chksum);
++	if (hdr->head.chksum_offset <= hdr->head.hdr_size &&
++	    hdr->head.hdr_size - hdr->head.chksum_offset >= sizeof(*chksum)) {
++		chksum = (struct nsp_img_hdr_chksum *)
++			((char *)hdr + hdr->head.chksum_offset);
++		printf("Header Checksum:   0x%x\n",		chksum->hdr_chksum);
++	} else {
++		printf("Header Checksum:   unavailable\n");
++	}
+ 
+ 	printf("+++ Section Information +++\n");
+ 	printf("# of sections:     %u\n", hdr->sect_info.num_sects);
+@@ -114,6 +121,8 @@
+ int main(int argc, char* argv[], char* env[])
+ {
+ 	FILE*	nsp_image	= NULL;
++	FILE*	filep		= NULL;
++	FILE*	non_web		= NULL;
+ 	int header_version=1;
+ 	int	cmdline_err;
+ 	char*	cmdline_error_msg;
+@@ -126,10 +135,14 @@
+ 	int	total = 0;
+ 
+ 	int	header_size=0;
+-	struct nsp_img_hdr_head		*img_hdr_head;	/* Start of image header */
++	struct nsp_img_hdr_head		*img_hdr_head = NULL;	/* Start of image header */
+ 	struct nsp_img_hdr_info *img_hdr_info;
+ 	struct nsp_img_hdr_section_info *img_hdr_section_info ;
+ 	struct nsp_img_hdr_sections	*img_hdr_sections, *section;	/* Section pointers */
++	struct nsp_img_hdr	*hdr = NULL;
++	char	*buf = NULL;
++	char	*img_buf = NULL;
++	char	*fname = NULL;
+ 	
+ 
+ 	/* Configure the command line. */
+@@ -167,6 +180,10 @@
+ 			sizeof(struct nsp_img_hdr_sections) * num_sects ;
+ 
+ 	img_hdr_head = (struct nsp_img_hdr_head *)malloc(header_size);
++	if (img_hdr_head == NULL) {
++		fprintf(stderr, "ERROR: can't allocate image header.\n");
++		goto fail;
++	}
+ 	memset(img_hdr_head, 0x0, header_size);
+ 	img_hdr_info = (struct nsp_img_hdr_info*)((char *)img_hdr_head + sizeof(struct nsp_img_hdr_head) + (header_version==1?0:4));
+ 	img_hdr_section_info = (struct nsp_img_hdr_section_info*)((char *)img_hdr_info + sizeof(struct nsp_img_hdr_info));
+@@ -189,19 +206,20 @@
+ 	/* Open the out file */
+ 	nsp_image = fopen(filen_out,"wb+");
+ 	if(nsp_image==NULL) {
+-		printf("ERROR: can't open %s for writing.\n", filen_out);
+-		return -1;
++		fprintf(stderr, "ERROR: can't open %s for writing.\n", filen_out);
++		goto fail;
+ 	}
+ 
+ 	/* Skip image header. We'll come back to it after we've written out the images. */	
+-	fseek(nsp_image,header_size,SEEK_SET);
+-	total = ftell(nsp_image);
++	if (fseek(nsp_image, header_size, SEEK_SET) != 0) {
++		fprintf(stderr, "ERROR: can't seek in %s.\n", filen_out);
++		goto fail;
++	}
+ 	total = header_size;
+ 	printf("total=%x\n",total);
+ 	{
+ 		int align;
+ 		int	padding;
+-		char * buf;
+ 		align = (header_version==1?0x10000:0x4000);
+ 		if(align==0) {
+ 			/* The user indicated no padding */
+@@ -215,15 +233,18 @@
+ 		}
+ 		if(padding>0)
+ 		{
+-			buf=malloc(padding);
+-			memset(buf, 0xff, padding);
+-			if(fwrite((void*)buf,1,padding,nsp_image)!=padding) {
+-				printf("ERROR: can't write to %s.\n", filen_out);
+-				free(buf);
+-				fclose(nsp_image);
+-				return -1;
++			buf=malloc((size_t)padding);
++			if (buf == NULL) {
++				fprintf(stderr, "ERROR: can't allocate padding buffer.\n");
++				goto fail;
++			}
++			memset(buf, 0xff, (size_t)padding);
++			if(fwrite((void*)buf,1,(size_t)padding,nsp_image)!=(size_t)padding) {
++				fprintf(stderr, "ERROR: can't write to %s.\n", filen_out);
++				goto fail;
+ 			}
+ 			free(buf);
++			buf = NULL;
+ 			
+ 		}
+ 		total+=padding;
+@@ -233,33 +254,44 @@
+ 	/* Write out all specified images (with -i option) */
+ 	for(i=0; i < num_sects; i++) {
+ 		char*	file_name;		/* input file name */
+-		FILE*	filep;			/* input file pointer */
+ 		int	padding;		/* number of padding bytes to prepend */
+ 		int	align;			/* align factor from command line */
+-		int	result;			/* intermediate result */
++		long	file_size;
+ 		uint32_t checksum;
+-		char * buf;
+ 
+ 		/* Open the specified image for reading */
+ 		file_name	= argv[cmdline_getarg(cmdline_getarg_list('i'),i)];
+ 		filep		= fopen(file_name, "rb");
+ 		if(filep==NULL) {
+-			printf("ERROR: can't open file %s for reading.\n", file_name);
+-			return -1;
++			fprintf(stderr, "ERROR: can't open file %s for reading.\n", file_name);
++			goto fail;
+ 		}
+ 		section->flags = ~0x00;
+ 		/* Determine file size */
+-		fseek(filep,0,SEEK_END);
+-		section->raw_size=ftell(filep);
+-		fseek(filep,0,SEEK_SET);
++		if (fseek(filep, 0, SEEK_END) != 0) {
++			fprintf(stderr, "ERROR: can't seek in %s.\n", file_name);
++			goto fail;
++		}
++		file_size = ftell(filep);
++		if (file_size < 0 || (uintmax_t)file_size > UINT_MAX ||
++		    (uintmax_t)file_size > INT_MAX) {
++			fprintf(stderr, "ERROR: unsupported size for %s.\n", file_name);
++			goto fail;
++		}
++		section->raw_size = (unsigned int)file_size;
++		if (fseek(filep, 0, SEEK_SET) != 0) {
++			fprintf(stderr, "ERROR: can't rewind %s.\n", file_name);
++			goto fail;
++		}
+ 		if (!cs_calc_sum(filep, &checksum, 0)) {
+ 			fprintf(stderr, "ERROR: can't calculate checksum for %s.\n", file_name);
+-			fclose(filep);
+-			fclose(nsp_image);
+-			return -1;
++			goto fail;
+ 		}
+ 		section->chksum = checksum;
+-		fseek(filep,0,SEEK_SET);
++		if (fseek(filep, 0, SEEK_SET) != 0) {
++			fprintf(stderr, "ERROR: can't rewind %s.\n", file_name);
++			goto fail;
++		}
+ 
+ 		/* Retrieve the alignment constant */
+ 		/* Set image offset from the beginning of the out file */
+@@ -269,10 +301,21 @@
+ 
+ 		/* Copy the image file into nsp_image */
+ 		count = section->raw_size;
+-		buf=malloc(count);
+-		result=fread(buf, 1, count, filep);
+-		fwrite(buf, 1, result, nsp_image);
++		buf=malloc(count ? (size_t)count : 1);
++		if (buf == NULL) {
++			fprintf(stderr, "ERROR: can't allocate input buffer for %s.\n", file_name);
++			goto fail;
++		}
++		if (fread(buf, 1, (size_t)count, filep) != (size_t)count) {
++			fprintf(stderr, "ERROR: can't read all of %s.\n", file_name);
++			goto fail;
++		}
++		if (fwrite(buf, 1, (size_t)count, nsp_image) != (size_t)count) {
++			fprintf(stderr, "ERROR: can't write section from %s.\n", file_name);
++			goto fail;
++		}
+ 		free(buf);
++		buf = NULL;
+ 		
+ 		/* HACK: This is a hack to get the names and types to the files.
+ 			TODO: Fix this to be a real method */
+@@ -299,13 +342,24 @@
+ 			unsigned int squash_padding;
+ 			squash_padding = EXTRA_BLOCK - section->raw_size % EXTRA_BLOCK;
+ 			buf=malloc(EXTRA_BLOCK + 4);
++			if (buf == NULL) {
++				fprintf(stderr, "ERROR: can't allocate squash buffer.\n");
++				goto fail;
++			}
+ 			memset(buf, 0, squash_padding);
+-			fwrite(buf, 1, squash_padding, nsp_image);
++			if (fwrite(buf, 1, squash_padding, nsp_image) != squash_padding) {
++				fprintf(stderr, "ERROR: can't write squash padding.\n");
++				goto fail;
++			}
+ 			memset(buf, 0, EXTRA_BLOCK + 4);
+ 			*((unsigned int *)buf)=0xdec0adde;
+ 			*((unsigned int *)(buf+EXTRA_BLOCK))=0xdec0adde;
+-			fwrite(buf, 1, EXTRA_BLOCK+4, nsp_image);
++			if (fwrite(buf, 1, EXTRA_BLOCK+4, nsp_image) != EXTRA_BLOCK+4) {
++				fprintf(stderr, "ERROR: can't write squash marker block.\n");
++				goto fail;
++			}
+ 			free(buf);
++			buf = NULL;
+ 			
+ 			if(align==0 || (((section->raw_size + (EXTRA_BLOCK + 4 + squash_padding)) %align)==0))
+ 				padding=0;
+@@ -314,18 +368,36 @@
+ 			section->total_size=section->raw_size + (EXTRA_BLOCK + 4 + squash_padding) + padding;
+ 		}
+ 		if(padding>0){
+-			buf=malloc(padding);
+-			memset(buf, 0xff, padding);
+-			fwrite(buf, 1, padding, nsp_image);
++			buf=malloc((size_t)padding);
++			if (buf == NULL) {
++				fprintf(stderr, "ERROR: can't allocate section padding buffer.\n");
++				goto fail;
++			}
++			memset(buf, 0xff, (size_t)padding);
++			if (fwrite(buf, 1, (size_t)padding, nsp_image) != (size_t)padding) {
++				fprintf(stderr, "ERROR: can't write section padding.\n");
++				goto fail;
++			}
+ 			free(buf);
++			buf = NULL;
+ 		}
+ 		printf("*****padding is %d\ttotal_size=%d\traw_size=%d\n",padding, section->total_size, section->raw_size);
+ 
+ 		//total += section->raw_size;
++		if (section->offset > INT_MAX ||
++		    section->total_size > (unsigned int)(INT_MAX - (int)section->offset)) {
++			fprintf(stderr, "ERROR: output size exceeds supported range.\n");
++			goto fail;
++		}
+ 		total = section->total_size + section->offset;
+ 		printf("total=0x%x\n",total);
+ 		/* Close the input file */
+-		fclose(filep);
++		if (fclose(filep) != 0) {
++			filep = NULL;
++			fprintf(stderr, "ERROR: can't close %s.\n", file_name);
++			goto fail;
++		}
++		filep = NULL;
+ 
+ 		/* Move the section pointer to the next slot */
+ 		section++;
+@@ -376,7 +448,16 @@
+ 	/* info fields */
+ 	/* TODO: Fix. Do nothing yet */
+ //	strncpy(nsp_img_hdr.id.prod_info,NSP_PRODINFO_STRING,sizeof(NSP_PRODINFO_STRING));
+-	strcpy(img_hdr_info->image_filename, (const char *)basename(filen_out));
++	{
++		const char *out_basename = basename(filen_out);
++		size_t basename_len = strlen(out_basename);
++
++		if (basename_len >= sizeof(img_hdr_info->image_filename)) {
++			fprintf(stderr, "ERROR: output basename is too long for the image header.\n");
++			goto fail;
++		}
++		memcpy(img_hdr_info->image_filename, out_basename, basename_len + 1);
++	}
+ 	/* section fields */
+ #if 0
+ 	img_hdr_section_info->num_sects=		num_sects;
+@@ -391,41 +472,58 @@
+ 			header_size - sizeof(struct nsp_img_hdr_chksum));
+ #endif
+ 	/* Write out the NSP header. */
+-	fseek(nsp_image,0,SEEK_SET);
++	if (fseek(nsp_image, 0, SEEK_SET) != 0) {
++		fprintf(stderr, "ERROR: can't seek in %s.\n", filen_out);
++		goto fail;
++	}
+ 	count = fwrite((void*)img_hdr_head, header_size, 1, nsp_image);
+ 	if(count!=1) {
+-		printf("ERROR: can't write to %s.\n", filen_out);
+-		return -1;
++		fprintf(stderr, "ERROR: can't write to %s.\n", filen_out);
++		goto fail;
+ 	}
+ 
+ 	/* Check if -v option was specified (no arg needed) */
+ 	if(cmdline_getopt_count('v') > 0)
+ 	{
+ 		struct nsp_img_hdr_head	head;
+-		struct nsp_img_hdr	*hdr;
+ 
+ 		/* Rewind the file back to the beginning */
+-		fseek(nsp_image,0,SEEK_SET);
++		if (fseek(nsp_image, 0, SEEK_SET) != 0) {
++			fprintf(stderr, "ERROR: can't rewind %s for verbose output.\n", filen_out);
++			goto fail;
++		}
+ 
+ 		/* Read header from the file */
+-		fread((void*)&head, sizeof(struct nsp_img_hdr_head),
+-				1, nsp_image);
++		if (fread((void*)&head, sizeof(struct nsp_img_hdr_head), 1, nsp_image) != 1) {
++			fprintf(stderr, "ERROR: can't read image header from %s.\n", filen_out);
++			goto fail;
++		}
++		if (head.hdr_size != (unsigned int)header_size) {
++			fprintf(stderr, "ERROR: invalid image header size in %s.\n", filen_out);
++			goto fail;
++		}
+ 
+ 		/* Get memory to store the complete header */
+ 		hdr = (struct nsp_img_hdr *)malloc(head.hdr_size);
++		if (hdr == NULL) {
++			fprintf(stderr, "ERROR: can't allocate verbose header.\n");
++			goto fail;
++		}
+ 
+ 		/* Read header from the file */
+-		fseek(nsp_image,0,SEEK_SET);
+-		fread((void*)hdr, head.hdr_size, 1, nsp_image);
++		if (fseek(nsp_image, 0, SEEK_SET) != 0 ||
++		    fread((void*)hdr, head.hdr_size, 1, nsp_image) != 1) {
++			fprintf(stderr, "ERROR: can't read complete header from %s.\n", filen_out);
++			goto fail;
++		}
+ 
+ 		/* Print it out */
+ 		mknspimg_print_hdr(hdr);
+ 		printf("Generated total %d bytes\n",total);
+ 		free(hdr);
++		hdr = NULL;
+ 	}
+ 
+-	free(img_hdr_head);
+-
+ 	{
+ 		struct checksumrecord cr;
+ 		uint32_t checksum;
+@@ -433,36 +531,100 @@
+ 		cr.magic=CKSUM_MAGIC_NUMBER;
+ 		if (!cs_calc_sum(nsp_image, &checksum, 0)) {
+ 			fprintf(stderr, "ERROR: can't calculate image checksum.\n");
+-			fclose(nsp_image);
+-			return -1;
++			goto fail;
+ 		}
+ 		cr.chksum = checksum;
+-		fseek(nsp_image,0, SEEK_END);
+-		fwrite(&cr, 1, sizeof(cr), nsp_image);
++		if (fseek(nsp_image, 0, SEEK_END) != 0 ||
++		    fwrite(&cr, 1, sizeof(cr), nsp_image) != sizeof(cr)) {
++			fprintf(stderr, "ERROR: can't append checksum record to %s.\n", filen_out);
++			goto fail;
++		}
+ 	}
+ 	  {
+-		FILE * non_web;
+-		char fname[256];
+-		char * img_buf;
+-		unsigned int len;
+-		strcpy(fname, filen_out);
+-		strcat(fname, ".non_web");
++		static const char suffix[] = ".non_web";
++		long file_size;
++		size_t len, out_len;
++		size_t path_len = strlen(filen_out);
++
++		if (path_len > SIZE_MAX - sizeof(suffix)) {
++			fprintf(stderr, "ERROR: output filename is too long.\n");
++			goto fail;
++		}
++		fname = malloc(path_len + sizeof(suffix));
++		if (fname == NULL) {
++			fprintf(stderr, "ERROR: can't allocate sidecar filename.\n");
++			goto fail;
++		}
++		memcpy(fname, filen_out, path_len);
++		memcpy(fname + path_len, suffix, sizeof(suffix));
+ 		non_web = fopen(fname,"wb+");
+-		fseek(nsp_image, 0, SEEK_END);
+-		len = ftell(nsp_image);
++		if (non_web == NULL) {
++			fprintf(stderr, "ERROR: can't open %s for writing.\n", fname);
++			goto fail;
++		}
++		if (fseek(nsp_image, 0, SEEK_END) != 0) {
++			fprintf(stderr, "ERROR: can't seek in %s.\n", filen_out);
++			goto fail;
++		}
++		file_size = ftell(nsp_image);
++		if (file_size < (long)sizeof(struct checksumrecord) || file_size <= 0xb ||
++		    (uintmax_t)file_size > SIZE_MAX) {
++			fprintf(stderr, "ERROR: invalid output size for %s.\n", filen_out);
++			goto fail;
++		}
++		len = (size_t)file_size;
++		out_len = len - sizeof(struct checksumrecord);
+ 		img_buf=malloc(len);
+-		fseek(nsp_image, 0, SEEK_SET);
+-		fread(img_buf, 1, len, nsp_image);
++		if (img_buf == NULL) {
++			fprintf(stderr, "ERROR: can't allocate sidecar image buffer.\n");
++			goto fail;
++		}
++		if (fseek(nsp_image, 0, SEEK_SET) != 0 ||
++		    fread(img_buf, 1, len, nsp_image) != len) {
++			fprintf(stderr, "ERROR: can't read complete output image from %s.\n", filen_out);
++			goto fail;
++		}
+ 		img_buf[0xb] = 0x17;
+-		fwrite(img_buf, 1, len-sizeof(struct checksumrecord), non_web);
+-		fclose(non_web);
++		if (fwrite(img_buf, 1, out_len, non_web) != out_len) {
++			fprintf(stderr, "ERROR: can't write sidecar image to %s.\n", fname);
++			goto fail;
++		}
++		if (fclose(non_web) != 0) {
++			non_web = NULL;
++			fprintf(stderr, "ERROR: can't close sidecar image %s.\n", fname);
++			goto fail;
++		}
++		non_web = NULL;
+ 		free(img_buf);
++		img_buf = NULL;
++		free(fname);
++		fname = NULL;
+ 	  }
+ 	  /* Close NSP image file */
+-	fclose(nsp_image);
++	if (fclose(nsp_image) != 0) {
++		nsp_image = NULL;
++		fprintf(stderr, "ERROR: can't close output image %s.\n", filen_out);
++		goto fail;
++	}
++	nsp_image = NULL;
++	free(img_hdr_head);
+ 
+ 	/* return result */
+ 	return(0);
++
++fail:
++	if (filep != NULL)
++		fclose(filep);
++	if (non_web != NULL)
++		fclose(non_web);
++	if (nsp_image != NULL)
++		fclose(nsp_image);
++	free(buf);
++	free(img_buf);
++	free(fname);
++	free(hdr);
++	free(img_hdr_head);
++	return -1;
+ }
+ 
+ #ifdef DMALLOC

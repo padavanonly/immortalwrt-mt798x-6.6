@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -35,10 +35,6 @@
 #define WOCPU_MCUSYS_RESET_ADDR		0x1500003C
 #define WOCPU_MCUSYS_OFFSET		0x100000
 #define WOCPU_WHOLE_MCUSYS_RESET_MASK 	0x7
-#define WOCPU_WO0_MCU_RESET_ADDR        0x15194050
-#define WOCPU_WO1_MCU_RESET_ADDR        0x15294050
-#define WOCPU_WO2_MCU_RESET_ADDR        0x15394050
-#define WOCPU_WO_MCU_RESET_MASK         0x20
 
 /*PCIE reg for bus set and reset*/
 #define VLPCFG_DEVICE_NODE "mediatek,mt6990-vlpcfg"
@@ -86,27 +82,26 @@ warp_wo_pc_lr_cr_dump(u8 wed_idx)
 void
 warp_wo_reset(u8 wed_idx)
 {
-        unsigned long addr;
-        u32 value = 0;
+	unsigned long addr;
+	u32 value = 0;
 
-        warp_dbg(WARP_DBG_OFF, "%s: --->\n", __func__);
+	warp_dbg(WARP_DBG_OFF, "%s: --->\n", __func__);
 
-        if (wed_idx == WARP_WED2)
-                addr = (unsigned long)ioremap(WOCPU_WO1_MCU_RESET_ADDR, 4);
-        else if (wed_idx == WARP_WED3)
-                addr = (unsigned long)ioremap(WOCPU_WO2_MCU_RESET_ADDR, 4);
-        else
-                addr = (unsigned long)ioremap(WOCPU_WO0_MCU_RESET_ADDR, 4);
+	if (wed_idx == WARP_WED1)
+		addr = (unsigned long)ioremap(WOCPU_WO1_MCU_RESET_ADDR, 4);
+	else if (wed_idx == WARP_WED2)
+		addr = (unsigned long)ioremap(WOCPU_WO2_MCU_RESET_ADDR, 4);
+	else
+	addr = (unsigned long)ioremap(WOCPU_WO0_MCU_RESET_ADDR, 4);
 
-        value = readl((void *)addr);
-        value |= WOCPU_WO_MCU_RESET_MASK;
-        writel(value, (void *)addr);
-        value &= ~WOCPU_WO_MCU_RESET_MASK;
-        writel(value, (void *)addr);
-        iounmap((void *)addr);
+	value = readl((void *)addr);
+	value |= (0x1 << wed_idx);
+	writel(value, (void *)addr);
+	value &= ~(0x1 << wed_idx);
+	writel(value, (void *)addr);
+	iounmap((void *)addr);
 
-        warp_dbg(WARP_DBG_OFF, "%s: <---\n", __func__);
-
+	warp_dbg(WARP_DBG_OFF, "%s: <---\n", __func__);
 }
 
 /*
@@ -199,7 +194,7 @@ err0:
 }
 #endif /* WED_RX_D_SUPPORT */
 
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+#ifdef WED_RX_HW_RRO_2_0
 #ifdef CONFIG_WARP_WO_EMBEDDED_LOAD
 /*
 *
@@ -207,9 +202,9 @@ err0:
 u8 *
 warp_get_wo_bin_ptr(u8 wed_idx)
 {
-	if (wed_idx == WARP_WED2)
+	if (wed_idx == WARP_WED1)
 		return WO1_FirmwareImage;
-	else if (wed_idx == WARP_WED3)
+	else if (wed_idx == WARP_WED2)
 		return WO2_FirmwareImage;
 	else
 		return WO0_FirmwareImage;
@@ -221,9 +216,9 @@ warp_get_wo_bin_ptr(u8 wed_idx)
 u32
 warp_get_wo_bin_size(u8 wed_idx)
 {
-	if (wed_idx == WARP_WED2)
+	if (wed_idx == WARP_WED1)
 		return sizeof(WO1_FirmwareImage);
-	else if (wed_idx == WARP_WED3)
+	else if (wed_idx == WARP_WED2)
 		return sizeof(WO2_FirmwareImage);
 	else
 		return sizeof(WO0_FirmwareImage);
@@ -245,9 +240,9 @@ warp_get_dts_idx(u8 *dts_idx)
 char *
 warp_get_wo_emi_node(u8 wed_idx)
 {
-	if (wed_idx == WARP_WED2)
+	if (wed_idx == WARP_WED1)
 		return WOCPU1_EMI_DEV_NODE;
-	else if (wed_idx == WARP_WED3)
+	else if (wed_idx == WARP_WED2)
 		return WOCPU2_EMI_DEV_NODE;
 	else
 		return WOCPU0_EMI_DEV_NODE;
@@ -298,7 +293,7 @@ warp_fwdl_get_wo_heartbeat(struct warp_fwdl_ctrl *ctrl, u32 *hb_val, u8 wed_idx)
 {
 	fwdl_io_read32(ctrl, WOX_MCU_CFG_LS_WOX_COM_REG0_ADDR, hb_val);
 }
-#endif /* CONFIG_WED_HW_RRO_SUPPORT */
+#endif /* WED_RX_HW_RRO_2_0 */
 
 /*
 *
@@ -317,10 +312,9 @@ warp_get_pcie_slot(struct pci_dev *pdev)
 /*
 *  set MSI group# to WED
 */
-void
-warp_bus_msi_set(u8 idx, u8 *enable)
+int
+warp_bus_msi_set(struct warp_entry *warp, struct warp_bus *bus, u8 enable)
 {
-
 #define MSI_GROUP0_MASK 0xc08
 #define MSI_GROUP1_MASK 0xc0c
 
@@ -333,6 +327,7 @@ warp_bus_msi_set(u8 idx, u8 *enable)
 
 	u32 value = 0;
 	u32 domain = 0;
+	u8 idx = warp->idx;
 
 	warp_dbg(WARP_DBG_ERR, "%s(): *enable=%d\n", __func__, *enable);
 
@@ -340,13 +335,15 @@ warp_bus_msi_set(u8 idx, u8 *enable)
 
 	do {
 		pcie_node = of_find_node_by_name(pcie_node, "pcie");
-		of_property_read_u32(pcie_node, "linux,pci-domain",&domain);
+		of_property_read_u32(pcie_node, "linux,pci-domain", &domain);
 		if (idx == domain)
 			break;
 	} while (pcie_node);
 
-	if (pcie_node == NULL)
-		warp_dbg(WARP_DBG_ERR, "%s(): get device_node faill\n", __func__);
+	if (pcie_node == NULL) {
+		warp_dbg(WARP_DBG_ERR, "%s(): get device_node fail\n", __func__);
+		return -EINVAL;
+	}
 
 	pcie.base_addr = (unsigned long)of_iomap(pcie_node, 0);
 
@@ -364,6 +361,7 @@ warp_bus_msi_set(u8 idx, u8 *enable)
 		value &= ~(1 << 0);
 	warp_io_write32(&pcie, MSI_GROUP1_MASK, value);
 
+	return 0;
 }
 /*
 *
@@ -379,32 +377,30 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 	struct node_dts node_cfg;
 	u32 value = 0;
 
-	if (idx == WARP_WED3 || idx == WARP_WED2) {
+	if (idx == WARP_WED2 || idx == WARP_WED1)
 		node = of_find_compatible_node(NULL, NULL, PERICFG_AO_DEVICE_NODE);
-	}
-	else {
+	else
 		node = of_find_compatible_node(NULL, NULL, VLPCFG_DEVICE_NODE);
-	}
 
 	if (node == NULL)
-		warp_dbg(WARP_DBG_ERR, "%s(): get device_node faill\n", __func__);
+		warp_dbg(WARP_DBG_ERR, "%s(): get device_node fail\n", __func__);
 
 	node_cfg.base_addr = (unsigned long)of_iomap(node, 0);
 
 	warp_dbg(WARP_DBG_ERR, "%s(): node_cfg.base_addr= 0x%x\n", __func__, node_cfg.base_addr);
 
 	switch (idx) {
-	case WARP_WED1:
+	case WARP_WED0:
 		warp_io_read32(&node_cfg, VLPCFG_INT_MASK, &value);
 		value |= (1 << 11);
 		warp_io_write32(&node_cfg, VLPCFG_INT_MASK, value);
 		break;
-	case WARP_WED2:
+	case WARP_WED1:
 		warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, &value);
 		value |= (1 << 3);
 		warp_io_write32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, value);
 		break;
-	case WARP_WED3:
+	case WARP_WED2:
 		warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, &value);
 		value |= (1 << 3);
 		warp_io_write32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, value);
@@ -421,7 +417,7 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 		warp_dbg(WARP_DBG_OFF, "%s(): MSI mode enable\n", __func__);
 
 		/* Use legacy WED INTx design to instead MSI design. */
-		
+
 		warp_io_read32(wed, WED_PCIE_INT_CTRL, &value);
 		value &= ~(1 << WED_PCIE_INT_CTRL_FLD_MSI_EN);
 		value |= (1 << WED_PCIE_INT_CTRL_FLD_IRQ_MSI_SEL);
@@ -453,55 +449,53 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 }
 
 /*
-* Reset PCIE reg in relative to warp_bus_set_hw()
-*/
+ * Reset PCIE reg in relative to warp_bus_set_hw()
+ */
 void
 warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,
-                        int idx)
+			int idx)
 {
-        struct device_node *node;
-        struct node_dts {
-                unsigned long base_addr;
-        };
-        struct node_dts node_cfg;
-        u32 value = 0;
+	struct device_node *node;
+	struct node_dts {
+		unsigned long base_addr;
+	};
+	struct node_dts node_cfg;
+	u32 value = 0;
 
-        if (idx == WARP_WED3 || idx == WARP_WED2) {
-                node = of_find_compatible_node(NULL, NULL, PERICFG_AO_DEVICE_NODE);
-        }
-        else {
-                node = of_find_compatible_node(NULL, NULL, VLPCFG_DEVICE_NODE);
-        }
+	if (idx == WARP_WED2 || idx == WARP_WED1)
+		node = of_find_compatible_node(NULL, NULL, PERICFG_AO_DEVICE_NODE);
+	else
+		node = of_find_compatible_node(NULL, NULL, VLPCFG_DEVICE_NODE);
 
-        if (node == NULL)
-                warp_dbg(WARP_DBG_ERR, "%s(): get device_node faill\n", __func__);
+	if (node == NULL)
+		warp_dbg(WARP_DBG_ERR, "%s(): get device_node fail\n", __func__);
 
-        node_cfg.base_addr = (unsigned long)of_iomap(node, 0);
+	node_cfg.base_addr = (unsigned long)of_iomap(node, 0);
 
-        warp_dbg(WARP_DBG_ERR, "%s(): node_cfg.base_addr= 0x%x\n", __func__, node_cfg.base_addr);
+	warp_dbg(WARP_DBG_ERR, "%s(): node_cfg.base_addr= 0x%x\n", __func__, node_cfg.base_addr);
 
-        switch (idx) {
-        case WARP_WED1:
-                warp_io_read32(&node_cfg, VLPCFG_INT_MASK, &value);
+	switch (idx) {
+	case WARP_WED0:
+		warp_io_read32(&node_cfg, VLPCFG_INT_MASK, &value);
 		value &= ~(1 << 11);
 		warp_io_write32(&node_cfg, VLPCFG_INT_MASK, value);
-                break;
+		break;
 
-        case WARP_WED2:
-                warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, &value);
+	case WARP_WED1:
+		warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, &value);
 		value &= ~(1 << 3);
 		warp_io_write32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, value);
-                break;
+		break;
 
-        case WARP_WED3:
-                warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, &value);
+	case WARP_WED2:
+		warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, &value);
 		value &= ~(1 << 3);
 		warp_io_write32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, value);
-                break;
+		break;
 
 	default:
 		break;
-        }
+	}
 }
 
 /*
@@ -567,4 +561,27 @@ warp_eint_ctrl_hw(struct wed_entry *wed, u8 enable)
 		warp_io_write32(wed, WED_EX_INT_MSK3, 0);
 	}
 #endif
+}
+
+int
+warp_get_wdma_port(struct wdma_entry *wdma, u8 idx)
+{
+	switch (idx) {
+	case WARP_WED0:
+		wdma->wdma_tx_port = WDMA_PORT3;
+		wdma->wdma_rx_port = WDMA_PORT8;
+		break;
+	case WARP_WED1:
+		wdma->wdma_tx_port = WDMA_PORT4;
+		wdma->wdma_rx_port = WDMA_PORT9;
+		break;
+	case WARP_WED2:
+		wdma->wdma_tx_port = WDMA_PORT3;
+		wdma->wdma_rx_port = WDMA_PORT13;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
 }

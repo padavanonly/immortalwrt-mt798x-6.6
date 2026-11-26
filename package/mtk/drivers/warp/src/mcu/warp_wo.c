@@ -4,7 +4,7 @@
  *
  * All rights reserved. source code is an unpublished work and the
  * use of a copyright notice does not imply otherwise. This source code
- * contains confidential trade secret material of MediaTek. Any attemp
+ * contains confidential trade secret material of MediaTek. Any attempt
  * or participation in deciphering, decoding, reverse engineering or in any
  * way altering the source code is stricitly prohibited, unless the prior
  * written consent of MediaTek, Inc. is obtained.
@@ -29,8 +29,6 @@ extern void wed_wo_init(struct wo_entry **wo);
 
 extern void wo_proc_init(struct warp_entry *warp);
 extern void wo_exep_proc_init(struct warp_entry *warp);
-
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 
 extern void ccif_bus_register(struct woif_bus *bus);
 
@@ -85,15 +83,17 @@ static int tx_dma_cb_init(
 	dma_cb->pkt_size = bus->tx_ring.pkt_len;
 
 #if (KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE)
-	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC|GFP_DMA32);
 #else
-	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_tx_page, dma_cb->pkt_size, GFP_ATOMIC|GFP_DMA32);
 #endif
 	if (unlikely(!dma_cb->pkt)) {
 		warp_dbg(WARP_DBG_ERR, "%s(): allocate bus pkt\n", __func__);
 		goto err;
 	}
-
+#ifdef WED_MEM_LEAK_DBG
+	pkt_alloc_mem(dma_cb->pkt_size, (void *)dma_cb->pkt, __builtin_return_address(0));
+#endif /* WED_MEM_LEAK_DBG */
 	dma_cb->pkt_va = (unsigned char *)dma_cb->pkt;
 	dma_cb->pkt_pa = dma_map_single(&pdev->dev, dma_cb->pkt_va, dma_cb->pkt_size, DMA_TO_DEVICE);
 
@@ -124,10 +124,12 @@ static void tx_dma_cb_exit(
 
 	if (bus && dma_cb) {
 		if (dma_cb->pkt_pa && dma_cb->pkt) {
+#ifdef WED_MEM_LEAK_DBG
+			pkt_free_mem((unsigned char *)dma_cb->pkt);
+#endif	/* WED_MEM_LEAK_DBG */
 			dma_unmap_single(&bus->pdev->dev, dma_cb->pkt_pa, dma_cb->pkt_size, DMA_TO_DEVICE);
 			page_frag_free(dma_cb->pkt);
 		}
-
 		dma_cb->pkt = NULL;
 		memset(dma_cb, 0, sizeof(struct warp_dma_cb));
 	} else {
@@ -195,15 +197,21 @@ static int rx_dma_cb_init(
 
 #if CCIF_PAGE_ALLOC
 #if (KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE)
-	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_rx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) page_frag_alloc(&bus->woif_rx_page,
+							dma_cb->pkt_size, GFP_ATOMIC | GFP_DMA32);
 #else
-	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_rx_page, dma_cb->pkt_size, GFP_ATOMIC);
+	dma_cb->pkt = (struct sk_buff *) __alloc_page_frag(&bus->woif_rx_page,
+							dma_cb->pkt_size, GFP_ATOMIC | GFP_DMA32);
 #endif
 
 	if (unlikely(!dma_cb->pkt)) {
 		warp_dbg(WARP_DBG_ERR, "%s(): allocate bus pkt\n", __func__);
 		goto err;
 	}
+
+#ifdef WED_MEM_LEAK_DBG
+	pkt_alloc_mem(dma_cb->pkt_size, (void *)dma_cb->pkt, __builtin_return_address(0));
+#endif	/* WED_MEM_LEAK_DBG */
 
 	dma_cb->pkt_va = (unsigned char *)dma_cb->pkt;
 	dma_cb->pkt_pa = dma_map_single(&pdev->dev, dma_cb->pkt_va, dma_cb->pkt_size, DMA_FROM_DEVICE);
@@ -226,7 +234,7 @@ static int rx_dma_cb_init(
 	dma_cb->alloc_va = desc->alloc_va + (idx * dma_cb->alloc_size);
 	dma_cb->alloc_pa = desc->alloc_pa + (idx * dma_cb->alloc_size);
 	rxd = (struct bus_dmad *) dma_cb->alloc_va;
-	/*txd, ddone set to 0*/
+	/* txd, ddone set to 0 */
 	ctrl = (bus->rx_ring.pkt_len << WED_CTL_SD_LEN0_SHIFT) & WED_CTL_SD_LEN0;
 	ctrl |= WED_CTL_LAST_SEC0;
 	WRITE_ONCE(rxd->sdp0, cpu_to_le32(dma_cb->pkt_pa));
@@ -244,6 +252,9 @@ static void rx_dma_cb_exit(
 {
 	if (dma_cb && bus) {
 		if (dma_cb->pkt_pa && dma_cb->pkt) {
+#ifdef WED_MEM_LEAK_DBG
+			pkt_free_mem((void *)dma_cb->pkt);
+#endif /* WED_MEM_LEAK_DBG */
 #if CCIF_PAGE_ALLOC
 			dma_unmap_single(&bus->pdev->dev, dma_cb->pkt_pa, dma_cb->pkt_size, DMA_FROM_DEVICE);
 			page_frag_free(dma_cb->pkt);
@@ -251,7 +262,6 @@ static void rx_dma_cb_exit(
 			dma_free_coherent(&bus->pdev->dev, dma_cb->alloc_size, dma_cb->pkt_va, dma_cb->pkt_pa);
 #endif
 		}
-
 		dma_cb->pkt = NULL;
 		memset(dma_cb, 0 , sizeof(struct warp_dma_cb));
 	} else {
@@ -442,7 +452,7 @@ static void bus_rx_task(unsigned long data)
 				cmd.msg = sendmsg_buf;
 				cmd.param.to_id = MODULE_ID_WO;
 				cmd.param.wait_type = WARP_MSG_WAIT_TYPE_NONE;
-				cmd.param.timeout = WARP_MSG_TIMEOUT_DEFAULT;
+				cmd.param.timeout = 3000;
 				cmd.param.rsp_hdlr = NULL;
 
 				warp_msg_send_cmd(warp->idx , &cmd);
@@ -466,7 +476,8 @@ static void bus_rx_task(unsigned long data)
 				rx_ctrl->dbg_ddone_check = 0;
 			}
 			} else {
-				warp_dbg(WARP_DBG_ERR, "wriong ddone bit 0x%x: %d ", cidx, (rxd->ctrl & WED_CTL_DMA_DONE));
+				warp_dbg(WARP_DBG_ERR, "wrong ddone bit 0x%x: %lu", cidx,
+					 (rxd->ctrl & WED_CTL_DMA_DONE));
 			}
 		}
 
@@ -569,9 +580,6 @@ err:
 	spin_unlock(&tx_ctrl->lock);
 	return ret;
 }
-
-
-#endif /*CONFIG_WED_HW_RRO_SUPPORT*/
 
 void wo_log_handle(char *msg, u16 msg_len, void *user_data)
 {
@@ -681,14 +689,14 @@ static void wo_exception_init(struct woif_entry *woif)
 	warp_os_alloc_mem((unsigned char **)&exp_ctrl->log , exp_ctrl->log_size, GFP_ATOMIC);
 
 	if (unlikely(!exp_ctrl->log)){
-		warp_dbg(WARP_DBG_OFF, "%s(): alloc exp_ctrl->log error\n", __func__);
+		warp_dbg(WARP_DBG_ERR, "%s(): alloc exp_ctrl->log error\n", __func__);
 		return;
 	}
 	memset(exp_ctrl->log, 0, exp_ctrl->log_size);
 	exp_ctrl->phys = dma_map_single(&bus->pdev->dev, exp_ctrl->log,
 		exp_ctrl->log_size, DMA_FROM_DEVICE);
 	if (unlikely(dma_mapping_error(&bus->pdev->dev, exp_ctrl->phys))) {
-		warp_dbg(WARP_DBG_OFF, "%s(): dma map error\n", __func__);
+		warp_dbg(WARP_DBG_ERR, "%s(): dma map error\n", __func__);
 		return;
 	}
 
@@ -700,10 +708,10 @@ static void wo_exception_init(struct woif_entry *woif)
 	cmd.msg_len = sizeof(struct wo_cmd_query);
 	cmd.param.to_id = MODULE_ID_WO;
 	cmd.param.wait_type = WARP_MSG_WAIT_TYPE_NONE;
-	cmd.param.timeout = WARP_MSG_TIMEOUT_DEFAULT;
+	cmd.param.timeout = 3000;
 	cmd.param.rsp_hdlr = NULL;
 	warp_msg_send_cmd(woif->idx , &cmd);
-	warp_dbg(WARP_DBG_OFF, "%s(%d): exp log= 0x%p, phy_addr= %pad size= %d\n", __func__,
+	warp_dbg(WARP_DBG_INF, "%s(%d): exp log= 0x%p, phy_addr= %pad size= %d\n", __func__,
 		woif->idx, exp_ctrl->log, &exp_ctrl->phys, exp_ctrl->log_size);
 }
 
@@ -730,7 +738,7 @@ int32_t woif_init(struct warp_entry *warp, struct warp_bus *bus)
 	int ret = 0;
 
 	woif->idx = warp->idx;
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
+
 	/*initial AP side wo bus for communication before fwdl*/
 	woif_bus_init(woif, warp->pdev, bus->trig_flag);
 	/* wo fwdl */
@@ -751,19 +759,16 @@ int32_t woif_init(struct warp_entry *warp, struct warp_bus *bus)
 	wo_exep_proc_init(warp);
 	wo_log_event_register(warp);
 	wo_exception_init(woif);
-#endif
 
 	return ret;
 }
 
 void woif_exit(struct woif_entry *woif)
 {
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
 	woif_bus_exit(woif);
 	if (woif->fwdl_ctrl.status == WO_FWDL_FAIL) {
 		warp_dbg(WARP_DBG_OFF, "%s WO FWDL fail:(status:%d):\n", __func__, WO_FWDL_FAIL);
 	}
 	else
 		wo_exception_exit(woif);
-#endif
 }

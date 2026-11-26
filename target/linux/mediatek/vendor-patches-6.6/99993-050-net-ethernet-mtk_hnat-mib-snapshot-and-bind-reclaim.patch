@@ -1,0 +1,699 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] net: ethernet: mtk_hnat: harden MIB snapshot locking and
+ pending bind reclaim
+
+Serialize per-PPE MIB snapshots and reclaim completed pending bind entries safely.
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.c |  58 +++-
+ drivers/net/ethernet/mediatek/mtk_hnat/hnat.h |  47 ++-
+ .../ethernet/mediatek/mtk_hnat/hnat_debugfs.c | 284 +++++++++++++++---
+ .../ethernet/mediatek/mtk_hnat/hnat_nf_hook.c |  54 +++-
+ 4 files changed, 382 insertions(+), 61 deletions(-)
+
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+index 483b8b2..c18d2a9 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.c
+@@ -649,6 +649,7 @@ struct hnat_ppe_alloc {
+ 	struct mib_entry *mib_cpu;
+ 	dma_addr_t mib_dma;
+ 	struct hnat_accounting *acct;
++	struct hnat_ct_cursor *ct_cursor;
+ };
+ 
+ struct hnat_alloc_context {
+@@ -664,6 +665,8 @@ static void hnat_free_ppe_bundle(struct hnat_alloc_context *alloc,
+ 	unsigned long foe_bytes = entries * sizeof(struct foe_entry);
+ 	unsigned long mib_bytes = entries * sizeof(struct mib_entry);
+ 
++	kfree(bundle->ct_cursor);
++	bundle->ct_cursor = NULL;
+ 	kfree(bundle->acct);
+ 	bundle->acct = NULL;
+ 	if (bundle->mib_cpu)
+@@ -701,6 +704,11 @@ static int hnat_alloc_ppe_bundle(void *context, unsigned int ppe_id,
+ 				       GFP_KERNEL);
+ 		if (!bundle->acct)
+ 			goto err_fatal;
++
++		bundle->ct_cursor = kzalloc(entries * sizeof(struct hnat_ct_cursor),
++					    GFP_KERNEL);
++		if (!bundle->ct_cursor)
++			goto err_fatal;
+ 	}
+ 
+ 	*bundle_out = bundle;
+@@ -756,6 +764,10 @@ static int hnat_start(void)
+ 		hnat_priv->foe_mib_cpu[ppe_id] = ppe_tables[ppe_id].mib_cpu;
+ 		hnat_priv->foe_mib_dev[ppe_id] = ppe_tables[ppe_id].mib_dma;
+ 		hnat_priv->acct[ppe_id] = ppe_tables[ppe_id].acct;
++		hnat_priv->ct_cursor[ppe_id] = ppe_tables[ppe_id].ct_cursor;
++		hnat_priv->mib[ppe_id].stopping = false;
++		memset(&hnat_priv->mib[ppe_id].pending, 0,
++		       sizeof(hnat_priv->mib[ppe_id].pending));
+ 
+ 		dev_info(hnat_priv->dev, "PPE%d entry number = %d\n",
+ 			 ppe_id, hnat_priv->foe_etry_num);
+@@ -873,6 +885,20 @@ static void hnat_stop(u32 ppe_id)
+ 	writel(0, hnat_priv->ppe_base[ppe_id] + PPE_TB_BASE);
+ 
+ 	if (hnat_priv->data->per_flow_accounting) {
++		unsigned long flags;
++
++		spin_lock_irqsave(&hnat_priv->mib[ppe_id].lock, flags);
++		hnat_priv->mib[ppe_id].stopping = true;
++		spin_unlock_irqrestore(&hnat_priv->mib[ppe_id].lock, flags);
++
++		wait_event(hnat_priv->mib[ppe_id].idle,
++			   !READ_ONCE(hnat_priv->mib[ppe_id].pending.polling));
++
++		spin_lock_irqsave(&hnat_priv->mib[ppe_id].lock, flags);
++		memset(&hnat_priv->mib[ppe_id].pending, 0,
++		       sizeof(hnat_priv->mib[ppe_id].pending));
++		spin_unlock_irqrestore(&hnat_priv->mib[ppe_id].lock, flags);
++
+ 		foe_mib_tb_sz = hnat_priv->foe_etry_num * sizeof(struct mib_entry);
+ 		if (hnat_priv->foe_mib_cpu[ppe_id])
+ 			dma_free_coherent(hnat_priv->dev, foe_mib_tb_sz,
+@@ -882,6 +908,8 @@ static void hnat_stop(u32 ppe_id)
+ 		writel(0, hnat_priv->ppe_base[ppe_id] + PPE_MIB_TB_BASE);
+ 		kfree(hnat_priv->acct[ppe_id]);
+ 		hnat_priv->acct[ppe_id] = NULL;
++		kfree(hnat_priv->ct_cursor[ppe_id]);
++		hnat_priv->ct_cursor[ppe_id] = NULL;
+ 	}
+ }
+ 
+@@ -1013,12 +1041,33 @@ int hnat_warm_init(void)
+ 			exclude_boundary_entry(hnat_priv->foe_table_cpu[ppe_id]);
+ 
+ 		if (hnat_priv->data->per_flow_accounting) {
++			unsigned long flags;
++
++			spin_lock_irqsave(&hnat_priv->mib[ppe_id].lock, flags);
++			hnat_priv->mib[ppe_id].stopping = true;
++			spin_unlock_irqrestore(&hnat_priv->mib[ppe_id].lock, flags);
++
++			wait_event(hnat_priv->mib[ppe_id].idle,
++				   !READ_ONCE(hnat_priv->mib[ppe_id].pending.polling));
++
++			spin_lock_irqsave(&hnat_priv->mib[ppe_id].lock, flags);
++			memset(&hnat_priv->mib[ppe_id].pending, 0,
++			       sizeof(hnat_priv->mib[ppe_id].pending));
++			if (hnat_priv->acct[ppe_id])
++				memset(hnat_priv->acct[ppe_id], 0,
++				       hnat_priv->foe_etry_num * sizeof(struct hnat_accounting));
++			if (hnat_priv->ct_cursor[ppe_id])
++				memset(hnat_priv->ct_cursor[ppe_id], 0,
++				       hnat_priv->foe_etry_num * sizeof(struct hnat_ct_cursor));
+ 			foe_mib_tb_sz =
+ 				hnat_priv->foe_etry_num * sizeof(struct mib_entry);
++			if (hnat_priv->foe_mib_cpu[ppe_id])
++				memset(hnat_priv->foe_mib_cpu[ppe_id], 0,
++				       foe_mib_tb_sz);
+ 			writel(hnat_priv->foe_mib_dev[ppe_id],
+ 			       hnat_priv->ppe_base[ppe_id] + PPE_MIB_TB_BASE);
+-			memset(hnat_priv->foe_mib_cpu[ppe_id], 0,
+-			       foe_mib_tb_sz);
++			hnat_priv->mib[ppe_id].stopping = false;
++			spin_unlock_irqrestore(&hnat_priv->mib[ppe_id].lock, flags);
+ 		}
+ 
+ 		hnat_hw_init(ppe_id);
+@@ -1065,6 +1114,11 @@ static int hnat_probe(struct platform_device *pdev)
+ 	if (!hnat_priv)
+ 		return -ENOMEM;
+ 
++	for (i = 0; i < MAX_PPE_NUM; i++) {
++		spin_lock_init(&hnat_priv->mib[i].lock);
++		init_waitqueue_head(&hnat_priv->mib[i].idle);
++	}
++
+ 	hnat_priv->foe_etry_num = DEF_ETRY_NUM;
+ 	hnat_priv->bind_threshold = DEF_BIND_THRESHOLD;
+ 	hnat_priv->tcp_dlta = 7;
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+index bcb0909..9afdd7b 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+@@ -17,6 +17,7 @@
+ #include <linux/if_ether.h>
+ #include <net/netevent.h>
+ #include <linux/mod_devicetable.h>
++#include <linux/wait.h>
+ #include "hnat_mcast.h"
+ #include "nf_hnat_mtk.h"
+ #include <net/dsa.h>
+@@ -901,6 +902,37 @@ struct hnat_accounting {
+ 	u64 packets;
+ };
+ 
++struct hnat_ct_cursor {
++	u64 reported_bytes;
++	u64 reported_packets;
++	u32 generation;
++};
++
++struct hnat_mib_pending {
++	u32 index;
++	u32 generation;
++	bool valid;
++	bool polling;
++};
++
++struct hnat_mib_ppe {
++	spinlock_t lock;
++	wait_queue_head_t idle;
++	struct hnat_mib_pending pending;
++	bool stopping;
++};
++
++struct hnat_mib_bind_guard {
++	unsigned long flags;
++	bool locked;
++};
++
++enum hnat_mib_op {
++	HNAT_MIB_OP_SNAPSHOT = 0,
++	HNAT_MIB_OP_CT_DELTA,
++	HNAT_MIB_OP_COUNT,
++};
++
+ enum mtk_hnat_version {
+ 	MTK_HNAT_V1_1 = 1,	/* version 1.1: mt7621, mt7623	*/
+ 	MTK_HNAT_V1_2,		/* version 1.2: mt7622		*/
+@@ -985,7 +1017,10 @@ struct mtk_hnat {
+ 	bool guest_en;
+ 	bool dscp_en;
+ 	bool macvlan_support;
+- };
++
++	struct hnat_ct_cursor *ct_cursor[MAX_PPE_NUM];
++	struct hnat_mib_ppe mib[MAX_PPE_NUM];
++};
+ 
+ struct extdev_entry {
+ 	char name[IFNAMSIZ];
+@@ -1351,8 +1386,18 @@ int mtk_ppe_get_xlat_v4_by_v6(struct in6_addr *ipv6, u32 *ipv4);
+ int mtk_ppe_get_xlat_v6_by_v4(u32 *ipv4, struct in6_addr *ipv6,
+ 			      struct in6_addr *prefix);
+ 
++int hnat_mib_sample_entry(struct mtk_hnat *h, u32 ppe_id, u32 index,
++			  enum hnat_mib_op op, struct hnat_accounting *out);
+ struct hnat_accounting *hnat_get_count(struct mtk_hnat *h, u32 ppe_id,
+ 				       u32 index, struct hnat_accounting *diff);
++int hnat_get_ct_delta(struct mtk_hnat *h, u32 ppe_id, u32 index,
++		      struct hnat_accounting *delta);
++int hnat_get_count_snapshot(struct mtk_hnat *h, u32 ppe_id, u32 index,
++			    struct hnat_accounting *snapshot);
++bool hnat_mib_bind_begin(struct mtk_hnat *h, u32 ppe_id, u32 index,
++			 struct hnat_mib_bind_guard *guard);
++void hnat_mib_bind_end(struct mtk_hnat *h, u32 ppe_id,
++		       struct hnat_mib_bind_guard *guard);
+ 
+ static inline u16 foe_timestamp(struct mtk_hnat *h)
+ {
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+index 9c39c71..5e04aff 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+@@ -968,70 +968,266 @@ static const debugfs_write_func cr_set_func[] = {
+ 	[12] = set_macvlan_support,
+ };
+ 
+-int read_mib(struct mtk_hnat *h, u32 ppe_id,
+-	     u32 index, u64 *bytes, u64 *packets)
++static void __hnat_mib_finish_pending_locked(struct mtk_hnat *h, u32 ppe_id,
++				     u64 *last_bytes, u64 *last_packets)
+ {
++	struct hnat_mib_ppe *mib = &h->mib[ppe_id];
++	u32 cmd_index = mib->pending.index;
++	u32 cmd_gen = mib->pending.generation;
++	u32 cnt_r0, cnt_r1, cnt_r2, cnt_r3;
++	u64 hw_bytes, hw_packets;
++
++	if (!mib->pending.valid)
++		return;
++
++	cnt_r0 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R0);
++	cnt_r1 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R1);
++	cnt_r2 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R2);
++
++	if (h->data->version == MTK_HNAT_V3) {
++		cnt_r3 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R3);
++		hw_bytes = cnt_r0 + ((u64)cnt_r1 << 32);
++		hw_packets = cnt_r2 + ((u64)cnt_r3 << 32);
++	} else {
++		hw_bytes = cnt_r0 + ((u64)(cnt_r1 & 0xffff) << 32);
++		hw_packets = ((cnt_r1 & 0xffff0000) >> 16) +
++			     ((u64)(cnt_r2 & 0xffffff) << 16);
++	}
++
++	if (cmd_index < h->foe_etry_num &&
++	    h->ct_cursor[ppe_id][cmd_index].generation == cmd_gen) {
++		h->acct[ppe_id][cmd_index].bytes += hw_bytes;
++		h->acct[ppe_id][cmd_index].packets += hw_packets;
++	}
++
++	mib->pending.valid = false;
++	mib->pending.polling = false;
++
++	if (last_bytes)
++		*last_bytes = hw_bytes;
++	if (last_packets)
++		*last_packets = hw_packets;
++}
++
++int hnat_mib_sample_entry(struct mtk_hnat *h, u32 ppe_id, u32 index,
++			  enum hnat_mib_op op, struct hnat_accounting *out)
++{
++	struct hnat_mib_ppe *mib;
++	struct hnat_ct_cursor *cursor;
++	struct hnat_accounting *total;
++	unsigned long flags;
++	u32 cmd_index, cmd_gen;
++	u32 val;
++	u64 hw_bytes = 0, hw_packets = 0;
+ 	int ret;
+-	u32 val, cnt_r0, cnt_r1, cnt_r2, cnt_r3;
+ 
+-	if (ppe_id >= CFG_PPE_NUM)
++	if (!h || ppe_id >= CFG_PPE_NUM || index >= h->foe_etry_num)
+ 		return -EINVAL;
+ 
+-	writel(index | (1 << 16), h->ppe_base[ppe_id] + PPE_MIB_SER_CR);
+-	ret = readx_poll_timeout_atomic(readl, h->ppe_base[ppe_id] + PPE_MIB_SER_CR, val,
+-					!(val & BIT_MIB_BUSY), 20, 10000);
++	if (!h->data || !h->data->per_flow_accounting)
++		return -EOPNOTSUPP;
++
++	mib = &h->mib[ppe_id];
++
++	spin_lock_irqsave(&mib->lock, flags);
++	if (mib->stopping) {
++		spin_unlock_irqrestore(&mib->lock, flags);
++		return -ENODEV;
++	}
++
++	if (mib->pending.polling) {
++		spin_unlock_irqrestore(&mib->lock, flags);
++		return -EBUSY;
++	}
++
++	if (!mib->pending.valid) {
++		mib->pending.index = index;
++		mib->pending.generation = h->ct_cursor[ppe_id][index].generation;
++		mib->pending.valid = true;
++		mib->pending.polling = true;
++		writel(index | (1 << 16), h->ppe_base[ppe_id] + PPE_MIB_SER_CR);
++		cmd_index = index;
++		cmd_gen = mib->pending.generation;
++	} else {
++		mib->pending.polling = true;
++		cmd_index = mib->pending.index;
++		cmd_gen = mib->pending.generation;
++	}
++	spin_unlock_irqrestore(&mib->lock, flags);
+ 
++	ret = readx_poll_timeout_atomic(readl, h->ppe_base[ppe_id] + PPE_MIB_SER_CR,
++					val, !(val & BIT_MIB_BUSY), 20, 10000);
+ 	if (ret < 0) {
+-		pr_notice("mib busy, please check later\n");
++		spin_lock_irqsave(&mib->lock, flags);
++		mib->pending.polling = false;
++		spin_unlock_irqrestore(&mib->lock, flags);
++		wake_up(&mib->idle);
+ 		return ret;
+ 	}
+-	cnt_r0 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R0);
+-	cnt_r1 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R1);
+-	cnt_r2 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R2);
+ 
+-	if (hnat_priv->data->version == MTK_HNAT_V3) {
+-		cnt_r3 = readl(h->ppe_base[ppe_id] + PPE_MIB_SER_R3);
+-		*bytes = cnt_r0 + ((u64)cnt_r1 << 32);
+-		*packets = cnt_r2 + ((u64)cnt_r3 << 32);
+-	} else {
+-		*bytes = cnt_r0 + ((u64)(cnt_r1 & 0xffff) << 32);
+-		*packets = ((cnt_r1 & 0xffff0000) >> 16) +
+-			   ((u64)(cnt_r2 & 0xffffff) << 16);
++	spin_lock_irqsave(&mib->lock, flags);
++	if (mib->stopping || !mib->pending.valid) {
++		mib->pending.polling = false;
++		spin_unlock_irqrestore(&mib->lock, flags);
++		wake_up(&mib->idle);
++		return -ENODEV;
+ 	}
+ 
+-	return 0;
++	cmd_index = mib->pending.index;
++	cmd_gen = mib->pending.generation;
++	__hnat_mib_finish_pending_locked(h, ppe_id, &hw_bytes, &hw_packets);
++
++	if (cmd_index != index || h->ct_cursor[ppe_id][index].generation != cmd_gen) {
++		spin_unlock_irqrestore(&mib->lock, flags);
++		wake_up(&mib->idle);
++		return -EAGAIN;
++	}
+ 
++	switch (op) {
++	case HNAT_MIB_OP_SNAPSHOT:
++		if (out)
++			*out = h->acct[ppe_id][index];
++		break;
++	case HNAT_MIB_OP_CT_DELTA:
++		cursor = &h->ct_cursor[ppe_id][index];
++		total = &h->acct[ppe_id][index];
++		if (out) {
++			out->bytes = total->bytes - cursor->reported_bytes;
++			out->packets = total->packets - cursor->reported_packets;
++		}
++		cursor->reported_bytes = total->bytes;
++		cursor->reported_packets = total->packets;
++		break;
++	case HNAT_MIB_OP_COUNT:
++		if (out) {
++			out->bytes = hw_bytes;
++			out->packets = hw_packets;
++		}
++		break;
++	}
++
++	spin_unlock_irqrestore(&mib->lock, flags);
++	wake_up(&mib->idle);
++	return 0;
+ }
+ 
++int read_mib(struct mtk_hnat *h, u32 ppe_id,
++	     u32 index, u64 *bytes, u64 *packets)
++{
++	struct hnat_accounting diff;
++	int ret;
++
++	ret = hnat_mib_sample_entry(h, ppe_id, index, HNAT_MIB_OP_COUNT, &diff);
++	if (ret)
++		return ret;
++	if (bytes)
++		*bytes = diff.bytes;
++	if (packets)
++		*packets = diff.packets;
++	return 0;
++}
+ 
+ struct hnat_accounting *hnat_get_count(struct mtk_hnat *h, u32 ppe_id,
+ 				       u32 index, struct hnat_accounting *diff)
+-
+ {
+-	u64 bytes, packets;
++	int ret;
+ 
+-	if (ppe_id >= CFG_PPE_NUM)
++	if (!h || ppe_id >= CFG_PPE_NUM || index >= h->foe_etry_num)
+ 		return NULL;
+ 
+-	if (index >= hnat_priv->foe_etry_num)
++	if (!h->data || !h->data->per_flow_accounting)
+ 		return NULL;
+ 
+-	if (!hnat_priv->data->per_flow_accounting)
++	ret = hnat_mib_sample_entry(h, ppe_id, index, HNAT_MIB_OP_COUNT, diff);
++	if (ret)
+ 		return NULL;
+ 
+-	if (read_mib(h, ppe_id, index, &bytes, &packets))
+-		return NULL;
++	return &h->acct[ppe_id][index];
++}
++EXPORT_SYMBOL(hnat_get_count);
+ 
+-	h->acct[ppe_id][index].bytes += bytes;
+-	h->acct[ppe_id][index].packets += packets;
++int hnat_get_ct_delta(struct mtk_hnat *h, u32 ppe_id, u32 index,
++		      struct hnat_accounting *delta)
++{
++	if (!delta)
++		return -EINVAL;
++
++	return hnat_mib_sample_entry(h, ppe_id, index, HNAT_MIB_OP_CT_DELTA, delta);
++}
++EXPORT_SYMBOL(hnat_get_ct_delta);
++
++int hnat_get_count_snapshot(struct mtk_hnat *h, u32 ppe_id, u32 index,
++			    struct hnat_accounting *snapshot)
++{
++	if (!snapshot)
++		return -EINVAL;
++
++	return hnat_mib_sample_entry(h, ppe_id, index, HNAT_MIB_OP_SNAPSHOT, snapshot);
++}
++EXPORT_SYMBOL(hnat_get_count_snapshot);
++
++bool hnat_mib_bind_begin(struct mtk_hnat *h, u32 ppe_id, u32 index,
++			 struct hnat_mib_bind_guard *guard)
++{
++	struct hnat_mib_ppe *mib;
++	struct hnat_ct_cursor *cursor;
++	unsigned long flags = 0;
+ 
+-	if (diff) {
+-		diff->bytes = bytes;
+-		diff->packets = packets;
++	if (!guard)
++		return false;
++
++	guard->locked = false;
++	guard->flags = 0;
++
++	if (!h || ppe_id >= CFG_PPE_NUM || index >= h->foe_etry_num)
++		return false;
++
++	if (!h->data || !h->data->per_flow_accounting)
++		return true;
++
++	mib = &h->mib[ppe_id];
++
++	spin_lock_irqsave(&mib->lock, flags);
++	if (mib->stopping)
++		goto reject;
++
++	if (mib->pending.valid && mib->pending.index == index) {
++		if (mib->pending.polling)
++			goto reject;
++		if (readl(h->ppe_base[ppe_id] + PPE_MIB_SER_CR) & BIT_MIB_BUSY)
++			goto reject;
++		__hnat_mib_finish_pending_locked(h, ppe_id, NULL, NULL);
+ 	}
+-	return &h->acct[ppe_id][index];
++
++	cursor = &h->ct_cursor[ppe_id][index];
++	cursor->generation++;
++	cursor->reported_bytes = 0;
++	cursor->reported_packets = 0;
++	memset(&h->acct[ppe_id][index], 0, sizeof(h->acct[ppe_id][index]));
++
++	guard->flags = flags;
++	guard->locked = true;
++	return true;
++
++reject:
++	spin_unlock_irqrestore(&mib->lock, flags);
++	return false;
+ }
+-EXPORT_SYMBOL(hnat_get_count);
++EXPORT_SYMBOL(hnat_mib_bind_begin);
++
++void hnat_mib_bind_end(struct mtk_hnat *h, u32 ppe_id,
++		       struct hnat_mib_bind_guard *guard)
++{
++	if (!guard || !guard->locked)
++		return;
++
++	if (!h || ppe_id >= CFG_PPE_NUM)
++		return;
++
++	guard->locked = false;
++	spin_unlock_irqrestore(&h->mib[ppe_id].lock, guard->flags);
++}
++EXPORT_SYMBOL(hnat_mib_bind_end);
+ 
+ #define PRINT_COUNT(m, acct) {if (acct) \
+ 		seq_printf(m, "bytes=%llu|packets=%llu|", \
+@@ -1042,6 +1238,7 @@ static int __hnat_debug_show(struct seq_file *m, void *private, u32 ppe_id)
+ 	struct foe_entry *entry, *end;
+ 	unsigned char h_dest[ETH_ALEN];
+ 	unsigned char h_source[ETH_ALEN];
++	struct hnat_accounting snap = { 0 };
+ 	struct hnat_accounting *acct;
+ 	u32 entry_index = 0;
+ 
+@@ -1056,7 +1253,10 @@ static int __hnat_debug_show(struct seq_file *m, void *private, u32 ppe_id)
+ 			entry_index++;
+ 			continue;
+ 		}
+-		acct = hnat_get_count(h, ppe_id, entry_index, NULL);
++		if (!hnat_get_count_snapshot(h, ppe_id, entry_index, &snap))
++			acct = &snap;
++		else
++			acct = NULL;
+ 		if (IS_IPV4_HNAPT(entry)) {
+ 			__be32 saddr = htonl(entry->ipv4_hnapt.sip);
+ 			__be32 daddr = htonl(entry->ipv4_hnapt.dip);
+@@ -3019,8 +3219,9 @@ static const struct file_operations hnat_static_fops = {
+ int get_ppe_mib(u32 ppe_id, int index, u64 *pkt_cnt, u64 *byte_cnt)
+ {
+ 	struct mtk_hnat *h = hnat_priv;
+-	struct hnat_accounting *acct;
++	struct hnat_accounting snap = { 0 };
+ 	struct foe_entry *entry;
++	int ret;
+ 
+ 	if (ppe_id >= CFG_PPE_NUM)
+ 		return -EINVAL;
+@@ -3030,17 +3231,16 @@ int get_ppe_mib(u32 ppe_id, int index, u64 *pkt_cnt, u64 *byte_cnt)
+ 		return -EINVAL;
+ 	}
+ 
+-	acct = hnat_get_count(h, ppe_id, index, NULL);
+ 	entry = hnat_priv->foe_table_cpu[ppe_id] + index;
+-
+-	if (!acct)
++	if (entry->bfib1.state != BIND)
+ 		return -1;
+ 
+-	if (entry->bfib1.state != BIND)
++	ret = hnat_get_count_snapshot(h, ppe_id, index, &snap);
++	if (ret)
+ 		return -1;
+ 
+-	*pkt_cnt = acct->packets;
+-	*byte_cnt = acct->bytes;
++	*pkt_cnt = snap.packets;
++	*byte_cnt = snap.bytes;
+ 
+ 	return 0;
+ }
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+index d6be585..1d13e41 100644
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -1072,18 +1072,19 @@ static void mtk_hnat_nf_update(struct sk_buff *skb)
+  
+ 	ct = nf_ct_get(skb, &ctinfo);
+ 	if (ct) {
+-		if (!hnat_get_count(hnat_priv, skb_hnat_ppe(skb), skb_hnat_entry(skb), &diff))
++		acct = nf_conn_acct_find(ct);
++		if (!acct)
+ 			return;
+ 
+-		acct = nf_conn_acct_find(ct);
+-		
+-		if (acct) {
+-			counter = acct->counter;
+-			atomic64_add(diff.packets, &counter[CTINFO2DIR(ctinfo)].packets);
+-			atomic64_add(diff.bytes, &counter[CTINFO2DIR(ctinfo)].bytes);
+-			atomic64_set(&counter[CTINFO2DIR(ctinfo)].diff_packets, diff.packets);
+-			atomic64_set(&counter[CTINFO2DIR(ctinfo)].diff_bytes, diff.bytes);
+-		}
++		if (hnat_get_ct_delta(hnat_priv, skb_hnat_ppe(skb),
++				      skb_hnat_entry(skb), &diff))
++			return;
++
++		counter = acct->counter;
++		atomic64_add(diff.packets, &counter[CTINFO2DIR(ctinfo)].packets);
++		atomic64_add(diff.bytes, &counter[CTINFO2DIR(ctinfo)].bytes);
++		atomic64_set(&counter[CTINFO2DIR(ctinfo)].diff_packets, diff.packets);
++		atomic64_set(&counter[CTINFO2DIR(ctinfo)].diff_bytes, diff.bytes);
+ 	}
+ }
+ 
+@@ -1602,6 +1603,7 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ {
+ 	struct net_device *master_dev = (struct net_device *)dev;
+ 	struct foe_entry entry = { 0 };
++	struct hnat_mib_bind_guard guard = { 0 };
+ 	struct mtk_mac *mac;
+ 	int whnat = IS_WHNAT(dev);
+ 	struct ethhdr *eth;
+@@ -2263,6 +2265,10 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 	 * the entry is set to BIND state in mtk_sw_nat_hook_tx().
+ 	 */
+ 	if (!whnat) {
++		if (!hnat_mib_bind_begin(hnat_priv, skb_hnat_ppe(skb),
++					 skb_hnat_entry(skb), &guard))
++			return 0;
++
+ 		entry.bfib1.ttl = 1;
+ 		entry.bfib1.state = BIND;
+ 	} else {
+@@ -2283,17 +2289,14 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
+ 	/* After other fields have been written, write info1 to BIND the entry */
+ 	memcpy(&foe->bfib1, &entry.bfib1, sizeof(entry.bfib1));
+ 	dma_wmb();
+-	/*reset statistic for this entry*/
+-	if (hnat_priv->data->per_flow_accounting &&
+-	    skb_hnat_entry(skb) < hnat_priv->foe_etry_num &&
+-	    skb_hnat_ppe(skb) < CFG_PPE_NUM)
+-		memset(&hnat_priv->acct[skb_hnat_ppe(skb)][skb_hnat_entry(skb)],0, sizeof(struct mib_entry));
++	hnat_mib_bind_end(hnat_priv, skb_hnat_ppe(skb), &guard);
+ 	return 0;
+ }
+ 
+ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ {
+ 	struct foe_entry *hw_entry, entry;
++	struct hnat_mib_bind_guard guard = { 0 };
+ 	struct ethhdr *eth;
+ 
+ 	if (skb_hnat_alg(skb) ||
+@@ -2546,6 +2549,12 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+ 		entry.ipv6_5t_route.iblk2.dp = gmac_no;
+ 	}
+ 
++	if (!hnat_mib_bind_begin(hnat_priv, skb_hnat_ppe(skb),
++				 skb_hnat_entry(skb), &guard)) {
++		spin_unlock(&hnat_priv->entry_lock);
++		return NF_ACCEPT;
++	}
++
+ 	entry.bfib1.ttl = 1;
+ 	entry.bfib1.state = BIND;
+ 	if (IS_IPV4_GRP(&entry))
+@@ -2563,6 +2572,7 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
+         /* After other fields have been writtefn, write info1 to BIND the entry */
+         memcpy(&hw_entry->bfib1, &entry.bfib1, sizeof(entry.bfib1));
+         dma_wmb();
++	hnat_mib_bind_end(hnat_priv, skb_hnat_ppe(skb), &guard);
+ 
+ #if defined(CONFIG_MEDIATEK_NETSYS_V3)
+ 	if (debug_level >= 7) {
+@@ -3019,6 +3029,7 @@ int mtk_464xlat_fill_l3(struct foe_entry *entry, struct sk_buff *skb,
+ int mtk_464xlat_post_process(struct sk_buff *skb, const struct net_device *out)
+ {
+ 	struct foe_entry *foe, entry = {};
++	struct hnat_mib_bind_guard guard = { 0 };
+ 	u32 hash;
+ 	bool l2w;
+ 
+@@ -3050,9 +3061,20 @@ int mtk_464xlat_post_process(struct sk_buff *skb, const struct net_device *out)
+ 	if (mtk_464xlat_fill_l2(&entry, skb, out, l2w))
+ 		return -1;
+ 
++	spin_lock(&hnat_priv->entry_lock);
++	if (!hnat_mib_bind_begin(hnat_priv, headroom_ppe(headroom[hash]), hash, &guard)) {
++		spin_unlock(&hnat_priv->entry_lock);
++		return 0;
++	}
++
+ 	/* We must ensure all info has been updated before set to hw */
+ 	wmb();
+-	memcpy(foe, &entry, sizeof(struct foe_entry));
++	hnat_copy_foe_info(foe, &entry);
++	wmb();
++	memcpy(&foe->bfib1, &entry.bfib1, sizeof(entry.bfib1));
++	dma_wmb();
++	hnat_mib_bind_end(hnat_priv, headroom_ppe(headroom[hash]), &guard);
++	spin_unlock(&hnat_priv->entry_lock);
+ 
+ 	return 0;
+ }

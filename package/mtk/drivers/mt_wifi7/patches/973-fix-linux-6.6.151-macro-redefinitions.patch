@@ -1,0 +1,99 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] mt_wifi7: fix Linux 6.6.151+ BIT macro redefinitions
+
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ mt_wifi/common/cmm_info.c            | 2 ++
+ mt_wifi/feature/rrm/rrm.c            | 2 ++
+ mt_wifi/feature/rrm/rrm_tlv.c        | 2 ++
+ mt_wifi/include/wlanif/wlan_common.h | 4 ++++
+ wlan_hwifi/utility.h                 | 6 ++++++
+ 5 files changed, 16 insertions(+)
+
+diff --git a/mt_wifi/common/cmm_info.c b/mt_wifi/common/cmm_info.c
+index 7695a92..c51ce7d 100644
+--- a/mt_wifi/common/cmm_info.c
++++ b/mt_wifi/common/cmm_info.c
+@@ -39,7 +39,9 @@
+ #endif
+ 
+ #define MCAST_WCID_TO_REMOVE 0 /* Pat: TODO */
++#ifndef MIN
+ #define MIN(a, b)					((a) < (b) ? (a) : (b))
++#endif
+ INT UNII4BandSupportRegions[] = {25, 26};
+ INT MCSMappingRateTable[] = {
+ 	2,  4, 11, 22, 12,  18,  24,  36, 48,  72,  96, 108, 109, 110, 111, 112,/* CCK and OFDM */
+diff --git a/mt_wifi/feature/rrm/rrm.c b/mt_wifi/feature/rrm/rrm.c
+index 9f9c72c..7cdc104 100644
+--- a/mt_wifi/feature/rrm/rrm.c
++++ b/mt_wifi/feature/rrm/rrm.c
+@@ -2504,7 +2504,9 @@ VOID RRM_PeerMeasureReqAction(
+ 		IN PRTMP_ADAPTER pAd,
+ 		IN MLME_QUEUE_ELEM *Elem)
+ {
++#ifndef MIN
+ #define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
++#endif
+ 	MEASURE_REQ_INFO MeasureReqInfo;
+ 	RRM_BEACON_REQ_INFO BcnReq;
+ 	PFRAME_802_11 pFr = (PFRAME_802_11)Elem->Msg;
+diff --git a/mt_wifi/feature/rrm/rrm_tlv.c b/mt_wifi/feature/rrm/rrm_tlv.c
+index c18db7e..e018780 100644
+--- a/mt_wifi/feature/rrm/rrm_tlv.c
++++ b/mt_wifi/feature/rrm/rrm_tlv.c
+@@ -979,7 +979,9 @@ VOID RRM_EnqueueNeighborRep(
+ 	IN PCHAR pSsid,
+ 	IN UINT8 SsidLen)
+ {
++#ifndef MIN
+ #define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
++#endif
+ 	UINT loop;
+ 	HEADER_802_11 ActHdr;
+ 	PUCHAR pOutBuffer = NULL;
+diff --git a/mt_wifi/include/wlanif/wlan_common.h b/mt_wifi/include/wlanif/wlan_common.h
+index db16254..7df53a9 100644
+--- a/mt_wifi/include/wlanif/wlan_common.h
++++ b/mt_wifi/include/wlanif/wlan_common.h
+@@ -107,8 +107,12 @@ enum
+ 	ACL_POLICY_ALLOW	= 2				/* allow traffic from MAC */
+ };
+ 
++#ifndef MIN
+ #define MIN(a, b)					((a) < (b) ? (a) : (b))
++#endif
++#ifndef MAX
+ #define MAX(a, b)					((a) > (b) ? (a) : (b))
++#endif
+ 
+ #define SETBIT(a,i)					((a)[(i) >> 3] |= 1 << ((i) & (NBBY - 1)))
+ #define CLRBIT(a,i)					((a)[(i) >> 3] &= ~(1 << ((i) & (NBBY - 1))))
+diff --git a/wlan_hwifi/utility.h b/wlan_hwifi/utility.h
+index 2c80d48..b83b64b 100644
+--- a/wlan_hwifi/utility.h
++++ b/wlan_hwifi/utility.h
+@@ -33,17 +33,23 @@
+ 
+ #include "os/mt_linux.h"
+ 
++#ifndef __bf_shf
+ #define __bf_shf(x) (__builtin_ffsll(x) - 1)
++#endif
+ 
++#ifndef field_prep
+ #define field_prep(_mask, _val)						\
+ 	({								\
+ 		((typeof(_mask))(_val) << __bf_shf(_mask)) & (_mask);	\
+ 	})
++#endif
+ 
++#ifndef field_get
+ #define field_get(_mask, _reg)						\
+ 	({								\
+ 		(typeof(_mask))(((_reg) & (_mask)) >> __bf_shf(_mask));	\
+ 	})
++#endif
+ 
+ #define SET_FIELD(_field, _val)	\
+ 	({	\

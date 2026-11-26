@@ -1,0 +1,49 @@
+From: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+Subject: [PATCH] usb: net: qmi_wwan: fix raw-IP RX flag, zero-len guard, and
+ qmimux headroom
+
+Restore QMI_WWAN_FLAG_RAWIP detection, drop zero-length USB frames safely, reserve QMAP+HNAT headroom, and guard qmimux_start_xmit() with skb_cow_head().
+Signed-off-by: sKyissKy <29267720+sKyissKy@users.noreply.github.com>
+---
+ drivers/net/usb/qmi_wwan.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/usb/qmi_wwan.c b/drivers/net/usb/qmi_wwan.c
+index c00becc..2978a72 100644
+--- a/drivers/net/usb/qmi_wwan.c
++++ b/drivers/net/usb/qmi_wwan.c
+@@ -102,6 +102,12 @@ static netdev_tx_t qmimux_start_xmit(struct sk_buff *skb, struct net_device *dev
+ 	struct qmimux_hdr *hdr;
+ 	netdev_tx_t ret;
+ 
++	if (skb_cow_head(skb, sizeof(struct qmimux_hdr))) {
++		dev_kfree_skb_any(skb);
++		dev->stats.tx_dropped++;
++		return NETDEV_TX_OK;
++	}
++
+ 	hdr = skb_push(skb, sizeof(struct qmimux_hdr));
+ 	hdr->pad = 0;
+ 	hdr->mux_id = priv->mux_id;
+@@ -133,6 +139,7 @@ static void qmimux_setup(struct net_device *dev)
+ 	dev->flags           = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST;
+ 	dev->netdev_ops      = &qmimux_netdev_ops;
+ 	dev->mtu             = 1500;
++	dev->needed_headroom = sizeof(struct qmimux_hdr) + ETH_HLEN + 16;
+ 	dev->needs_free_netdev = true;
+ }
+ 
+@@ -570,11 +577,11 @@ static const u8 buggy_fw_addr[ETH_ALEN] = {0x00, 0xa0, 0xc6, 0x00, 0x00, 0x00};
+ static int qmi_wwan_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
+ {
+ 	struct qmi_wwan_state *info = (void *)&dev->data;
+-	bool rawip = 0;
++	bool rawip = !!(info->flags & QMI_WWAN_FLAG_RAWIP);
+ 	__be16 proto;
+ 
+ 	/* This check is no longer done by usbnet */
+-	if (skb->len < dev->net->hard_header_len)
++	if (unlikely(!skb->len) || skb->len < dev->net->hard_header_len)
+ 		return 0;
+ 
+ 	if (info->flags & QMI_WWAN_FLAG_MUX)
